@@ -1,0 +1,224 @@
+{
+  "main": {
+    "id": "5df4df2cda8aee6d",
+    "type": "split",
+    "children": [
+      {
+        "id": "b707ca0797ce6f7d",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "144a992dcaf8cb6c",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "World/Races/Fiend.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Fiend"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "d07504c7c237aa3a",
+    "type": "split",
+    "children": [
+      {
+        "id": "ea92287945ffafae",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "d686cdf3941deb1e",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "f8e90a5e41e58039",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "tag:",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "Search"
+            }
+          },
+          {
+            "id": "b5a9414b0b1c8a35",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300
+  },
+  "right": {
+    "id": "6ba3421fb03c2e4c",
+    "type": "split",
+    "children": [
+      {
+        "id": "f2621af3ab12cd94",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "2e4e6c2406b00b84",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Characters/Black Clover/Magna Swing.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Magna Swing"
+            }
+          },
+          {
+            "id": "5bdf628bc197fc59",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Characters/Black Clover/Magna Swing.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Magna Swing"
+            }
+          },
+          {
+            "id": "a173cff12d153c60",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
+            }
+          },
+          {
+            "id": "b92b1099f8d04c96",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Characters/Black Clover/Magna Swing.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Magna Swing"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "bases:Create new base": false,
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false
+    }
+  },
+  "active": "144a992dcaf8cb6c",
+  "lastOpenFiles": [
+    "World/Races/Race.md",
+    "World/Races/Human Subtypes/Fanalis.md",
+    "World/Races/Exceed.md",
+    "World/Races/Monsters",
+    "World/Races/Intelligent Monsters",
+    "World/Races/Human Subtypes",
+    "World/Races/Elf.md",
+    "World/Races/Vampires.md",
+    "World/Races/Demon.md",
+    "World/World Building.md",
+    "World/Power System/Devil's Fruits.md",
+    "World/Races/Fishman.md",
+    "World/Cursed Spirits.md",
+    "World/Races/Chimera Ant.md",
+    "World/Races/Infernal.md",
+    "World/Races/Saiyan.md",
+    "World/Races/Fiend.md",
+    "World/Races/Hollow.md",
+    "World/Races",
+    "World/Power System/Power System.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/Shū.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/Ken.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/Intermediate Techniques.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/In.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/Gyō.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/En.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques/Chū.md",
+    "World/Power System/Nen/Techniques/Advanced Techniques/Yū.md",
+    "World/Power System/Nen/Techniques/Advanced Techniques/Ryū.md",
+    "World/Power System/Nen/Techniques/Intermediate Techniques",
+    "World/Power System/Nen/Techniques/Four Major Principles",
+    "World/Power System/Nen/Techniques/Advanced Techniques",
+    "World/Power System/Nen/Types of Nen",
+    "World/Power System/Nen/Techniques",
+    "World/Power System/Nen/Nen and Limitation",
+    "World/Power System/Nen/Nen Path.canvas",
+    "Power System/Nen/Nen Path.canvas",
+    "Nen/Nen Path.canvas",
+    "attachments/transmutation.png",
+    "attachments/sukuna-emitter.png",
+    "attachments/emission.png",
+    "attachments/enhancement.png",
+    "attachments/specialization.png",
+    "attachments/sukuna-transmuter.png",
+    "attachments/nen-category-chart.png",
+    "attachments/manipulation.png",
+    "attachments/conjuration.png",
+    "Untitled.canvas",
+    "Untitled 1.canvas"
+  ]
+}
