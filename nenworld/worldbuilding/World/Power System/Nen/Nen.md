@@ -4,6 +4,7 @@
 
 ## Contents
 
+- [[The Nen Path]] — the whole journey, ordinary person to master
 - [[Nen/Fundamentals/Aura]]
 - [[Nen and Nature]]
 - [[Nen in Society]]
@@ -12,5 +13,7 @@
 - [[Intermediate Techniques]]
 - [[Advanced Techniques]]
 - [[Nen Ability]]
+- [[Developing a Nen Ability]] — grow your own ability and its stages
 - [[Types of Nen]]
 - [[Nen and Limitation]]
+- [[Nen at the Table]] — running Nen in play

@@ -1,0 +1,22 @@
+/* Center the text inside Canvas text-node cards (both axes). */
+.canvas-node .markdown-preview-view,
+.canvas-node .markdown-rendered {
+	display: grid;
+	place-items: center;
+	height: 100%;
+	text-align: center;
+}
+
+/* Let the rendered content size to its text so grid can center it. */
+.canvas-node .markdown-preview-sizer {
+	width: 100%;
+	min-height: unset !important;
+	padding: 0 !important;
+}
+
+/* Drop heading margins/borders so a "# [[Link]]" tile sits dead-center. */
+.canvas-node .markdown-preview-view :is(h1, h2, h3, h4, h5, h6) {
+	margin: 0;
+	padding: 0;
+	border: none;
+}
