@@ -1,0 +1,7 @@
+[[Ideal Power System For the Real World]] › [[World Building]] › [[Race]] › [[Humans]]
+
+A Jinchūriki is a person with a [[Monsters|Monster]] sealed inside their body. The practice exists because some Monsters simply cannot be killed — the [[Monsters|Tailed Beasts]] above all — so the alternative was to bind one into a living human vessel and make it somebody's problem to carry. The host is an ordinary human before the sealing and remains biologically human after it; what changes is that they now share a body with something enormous that did not consent to be there.
+
+What a Jinchūriki gets out of it is access. The sealed Monster's natural energy bleeds into the host, granting stamina and durability far past human limits, accelerated healing, and — for a host who can bear it — the ability to deliberately draw on the Monster's power in escalating amounts. What they pay is that the thing inside is awake, hostile, and constantly looking for a moment of weakness, grief, or rage to push through and take the body for itself. Hosts who lose that argument are among the most destructive events a region can experience.
+
+**Jinchūriki are not a family and share no lineage.** They're made individually, usually by governments, usually to children, and usually as weapons — which means they're scattered across unrelated nations, unrelated to each other, and typically raised in isolation by people who fear them. Whether a given Jinchūriki grows up a monster or a person tends to come down to whether anyone in that childhood treated them as one.

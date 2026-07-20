@@ -1,0 +1,11 @@
+[[Ideal Power System For the Real World]] › [[World Building]] › [[Race]] › [[Humans]]
+
+Bloodkin are humans deliberately remade using the blood (or any other essence) of a powerful creature. The process (ritual, transfusion, implantation, etc) alters the physiology human host, so the survivor keeps their human mind and lineage but gains a properties or even part of the monster's power. It is rarely safe: the body has to survive taking on something it was never built for, and plenty of people don't. Those who do pass the trait to their children, which is how a one-time modification becomes a lasting bloodline. Most [[Clans]] are Bloodkin of some type — the difference is just containment. A Clan like the [[Fanalis]] stayed one small family, everyone able to trace back to the same ancestor; other Bloodkin, like the [[Quincy]] or [[Pyrokinetic]], spread the same kind of modification across many unrelated families instead, with no single shared ancestor to point to at all.
+
+What a Bloodkin becomes depends entirely on what they were forged from:
+
+- **Monster-blood** (usually named specific to the monster) — can gain strength, speed, senses, and strange abilities; the **[[Fanalis]]** are the established example, an entire warrior people descended from Bloodkin remade with the blood of the Red Lion. See [[Fanalis]] for the full clan.
+- **Dragon-blood** (Dragons are not classified as monsters because of their intelligence) — scales, breath, and raw durability drawn from a [[Dragon]]; the classic "dragonslayer" archetype, humans made to fight dragons by becoming half one. Depending on the Dragon used to make them, they gain the ability to eat, and use the element of that Dragon.
+- **Spirit-blood** — chosen by Blessed Spirits, and often granted power from them. They are more common than Dragon Bloods but less common than Monster Bloods. They are often known as "chosen heroes" as they are literally "chosen" by the local Blessed Spirit, who are often worshipped as Deities. However unlike the other two, they do not pass on their modified changes to their descendants.
+
+The list is open-ended: in principle any species can be forged from the essence of anything powerful enough to be worth the risk.

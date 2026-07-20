@@ -2,7 +2,7 @@
 
 [[Ideal Power System For the Real World]] › [[Nen]] › [[Nen Ability]]
 
-A [[Nen Ability]] is **grown, not granted.** Nobody — not a teacher, not the world, not the GM — hands a practitioner a finished ability with its stages already written. The user builds it themselves, out of who they are and what they have learned to do, and it earns new forms only as they earn them in the world. This page is the scaffold for that: a set of slots the player fills in, not a menu they pick from.
+A [[Nen Ability]] is **grown, not granted.** Nobody hands a practitioner a finished ability with its stages already written. The user builds it themselves, out of who they are and what they have learned to do, and it earns new forms only as they earn them in the world. This page is the scaffold for that: a set of slots the player fills in, not a menu they pick from.
 
 The rule underneath all of it comes from the [[Nen Ability]] and [[Conditions]] pages: an ability reflects its creator's character, and its limits are set by that person's own deepest sense of what's fair (their "internal locus of equivalence"). **You cannot fake this.** An ability that doesn't honestly fit the person who made it stays weak, no matter how clever it looks on paper.
 

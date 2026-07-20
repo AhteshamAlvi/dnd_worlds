@@ -35,9 +35,9 @@ This is the main way anyone punches above their tier, and the system's central t
 
 **GM adjudication:** the size of the boost tracks the *sincerity and severity* of the restriction, judged against that character's own values — not how the player games it. A vow that costs the character nothing grants nothing. A vow with teeth ("I die if I break this") grants a lot, and the teeth are real. You are allowed to say "that restriction is cosmetic, so it does nothing."
 
-## Pacing power through the tiers
+## Pacing power through the path
 
-Use [[The Nen Path]] as the gate. A character can only do what their tier and learned techniques allow, and can only build an ability out of techniques they actually have. This keeps growth legible: advancement means *learning the next technique* or *earning the next stage* (see [[Developing a Nen Ability]]), never just "getting stronger" in the abstract.
+Use [[The Nen Path]] as the gate — but the gate is *dependency, not a fixed ladder.* Past the shared foundation (the [[Four Major Principles]]), a character learns intermediate techniques, advanced techniques, and their signature ability in whatever order suits them; one PC may craft an ability early and thin out on techniques, another may skip half the [[Intermediate Techniques]] and reach straight for a specific [[Advanced Techniques|advanced]] one. The only hard limit is that anything they do must rest on something they *actually hold*. This keeps growth legible: advancement means *learning a specific new technique* or *earning the next stage* (see [[Developing a Nen Ability]]), never just "getting stronger" in the abstract.
 
 ## A few standing rulings
 
