@@ -8,7 +8,7 @@ Every person is born one of the six [[Types of Nen]]. The type is innate, discov
 
 Around the chart: **Enhancement → Transmutation → Conjuration → Specialization → Manipulation → Emission →** (back to Enhancement). Efficiency: own type 100%, adjacent 80%, two steps 60%, opposite 40% ([[Types of Nen]] — lore numbers, reproduced exactly).
 
-| Your type ↓ | ENH | TRA | CON | SPE | MAN | EMI |
+| Your type ↓ | ENH | TRA | CONJ | SPE | MAN | EMI |
 |---|---|---|---|---|---|---|
 | **Enhancement** | 100 | 80 | 60 | — | 60 | 80 |
 | **Transmutation** | 80 | 100 | 80 | — | 40 | 60 |
@@ -16,6 +16,8 @@ Around the chart: **Enhancement → Transmutation → Conjuration → Specializa
 | **Specialization** | * | * | * | 100 | * | * |
 | **Manipulation** | 60 | 40 | 60 | — | 100 | 80 |
 | **Emission** | 80 | 60 | 40 | — | 80 | 100 |
+
+> **Category codes:** ENH Enhancement · TRA Transmutation · **CONJ Conjuration** · SPE Specialization · MAN Manipulation · EMI Emission. Conjuration is **CONJ**, never "CON" — CON is the Constitution attribute ([[Attributes and Skills]]). The two are unrelated; keep them distinct in every ability writeup.
 
 — : Specialization is binary. Non-Specialists have **0%** in it: not weak access, *no* access ([[Specialization]]).
 \* : Specialists have **100% learning affinity** for every category; their *output* efficiency defaults to **100% own / 80% everything else**, varied per individual by GM design (the lore says it varies).
@@ -49,7 +51,7 @@ At divination, roll d20 in secret:
 |---|---|
 | 1–14 | Standard hexagon spread |
 | 15–17 | **One raised band**: one non-adjacent category runs one band better (e.g., a Conjurer with 80% Manipulation). |
-| 18–19 | **Double affinity**: a second category at 90–100% ([[Ryomen Sukuna|Sukuna]] pattern: Emission + Transmutation both ~100). Compensation: soft cap counts as one SPI lower (spread thin). |
+| 18–19 | **Double affinity**: a second category at 90–100% ([[Ryomen Sukuna|Sukuna]] pattern: Emission + Transmutation both ~100). Compensation: pool computed at **effective CON −1** (aura spread across two masteries — [[Aura Statistics]]). |
 | 20 | **Anomalous**: GM designs a lopsided spread ([[Fern]] pattern: 100/90/70/50/30 leaning toward an adjacent type), or an off-chart quirk. |
 
 Variations are *discovered through play* — a character who keeps finding Manipulation strangely easy should get to notice that. The canon character files (Sukuna, Fern, [[Gojo Satoru|Gojo]]) establish these variations exist; the frequencies are a design addition.

@@ -35,7 +35,7 @@ Rule of thumb at the table: **natural-energy beings are magnitude; Nen beings ar
 - **Blessed:** guardianship abilities; communities worship them ([[The World of Sorane]] uses several).
 - **Cursed:** walking disasters; the emergency that outranks politics.
 
-**Spirit Tools** *(item rules — the playable face of Spirits)*: a Spirit sealed in an object. Wielder gains: the Spirit's ability as a granted Hatsu (fixed form, no growth, uses wielder's AO with the *Spirit's* Efficiency), and the Spirit's terms — every Tool has a **price clause** (a Vow the wielder didn't get to negotiate). Awake Tools talk. Strong-willed Tools test (WIL contests for control at dramatic moments). Treat every Tool as an NPC with an inventory slot.
+**Spirit Tools** *(item rules — the playable face of Spirits)*: a Spirit sealed in an object. Wielder gains: the Spirit's ability as a granted Hatsu (fixed form, no growth, uses wielder's AO with the *Spirit's* Efficiency), and the Spirit's terms — every Tool has a **price clause** (a Vow the wielder didn't get to negotiate). Awake Tools talk. Strong-willed Tools test (**Spirit (SPI) contests** for control at dramatic moments — a clash of Nen wills). Treat every Tool as an NPC with an inventory slot.
 
 ## Hollows ([[Hollow]])
 
@@ -48,7 +48,7 @@ Rule of thumb at the table: **natural-energy beings are magnitude; Nen beings ar
 
 **Lucid Infernal** *(restricted PC)* — fire given a person's leftover shape:
 - Body of flame: fire immunity; unarmed strikes +P 10 burn rider; water/smothering: Numbed condition; their *touch* ignites the flammable (control is a discipline — Composure after any surge).
-- +2 AGI, +1 WIL; no VIT-based natural healing (fire doesn't knit — repairs via fuel/rest); Body HP normal (the flame-pattern can be disrupted).
+- +2 AGI, +1 PER; no VIT-based natural healing (fire doesn't knit — repairs via fuel/rest); Body HP normal (the flame-pattern can be disrupted).
 - **The social truth:** most Infernals are mourned as dead and feared as bombs; lucid ones live in the gap ([[Infernal]]). The disease cosmology (carrier insects, infectious burns, cures) is a campaign framework hook, not PC bookkeeping — unless the PC wants the cure, which is a *great* want.
 - Mindless Infernals: GM creatures — grief with a heat signature; put-downs are tragedies, write them that way.
 

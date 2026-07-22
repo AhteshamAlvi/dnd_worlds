@@ -15,7 +15,7 @@ Human range 24–60. Body HP is *meat*: it never scales with aura, training only
 
 ## Dying and death
 
-At 0 Body HP you fall Dying. On each of your turns: **death save** — d20 + VIT mod: 10+ success, else failure. **Three failures: dead. Three successes: stable** (unconscious, 1 HP after 1d4 hours). Natural 20: wake at 1 HP. Damage taken while Dying = 1 failure (2 if the hit's Power ≥ your max Body).
+At 0 Body HP you fall Dying. On each of your turns: **death save** — d20 + **SPI** mod ([[Spirit]] — the spark that decides whether you cling on is spirit, not meat): 10+ success, else failure. **Three failures: dead. Three successes: stable** (unconscious, 1 HP after 1d4 hours). Natural 20: wake at 1 HP. Damage taken while Dying = 1 failure (2 if the hit's Power ≥ your max Body).
 
 - **Massive damage:** a single hit dealing ≥ 2× max Body sends you Dying with **1 failure banked + a Severe injury** — never instant death from HP loss alone (design brief: no insta-kills). The *only* instant kill is a coup de grâce against the helpless ([[Combat Core]]) or brain destruction ([[Nen Techniques (Rules)|Yū]] can't fix that; nothing can).
 - **Players roll their own death saves, in the open.** The table should hold its breath honestly.
@@ -78,12 +78,12 @@ Injuries stack. This table is the game's tax on fighting up a band — you can s
 | Suffocation | CON score in rounds of effort (×2 prepared); then Dying |
 | Poison/disease | CON save vs listed DC; on fail, listed track. [[Nen Techniques (Rules)|Jū]] can reject *Nen-borne* affliction only |
 | Extreme cold/heat | CON save DC 13/hour or 1 Strain-equivalent fatigue ([[Race Rules Overview|races]] modify: Yuki, Merfolk, Plantfolk…) |
-| Aura-dense zones (Hollowlands, sacred sites) | Recovery ×2 but WIL DC 13/day or emotional bleed — see [[The World of Sorane]] |
+| Aura-dense zones (Hollowlands, sacred sites) | Regeneration ×2 but Composure (CHA) DC 13/day or emotional bleed — see [[The World of Sorane]] |
 
 ## Chases and escapes
 
 1. **Speed check:** SR gap 2+ in open ground = the faster side simply decides the outcome ([[Scale Speed and Magnitude]]).
-2. Otherwise best-of-3 opposed legs: AGI (sprint/parkour), CON (endurance), WIS (route/prediction) — terrain picks which; each leg won by the quarry adds separation, each lost closes it.
+2. Otherwise best-of-3 opposed legs: AGI (sprint/parkour), CON (endurance), PER (route/prediction — reading where they'll break) — terrain picks which; each leg won by the quarry adds separation, each lost closes it.
 3. Nen layer: Zetsu drops you off the aura map (then it's mundane tracking); En sweeps flush hiders; Drive spends pool for raw gap — and a pursuer who empties their pool to catch you arrives Exhausted. Let them do the math.
 
 ## Social and psychological pressure

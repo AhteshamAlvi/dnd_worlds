@@ -12,7 +12,7 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 **User:** Boru, professional Enhancer. Hatsu II (budget 20), AO 100, Control 2 (×1.6), Kō I. Efficiency: ENH 100%.
 **Build:** Power multiplier +50% (6 EP). **Conditions:** must plant both feet and name his target aloud (Minor, +2 EP); only against someone who has harmed him or an ally this scene (Major, +5 EP). Budget 20+7 = 27; spent 6.
 **Vow:** "Never against someone fleeing" — Serious, ×1.5 (audited: his enemies *will* flee).
-**In play:** all-in blow via [[Nen Techniques (Rules)|Kō]]: Fuel 100 → P = 100 × 1.0 (ENH) × 2 (Kō) × 1.5 (multiplier) × 1.5 (vow) = **P 675**, rolled as 1d10 ×100 + 120. Pool cost 160. One punch that deletes professionals and staggers elites — twice, then he's spent.
+**In play:** he dumps his whole output as Fuel through a [[Nen Techniques (Rules)|Kō]] fist (concentration is the *delivery*, not a separate multiplier — an ability already committing full Fuel doesn't double-dip; [[Aura Density and Concentration]]): Fuel 100 → P = 100 × 1.0 (ENH) × 1.5 (multiplier) × 1.5 (vow) = **P 225**, rolled as 2d10 ×10 + 5. Pool cost 160. One punch that deletes professionals and dents elites — and while it's up, every region but that fist is Soak 0.
 **Counters/Failure:** the foot-plant is a read (Insight DC 13); mid-Kō he is naked everywhere else. Wrong target named → fizzles, Fuel lost.
 **Growth trigger:** surviving a duel he *chose* not to end with it (→ defensive form: the planted stance as immovable Guard).
 
@@ -26,14 +26,14 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 ## 3 · Razor Psalm — Transmutation, offense/deception
 **User:** Sylle, professional Transmuter. Hatsu III (35), AO 130, Control 3 (×1.4), In III. TRA 100%.
 **Build:** monofilament aura wire — Range 20 m (2), In-woven (3), sustained duration (1), Power +25% (3) = 9 EP. **Conditions:** both ends must anchor to surfaces she has touched bare-handed (Major, +5); she must hum the psalm while placing it — continuous (Minor +2, continuous +2 = +4). Budget 35+9 = 44; spent 9.
-**In play:** Fuel 60 → wire of P 60 × 1.25 = **P 75** against whatever crosses it (2d10 ×10 − 35 flat rider... rolled as 1d10 ×10 + 20). Hidden: her WIL+In III vs finder's WIS+Gyō. Costs 84 + 25% In premium ≈ 105 pool per placement.
+**In play:** Fuel 60 → wire of P 60 × 1.25 = **P 75** against whatever crosses it (2d10 ×10 − 35 flat rider... rolled as 1d10 ×10 + 20). Hidden: her DEX+In III vs finder's PER+Gyō. Costs 84 + 25% In premium ≈ 105 pool per placement.
 **Counters/Failure:** win the Gyō contest; [[Nen Techniques (Rules)|Fū]] dampens it at the boundary; shatter her anchors. If the hum stops, every wire drops at once — grab her throat.
 **Growth trigger:** an enemy who *heard the hum* and walked the wires anyway (→ silent psalm: buy off the hum by upgrading the anchor condition to Defining).
 
 ## 4 · Slack Tide — Transmutation, debuff/battlefield control
 **User:** as Sylle's rival, same band. Hatsu III.
 **Build:** numbing mist — 5 m radius (4), Major paralytic rider (5), sustained (1) = 10 EP. **Conditions:** exhale-borne, drifts only with the air (Major, +5); user must hold their breath while it persists — continuous (Major +5 +2 = +7). Budget 35+12 = 47; spent 10.
-**In play:** Fuel 90 × 1.5 (AoE surcharge) = 135 committed (189 pool at ×1.4): everyone in the cloud saves Fortitude DC 10+3(WIL)+3(Hatsu) = **DC 16** each round: fail = Numbed (−2 all d20s, Strike halved); fail by 5+ (or any unawakened) = Paralyzed 1 round.
+**In play:** Fuel 90 × 1.5 (AoE surcharge) = 135 committed (189 pool at ×1.4): everyone in the cloud saves Fortitude DC 10+3(SPI)+3(Hatsu) = **DC 16** each round: fail = Numbed (−2 all d20s, Strike halved); fail by 5+ (or any unawakened) = Paralyzed 1 round.
 **Counters/Failure:** hold your breath (delays 3 rounds), wind, [[Nen Techniques (Rules)|Jū]] purge, or hit the breath-holding user — one solid Body hit forces the Concentration check and the tide dies with his lungs.
 **Growth trigger:** the day the mist saves a hostage by dropping *everyone* (→ selective tide: allies exempt, bought as a Defining condition rework).
 
@@ -53,7 +53,7 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 **Growth trigger:** arriving somewhere he's never stood to save someone (impossible — until the day the condition evolves: swap to "a place a willing ally currently stands," a Defining rework).
 
 ## 7 · The Unopenable Door — Conjuration, defense/battlefield control
-**User:** Mirel's mentor Odan, elite Conjurer. Hatsu IV (55), AO 500, Control 4. CON 100%.
+**User:** Mirel's mentor Odan, elite Conjurer. Hatsu IV (55), AO 500, Control 4. CONJ 100%.
 **Build:** conjured iron door + minor rule "cannot be forced open by strength" (8), scene duration (5−2 = 3), Independence (3−1 = 2) = 13 EP. **Condition (mandatory Defining for rule effects):** only functions when conjured into a genuine threshold — a doorway, gate, or pass (+10). Budget 55+10 = 65; spent 13.
 **In play:** Fuel 400 → the door exists at HP 400, Soak 20, and its *rule* holds against force up to P 400 (the rule contests the blow; stronger blows shatter rule and door together). Visible and solid to everyone — Conjuration's gift.
 **Counters/Failure:** the rule is literal — the door cannot be *opened* by force. The wall beside it can be. Teach your players to read rules like lawyers; this ability exists in the library to do exactly that.
@@ -67,16 +67,16 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 **Growth trigger:** a patient who consented *before* falling unconscious (→ standing-consent ledger form).
 
 ## 9 · Coachman's Needle — Manipulation, control (coercive)
-**User:** "the Coachman," elite Manipulator. Hatsu IV (55), AO 450, Control 4, WIL 18 (+4). MAN 100%.
+**User:** "the Coachman," elite Manipulator. Hatsu IV (55), AO 450, Control 4, SPI 18 (+4). MAN 100%.
 **Build:** Coercive control (12), range 100 m (4), scene duration (5) = 21 EP. **Mandatory conditions:** medium — a silver needle from his family's estate must pierce the target's skin (Major, +5); target must have willingly accepted a gift from him (Defining, +10). Budget 55+15 = 70; spent 21.
-**In play:** conditions met → Will save DC 10+4+4 = **18** or total control, scene-long, at up to 100 m. Commits Fuel 200/round upkeep; the target's allies see a friend turn. [[Nen Techniques (Rules)|Jū]] contest: rejection must reach P 200 committed — 2–3× that in practice for a general defense.
+**In play:** conditions met → **Spirit save (SPI)** DC 10+4(SPI)+4(Hatsu) = **18** or total control, scene-long, at up to 100 m. Commits Fuel 200/round upkeep; the target's allies see a friend turn. [[Nen Techniques (Rules)|Jū]] contest: rejection must reach P 200 committed — 2–3× that in practice for a general defense.
 **Counters/Failure:** refuse gifts; find and pull the needle (action, DC 13 Medicine); force him past AO with multiple puppets (each is separate upkeep). If the save succeeds, the target *feels the strings* and knows exactly what he tried.
 **Growth trigger:** canon-style escalation — a puppet made of someone already dead (new form; corpse-puppets at Pseudo-coercive price, no save, but Defining condition: only the willing dead).
 
 ## 10 · Small Favors — Manipulation, social
 **User:** fixer Ama, professional Manipulator. Hatsu II (20), Control 3.
 **Build:** Soliciting control (5), up to 5 targets (5) = 10 EP. **Condition:** target must genuinely owe her a favor — a real debt, acknowledged or not (Defining, +10). Budget 20+10 = 30; spent 10.
-**In play:** a nudge, not a leash: target saves Will DC 15 or treats her *reasonable* requests as their own good idea (queue her in, mention the name, lose the paperwork for an hour). Hostile or self-destructive asks break the effect instantly and reveal it (Soliciting leaves free will intact — [[Manipulation]]). Fuel 20/target — she can afford to run a whole street of small debts.
+**In play:** a nudge, not a leash: target saves **Spirit (SPI) DC 15** or treats her *reasonable* requests as their own good idea (queue her in, mention the name, lose the paperwork for an hour). Hostile or self-destructive asks break the effect instantly and reveal it (Soliciting leaves free will intact — [[Manipulation]]). Fuel 20/target — she can afford to run a whole street of small debts.
 **Counters/Failure:** pay your debts. Insight DC 20 to notice the nudges pattern across days. Any overreach burns the debt *and* the trust.
 **Growth trigger:** someone repaying a favor she never called in (→ the Ledger of Grace: banked goodwill as +2 DC per unpaid year, a Condition rework the GM will audit hard).
 

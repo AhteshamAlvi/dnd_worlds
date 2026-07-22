@@ -27,7 +27,7 @@ Players chose a discovery campaign ([[00 Read Me First]]). Protect it:
 
 ## Adjudicating novel Nen
 
-The four-step procedure in [[Core Resolution]] (magnitude → specificity → conditions → opposed WIL). Three standing rulings from the lore, restated as GM law:
+The four-step procedure in [[Core Resolution]] (magnitude → specificity → conditions → opposed SPI). Three standing rulings from the lore, restated as GM law:
 
 1. **You can't copy your way to mastery** ([[Nen at the Table]]) — cap borrowed/copied anything at rank III equivalence.
 2. **Emotion and risk amplify** — when a player puts something real on the line, the multipliers in [[Conditions Vows and Risk (Rules)]] are yours to *offer*, not just approve.

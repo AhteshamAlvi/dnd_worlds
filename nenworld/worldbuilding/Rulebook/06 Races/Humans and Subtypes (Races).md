@@ -24,7 +24,7 @@ The measuring stick ([[Humans]]). SF ×1 · base SR 1 (2 with AGI 14+ or Athleti
 
 **[[Celestial Dragons|Celestial Dragon]]** *(restricted — social nuke)* — physically ordinary human, often worse: −1 CON or VIT (generations of the sealed helmet and the shallow gene pool). **Untouchable:** the central authority answers harm to them with overwhelming force — an ally who is also a hostage-shaped diplomatic incident. **Never told no:** Streetwise and Survival can't be taken at creation. A renounced Dragon loses Untouchable and gains the world's most dangerous enemies: their family.
 
-**[[Humans|Jinchūriki]]** *(GM-only as origin; a campaign premise)* — human package + a sealed [[Monsters|Monster]]. Mechanics if run: +4 VIT/CON split, healing ×2, and **the Tenant**: a hostile NPC inside the sheet with its own agenda; drawing its power = borrowed AP/AO at escalating control checks (WIL DC 13/16/20/24 by draw depth; failure hands the body over). Not balanced. Not meant to be.
+**[[Humans|Jinchūriki]]** *(GM-only as origin; a campaign premise)* — human package + a sealed [[Monsters|Monster]]. Mechanics if run: +4 VIT/CON split, healing ×2, and **the Tenant**: a hostile NPC inside the sheet with its own agenda; drawing its power = borrowed AP/AO at escalating control checks (**Spirit save (SPI)** DC 13/16/20/24 by draw depth; failure hands the body over). Not balanced. Not meant to be.
 
 ## Clans ([[Clans]] with bodily traits)
 
@@ -36,14 +36,14 @@ A creation-legal clan trait costs its grade in attribute points from your racial
 | **[[Hyuga]]** | Major | *Byakugan:* activate (5 upkeep): 360° vision (can't be flanked), see aura flows as rank-II eyes-Gyō, read allocation at +2. Blind spot known to insiders (one narrow arc; a clan secret worth killing over). |
 | **[[Uchiha]]** | Major | *Sharingan (awakens at a defining trauma, not creation):* +2 on combat reads; observation learning ×½ instead of ×¾; may copy one witnessed *technique* program per arc at ×½ time. Copying [[Hatsu]] still obeys the caps ([[Hatsu Design]]). |
 | **[[Kaguya]]** | Major | *Shikotsumyaku:* bone weapons at will (1d8, count as armed; +1 natural Soak); VIT +1 included. Reckless culture is a background, not the gene. |
-| **[[Uzumaki]]** | Major | *Vitality:* +2 VIT, natural healing ×2, lifespan +50%, +10 AP at awakening. |
+| **[[Uzumaki]]** | Major | *Vitality:* +2 VIT, +1 CON (a deeper native aura pool — pool is CON-derived, [[Aura Statistics]]), natural healing ×2, lifespan +50%. |
 | **[[Inuzuka]]** | Minor | *Feral senses:* scent-tracking as Survival advantage; +2 Perception (smell/hearing); bonded beast companion (use ally rules). |
 | **[[Aburame]]** | Major | *Host colony:* insect swarm scouts (remote Perception 100 m via swarm), harvest 5 aura/round from marked targets at touch (their food is your pool). Social cost baked in. |
 | **[[Yuki]]** | Major | *Ice yield:* produce/shape ice from body water: improvised weapons/tools, +2 vs heat... no — *cold*: immune cold environment; **vulnerable heat** (environment saves at disadvantage). Ice-themed Hatsu components −1 EP. |
-| **[[Iburi]]** | Defining (GM) | *Smoke body:* as reaction, partial-dissolve — one attack misses automatically (3 uses/day); wind, unconsciousness, or panic risks involuntary dispersal (WIL DC 13 or lose actions; the clan's children die of this). |
+| **[[Iburi]]** | Defining (GM) | *Smoke body:* as reaction, partial-dissolve — one attack misses automatically (3 uses/day); wind, unconsciousness, or panic risks involuntary dispersal (Composure (CHA) DC 13 or lose actions; the clan's children die of this). |
 | **[[Hozuki]]** | Defining (GM) | *Water body:* non-aura physical damage halved; grapples auto-escaped; **dries out** (hydration clock), lightning-vulnerable, and a Nen-enhanced blow treats you as ordinary flesh. |
 | **[[Kamo]]** | Major | *Blood command:* your blood as weapon/tool (1d8 whip at 3 m, self-clot: stabilize free); every use costs Body HP 1:1 — supply is the leash ([[Kamo]]). |
-| **[[Inumaki]]** | Defining (GM) | *Cursed Speech:* born Hatsu — plain commands compel (Will save DC 10+CHA+Hatsu rank); each command costs throat: 1 Strain per grade of demand; your Hatsu budget starts pre-committed 10 EP to this. |
+| **[[Inumaki]]** | Defining (GM) | *Cursed Speech:* born Hatsu — plain commands compel (Spirit save (SPI) DC 10+CHA+Hatsu rank); each command costs throat: 1 Strain per grade of demand; your Hatsu budget starts pre-committed 10 EP to this. |
 | **[[Ubuyashiki]]** | Major | *The Bargain:* +2 WIS +2 CHA, once/session ask the GM one yes/no read on a person or plan and get a true answer — and the illness: lifespan ~30, CON capped 12, the clock visible on the sheet. |
 | **[[Gojo]] (Six Eyes)** | GM-only | Control 6 from awakening, see aura structure (all reads at advantage, exact-cost sight). Once-a-century: an NPC gift, or a campaign's entire premise. |
 | **[[Fanalis]]** | Restricted package (not a trait) | +2 STR, +2 AGI, base SR 3, caps STR/AGI 24; SPI cap 16 and no leaning ([[Fanalis]]: the body is the whole gift). The party's monster — and everyone who sees them run knows exactly what they are. |

@@ -24,7 +24,7 @@ One spectrum, three playable rungs (Winged and Shifters are restricted):
 
 ## Dwarf *(open; lore stub — minimal kit, expand when the vault does)*
 
-+2 CON, +1 VIT, +1 WIL; base SR 1 (never 2 by AGI); +1 natural Soak (stone-dense); advantage on saves vs poison and forced march; Craft mastery culture (background synergy). Caps: CON 22. Leaning +5 Conjuration (makers). Lifespan ~300.
++2 CON, +1 VIT, +1 WIS; base SR 1 (never 2 by AGI); +1 natural Soak (stone-dense); advantage on saves vs poison and forced march; Craft mastery culture (background synergy). Caps: CON 22. Leaning +5 Conjuration (makers). Lifespan ~300.
 
 ## Orckin and Goblinkin ([[Orckin]])
 
@@ -46,7 +46,7 @@ One spectrum, three playable rungs (Winged and Shifters are restricted):
 
 ## Plantfolk ([[Plantfolk]])
 
-*(open; Treants GM-only)* +2 CON, +2 WIL, −2 AGI (and AGI cap 16); photosynthetic (needs sun/water/soil — a week deprived = Exhausted); **slow perfection:** natural healing ½ rate but heals *everything* short of fire eventually, including lost limbs (months); **fire vulnerability:** fire damage ×2 and fire injuries don't self-mend. **Long patience:** time-term Vows ("for a decade…") read one grade higher in the audit ([[Plantfolk]] lore, priced). Lifespan centuries. Leaning +10 Conjuration/Conditions-flavored design.
+*(open; Treants GM-only)* +2 CON, +2 WIS, −2 AGI (and AGI cap 16); photosynthetic (needs sun/water/soil — a week deprived = Exhausted); **slow perfection:** natural healing ½ rate but heals *everything* short of fire eventually, including lost limbs (months); **fire vulnerability:** fire damage ×2 and fire injuries don't self-mend. **Long patience:** time-term Vows ("for a decade…") read one grade higher in the audit ([[Plantfolk]] lore, priced). Lifespan centuries. Leaning +10 Conjuration/Conditions-flavored design.
 
 ## Sky People ([[Sky People]])
 
@@ -64,8 +64,8 @@ Cross-fertile with humans; mixed children usually carry the dial at half strengt
 ## Saiyan ([[Saiyan]])
 
 *(restricted — the progression is the problem, on purpose)* +2 STR, +1 AGI, +1 VIT; caps STR/AGI/VIT 24.
-- **Zenkai:** each time the Saiyan recovers from Dying, permanently gain +5% max AP and +1 to one physical attribute (max 5 lifetime activations). The lore's near-death engine — and the reason for the restriction: this PC is *rewarded* for the party's worst days, and their curve bends above everyone's. The GM must want that at the table. It also makes them a target: the trait is known, and there are people who *farm* Saiyans carefully. That is a campaign.
-- **The tail:** if kept — under a full moon and open sky, WIL DC 16 or the Oozaru takes the table (GM-controlled rampage, SF ×10). Most cut it. Keeping it is a statement.
+- **Zenkai:** each time the Saiyan recovers from Dying, permanently gain a **free CON breakthrough** (one completed CON regimen — which ×1.6s the aura pool, [[Nen Growth]]) and +1 to one physical attribute (max 5 lifetime activations). The lore's near-death engine — and the reason for the restriction: this PC is *rewarded* for the party's worst days, and their curve bends above everyone's. The GM must want that at the table. It also makes them a target: the trait is known, and there are people who *farm* Saiyans carefully. That is a campaign.
+- **The tail:** if kept — under a full moon and open sky, Composure (CHA) DC 16 or the Oozaru takes the table (GM-controlled rampage, SF ×10). Most cut it. Keeping it is a statement.
 - Leaning +10 Enhancement. Scattered, homeland-less ([[Saiyan]]).
 
 ## Stub peoples (named in the vault, awaiting lore)

@@ -4,21 +4,21 @@
     "type": "split",
     "children": [
       {
-        "id": "27c21f7843346838",
+        "id": "e159346d99814e55",
         "type": "tabs",
         "children": [
           {
-            "id": "933182faca121a42",
+            "id": "9fab2cf3de3a858f",
             "type": "leaf",
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Rulebook/09 Appendices/Balance and Math.md",
+                "file": "Rulebook/01 Core Rules/Attributes/Strength.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Balance and Math"
+              "title": "Strength"
             }
           }
         ]
@@ -150,8 +150,39 @@
               "icon": "lucide-list",
               "title": "Outline of Magna Swing"
             }
+          },
+          {
+            "id": "b340b7300eaa9615",
+            "type": "leaf",
+            "state": {
+              "type": "claudian-view",
+              "state": {},
+              "icon": "bot",
+              "title": "Claudian"
+            }
+          },
+          {
+            "id": "ce6cb1c2b861c1fe",
+            "type": "leaf",
+            "state": {
+              "type": "git-view",
+              "state": {},
+              "icon": "git-pull-request",
+              "title": "Source Control"
+            }
+          },
+          {
+            "id": "b5ac66e251900e79",
+            "type": "leaf",
+            "state": {
+              "type": "advanced-tables-toolbar",
+              "state": {},
+              "icon": "spreadsheet",
+              "title": "Advanced Tables"
+            }
           }
-        ]
+        ],
+        "currentTab": 6
       }
     ],
     "direction": "horizontal",
@@ -160,6 +191,10 @@
   },
   "left-ribbon": {
     "hiddenItems": {
+      "templater-obsidian:Templater": false,
+      "table-editor-obsidian:Advanced Tables Toolbar": false,
+      "obsidian-git:Open Git source control": false,
+      "realclaudian:Open Claudian": false,
       "bases:Create new base": false,
       "switcher:Open quick switcher": false,
       "graph:Open graph view": false,
@@ -169,34 +204,36 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "933182faca121a42",
+  "active": "9fab2cf3de3a858f",
   "lastOpenFiles": [
-    "Rulebook/01 Core Rules/Scale Speed and Magnitude.md",
+    "World/Races/Other/Infernal.md",
+    "Untitled.base",
+    "World/Ideal Power System For the Real World.md",
+    "World/Races/Other/Merfolk.md",
+    "Rulebook/01 Core Rules/Attributes/Strength.md",
+    "Rulebook/01 Core Rules/Attributes/Vitality.md",
+    "Rulebook/03 Aura Engine/Aura Density and Concentration.md",
+    "Rulebook/01 Core Rules/Attributes/Attributes.md",
+    "Rulebook/01 Core Rules/Attributes/Agility.md",
+    "Core Rules.md",
     "Rulebook/01 Core Rules/Attributes and Skills.md",
-    "Rulebook/01 Core Rules/Core Resolution.md",
-    "Rulebook/00 Read Me First.md",
-    "Characters/Black Clover/Asta.md",
-    "Rulebook/09 Appendices/Character Sheet.md",
-    "Rulebook/09 Appendices/Glossary and Quick Reference.md",
-    "Rulebook/09 Appendices/Balance and Math.md",
-    "Rulebook/08 GM Tools/Social Exploration and Investigation.md",
-    "Rulebook/08 GM Tools/Devils Fruits (Rules).md",
-    "Rulebook/08 GM Tools/Canon Benchmarks.md",
-    "Rulebook/08 GM Tools/NPCs Creatures and Encounters.md",
-    "Rulebook/08 GM Tools/Running the Game.md",
-    "Rulebook/07 World/Campaign Frameworks.md",
-    "Rulebook/07 World/Society Law and Licenses.md",
-    "Rulebook/07 World/The World of Sorane.md",
-    "Rulebook/06 Races/Supernatural Races.md",
-    "Rulebook/06 Races/Peoples (Races).md",
-    "Rulebook/06 Races/Humans and Subtypes (Races).md",
-    "Rulebook/06 Races/Race Rules Overview.md",
-    "Rulebook/05 Progression/Progression and Training.md",
-    "Rulebook/02 Characters/Sample Characters.md",
-    "Rulebook/02 Characters/Character Creation.md",
-    "Rulebook/04 Combat/Injury Recovery and Conditions.md",
+    "Rulebook/01 Core Rules/Attributes/Spirit.md",
+    "Rulebook/01 Core Rules/Attributes/Charisma.md",
+    "Rulebook/01 Core Rules/Attributes/Perception.md",
+    "Rulebook/01 Core Rules/Attributes/Wisdom.md",
+    "Rulebook/01 Core Rules/Attributes/Intelligence.md",
+    "Rulebook/01 Core Rules/Attributes/Constitution.md",
+    "Rulebook/01 Core Rules/Attributes/Dexterity.md",
+    "Rulebook/01 Core Rules/Attributes",
     "Rulebook/04 Combat/Combat Core.md",
+    "Rulebook/04 Combat/Injury Recovery and Conditions.md",
+    "Rulebook/03 Aura Engine/Hatsu Design.md",
+    "Rulebook/03 Aura Engine/Hatsu Library.md",
     "Rulebook/03 Aura Engine/Nen Growth.md",
+    "Rulebook/03 Aura Engine/Nen Manifestation.md",
+    "Rulebook/03 Aura Engine/Nen Techniques (Rules).md",
+    "Rulebook/03 Aura Engine/Types and Affinity (Rules).md",
+    "World/Power System/Nen/Nen Path.canvas",
     "Rulebook/09 Appendices",
     "Rulebook/08 GM Tools",
     "Rulebook/07 World",
@@ -205,9 +242,6 @@
     "Rulebook/04 Combat",
     "Rulebook/03 Aura Engine",
     "Rulebook/02 Characters",
-    "Rulebook/01 Core Rules",
-    "Rulebook",
-    "World/Power System/Nen/Nen Path.canvas",
     "Untitled.canvas",
     "Power System/Nen/Nen Path.canvas",
     "Nen/Nen Path.canvas",

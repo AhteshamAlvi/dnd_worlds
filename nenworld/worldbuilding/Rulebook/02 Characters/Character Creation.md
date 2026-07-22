@@ -12,7 +12,7 @@ One sentence: who are you and what do you want? Then pick a race **from the camp
 
 **Standard array** — assign 15, 14, 13, 12, 11, 10, 10, 9, 8, 8 across the ten attributes ([[Attributes and Skills]]) — or **point buy** (all start 8; 24 points; 1 pt/step to 13, 2 pts/step to 16). Then apply racial adjustments (creation cap 18 after race; SPI creation cap 16 for humans).
 
-Tell players what SPI is ("innate spiritual potential") and nothing about what it does. Where they put it is already a story decision.
+Tell players what SPI is ("innate Nen talent") and nothing about what it does. Where they put it is already a story bet. **A quiet note for the GM only:** once these characters awaken, **CON** will set their aura pool and its lifetime ceiling, **VIT** their aura recovery and Body HP, **DEX** their aura execution and all accuracy, and **SPI** their odds on the rare make-or-break Nen manifestations ([[Aura Statistics]], [[Nen Manifestation]]). None of that is visible at creation — the fodder phase runs on the physical and social stats — but the array a player picks is the Nen build they'll grow into. Don't tell them; let it be discovered.
 
 ## Step 3 — Background (the life so far)
 
@@ -46,7 +46,7 @@ One line about the moment that bent your life ("the flood year," "my sister's In
 - **Body HP** = VIT × 3 × SF (SF ×1 for almost all playable races)
 - **Evasion** = 10 + AGI mod
 - **Speed Rating** = race base (human 1; 2 if AGI 14+ *or* Athletics trained; see race entries)
-- **Initiative** = AGI mod · **Passive Perception** = 10 + WIS mod + prof
+- **Initiative** = PER mod · **Passive Perception** = 10 + PER mod + prof
 - **Saves** = attribute checks; mark background/race proficiencies
 - **Aura statistics: none.** Leave the whole [[Aura Statistics]] block blank. It gets filled in ink the day the character awakens — at the table.
 
@@ -59,7 +59,7 @@ Background gear + **200 ryn** (see [[Society Law and Licenses]] for the economy;
 The character is **Tier 0 — Ordinary** ([[The Nen Path]]). Now, privately:
 - If the player chose **discussed pick** for affinity, record it sealed.
 - Otherwise pre-roll their d100 type and d20 variation ([[Types and Affinity (Rules)]]) and seal both.
-- Note their SPI and what it implies for pacing ([[Nen Growth]]).
+- Note their CON (their eventual aura ceiling and growth pace) and SPI (their manifestation edge) — [[Nen Growth]], [[Nen Manifestation]].
 - Optional: 1-in-1000 humans are Nen-null ([[Mutations]]) — **only with player buy-in**, it's a different game for them ([[Race Rules Overview]], Mutations section).
 
 ## Step 9 — Ties
@@ -76,4 +76,4 @@ For campaigns skipping the fodder phase: build as above, then apply [[Nen Growth
 
 ## Different races, one party
 
-All PCs start Nen-less at base level, so racial spread at creation is bounded by design: the biggest legal creation gaps are ~+4 attribute points and a trait (a [[Fanalis]] scion hits harder than a human scholar — and the scholar's SPI may dwarf theirs, sealed). The math converges further as Nen grows: aura statistics don't care about race except where a trait says so, and traits are priced ([[Race Rules Overview]]). What does *not* converge: lifespan, social treatment, and biology — play those as the world reacting, not as numbers.
+All PCs start Nen-less at base level, so racial spread at creation is bounded by design: the biggest legal creation gaps are ~+4 attribute points and a trait (a [[Fanalis]] scion hits harder than a human scholar — and the scholar's higher CON may mean a far deeper aura ceiling once both awaken, invisible for now). The math converges further as Nen grows: aura statistics don't care about race except where a trait says so, and traits are priced ([[Race Rules Overview]]). What does *not* converge: lifespan, social treatment, and biology — play those as the world reacting, not as numbers.

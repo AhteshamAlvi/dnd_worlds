@@ -1,5 +1,3 @@
-# Merfolk
-
 [[Ideal Power System For the Real World]] › [[World Building]] › [[Race]]
 
 Merfolk are the peoples of the sea — humanoid above, adapted for the water below, able to breathe and move through the deep as easily as a human walks on land. The classic Merfolk are fish-tailed, but the category is broad and interbreeding is common, so the line between subtypes is blurry and a single family can produce children of more than one kind.

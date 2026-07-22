@@ -21,8 +21,8 @@ Statline format per [[NPCs Creatures and Encounters]].
 
 ## Fern — T2→T3 (rising prodigy)
 
-Her file establishes the lopsided spread: **EMI 100 / MAN 90 / ENH 70 / TRA 50 / CON 30** (an *Anomalous* variation — [[Types and Affinity (Rules)]]).
-`T2-3 · EVA 14 · Soak 12 · Guard 120 · Body 30 · SR 3 · AP 900 · AO 110 · Control 4 (the point of her: control years ahead of her pool)`
+Her file establishes the lopsided spread: **EMI 100 / MAN 90 / ENH 70 / TRA 50 / CONJ 30** (an *Anomalous* variation — [[Types and Affinity (Rules)]]).
+`T2-3 · EVA 14 · Soak 12 · Guard 120 · Body 30 · SR 3 · CON 17 → AP 900 · AO 110 · Control 4 (the point of her: control years ahead of her pool)`
 - **Zoltraak** (EMI+TRA+MAN): rapid aura bolts — Fuel 40 each, P 40, 100 m, near-silent wind-up (her Control makes the flare read one band lower: In-equivalent from economy alone).
 - **Flight** (MAN 90%): travel SR 4 airborne, upkeep 20/round.
 - **Shield** (ENH+EMI): projected Guard 80 dome, upkeep half after round 1 (Ken-through-ability).
@@ -31,39 +31,39 @@ Her file establishes the lopsided spread: **EMI 100 / MAN 90 / ENH 70 / TRA 50 /
 ## Yami Sukehiro — T3–T4 (elite captain)
 
 File: Transmuter; **Dark Eclipse** — transmuted darkness-aura ([[Yami Sukehiro]]).
-`T3-4 · EVA 14 · Soak 45 · Guard 500 · Body 48 · SR 4 (burst 6) · AP 3.5k · AO 560 · Control 4 · Ren IV, Ken III, Kō III, Gyō III, Ryū II`
-- **Dark Cloaked Blade** (TRA 100%): katana + darkness Strike — standing P 450; with Kō, **P 1.1k** (2 × 280 Strike + multipliers).
-- **Dark Moon** (TRA+CON 80%): crescent arc, 10 m line, P 600, the *visible* finisher (optional-boost chant +25% when he names it).
+`T3-4 · EVA 14 · Soak 45 · Guard 500 · Body 48 · SR 4 (burst 6) · CON 20 → AP 3.5k · AO 560 · Control 4 · Ren IV, Ken III, Kō III, Gyō III, Ryū II`
+- **Dark Cloaked Blade** (TRA 100%): katana + darkness Strike — standing P 450; with Kō (his full AO ~560 concentrated into the blade, then his darkness multipliers), **P 1.1k**.
+- **Dark Moon** (TRA+CONJ 80%): crescent arc, 10 m line, P 600, the *visible* finisher (optional-boost chant +25% when he names it).
 - Condition thread: the darkness *absorbs* — small incoming Emission effects (P ≤ 100) are eaten by his Guard, feeding 25% back as Fuel. Tell: the blade drinks light first.
 *He is what a party of T3s should fear in a rival and pray for in a mentor.*
 
 ## Mereoleona Vermillion — T4 (master, double-type)
 
-File: **Double type TRA + ENH** ([[Types and Affinity (Rules)|variation 18–19]]): both at 100, soft cap one SPI lower — she paid the tax and never noticed.
-`T4 · EVA 15 · Soak 120 · Guard 1.6k · Body 54 · SR 6 (burst 8) · AP 8k · AO 1.4k · Control 4 · Chū V (Enhancer half-cost), Ryū IV`
+File: **Double type TRA + ENH** ([[Types and Affinity (Rules)|variation 18–19]]): both at 100, pool computed at **effective CON −1** (aura spread across two masteries) — she paid the tax and never noticed.
+`T4 · EVA 15 · Soak 120 · Guard 1.6k · Body 54 · SR 6 (burst 8) · CON 22 → AP 8k · AO 1.4k · Control 4 · Chū V (Enhancer half-cost), Ryū IV`
 - **Flame Incarnation** (TRA+ENH→SPE-flavored): her whole body as transmuted flame — melee P 1.8k sustained, every round, without Kō (the double-type dividend: full-price Strike *and* full-price rider). Grapplers take P 300/round ambient.
 - No ranged game worth naming — her file's truth: she walks at you, and the walk is the threat. Counter-shape: kiting at SR 7+, or a Fū boundary she must burn through.
 
 ## Isaac Netero — T5 (the human summit)
 
 File empty; this build is the "vow-built apex human" archetype the lore demands ([[Nen Growth]] soft-cap grind + [[Conditions Vows and Risk (Rules)]] at full stack).
-`T5 · EVA 16 · Soak 350 · Guard 4k · Body 40 (an old man's meat — the point) · SR 7 (strikes arrive SR 9) · AP 14k (SPI 20, sixty years) · AO 2.8k · Control 5 · Ten V, Zetsu V, Ren V, everything V`
-- **The Grateful Guest** (CON 100%, decades of a single prayer): conjured many-armed bodhisattva. Activation: his prayer bow (Minor condition, and the *only* tell). Strikes: P 8k at SR 9 (Grave vow "only after my bow of thanks" ×2 × narrow-vow on arrival speed) — faster than the enemy's round, from a seated old man.
+`T5 · EVA 16 · Soak 350 · Guard 4k · Body 40 (an old man's meat — the point) · SR 7 (strikes arrive SR 9) · CON 23 → AP 14k (sixty years drove his constitution deep into the superhuman band) · AO 2.8k · Control 5 · SPI 18 (his prayer-ability was a lifetime's manifestation) · Ten V, Zetsu V, Ren V, everything V`
+- **The Grateful Guest** (CONJ 100%, decades of a single prayer): conjured many-armed bodhisattva. Activation: his prayer bow (Minor condition, and the *only* tell). Strikes: P 8k at SR 9 (Grave vow "only after my bow of thanks" ×2 × narrow-vow on arrival speed) — faster than the enemy's round, from a seated old man.
 - **The Final Vow** (death-rider, pre-sworn): his death in battle releases everything at once — P 40k, 20 m, unsoakable by Guard (it's *inside* the vow's terms to be a gift). The lesson he teaches the ladder: the human ceiling is not talent; it's what you're willing to owe.
 
 ## Gojo Satoru — T5–T6 (perfect efficiency)
 
 File establishes: Conjurer 100%, **Six Eyes: minimum 80% across all types except SPE** — plus this book's Six Eyes trait: **Control 6, all reads at advantage, exact-cost sight** ([[Humans and Subtypes (Races)]]).
-`T5-6 · EVA 17 · Soak 400 · Guard 6k · Body 42 · SR 8 · AP 20k · AO 4k · Control 6 (×1.0 — he spends list price while the world pays retail)`
-- **Limitless** (CON): a conjured *rule-space* at skin's edge — "approach never completes." Standing: attacks must beat committed barrier P (default 2k/round upkeep — trivial for him) or never arrive. This is a Rule effect (major) with the Defining condition *it guards only him*.
+`T5-6 · EVA 17 · Soak 400 · Guard 6k · Body 42 · SR 8 · CON 24 → AP 20k · AO 4k · Control 6 (×1.0 — he spends list price while the world pays retail)`
+- **Limitless** (CONJ): a conjured *rule-space* at skin's edge — "approach never completes." Standing: attacks must beat committed barrier P (default 2k/round upkeep — trivial for him) or never arrive. This is a Rule effect (major) with the Defining condition *it guards only him*.
 - **Blue / Red** (forms): attraction/repulsion wells — P 3k pull or P 6k blast, 20 m radius options.
 - **Hollow Purple** (culmination, chant + handsign optional-boosts): the rule collides with itself — P 14k line, erases matter (Soak counts half). His file's stages left blank stay blank here: growth triggers belong to play.
 *Calibration lesson: Control 6 + AP 20k ≈ a T6 output on a T5 pool. Efficiency is the stat the ladder underprices — deliberately, and only once, for him.*
 
 ## Ryomen Sukuna — T6 (the flagship math)
 
-His file is the system's Rosetta stone — fully written, and every line below maps one of its steps to a rule already in this book. Spread per file: **EMI 100 / TRA 100 (double type) / ENH 90 / CON 80 / MAN 80 → sacrificed.**
-`T6 · EVA 17 · Soak 900 · Guard 10k · Body 50 · SR 9 · AP 40k · AO 8k · Control 5 · In V, Gyō V, Fū (via ability), all Principles V`
+His file is the system's Rosetta stone — fully written, and every line below maps one of its steps to a rule already in this book. Spread per file: **EMI 100 / TRA 100 (double type) / ENH 90 / CONJ 80 / MAN 80 → sacrificed.**
+`T6 · EVA 17 · Soak 900 · Guard 10k · Body 50 · SR 9 · CON 25 → AP 40k · AO 8k · Control 5 · In V, Gyō V, Fū (via ability), all Principles V`
 
 **Dismantle** (EMI+TRA composite; file steps 1–10 → system):
 1–2. *Slash shaping + "cutting" property:* Fuel F → slash of P = F × 1.0; the cutting rider ignores half of object/structure Soak. Target-tier ladder (file step 2): solids at listed cost; intangibles ×10 Fuel; ethereals ×100; concepts — GM-gated, Conditions required.
@@ -83,7 +83,7 @@ His file is the system's Rosetta stone — fully written, and every line below m
 ## Meruem — T7 (the ceiling)
 
 File stub; the archetype: born at the summit, growing *during* the conversation.
-`T7 · EVA 18 · Soak 4k · Guard 30k · Body 300 (SF ×1 but inhuman weave) · SR 11 · AP 250k · AO 30k · Control 5 · reads at Legendary`
+`T7 · EVA 18 · Soak 4k · Guard 30k · Body 300 (SF ×1 but inhuman weave) · SR 11 · CON 29 → AP 250k · AO 30k · Control 5 · reads at Legendary`
 - **Synthesis:** each round observing an opponent: permanent +2 on reads against them (stacking to +8); after 3 rounds he pre-empts declared allocations (players allocate first, he answers).
 - Strikes P 25k without abilities. The math message of T7: *there is no math message.* The party's business with a T7 is presence, witness, bargain, or flight — and the world's business is whatever it decides. Run him a season's antagonist, never a stat check.
 

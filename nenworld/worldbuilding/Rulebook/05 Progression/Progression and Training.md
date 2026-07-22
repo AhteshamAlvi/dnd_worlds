@@ -4,8 +4,8 @@
 
 Nenworld's advancement is a **two-currency system** (per the design brief):
 
-1. **Training Points (TP)** — earned in sessions, spent on *skill*: proficiencies, technique ranks, attributes, Hatsu ranks. **Every spend needs an in-fiction justification** — training time, a teacher, a breakthrough, or the growth loop. TP is permission *plus* pacing; fiction is the gate.
-2. **Time trained** — aura quantity (AP), and the weeks the TP-spends require. Rates in [[Nen Growth]]. **TP never buys AP.**
+1. **Training Points (TP)** — earned in sessions, spent on *skill*: proficiencies, technique ranks, attributes (including **CON**), Hatsu ranks. **Every spend needs an in-fiction justification** — training time, a teacher, a breakthrough, or the growth loop. TP is permission *plus* pacing; fiction is the gate.
+2. **Time trained** — the weeks every TP-spend requires. Rates in [[Nen Growth]]. **You never buy aura points directly:** max pool is derived from CON ([[Aura Statistics]]), so you grow it by raising CON — a TP + time + breakthrough regimen like any attribute, never a number you spend TP to inflate.
 
 There are no levels and no XP. The sheet grows where the character actually grew.
 
@@ -32,7 +32,7 @@ All costs; fiction gates in the right column. Time can run concurrently with adv
 | → Expert | 4 | 8 weeks use/practice |
 | → Master | 6 | Breakthrough moment in that skill |
 | → Legendary | 8 | GM invitation |
-| Attribute +1 (physical) | 5 | 8-week regimen; racial cap |
+| Attribute +1 (physical) | 5 | 8-week regimen; racial cap — **except CON**, which Nen-tempering drives into the superhuman band (double time past 20; grows the aura pool — [[Nen Growth]]) |
 | Attribute +1 (mental/social) | 5 | 8 weeks study/immersion |
 | **SPI +1** | 10 | Extraordinary event only ([[Nen Growth]]) |
 | Technique rank I–V | 2/3/4/6/8 | Programs and gates in [[Nen Growth]] |
@@ -57,10 +57,10 @@ A program = **focus + duration + weekly check + success threshold** ([[Awakening
 
 | Program | Duration & check | Notes |
 |---|---|---|
-| **Awaken (meditation)** | 8 wks teacher / 16 solo; WIL DC 13/16; 4 successes | [[Awakening and the Path]] |
+| **Awaken (meditation)** | 8 wks teacher / 16 solo; CON (Endurance) DC 13/16; 4 successes | [[Awakening and the Path]] |
 | **Ten → Ren rank I each** | 1–2 wks each; listed there | The shared foundation |
-| **Aura Control drills** (Control 2→3) | 12 wks; DEX or WIL DC 13; 4 successes | Coin-hover, leaf-split, bowl-stilling ([[Nen Growth]]) |
-| **Expanding En** (En II→III) | 8 wks; WIL Concentration DC 16; 4 successes | Hold radius +1 m past comfort daily; Strain on overrun is *expected* — budget rest weeks |
+| **Aura Control drills** (Control 2→3) | 12 wks; DEX DC 13; 4 successes | Coin-hover, leaf-split, bowl-stilling — precise aura work is DEX ([[Nen Growth]]) |
+| **Expanding En** (En II→III) | 8 wks; CON (Endurance) DC 16; 4 successes | Hold radius +1 m past comfort daily; Strain on overrun is *expected* — budget rest weeks |
 | **Category bell-curve block** | 4 wks mixed categories | Grants the ×1.25 primary bonus ([[Nen Growth]]) |
 | **First Hatsu (seed → form 1)** | 2 wks + design table-time; SPI DC 13; 2 successes | Player fills the [[Developing a Nen Ability]] worksheet; GM runs the [[Hatsu Design]] audit |
 | **Water Divination retreat** | 1 wk | For characters with no teacher: DIY divination is a rite, not a formality — run the scene |
@@ -76,8 +76,8 @@ A program = **focus + duration + weekly check + success threshold** ([[Awakening
 |---|---|---|
 | Forced Initiation of a student "before they're ready" | Skip the awakening program | The full [[Awakening and the Path]] risk table; reputations end this way |
 | Aura stimulants (black-market) | One week counts double | CON save DC 16 or 2 Strain; addiction track on repeats |
-| Leech-training (master channels aura *through* student) | AP gains ×3 for the block | Dependency: −10% AO when the master's aura isn't nearby, until a season passes clean |
-| Crucible past sane limits (unsanctioned death games) | ×2 AP and a technique week discount | Real death chance on the table, every week — [[Society Law and Licenses|and it's illegal]] |
+| Leech-training (master channels aura *through* student) | CON breakthroughs come ×2 faster for the block (deeper aura, [[Nen Growth]]) | Dependency: −10% AO when the master's aura isn't nearby, until a season passes clean |
+| Crucible past sane limits (unsanctioned death games) | CON breakthroughs ×2 faster and a technique week discount | Real death chance on the table, every week — [[Society Law and Licenses|and it's illegal]] |
 
 ## Montages and time skips
 
@@ -89,17 +89,17 @@ The moments the fiction runs on — outlined here, priced elsewhere:
 - **Desperation Surge** (+50% AO, 1/arc, 2 Strain after) — [[Injury Recovery and Conditions]]
 - **Overdraw** (Body HP → aura at 1:2, Strain) — same file
 - **Situational Risk ×1.5** and **emotion advantage** — [[Conditions Vows and Risk (Rules)]]
-- **Sacrificial vows** (the [[Isaac Netero|Netero]] gate: permanent SPI/AP loss for a scene of borrowed apex power) — GM-designed, see [[Canon Benchmarks]]; the cost is *permanent by definition* or it isn't this.
+- **Sacrificial vows** (the [[Isaac Netero|Netero]] gate: permanent **CON or SPI loss** — a shrunk pool or a dimmed talent — for a scene of borrowed apex power) — GM-designed, see [[Canon Benchmarks]]; the cost is *permanent by definition* or it isn't this.
 
 ## Progression yardsticks (expected values)
 
-| Stage | In-fiction time | AP | Ren/Control | Hatsu | TP earned (approx) |
+| Stage | In-fiction time | CON → AP (derived) | Ren/Control | Hatsu | TP earned (approx) |
 |---|---|---|---|---|---|
-| Creation | — | — | — | — | 0 |
-| First-arc end | 3–4 months | 150–250 | I / 1 | I (seed) | 10–16 |
-| Year one | 1 year | 400–700 | II / 2 | II, first form | 25–40 |
-| Professional | 2–4 years | 700–2k | II–III / 2–3 | II–III | 40–80 |
-| Elite | 8–15 years | 2k–6k | IV / 4 | III–IV | 100+ |
-| Master | 20+ years | 6k–16k | V / 5 | IV–V | GM territory |
+| Creation | — | — (not yet awakened) | — | — | 0 |
+| First-arc end | 3–4 months | CON 13–14 → 120–200 | I / 1 | I (seed) | 10–16 |
+| Year one | 1 year | CON 15–16 → 315–500 | II / 2 | II, first form | 25–40 |
+| Professional | 2–4 years | CON 17–19 → 800–2k | II–III / 2–3 | II–III | 40–80 |
+| Elite | 8–15 years | CON 20–22 → 3.3k–8.4k | IV / 4 | III–IV | 100+ |
+| Master | 20+ years | CON 23–25 → 13k–35k | V / 5 | IV–V | GM territory |
 
-Elite users are rare because the table says so: reaching elite takes a decade of *sustained* dedication (most working licensees plateau at professional — life happens, per the throughput limits), a soft cap that didn't stop you, and survival of everything that hunts the promising. The world's masters are the survivors of that triple filter — treat every one as a named institution.
+Elite users are rare because the arithmetic says so: reaching elite means driving CON into the superhuman band ([[Nen Growth]]) — a dozen hard-won breakthroughs at doubling time-cost past the mundane cap, over a decade of *sustained* dedication (most working licensees plateau at professional — life happens, per the throughput limits) — and surviving everything that hunts the promising. No wall stops anyone; the years and the danger do the filtering. The world's masters are the survivors of that triple filter — treat every one as a named institution.

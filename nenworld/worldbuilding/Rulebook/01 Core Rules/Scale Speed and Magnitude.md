@@ -36,7 +36,7 @@ Damage and effect rolls use **small dice pools × a multiplier**. You never roll
 Attacks resolve **accuracy → penetration → damage** (full procedure in [[Combat Core]]):
 
 1. **Accuracy** (d20, bounded): did it touch them?
-2. **Penetration:** compare the attack's Power to the target's **Soak** (hardness). **If P ≤ Soak, nothing happens.** No roll, no chip. A pistol (P 8) fired at a creature with Soak 400 is a noise.
+2. **Penetration:** compare the attack's Power to the target's **Soak** (hardness) in the struck region. **If P ≤ Soak, nothing happens.** No roll, no chip. A pistol (P 8) fired at a creature with Soak 400 is a noise. (Aura Soak is *density × 10* — where the defender concentrated their aura, and how much — per [[Aura Density and Concentration]]; an evenly-guarded body is Guard ÷ 10 everywhere.)
 3. **Damage:** roll magnitude dice, subtract Soak, deplete **Guard** (aura) first, then **Body HP**.
 
 This is deliberate and load-bearing: a party dealing 20–40 damage is *mechanically incapable* of defeating a being with thousands of Guard and triple-digit Soak. Their options are escape, concealment, negotiation, survival — exactly the fiction the lore describes. There is no action-economy exploit around it; see [[Balance and Math]] for the verification.
@@ -92,6 +92,8 @@ Scale Factor is the *biological* magnitude multiplier — how much creature ther
 | ×1k+ | [[Monsters|Tailed Beasts]], mountain-scale entities |
 
 SF multiplies: **Body HP**, **Body Soak**, carrying/dragging, and structural damage dealt by sheer mass. SF does **not** multiply aura statistics — aura comes from life-force and training, not tonnage ([[Aura]]); a Gillian's enormity is mostly natural energy and meat. (Some races carry a separate *aura multiplier*; that's a racial trait, not SF — see [[Race Rules Overview]].)
+
+SF is distinct from **Surface Units** (SU), the *area* measure that drives aura density ([[Aura Density and Concentration]]): SF is about mass/durability, SU about skin. A large creature has both a high SF (hard to hurt) and a high SU (its aura spreads thin unless concentrated) — which is why a giant is durable yet its unfocused aura is easy to out-penetrate with a concentrated human strike. Read the two independently.
 
 **Body HP = VIT × 3 × SF. Body Soak = (VIT mod + natural armor) × SF.** So a Gillian at VIT 20, armor +3: 6k Body HP, Soak 800 — small-arms-proof and novice-proof by construction, exactly as the ladder in [[Hollow]] demands.
 

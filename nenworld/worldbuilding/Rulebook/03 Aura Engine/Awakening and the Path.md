@@ -17,14 +17,14 @@ They should **not** know: the six types, the affinity chart, technique mechanics
 Two lore paths ([[Initiation]]), now with rules:
 
 ### The slow way — meditation
-Months of guided practice. In downtime terms ([[Progression and Training]]): a **Meditation Program** — 8 weeks baseline with a teacher, 16 without. Each week the student makes a WIL (Concentration) check DC 13 (DC 16 untaught); collect **4 successes** to awaken. A natural 20 counts twice. Between checks, characters feel incremental signs (warmth in the hands, seeing "heat-shimmer" around the teacher) — feed these to the player; discovery is the payoff.
+Months of guided practice. In downtime terms ([[Progression and Training]]): a **Meditation Program** — 8 weeks baseline with a teacher, 16 without. Each week the student makes a **CON (Endurance)** check DC 13 (DC 16 untaught) — awakening is patient, sustained attunement, not a flash of talent; collect **4 successes** to awaken. A natural 20 counts twice. Between checks, characters feel incremental signs (warmth in the hands, seeing "heat-shimmer" around the teacher) — feed these to the player; discovery is the payoff.
 
 ### The fast way — Initiation
 An awakened user forces the student's nodes open with a burst of their own aura (an "attack," in the lore's pointed phrasing). One action by the initiator; the student immediately awakens and immediately starts **leaking**:
 
 - **Leaking:** lose 5% of max AP per hour awake; while leaking, all checks take **−2** and sleep restores only half. Ends when the student learns [[Ten]] rank I.
 - The student makes a CON check DC 13 at Initiation. Fail: **Aura Shock** — bedridden, Exhausted, and unable to attempt Ten for 1 week per point failed by. Fail by 10+: roll on the injury table ([[Injury Recovery and Conditions]]); malicious or botched Initiations have killed.
-- An unwilling target resists with a Will save vs the initiator's 10 + WIL mod + Ren rank.
+- An unwilling target resists with a **Spirit save (SPI)** vs the initiator's **10 + SPI mod + Ren rank** — forced Initiation is one person's Nen prised into another, a [[Nen Manifestation|manifestation]] the target's own spirit fights.
 - **Indirect awakening** (healing, "first-class Manipulation," repeated exposure to Hatsu used *on* the person) uses the same mechanics at GM discretion, usually with the CON check at advantage — gentler, rarer, and a great story lever.
 
 ### Half-awakening
@@ -38,8 +38,8 @@ Each technique is learned to rank I via a **training program** ([[Progression an
 
 | Technique | Baseline program (with teacher) | Self-taught | Program check |
 |---|---|---|---|
-| [[Ten]] I | 1 week | 3 weeks | WIL (Concentration) DC 10, 3 successes |
-| [[Zetsu]] I | 1 week (requires Ten I) | 2 weeks | WIL DC 13, 2 successes |
+| [[Ten]] I | 1 week | 3 weeks | CON (Endurance) DC 10, 3 successes |
+| [[Zetsu]] I | 1 week (requires Ten I) | 2 weeks | CON (Endurance) DC 13, 2 successes |
 | [[Ren]] I | 2 weeks (requires Ten I) | 6 weeks | CON (Endurance) DC 13, 3 successes |
 | [[Hatsu]] I | 2 weeks (requires Ren I) | 4 weeks | SPI check DC 13, 2 successes |
 

@@ -86,7 +86,7 @@ Off-type components cost **EP × the learning multiplier** of that category for 
 | Pseudo-coercive (body OR forced-choice traps) | 8 |
 | Coercive (total control) | 12 |
 
-Control is contested: target's Will save vs your DC (below) at conditions-met; thereafter [[Nen Techniques (Rules)|Jū]] or outside help. Order complexity by target per lore (sentient > machine > simple object).
+Control is contested: target's **Spirit save (SPI)** vs your DC (below) at conditions-met; thereafter [[Nen Techniques (Rules)|Jū]] or outside help. Order complexity by target per lore (sentient > machine > simple object).
 
 **Movement**
 | +1 SR travel mode | 3 | +2 SR burst (1 round) | 5 | Short-range translocation (Emission, 20 m default) | 10 |
@@ -108,14 +108,14 @@ Control is contested: target's Will save vs your DC (below) at conditions-met; t
 
 ## Rolls, DCs, Fuel
 
-- **Ability attack:** d20 + (DEX or WIL mod, ability's choice at design) + Hatsu rank, vs EVA. Bounded, always.
-- **Save DC:** 10 + (linked attribute mod) + Hatsu rank.
+- **Ability attack:** d20 + **DEX mod** (precise Nen execution — or **PER** for a sensed/tracking target, ability's choice at design) + Hatsu proficiency, vs EVA. Bounded, always. (Not SPI — SPI is for *manifesting* the ability, [[Nen Manifestation]], never for aiming it once it's real.)
+- **Save DC:** 10 + **SPI mod** (your Nen's potency — how hard it is to resist; the default) or another linked attribute the ability names + Hatsu rank. The *target* rolls whichever save the effect calls for — Reflex (AGI) to dodge, Fortitude (VIT/CON) vs bodily effects, **Spirit (SPI)** vs mind/soul control.
 - **Fuel:** chosen per use, up to AO; Power = Fuel × Efficiency × multipliers. An ability may *require* minimum Fuel (that's physics, not a Condition — no EP for it).
 - **Sustained forms:** upkeep = 20% of creation Fuel per round unless bought to free-running duration.
 
 ## Growth in play
 
-A new form sticks when: (1) it leans only on techniques the user actually holds (**Technique test**), (2) it grew from something that really happened (**Truth test**), and (3) the player pays its EP price from budget headroom — [[Developing a Nen Ability]], now with a bill. If budget is full, growth waits for the next Hatsu rank ([[Nen Growth]]) or a refit.
+A new form sticks when: (1) it leans only on techniques the user actually holds (**Technique test**), (2) it grew from something that really happened (**Truth test**), (3) the player pays its EP price from budget headroom, and (4) it **manifests** — the first time the form is called into being, the user makes a **Manifestation roll** (d20 + SPI + Hatsu, DC by ambition — [[Nen Manifestation]]); success seats it permanently, failure means the idea is sound but the Nen didn't take *yet*. [[Developing a Nen Ability]], now with a bill and a moment of truth. If budget is full, growth waits for the next Hatsu rank ([[Nen Growth]]) or a refit.
 
 ## GM audit checklist
 

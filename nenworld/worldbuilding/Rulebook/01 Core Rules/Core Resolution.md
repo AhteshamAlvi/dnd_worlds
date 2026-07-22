@@ -66,8 +66,8 @@ Exactly as in D&D: roll 2d20, take the higher (advantage) or lower (disadvantage
 
 Two scores are always "on":
 
-- **Passive Perception** = 10 + WIS mod + Perception proficiency.
-- **Passive Aura Sense** = 10 + WIS mod + Aura Sense proficiency (only for the awakened; see [[Aura Statistics]]).
+- **Passive Perception** = 10 + PER mod + Perception proficiency.
+- **Passive Aura Sense** = 10 + PER mod + Aura Sense proficiency (only for the awakened; see [[Aura Statistics]]). *(Both are PER now — sensing is noticing; [[Attributes and Skills]].)*
 
 **The GM rolls secretly** whenever the *result would leak information the character can't have*: detecting [[In]], noticing a tail, insight against a good liar, Water Divination quirks, whether a Vow's sincerity held, anything about an enemy's remaining aura. Players roll everything else, including their own death saves — dying in the open is a rule of this game (see [[Injury Recovery and Conditions]]).
 
@@ -80,6 +80,6 @@ When two Nen effects collide and no rule covers it (it will happen weekly — th
 1. **Magnitude first.** Compare aura committed × efficiency on each side. A 10× disparity isn't a contest; narrate it.
 2. **Specificity beats generality** at similar magnitude ([[Manipulation]] lore: a specific ability beats general resistance like [[Jū]] unless the Jū is much stronger — implemented as: the general side needs 2× the committed aura to stop a specific ability).
 3. **Conditions are absolute.** If an ability's [[Conditions|Condition]] isn't met, it doesn't function, regardless of magnitude.
-4. Still genuinely uncertain? **Opposed WIL checks**, each side adding +1 per full 25% more aura committed than the other (cap +4). This is the only place raw aura touches a d20.
+4. Still genuinely uncertain? **Opposed SPI checks** (talent decides whose Nen prevails when preparation ties — [[Nen Manifestation]]), each side adding +1 per full 25% more aura committed than the other (cap +4). This is the only place raw aura touches a d20.
 
 Rule 3 beats rule 2; rule 2 beats rule 4. Rule 1 is a lens, not a step you can skip.
