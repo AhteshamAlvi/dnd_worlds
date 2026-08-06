@@ -1,12 +1,10 @@
-# Types and Affinity (Rules)
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
-[[00 Read Me First|Rulebook]] › Aura Engine
-
-Every person is born one of the six [[Types of Nen]]. The type is innate, discovered (not chosen) in-fiction via [[Water Divination]], and it sets the **Efficiency spread** that prices everything the character ever does with aura.
+Every person is born one of the six [[0 Types of Nen|Types of Nen]]. The type is innate, discovered (not chosen) in-fiction via [[Water Divination]], and it sets the **Efficiency spread** that prices everything the character ever does with aura.
 
 ## The hexagon
 
-Around the chart: **Enhancement → Transmutation → Conjuration → Specialization → Manipulation → Emission →** (back to Enhancement). Efficiency: own type 100%, adjacent 80%, two steps 60%, opposite 40% ([[Types of Nen]] — lore numbers, reproduced exactly).
+Around the chart: **Enhancement → Transmutation → Conjuration → Specialization → Manipulation → Emission →** (back to Enhancement). Efficiency: own type 100%, adjacent 80%, two steps 60%, opposite 40% ([[0 Types of Nen|Types of Nen]] — lore numbers, reproduced exactly).
 
 | Your type ↓ | ENH | TRA | CONJ | SPE | MAN | EMI |
 |---|---|---|---|---|---|---|
@@ -25,7 +23,7 @@ Around the chart: **Enhancement → Transmutation → Conjuration → Specializa
 ## What Efficiency does (three levers)
 
 1. **Conversion.** Effect = aura committed × Efficiency ([[Aura Statistics]]). An Emitter's 100-aura remote bolt lands at P 100; their 100-aura conjured knife exists at P 40 worth of substance.
-2. **Learning.** Training time and TP costs for techniques, exercises, and ability forms in a category are multiplied: **×1 (100%) · ×1.5 (80%) · ×2.5 (60%) · ×4 (40%)** ([[Nen Growth]]). This is the design translation of "ease of learning coincides with efficiency" ([[Types of Nen]]).
+2. **Learning.** Training time and TP costs for principles, exercises, and ability forms in a category are multiplied: **×1 (100%) · ×1.5 (80%) · ×2.5 (60%) · ×4 (40%)** ([[Nen Growth]]). This is the design translation of "ease of learning coincides with efficiency" ([[0 Types of Nen|Types of Nen]]).
 3. **Ceiling.** Maximum mastery of ability forms by category: own type rank V, adjacent IV, far III, opposite II. (You can *use* an opposite-category trick; you will never be its master. Lore: "risks stagnating their potential.")
 
 The lore's ideal training regimen — a bell curve across accessible categories — is rewarded mechanically: see the Cross-training rule in [[Nen Growth]] (training adjacent categories grants spillover progress to your own).
@@ -56,7 +54,7 @@ At divination, roll d20 in secret:
 
 Variations are *discovered through play* — a character who keeps finding Manipulation strangely easy should get to notice that. The canon character files (Sukuna, Fern, [[Gojo Satoru|Gojo]]) establish these variations exist; the frequencies are a design addition.
 
-**Drift.** Types can shift very rarely through profound psychological change plus retraining ([[Types of Nen]]). Rule: only by GM invitation after a defining character arc; costs a full retraining program ([[Nen Growth]]) and one permanent point of SPI. Becoming a **Specialist** later in life follows the same rule — Conjurers and Manipulators only, per lore.
+**Drift.** Types can shift very rarely through profound psychological change plus retraining ([[0 Types of Nen|Types of Nen]]). Rule: only by GM invitation after a defining character arc; costs a full retraining program ([[Nen Growth]]) and one permanent point of SPI. Becoming a **Specialist** later in life follows the same rule — Conjurers and Manipulators only, per lore.
 
 ## The six types in play (mechanical identity)
 

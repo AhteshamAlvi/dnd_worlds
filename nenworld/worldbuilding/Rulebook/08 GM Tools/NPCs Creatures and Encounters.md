@@ -1,6 +1,4 @@
-# NPCs, Creatures, and Encounters
-
-[[00 Read Me First|Rulebook]] › GM Tools
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › GM Tools
 
 NPCs do **not** use the full character system. They use the band table, a template, and at most one ability with one condition. Ten minutes builds a boss; thirty seconds builds a guard.
 
@@ -28,15 +26,15 @@ Creature bands run on natural energy: same columns, but read Guard/Soak as hide-
 3. **One ability, one condition.** An NPC Hatsu is: name, one effect at band-appropriate P, one condition (their discoverable weakness), one tell. That's the entire writeup.
 4. **Fast-mode damage** ([[Scale Speed and Magnitude]]): flat P, roll dice only for PCs-adjacent drama.
 
-**Statline format:** `Band · EVA · Soak · Guard · Body · SR · Attack (P) · Techniques · Ability (effect / condition / tell) · Tactics`
+**Statline format:** `Band · EVA · Soak · Guard · Body · SR · Attack (P) · Principles · Ability (effect / condition / tell) · Tactics`
 
 ## Templates
 
 **Non-Nen combatant (T0):** EVA 11 · Soak 1 (vest 2) · Body 30 · SR 1 · club/pistol P 6/8 · Tactics: numbers, angles, hostages. *Twenty of them still cannot scratch Soak 15 — that's the setting working as designed.*
 
-**Nen-user by band:** take the band row, pick 2–4 techniques by concept (bodyguard: Ken+Gyō; assassin: Zetsu+In+Kō; sensor: En+Gyō), one ability per rule 3. Done.
+**Nen-user by band:** take the band row, pick 2–4 principles by concept (bodyguard: Ken+Gyō; assassin: Zetsu+In+Kō; sensor: En+Gyō), one ability per rule 3. Done.
 
-**Creature traits (attach 1–3):** *Massive* (SF per [[Scale Speed and Magnitude]]) · *Regenerating* (Body 10%/round unless fire/aura-cut) · *Instinct-technique* (one, rank I–II — [[Nen Techniques (Rules)]]) · *Sense-hunter* (tracks by aura; Zetsu blinds it) · *No mind* (immune Manipulation-of-mind, reads, fear) · *Desire-bound* (Hollow: compelled toward its fixation — the exploitable tell, [[Hollow]]).
+**Creature traits (attach 1–3):** *Massive* (SF per [[Scale Speed and Magnitude]]) · *Regenerating* (Body 10%/round unless fire/aura-cut) · *Instinct-principle* (one, rank I–II — [[Nen Principles (Rules)]]) · *Sense-hunter* (tracks by aura; Zetsu blinds it) · *No mind* (immune Manipulation-of-mind, reads, fear) · *Desire-bound* (Hollow: compelled toward its fixation — the exploitable tell, [[Hollow]]).
 
 ## Boss mechanics
 

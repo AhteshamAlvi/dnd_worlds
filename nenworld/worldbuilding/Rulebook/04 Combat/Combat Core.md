@@ -1,6 +1,4 @@
-# Combat Core
-
-[[00 Read Me First|Rulebook]] › Combat
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Combat
 
 Rounds are **6 seconds**. Distances are meters. The heart of Nen combat is the **Allocation** step — the lore's aura war ([[Ryū]], [[Kō]], [[Ken]]) made into the turn's central decision. Everything else will feel like D&D on purpose.
 
@@ -17,7 +15,7 @@ Rounds are **6 seconds**. Distances are meters. The heart of Nen combat is the *
 | **Allocation** | Free, at turn start | Commit up to AO into Strike / Guard / Drive / Focus / Fuel |
 | **Action** | 1 | Attack (with your attack routine), use an ability, raise [[En]], enter [[Zetsu]], Dash (double move), disengage, aid, stabilize |
 | **Move** | 1 | Up to combat move for your SR |
-| **Minor** | 1 | Enter [[Ken]]/[[Nen Techniques (Rules)|Kō]]/[[Gyō]] focus, draw/sheathe, shout a sentence, drop prone |
+| **Minor** | 1 | Enter [[Ken]]/[[Nen Principles (Rules)|Kō]]/[[Gyō]] focus, draw/sheathe, shout a sentence, drop prone |
 | **Reaction** | 1/round | Dodge (+2 EVA vs one attack you can perceive), Block (move your Guard: treat one location as full-Guard), [[Ryū]] reallocation, readied action, counter (below) |
 
 Allocation has **two axes**: *how much* AO goes to each purpose, and *where on the body* it sits. The first is the familiar lane split; the second is the [[Aura Density and Concentration|density]] layer that decides Soak and concentrated Power.
@@ -25,13 +23,13 @@ Allocation has **two axes**: *how much* AO goes to each purpose, and *where on t
 **Axis 1 — purpose.** At turn start, split up to your **AO** among:
 
 - **Strike** — offense: aura carried into your attacking region. Delivered as damage = (region aura × Efficiency × multipliers) ([[Aura Statistics]]).
-- **Guard** — defense: aura spread as a protective layer. **Whole-body Soak = Guard ÷ 10** (this is the density formula for even spread — [[Aura Density and Concentration]]); damage depletes Guard before Body. Refreshes each turn; [[Nen Techniques (Rules)|Ken]] discounts sustained Guard.
-- **Drive** — speed: +1 SR for 10/round; each further +1 doubles (20, 40, 80…). Max steps: **1**, +1 at Ren III, + [[Nen Techniques (Rules)|Chū]] SR on top.
+- **Guard** — defense: aura spread as a protective layer. **Whole-body Soak = Guard ÷ 10** (this is the density formula for even spread — [[Aura Density and Concentration]]); damage depletes Guard before Body. Refreshes each turn; [[Nen Principles (Rules)|Ken]] discounts sustained Guard.
+- **Drive** — speed: +1 SR for 10/round; each further +1 doubles (20, 40, 80…). Max steps: **1**, +1 at Ren III, + [[Nen Principles (Rules)|Chū]] SR on top.
 - **Focus** — senses: eyes-[[Gyō]] (5/round), [[En]] (radius/round), Chū-sense boosts.
-- **Fuel** — abilities ([[Hatsu Design]]) and technique charges (Fū boundary, Jū rejection).
+- **Fuel** — abilities ([[Hatsu Design]]) and principle charges (Fū boundary, Jū rejection).
 
 **Axis 2 — location.** Your Strike and Guard aura also has a *distribution* across your body ([[Aura Density and Concentration]]):
-- **Even** (default / [[Nen Techniques (Rules)|Ken]]): Guard spread over 100 SU → uniform Soak = Guard ÷ 10, no thin spot to exploit.
+- **Even** (default / [[Nen Principles (Rules)|Ken]]): Guard spread over 100 SU → uniform Soak = Guard ÷ 10, no thin spot to exploit.
 - **Concentrated** ([[Gyō]]/[[Kō]]): aura pulled into one region → that region's density (and Soak, and delivered Power) spikes; everywhere else thins.
 - **Weighted** ([[Ryū]]): any split, recomputed per region.
 At the table you only compute the regions in play (your striking limb, the limb that gets hit). The module computes all of them. **Most fighters below Ren II fight "even" and never touch Axis 2** — concentration is a learned toolkit.
@@ -48,9 +46,11 @@ At the table you only compute the regions in play (your striking limb, the limb 
 
 **3 · Damage.** Roll the magnitude dice for the attack's Power ([[Scale Speed and Magnitude]]), subtract Soak, deplete the struck region's **Guard first**, overflow to **Body HP**.
 
-> **Attack Power** = weapon average + **STR mod** (melee, Chū-reinforced if any) + (**Final Region Aura** × Efficiency × vow/boost multipliers). Final Region Aura is your Strike aura after [[Aura Density and Concentration|concentration]] — for an even swing it's just your Strike allocation; for a [[Nen Techniques (Rules)|Kō]] it's nearly your whole AO in one fist. **STR sets how hard the hit is; DEX (step 1) set whether it landed** — they never mix. When in doubt whether it penetrates, compare averages; when rolling, roll the dice.
+> **Attack Power** = **Physical Force** (melee/thrown, Chū-reinforced if any) + (**Final Region Aura** × Efficiency × vow/boost multipliers). Final Region Aura is your Strike aura after [[Aura Density and Concentration|concentration]] — for an even swing it's just your Strike allocation; for a [[Nen Principles (Rules)|Kō]] it's nearly your whole AO in one fist. **STR sets how hard the hit is; DEX (step 1) set whether it landed** — they never mix. When in doubt whether it penetrates, compare averages; when rolling, roll the dice.
 
-**Weapons (baseline dice):** unarmed 1d4 · knife 1d6 · sword/axe/spear 1d10 · greatweapon 2d8 · pistol 2d8 · rifle 3d10 · anti-materiel 2d10×10. A Nen user's Strike outgrows these fast — by professional band the weapon is a *shape* for aura ([[Nen Techniques (Rules)|Shū]]), not the damage source. That's canonical: fists exceed missiles ([[Progression and Training]]).
+**Physical Force** = the muscle-driven kinetic Power of the blow = **weapon/limb dice average × [[Strength|STR Force Factor]]** (`2^((STR−10)/4)`, ×1.00 at STR 10, ×32 at STR 30 — see [[Strength]]). This is the exponential term that lets a Nen-tempered brute hurt you with bare muscle; for a professional-band human (STR 12–16, ×1.4–2.8) it stays small next to aura. Firearms and energy weapons do **not** take the Force Factor (their charge does the work); STR's *modifier*, not its Force Factor, is the d20 term for grapples, shoves, Athletics, and heavy-weapon requirements — the two never mix.
+
+**Weapons (baseline dice):** unarmed 1d4 · knife 1d6 · sword/axe/spear 1d10 · greatweapon 2d8 · pistol 2d8 · rifle 3d10 · anti-materiel 2d10×10. A Nen user's Strike outgrows these fast — by professional band the weapon is a *shape* for aura ([[Nen Principles (Rules)|Shū]]), not the damage source. That's canonical: fists exceed missiles ([[Rulebook/05 Progression/Progression and Training]]).
 
 **Multiple attacks:** Martial/Weapons Expert = 2 per Action, Master = 3, Legendary = 4; +1 vs targets 2+ SR slower (cap 5 total). Split Strike among them before rolling.
 
@@ -76,9 +76,9 @@ This loop — read, feint, reallocate, exploit — is where the lore's aura ches
 
 Opposed **STR Grappling** (attacker) vs **STR Grappling or AGI Acrobatics** (defender). Win: target Grappled (no move; −2 attacks); win by 5+: Restrained (no move, no reactions, attacks vs them at advantage). Escape: action, win the reverse contest. **Scale rule:** a grappler 2+ SF steps larger auto-wins unless the smaller side commits Strike ≥ the larger's STR score as leverage-aura — aura equalizes meat, which is how a Fairy suplexes an Orckin.
 
-## Sustaining techniques under fire
+## Sustaining principles under fire
 
-Any Body damage (post-Guard) while maintaining sustained techniques → **CON (Endurance) check** DC 10 + damage÷10 (max +10) — holding aura together while hurt is stamina, not a lost willpower stat. One check covers all held techniques. Fail: they drop at your action's end. [[Nen Techniques (Rules)|Ten]] rank III+ protects itself.
+Any Body damage (post-Guard) while maintaining sustained principles → **CON (Endurance) check** DC 10 + damage÷10 (max +10) — holding aura together while hurt is stamina, not a lost willpower stat. One check covers all held principles. Fail: they drop at your action's end. [[Nen Principles (Rules)|Ten]] rank III+ protects itself.
 
 ## Nonlethal, called shots, executions
 
@@ -91,8 +91,8 @@ Any Body damage (post-Guard) while maintaining sustained techniques → **CON (E
 Darun (AP 1.1k, AO 130, Control ×1.4, **DEX 12 (+1)**, STR 14 (+2), Weapons Expert +4, Transmuter, Ten III, Gyō III, Zetsu II, Chū II, Ken II) vs a Coachman puppet (Guard 300 even, Soak 30, attack P 90). Transmuter using raw force runs at adjacent-Enhancement 80%.
 
 *Round 1 — even stance.* Allocation 60 Guard (even → whole-body Soak 6) + 60 Strike (into the sword arm) + 10 eyes-Gyō = 130 AO ✓ (pool ~180).
-His attack: sword 1d10 (5.5) + **2 (STR — power only)** + 60 Strike × 0.8 = P ~55. **Penetration: 55 > Soak 30 ✓.** *Accuracy:* d20 **+ 1 (DEX) + 4 (Weapons)** vs EVA 12 — DEX decides the landing, STR was never in the accuracy math. Hits, damage 1d10×10 (P 55 row) = 40 − 30 Soak = **10** into puppet Guard. He's chipping — wrong tool.
+His attack: Physical Force = sword 1d10 (5.5) × **2.0 (STR 14 Force Factor)** = 11, + 60 Strike × 0.8 (48 aura) = P ~59. **Penetration: 59 > Soak 30 ✓.** *Accuracy:* d20 **+ 1 (DEX) + 4 (Weapons)** vs EVA 12 — DEX decides the landing, STR's Force Factor set only how hard, never whether it landed. Hits, damage 1d10×10 (≈P 55 row), a low roll of 44 − 30 Soak = **14** into puppet Guard. He's chipping — wrong tool.
 
-*Round 2 — Kō, after a Read.* His PER (Insight) + Gyō III beats the puppet's control: its Guard is even, no thin spot, but also no surprise coming. He commits to [[Nen Techniques (Rules)|Kō]] — the full sequence ([[Aura Density and Concentration]]): Ren gives AO 130 → Gyō III + Zetsu drive ~100% of it into his fist → Ten III contains 94% → **Final fist aura ≈ 122, density ≈ 49**. Chū II reads that density → **+4 STR** (capped). 
-Attack Power = 5.5 (blade) + 4 (Chū-STR) + 122 × 0.8 = **P ~107.** Penetration 107 > 30 ✓; damage 2d10×10 (P 107 row) ≈ 100 − 30 = **70** into puppet Guard — nearly 3× the even swing, from the *same* 130 AO, just concentrated. **The price:** every region but that fist is Soak 0 — if the puppet's P 90 counter lands anywhere else, it hits bare Body.
+*Round 2 — Kō, after a Read.* His PER (Insight) + Gyō III beats the puppet's control: its Guard is even, no thin spot, but also no surprise coming. He commits to [[Nen Principles (Rules)|Kō]] — the full sequence ([[Aura Density and Concentration]]): Ren gives AO 130 → Gyō III + Zetsu drive ~100% of it into his fist → Ten III contains 94% → **Final fist aura ≈ 122, density ≈ 49**. Chū II reads that density → **+4 STR** (capped), raising his effective STR to 18 (Force Factor ×4.0). 
+Attack Power = Physical Force (5.5 blade × 4.0 = 22) + 122 × 0.8 (98 aura) = **P ~120.** Penetration 120 > 30 ✓; damage 2d10×10 (≈P 110 row) ≈ 110 − 30 = **80** into puppet Guard — about 2× the even swing's Power, from the *same* 130 AO, just concentrated (with a Chū-boosted fist behind it). **The price:** every region but that fist is Soak 0 — if the puppet's P 90 counter lands anywhere else, it hits bare Body.
 *The lesson players learn:* DEX lands it, STR and concentration make it hurt, density decides *whether* it penetrates, reads decide *where*, and Kō's power buys itself with your own safety.

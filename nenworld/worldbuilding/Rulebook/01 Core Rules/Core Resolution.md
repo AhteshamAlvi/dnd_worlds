@@ -1,6 +1,4 @@
-# Core Resolution
-
-[[00 Read Me First|Rulebook]] › Core Rules
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules
 
 Nenworld resolves uncertainty with a **d20 check**. Everything a D&D player knows about rolling high still applies. What's different is the division of labor: the d20 decides *whether* something works; **magnitude** (see [[Scale Speed and Magnitude]]) decides *how hard it hits*. The d20's modifiers stay small forever.
 
@@ -9,7 +7,7 @@ Nenworld resolves uncertainty with a **d20 check**. Everything a D&D player know
 > **d20 + attribute modifier + proficiency bonus vs DC**
 
 - **Attribute modifier** — from one of the ten attributes ([[Attributes and Skills]]). Human range roughly −2 to +5; hard ceiling in practice +10 (attribute 30, reachable only by extreme races and decades of Nen reinforcement).
-- **Proficiency bonus** — from a skill or technique rank: Untrained +0, Trained +2, Expert +4, Master +6, Legendary +8. Bought with Training Points ([[Progression and Training]]).
+- **Proficiency bonus** — from a skill or principle rank: Untrained +0, Trained +2, Expert +4, Master +6, Legendary +8. Bought with Training Points ([[Rulebook/05 Progression/Progression and Training]]).
 - Situational modifiers should be handled with **advantage/disadvantage**, not stacking +1s. If you're tempted to add a third numeric modifier, use advantage instead.
 
 **Design note.** Modifiers are bounded (max ≈ +18 for a legendary master with attribute 30) because power in this game is expressed through Guard, damage magnitude, and Speed Rating — a Vasto Lorde doesn't hit *more accurately* than a boxer by +50; it hits with force no boxer can survive or stop. This is a system-design decision that implements the lore's insistence that skill and raw power are different things ([[Nen at the Table]]).
@@ -59,7 +57,7 @@ Exactly as in D&D: roll 2d20, take the higher (advantage) or lower (disadvantage
 | Attacking with a body part the enemy read via [[Gyō]]/[[Ryū]] read | They defend with advantage-equivalent (+2 EVA) |
 | Speed Rating 2+ above opponent | Advantage on attack or +2 EVA (see [[Scale Speed and Magnitude]]) |
 | Acting while Exhausted (0 aura) | Disadvantage on everything |
-| Maintaining a technique while taking Body damage | Concentration check or lose it ([[Nen Techniques (Rules)]]) |
+| Maintaining a principle while taking Body damage | Concentration check or lose it ([[Nen Principles (Rules)]]) |
 | Emotional resonance with a Vow or ability theme | Advantage (GM call, reward sincerity) |
 
 ## Passive scores and secret rolls

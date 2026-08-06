@@ -1,8 +1,6 @@
-# Aura Density and Concentration
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
-[[00 Read Me First|Rulebook]] › Aura Engine
-
-This chapter is the physical engine under [[Gyō]], [[Kō]], [[Ken]], [[Ryū]], and [[Chū]]. The lore treats aura as something you *move around your body* — concentrate into a fist, spread evenly, pour into the eyes, leave one part naked ([[Kō]], [[Gyō]], [[Ryū]]). Earlier drafts abstracted that into flat lane-values and a "×2 for Kō" fudge. This chapter replaces the fudge with the real thing: **aura has a location and a density, and every concentration technique is arithmetic on where it sits.** Computation is deliberately not simplified for hand-play — the FoundryVTT module resolves it in one click; at a bare table, use the lookup tables and round.
+This chapter is the physical engine under [[Gyō]], [[Kō]], [[Ken]], [[Ryū]], and [[Chū]]. The lore treats aura as something you *move around your body* — concentrate into a fist, spread evenly, pour into the eyes, leave one part naked ([[Kō]], [[Gyō]], [[Ryū]]). Earlier drafts abstracted that into flat lane-values and a "×2 for Kō" fudge. This chapter replaces the fudge with the real thing: **aura has a location and a density, and every concentration principle is arithmetic on where it sits.** Computation is deliberately not simplified for hand-play — the FoundryVTT module resolves it in one click; at a bare table, use the lookup tables and round.
 
 ## Surface Units (SU)
 
@@ -61,7 +59,7 @@ Two distinct outputs, because penetration is a *pressure* problem and damage is 
 
 > **Defensive Soak of a region** = Aura Density × 10
 >
-> **Offensive Attack Power from aura** = Final Region Aura × Efficiency × (technique & vow multipliers)
+> **Offensive Attack Power from aura** = Final Region Aura × Efficiency × (principle & vow multipliers)
 
 - **Whole-body defense reproduces the old rule exactly.** Spread G aura for defense across 100 SU → density G/100 → Soak = (G/100) × 10 = **G/10** — identical to the legacy "Guard ÷ 10." Nothing about existing Soak values changes; they're now *derived* instead of asserted.
 - **Concentrated defense is far harder locally.** The same G in one fist (2.5 SU) → density G/2.5 → local Soak = **4G** — forty times the whole-body value, but only there. This is why *defensive [[Kō]] beats offensive Kō* ([[Kō]] lore) and why a Kō user hit anywhere else is destroyed (Soak 0 elsewhere).
@@ -92,7 +90,7 @@ Chū rank caps the final bonus (+2/+4/+6/+8/+10 for I–V). The bonus applies to
 
 ## Kō as an emergent sequence (no flat multiplier)
 
-[[Kō]] is not "×2 damage." It is the maximal case of everything above, run in order. Each step is a technique the user must actually hold:
+[[Kō]] is not "×2 damage." It is the maximal case of everything above, run in order. Each step is a principle the user must actually hold:
 
 ```
 Ren   → set AO for the round (the aura available to move)

@@ -1,6 +1,4 @@
-# Vitality (VIT)
-
-[[00 Read Me First|Rulebook]] › Core Rules › [[Attributes]]
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules › [[0 Attributes|Attributes]]
 
 **Vitality is recovery — how much punishment your flesh takes and how fast everything about you comes back.** Both Body HP and aura regeneration flow *from* VIT; it is the twin of [[Constitution|CON]] (CON sizes the reservoir, VIT paces the refill).
 
@@ -12,7 +10,7 @@
 - **Aura regeneration rate** — the refill percentage is a direct function of VIT ([[Aura Statistics]]):
   > **Regen/hour = (VIT × state factor)% of max pool** — active ÷10, resting ÷2, sleeping ×1; [[Zetsu]] ×3, distress ×½.
   (VIT 10 → 5%/hr resting; VIT 16 → 8%/hr; VIT 8 → 4%/hr.)
-- **Natural healing** — Body HP recovers **VIT mod per day** (min 1), doubled under real care (Medicine DC 13, safe bed); blood loss and injuries ([[Injury Recovery and Conditions]]) clear on VIT-driven timelines, accelerated by [[Nen Techniques (Rules)|Yū]] and [[Nen Techniques (Rules)|Chū]].
+- **Natural healing** — Body HP recovers **VIT mod per day** (min 1), doubled under real care (Medicine DC 13, safe bed); blood loss and injuries ([[Injury Recovery and Conditions]]) clear on VIT-driven timelines, accelerated by [[Nen Principles (Rules)|Yū]] and [[Nen Principles (Rules)|Chū]].
 - **Fortitude (VIT) saves** — resisting damage *to the body* (as distinct from Fortitude (CON), which resists poison/fatigue/environment) ([[Attributes and Skills]]).
 
 ## Notes

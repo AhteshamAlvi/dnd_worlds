@@ -1,6 +1,4 @@
-# Conditions
-
-[[Ideal Power System For the Real World]] › [[Nen]] › [[Nen and Limitation]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › [[0 Nen and Limitation|Nen and Limitation]]
 
 The creator of a Nen ability can include Conditions in it to increase its power or to make the ability feasible in the first place, whether because the user lacks the degree of skill otherwise required, or because the effects of the ability exceed what can be achieved with Nen without a trade-off. 
 

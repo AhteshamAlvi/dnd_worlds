@@ -1,6 +1,4 @@
-# Awakening and the Path
-
-[[00 Read Me First|Rulebook]] › Aura Engine
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
 PCs begin Tier 0 — ordinary ([[The Nen Path]]). This chapter is the bridge from fodder to Nen user: what characters know beforehand, how awakening happens in play, and how the shared foundation is learned. Pacing target (per the design brief): **awakened in the first sessions, Four Principles solid by the end of the first arc, divination and a Hatsu seed around its end.**
 
@@ -10,14 +8,14 @@ This section may be read to players at session 0 — it is what any schooled cit
 
 > *Aura is life energy; everyone has it, everyone leaks it, and almost nobody can use it. "Nen" is the discipline of controlling it. The basics are a school subject: you were taught the words Ten, Zetsu, Ren, Hatsu, made to sit through breathing exercises, and told that real use requires opening your aura nodes — which schools do not do. Actual Nen users are licensed and registered; dangerous jobs demand a license. Nen abilities — the personal, signature powers — are rarer; you know of two or three people who have one. Everyone knows the stories: masters who stop bullets, hear lies, regrow limbs. Everyone also knows someone who tried to awaken alone and spent a month in bed.*
 
-They should **not** know: the six types, the affinity chart, technique mechanics beyond the four names, Vows, races beyond their home region, or anything in this book's numbers.
+They should **not** know: the six types, the affinity chart, principle mechanics beyond the four names, Vows, races beyond their home region, or anything in this book's numbers.
 
 ## Awakening (opening the nodes)
 
 Two lore paths ([[Initiation]]), now with rules:
 
 ### The slow way — meditation
-Months of guided practice. In downtime terms ([[Progression and Training]]): a **Meditation Program** — 8 weeks baseline with a teacher, 16 without. Each week the student makes a **CON (Endurance)** check DC 13 (DC 16 untaught) — awakening is patient, sustained attunement, not a flash of talent; collect **4 successes** to awaken. A natural 20 counts twice. Between checks, characters feel incremental signs (warmth in the hands, seeing "heat-shimmer" around the teacher) — feed these to the player; discovery is the payoff.
+Months of guided practice. In downtime terms ([[Rulebook/05 Progression/Progression and Training]]): a **Meditation Program** — 8 weeks baseline with a teacher, 16 without. Each week the student makes a **CON (Endurance)** check DC 13 (DC 16 untaught) — awakening is patient, sustained attunement, not a flash of talent; collect **4 successes** to awaken. A natural 20 counts twice. Between checks, characters feel incremental signs (warmth in the hands, seeing "heat-shimmer" around the teacher) — feed these to the player; discovery is the payoff.
 
 ### The fast way — Initiation
 An awakened user forces the student's nodes open with a burst of their own aura (an "attack," in the lore's pointed phrasing). One action by the initiator; the student immediately awakens and immediately starts **leaking**:
@@ -28,15 +26,15 @@ An awakened user forces the student's nodes open with a burst of their own aura 
 - **Indirect awakening** (healing, "first-class Manipulation," repeated exposure to Hatsu used *on* the person) uses the same mechanics at GM discretion, usually with the CON check at advantage — gentler, rarer, and a great story lever.
 
 ### Half-awakening
-Any partial event (interrupted meditation program at 2–3 successes, surviving a Nen attack, a brush with a [[Hollow]]) can leave a character **half-awakened**: they can feel aura (gain Aura Sense as usable skill), may release trickles (AO 2% rules), but cannot see aura and cannot learn techniques until fully awakened. A strong hook state — use it on PCs mid-arc.
+Any partial event (interrupted meditation program at 2–3 successes, surviving a Nen attack, a brush with a [[Hollow]]) can leave a character **half-awakened**: they can feel aura (gain Aura Sense as usable skill), may release trickles (AO 2% rules), but cannot see aura and cannot learn principles until fully awakened. A strong hook state — use it on PCs mid-arc.
 
 ## Learning the Four Principles
 
-Once awakened, the [[Four Major Principles]] come **in order** — each is the foundation of the next (this is the one fixed sequence in the whole system; after Hatsu, the Path branches freely, dependency-gated — [[The Nen Path]]).
+Once awakened, the [[0 Four Major Principles|Four Major Principles]] come **in order** — each is the foundation of the next (this is the one fixed sequence in the whole system; after Hatsu, the Path branches freely, dependency-gated — [[The Nen Path]]).
 
-Each technique is learned to rank I via a **training program** ([[Progression and Training]] has the general system; specific programs below) and deepened later (ranks II–V) as its entry in [[Nen Techniques (Rules)]] describes.
+Each principle is learned to rank I via a **training program** ([[Rulebook/05 Progression/Progression and Training]] has the general system; specific programs below) and deepened later (ranks II–V) as its entry in [[Nen Principles (Rules)]] describes.
 
-| Technique | Baseline program (with teacher) | Self-taught | Program check |
+| Principle | Baseline program (with teacher) | Self-taught | Program check |
 |---|---|---|---|
 | [[Ten]] I | 1 week | 3 weeks | CON (Endurance) DC 10, 3 successes |
 | [[Zetsu]] I | 1 week (requires Ten I) | 2 weeks | CON (Endurance) DC 13, 2 successes |
@@ -44,8 +42,8 @@ Each technique is learned to rank I via a **training program** ([[Progression an
 | [[Hatsu]] I | 2 weeks (requires Ren I) | 4 weeks | SPI check DC 13, 2 successes |
 
 - Checks are made per training week; a week with a failed check still counts toward time but not successes.
-- **Crisis learning:** the first rank of any Principle can instead snap into place at a dramatic moment (drowning in your own leak, a killer's bloodlust washing over you): the player declares the attempt, makes the program check at DC +3 — success grants rank I on the spot, failure inflicts one level of Strain ([[Injury Recovery and Conditions]]). Once per technique. This is the action-movie version of the lore's "learn or die" awakenings, budgeted so it can't replace training wholesale.
-- A **teacher** must hold the technique at rank II+ to teach rank I ([[Nen Growth]] for teacher quality effects).
+- **Crisis learning:** the first rank of any Principle can instead snap into place at a dramatic moment (drowning in your own leak, a killer's bloodlust washing over you): the player declares the attempt, makes the program check at DC +3 — success grants rank I on the spot, failure inflicts one level of Strain ([[Injury Recovery and Conditions]]). Once per principle. This is the action-movie version of the lore's "learn or die" awakenings, budgeted so it can't replace training wholesale.
+- A **teacher** must hold the principle at rank II+ to teach rank I ([[Nen Growth]] for teacher quality effects).
 
 ## Water Divination (Tier 3 — Discovery)
 
@@ -53,12 +51,12 @@ Requires Ren I. The character performs [[Water Divination]] — glass, water, le
 
 After divination, the character may:
 - Train their natural category (Hatsu exercises — the geyser drill from [[Hatsu Training]]),
-- Begin learning [[Intermediate Techniques]] in any order (each has prerequisites in [[Nen Techniques (Rules)]]),
+- Begin learning [[0 Intermediate Principles|Intermediate Principles]] in any order (each has prerequisites in [[Nen Principles (Rules)]]),
 - Start growing a [[Hatsu]] ability seed ([[Hatsu Design]]).
 
 ## The Path after the foundation
 
-No fixed ladder. The gate is **dependency, not sequence** ([[The Nen Path]]): a character can only build on what they actually hold, at the ranks the target requires. The dependency graph (from the technique files and the [[Nen Path]] canvas):
+No fixed ladder. The gate is **dependency, not sequence** ([[The Nen Path]]): a character can only build on what they actually hold, at the ranks the target requires. The dependency graph (from the principle files and the [[Nen Path]] canvas):
 
 ```
 Ten ──┬─────────────► Shū ─────────┐
@@ -73,7 +71,7 @@ Zetsu ┴──► In               │      ├──► Jū  (Ken+Chū+Hatsu)
 Hatsu ───────────────────────────────► Yū  (Ren+Hatsu+Gyō+Chū) · Fū · Jū · abilities
 ```
 
-Full prerequisites, ranks, costs, and effects: [[Nen Techniques (Rules)]]. Time and TP costs: [[Nen Growth]] and [[Progression and Training]].
+Full prerequisites, ranks, costs, and effects: [[Nen Principles (Rules)]]. Time and TP costs: [[Nen Growth]] and [[Rulebook/05 Progression/Progression and Training]].
 
 ## GM pacing dials
 

@@ -1,6 +1,4 @@
-# Manipulation
-
-[[Ideal Power System For the Real World]] › [[Nen]] › [[Types of Nen]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › [[0 Types of Nen|Types of Nen]]
 
 If a student moves the leaf floating on the water in the glass around the water's surface during their Water Divination, then that student is a **Manipulator**. 
 

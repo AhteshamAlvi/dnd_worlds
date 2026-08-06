@@ -1,6 +1,4 @@
-# Balance and Math
-
-[[00 Read Me First|Rulebook]] › Appendices
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Appendices
 
 The verification appendix. Every claim below was computed, not asserted; the numbers are reproducible from the cited chapters. Where testing found a miss, the fix is documented here — this book does not claim a rule "came from the lore" when it's a balancing invention, and it does not claim balance it didn't check.
 
@@ -42,11 +40,11 @@ Full-commit rounds by band exemplar: T1 ≈ 10 · T2 ≈ 6 · T3 ≈ 5.7 · T4 �
 
 ## 5 · Lore-fidelity spot checks
 
-- **"Ken ≈ 10× Ten"** ([[Ken]]): initial design had Ten's shroud at 2% of AP → came out 4.5×, **failed.** Fixed: shroud = 1% (ranks I–II) — a working professional's Ken (~100 committed, whole-body Soak via density = 100/100×10 = 10) over their Ten shroud (11 → Soak ~1) = **9–10×.** ✓ Recorded in [[Nen Techniques (Rules)]]. *(Honest label: both percentages are design inventions; only the 10× ratio is lore.)*
-- **"More durable than a bunker… force of tactical missiles"** ([[Progression and Training]]): elite Enhancer Kō delivers ~its full AO into one fist (P ~900+ at AO 960, × Enhancement × any vows) vs bunker wall (Soak 60, HP 2k) → down in a couple of blows; elite Ken Guard 600 → whole-body Soak 60 = bunker-grade skin. ✓ (The old "×2 Kō = P 1,280" is gone; the density engine delivers ~AO instead, landing at the same order of magnitude — see §5b.)
+- **"Ken ≈ 10× Ten"** ([[Ken]]): initial design had Ten's shroud at 2% of AP → came out 4.5×, **failed.** Fixed: shroud = 1% (ranks I–II) — a working professional's Ken (~100 committed, whole-body Soak via density = 100/100×10 = 10) over their Ten shroud (11 → Soak ~1) = **9–10×.** ✓ Recorded in [[Nen Principles (Rules)]]. *(Honest label: both percentages are design inventions; only the 10× ratio is lore.)*
+- **"More durable than a bunker… force of tactical missiles"** ([[Rulebook/05 Progression/Progression and Training]]): elite Enhancer Kō delivers ~its full AO into one fist (P ~900+ at AO 960, × Enhancement × any vows) vs bunker wall (Soak 60, HP 2k) → down in a couple of blows; elite Ken Guard 600 → whole-body Soak 60 = bunker-grade skin. ✓ (The old "×2 Kō = P 1,280" is gone; the density engine delivers ~AO instead, landing at the same order of magnitude — see §5b.)
 - **"Mach speeds for powerful non-Enhancers"**: elite Drive + Chū stack reaches SR 6–7 (≈ Mach 1) at sustainable cost; Enhancers exceed it (half-cost Chū). ✓
 - **En 2 m minimum / 50 m mastery** ([[En]]): reproduced as rank I/V radii, upkeep = radius/round makes 50 m "extremely tiring" for anyone below elite (50/round vs a pro's AO 120). ✓
-- **Yū "consumes far more aura than any other technique"** ([[Yū]]): 20 HP of internal repair ≈ 700 pool from a professional's 1,100 — day-scale, never combat-spam. ✓
+- **Yū "consumes far more aura than any other principle"** ([[Yū]]): 20 HP of internal repair ≈ 700 pool from a professional's 1,100 — day-scale, never combat-spam. ✓
 
 ## 5b · The density engine (surface-area revision)
 
@@ -60,7 +58,7 @@ The concentration mechanics ([[Aura Density and Concentration]]) were verified t
 
 ## 6 · Skilled-but-weaker vs stronger-but-sloppier
 
-Fern-type (AP 900, AO 110, Control 4 ×1.25) vs brute (AP 1,500, AO 180, Control 1 ×2.0) — the brute out-commits her 180 to 110 every round and *pays double*: sustain 4.2 rounds vs her 6.5. At round 4 the brute is empty (Exhausted: disadvantage, no techniques, Guard 0) with her at ~350 pool. If she survives four rounds — Guard the spikes, give ground, make him chase — she wins walking. **Control and pacing beat raw pool at ≤2× disparity; at ≥3× pool disparity, magnitude wins anyway.** That boundary (skill closes one gap, not two) is the game's core fairness claim, now verified.
+Fern-type (AP 900, AO 110, Control 4 ×1.25) vs brute (AP 1,500, AO 180, Control 1 ×2.0) — the brute out-commits her 180 to 110 every round and *pays double*: sustain 4.2 rounds vs her 6.5. At round 4 the brute is empty (Exhausted: disadvantage, no principles, Guard 0) with her at ~350 pool. If she survives four rounds — Guard the spikes, give ground, make him chase — she wins walking. **Control and pacing beat raw pool at ≤2× disparity; at ≥3× pool disparity, magnitude wins anyway.** That boundary (skill closes one gap, not two) is the game's core fairness claim, now verified.
 
 ## 7 · Vow spike audit (does ×5 break the ladder?)
 
@@ -71,11 +69,11 @@ T2 pro with a maximum ×5 vow stack: one P 600 hit — a T3-grade *moment* on a 
 | Strategy | Closure | Where |
 |---|---|---|
 | Chip-siege anything huge | P ≤ Soak = 0, no roll | [[Scale Speed and Magnitude]] |
-| Zetsu regen mid-fight | Defenseless + double Nen damage | [[Nen Techniques (Rules)]] |
+| Zetsu regen mid-fight | Defenseless + double Nen damage | [[Nen Principles (Rules)]] |
 | Permanent En radar | Radius/round upkeep + Strain clock | same |
 | Yū combat heal-tank | Full-action lock + 10–50:1 rates | same |
 | Vow lawyer-ing | Sincerity audit; spirit-binding clause | [[Conditions Vows and Risk (Rules)]] + [[Running the Game]] |
-| Downtime rank-stuffing | Throughput limit | [[Progression and Training]] |
+| Downtime rank-stuffing | Throughput limit | [[Rulebook/05 Progression/Progression and Training]] |
 | Overdraw as free fuel | 1 HP : 2 aura + compounding Strain | [[Injury Recovery and Conditions]] |
 | Minion-swarm walls | Sub-threshold minions add zero | [[NPCs Creatures and Encounters]] |
 | Guard-stacking passivity | Guard is per-round flow, not a battery; economy punishes turtling | [[Combat Core]] |
@@ -104,3 +102,14 @@ Verifying the finalized attribute spine ([[Attributes and Skills]]) behaves:
 - **Willpower's removal left no orphaned checks.** Every former WIL call re-homed: Concentration/Composure → CON, reading/Initiative → PER, Manipulation-resistance → Spirit (SPI). A full-text sweep confirms zero remaining WIL references outside the "where it went" note. ✓
 
 None of §§1–7's results move under the overhaul — the pool/output/Soak *magnitudes* are unchanged, only their attribute sources are renamed and split. The overhaul is a re-rooting, not a rebalance, and the canary checks still pass.
+
+## 12 · STR Force Factor (physical-Power scaling)
+
+STR gained a derived magnitude — **Force Factor = 2^((STR−10)/4)**, ×1.00 at STR 10, ×32 at STR 30 (deadlift 100 kg → 3.2 t) — and the combat bridge is: **Physical Force = weapon-dice average × Force Factor** (melee/thrown only; firearms exempt), with the aura Strike term unchanged ([[Strength]], [[Combat Core]]). Verifying it does **not** disturb §§1–10:
+
+- **The exponential lives on the physical term, never on the d20.** Force Factor multiplies a damage-side Power, exactly like the ×10 magnitude notation and Impact = speed × SF already do ([[Scale Speed and Magnitude]]). Accuracy stays the bounded −2…+14 band (§1); STR's *modifier* (not its Force Factor) remains the d20 term for grapple/Athletics/carry. ✓
+- **Professional-band fights don't move.** The Darun worked example ([[Combat Core]]): R1 even swing 5.5 × ×2.0 (STR 14) + 48 aura = **P 59** (was ~55); R2 Kō with Chū +4 STR → ×4.0 (STR 18) → 5.5 × 4 + 98 aura = **P 120** (was ~107). Shifts of +4/+13 on Powers of ~55–110 — inside rounding, no verified result changes. At professional STR (12–16) the Force Factor is ×1.4–2.8, so muscle stays a minor addend next to aura; *fists still exceed missiles via aura, not meat.* ✓
+- **The penetration walls hold, and high STR earns real teeth.** A pure-muscle bare fist (zero aura) is P 7 at STR 16, P 14 at STR 20, P 34 at STR 25, **P 80 at STR 30.** Each pierces an even guard (Soak ~8) as a superhuman brute should, and **every one bounces off a concentrated defensive Kō (Soak ~490)** — the §3 wall is intact. A ×32 muscle fist reaching T2–T3 Power *only at STR 30* (apex/Nen-tempered/racial, per the ladder) is the intended "megaton strength" of the lore, correctly gated behind a score almost no one has. ✓
+- **Human calibration is honest.** STR 20 (the once-a-generation record) = 566 kg deadlift, just past the real all-time equipped record (~500 kg); STR 19 = 476 kg ≈ the real raw-ish ceiling. The mundane cap lands where reality runs out, and 21+ is flagged superhuman-only. ✓
+
+The Force Factor is an addition to STR's *physical* magnitude, not a rebalance of aura combat — §§1–10's canary checks were rerun above and still pass. *(Honest label: the 100 kg/50 kg STR-10 anchors and the per-+4 doubling are design inventions chosen to land the human cap on reality; only "strength scales exponentially while the die stays linear" is the load-bearing principle.)*

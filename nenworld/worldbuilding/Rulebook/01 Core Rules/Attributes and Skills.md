@@ -1,10 +1,8 @@
-# Attributes and Skills
-
-[[00 Read Me First|Rulebook]] › Core Rules › [[Attributes]]
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules
 
 Nenworld uses **ten attributes**. They keep D&D's familiar shape but split every seam Nen actually taxes: raw speed vs fine control, capacity vs recovery, knowing vs noticing, and a talent stat no D&D attribute carries. **Each attribute owns exactly one responsibility** — the design deliberately refuses to let any single stat become the "Nen stat," so a complete Nen combatant invests across four of them (CON for capacity, VIT for staying power, DEX for execution, SPI for breakthroughs).
 
-For the full ten-attribute list, the shared 1–30 modifier ladder, the per-attribute deep-dive pages, and the load-bearing distinctions between them (DEX vs AGI, DEX vs Control, CON vs VIT, WIS vs PER, CHA vs PER, and SPI's unique role), see **[[Attributes]]**. This page covers skill/proficiency lists, attribute generation, and saving throws only — it does not restate what's already there.
+For the full ten-attribute list, the shared 1–30 modifier ladder, the per-attribute deep-dive pages, and the load-bearing distinctions between them (DEX vs AGI, DEX vs Control, CON vs VIT, WIS vs PER, CHA vs PER, and SPI's unique role), see **[[0 Attributes|Attributes]]**. This page covers skill/proficiency lists, attribute generation, and saving throws only — it does not restate what's already there.
 
 ## Generating attributes
 
@@ -14,7 +12,7 @@ Because CON now sets the aura ceiling and VIT sets recovery, a player's array *i
 
 ## Skills
 
-Skills are proficiencies added to attribute checks (ranks and TP costs in [[Progression and Training]]). Short list; anything uncovered is a raw attribute check.
+Skills are proficiencies added to attribute checks (ranks and TP costs in [[Rulebook/05 Progression/Progression and Training]]). Short list; anything uncovered is a raw attribute check.
 
 | Skill | Attr | Covers |
 |---|---|---|
@@ -29,7 +27,7 @@ Skills are proficiencies added to attribute checks (ranks and TP costs in [[Prog
 | Investigation | INT | Searching, deducing, cross-referencing |
 | Medicine | INT | Treating injuries, illness, stabilizing the dying |
 | Technology | INT | Machines, vehicles, electronics, security |
-| Nen Theory | WIS | Understanding [[Nen]]: recognizing techniques, deducing [[Conditions]], analyzing abilities, ritual and Contract lore |
+| Nen Theory | WIS | Understanding [[0 Nen|Nen]]: recognizing principles, deducing [[Conditions]], analyzing abilities, ritual and Contract lore |
 | Survival | WIS | Tracking, foraging, weather, navigation |
 | Animal Handling | WIS | Beasts and mounts (not [[Monsters]]) |
 | Perception | PER | Ordinary senses; spotting the hidden |
@@ -44,7 +42,7 @@ Skills are proficiencies added to attribute checks (ranks and TP costs in [[Prog
 
 **Note — Nen Theory moved to WIS** (understanding Nen), and **Perception / Aura Sense / Insight moved to PER** (noticing). INT keeps the hard, learned knowledge (Academics, Investigation, Medicine, Technology); WIS keeps interpretive understanding; PER keeps live sensing and reading. This split is the whole point of separating the three.
 
-**Precise aura work** (shaping a construct's fine structure, threading aura, a delicate [[Nen Techniques (Rules)|Shū]] or [[Nen Techniques (Rules)|Yū]] operation) is a **DEX check + the relevant technique/Hatsu proficiency** — not a separate skill. Its *cost* is governed by Control; its *success* by DEX.
+**Precise aura work** (shaping a construct's fine structure, threading aura, a delicate [[Nen Principles (Rules)|Shū]] or [[Nen Principles (Rules)|Yū]] operation) is a **DEX check + the relevant principle/Hatsu proficiency** — not a separate skill. Its *cost* is governed by Control; its *success* by DEX.
 
 **Attack proficiencies** (same rank ladder, bought separately): **Martial Arts** (unarmed/melee), **Weapons** (pick a group), **Marksmanship** (thrown/bows/firearms), and **Hatsu** (your own abilities). These add to attack **accuracy** rolls, never to damage — damage is magnitude and Attack Power ([[Scale Speed and Magnitude]]).
 
@@ -54,7 +52,7 @@ A save is an attribute check the GM calls for:
 
 - **Reflex** (AGI) — dodging area effects, reacting bodily.
 - **Fortitude** — **VIT** vs damage to the body; **CON** vs poison, fatigue, disease, environment.
-- **Spirit** (SPI) — vs Nen that acts on the mind, soul, or aura: [[Manipulation]], curses, Nen-borne affliction, forced awakening. Bonus = SPI mod + save proficiency + any defensive technique rank ([[Nen Techniques (Rules)|Jū]]/[[Ten]]). **[[Spirit|SPI]] is also the death-saving modifier** ([[Injury Recovery and Conditions]]).
+- **Spirit** (SPI) — vs Nen that acts on the mind, soul, or aura: [[Manipulation]], curses, Nen-borne affliction, forced awakening. Bonus = SPI mod + save proficiency + any defensive principle rank ([[Nen Principles (Rules)|Jū]]/[[Ten]]). **[[Spirit|SPI]] is also the death-saving modifier** ([[Injury Recovery and Conditions]]).
 - **Composure** (CHA) — vs fear, bloodlust, and emotional pressure that isn't a direct Nen-on-soul effect; [[Ten]] adds its rank.
 
-Races and backgrounds grant **save proficiency** (+2, upgradeable like a skill). Standard save DC of an ability = **10 + the user's relevant attribute mod + technique/Hatsu rank** ([[Hatsu Design]]).
+Races and backgrounds grant **save proficiency** (+2, upgradeable like a skill). Standard save DC of an ability = **10 + the user's relevant attribute mod + principle/Hatsu rank** ([[Hatsu Design]]).

@@ -1,8 +1,6 @@
-# Canon Benchmarks
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › GM Tools
 
-[[00 Read Me First|Rulebook]] › GM Tools
-
-Named characters from the vault's [[World Building|Characters]] collection, statted as **calibration anchors** across the whole power ladder. Most character files are stubs, so every number here is a *proposal* labeled by band — veto freely; the ladder's spacing is what matters. Where a character file *does* establish mechanics ([[Ryomen Sukuna|Sukuna]], [[Fern]], [[Gojo Satoru|Gojo]], [[Asta]]), those facts are reproduced exactly and the system math is built around them.
+Named characters from the vault's [[0 World|Characters]] collection, statted as **calibration anchors** across the whole power ladder. Most character files are stubs, so every number here is a *proposal* labeled by band — veto freely; the ladder's spacing is what matters. Where a character file *does* establish mechanics ([[Ryomen Sukuna|Sukuna]], [[Fern]], [[Gojo Satoru|Gojo]], [[Asta]]), those facts are reproduced exactly and the system math is built around them.
 
 Statline format per [[NPCs Creatures and Encounters]].
 
@@ -89,4 +87,4 @@ File stub; the archetype: born at the summit, growing *during* the conversation.
 
 ## Asta — the null benchmark
 
-File: Human → [[Mutations|Mutant]] (lacks all Nen), "Nen Type: Specialist — Anti-Magic (TRA→SPE)". Rendered per [[Humans and Subtypes (Races)]]: **Nen-null mutation + an anti-Nen Spirit-Tool-grade artifact** — the "ability" lives in the sword, not the man, which resolves the file's apparent contradiction without touching it. As an NPC: EVA 16, Body 60, physical caps 24 everywhere, SR 4 on muscle alone — and a blade whose edge treats aura constructs as P 0 objects (it doesn't beat Guard; it *unmakes* it, GM-gated to the artifact's swings). The walking argument that the ladder has a side door.
+File: Human → [[0 Mutants|Mutant]] (lacks all Nen), "Nen Type: Specialist — Anti-Magic (TRA→SPE)". Rendered per [[Humans and Subtypes (Races)]]: **Nen-null mutation + an anti-Nen Spirit-Tool-grade artifact** — the "ability" lives in the sword, not the man, which resolves the file's apparent contradiction without touching it. As an NPC: EVA 16, Body 60, physical caps 24 everywhere, SR 4 on muscle alone — and a blade whose edge treats aura constructs as P 0 objects (it doesn't beat Guard; it *unmakes* it, GM-gated to the artifact's swings). The walking argument that the ladder has a side door.

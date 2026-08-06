@@ -1,6 +1,4 @@
-# Dexterity (DEX)
-
-[[00 Read Me First|Rulebook]] › Core Rules › [[Attributes]]
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules › [[0 Attributes|Attributes]]
 
 **Dexterity is precision — hands, aim, and the fine control of aura.** It is the single most important attribute a Nen user has after [[Constitution|CON]], because **every attack's accuracy and every act of shaping aura runs on DEX.**
 
@@ -11,8 +9,8 @@
   Melee and ranged alike. STR sets a melee blow's *power*, never its accuracy.
 - **All precise aura work** — shaping, threading, and executing Nen:
   - **Ability attack rolls** = d20 + DEX mod (or [[Perception|PER]] for a sensed/tracked target) + **Hatsu** proficiency ([[Hatsu Design]]).
-  - **Constructing and executing** conjured objects, transmuted shapes, aura threads, fine [[Nen Techniques (Rules)|Shū]] and cellular [[Nen Techniques (Rules)|Yū]] work (a DEX check + the technique's minimum Control rank).
-  - **Concealment** — hiding your aura is aura-control: **[[In]] contest = DEX + In rank vs the seeker's PER + [[Gyō]] rank** ([[Nen Techniques (Rules)]]).
+  - **Constructing and executing** conjured objects, transmuted shapes, aura threads, fine [[Nen Principles (Rules)|Shū]] and cellular [[Nen Principles (Rules)|Yū]] work (a DEX check + the principle's minimum Control rank).
+  - **Concealment** — hiding your aura is aura-control: **[[In]] contest = DEX + In rank vs the seeker's PER + [[Gyō]] rank** ([[Nen Principles (Rules)]]).
   - **The read game** — projecting a false aura distribution (a feint) or hiding your real one uses **DEX (aura-control) + [[Ryū]] rank** against an opponent's PER (Insight) + Gyō ([[Combat Core]]).
   - **Water Divination** and other delicate aura displays are resolved by DEX finesse.
   - The **Manipulation gate** of a [[Nen Manifestation]] ("can your hands shape the aura precisely enough?") is a DEX check.

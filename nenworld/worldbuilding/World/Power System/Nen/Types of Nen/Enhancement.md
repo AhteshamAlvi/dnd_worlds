@@ -1,6 +1,4 @@
-# Enhancement
-
-[[Ideal Power System For the Real World]] › [[Nen]] › [[Types of Nen]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › [[0 Types of Nen|Types of Nen]]
 
 If a student increases the quantity of water in the glass during their Water Divination, then that student is an **Enhancer**. 
 
@@ -10,4 +8,4 @@ If a student increases the quantity of water in the glass during their Water Div
 
 A proficient Enhancer who trains their base body (outside of Nen use) can become even more durable than a bunker and generate the force of tactical missiles with their blows. Enhancement is also the most balanced category. It allows users to spread themselves evenly between offense and defense and become very powerful using only simple abilities.
 
-It is a common belief that Enhancers generally do not need special techniques, as their natural category already has the best balance between attack and defense as its primary attribute. This might play into why most Enhancement abilities appear to be mere applications of the basic, intermediate, and/or advanced Nen techniques. However, there do exist Enhancement abilities that are more complex, such as enhancing one's healing factor or boosting the target's growth.
+It is a common belief that Enhancers generally do not need special techniques, as their natural category already has the best balance between attack and defense as its primary attribute. This might play into why most Enhancement abilities appear to be mere applications of the basic, intermediate, and/or advanced Nen principles. However, there do exist Enhancement abilities that are more complex, such as enhancing one's healing factor or boosting the target's growth.

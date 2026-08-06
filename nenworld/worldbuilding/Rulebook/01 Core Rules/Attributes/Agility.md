@@ -1,6 +1,4 @@
-# Agility (AGI)
-
-[[00 Read Me First|Rulebook]] › Core Rules › [[Attributes]]
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules › [[0 Attributes|Attributes]]
 
 **Agility is whole-body quickness and control — how well you move, dodge, and keep your feet.** It is the twin of [[Dexterity|DEX]]: AGI moves your *body*, DEX moves your *hands*.
 
@@ -9,7 +7,7 @@
 - **Evasion** — your passive defense that attacks roll against ([[Combat Core]]):
   > **Evasion = 10 + AGI mod** (+2 shield/style, +2 for the Dodge reaction)
 - **Reflex saves** — dodging area effects, blasts, collapsing ground, and anything you beat by getting out of the way ([[Attributes and Skills]]).
-- **Base Speed Rating (SR)** — your movement band ([[Scale Speed and Magnitude]]). A human is SR 1 by default, **SR 2 if AGI 14+** (or Athletics-trained). SR then climbs with training, Drive aura, and [[Nen Techniques (Rules)|Chū]]. AGI sets the floor everything else builds on.
+- **Base Speed Rating (SR)** — your movement band ([[Scale Speed and Magnitude]]). A human is SR 1 by default, **SR 2 if AGI 14+** (or Athletics-trained). SR then climbs with training, Drive aura, and [[Nen Principles (Rules)|Chū]]. AGI sets the floor everything else builds on.
 - **Combat movement, Dash, disengage, balance, tumbling, squeezing, falling safely** ([[Combat Core]]).
 - **Grapple escape** — a grappled character may resist/break with **AGI (Acrobatics)** instead of STR ([[Combat Core]]).
 - **Chases** — the sprint/parkour leg of a chase is AGI ([[Injury Recovery and Conditions]]).
@@ -18,7 +16,7 @@
 ## Interactions
 
 - **AGI vs DEX** — dodging a strike is AGI; landing one, or disarming a trap, is DEX.
-- **Chū** can temporarily raise AGI (aura density → +AGI score, rank-capped), which also feeds Speed Rating — the engine behind "non-Enhancers reach Mach speeds" ([[Nen Techniques (Rules)]], [[Aura Density and Concentration]]).
+- **Chū** can temporarily raise AGI (aura density → +AGI score, rank-capped), which also feeds Speed Rating — the engine behind "non-Enhancers reach Mach speeds" ([[Nen Principles (Rules)]], [[Aura Density and Concentration]]).
 - **Speed gaps** are resolved on SR, not raw AGI — a 2+ SR advantage grants +2 to hit and +2 EVA against the slower side; 5+ is auto-hit/uncatchable ([[Scale Speed and Magnitude]]).
 
 ## The Agility scale (1–30)

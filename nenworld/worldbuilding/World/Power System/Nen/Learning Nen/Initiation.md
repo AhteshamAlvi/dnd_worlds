@@ -1,6 +1,4 @@
-# Initiation
-
-[[Ideal Power System For the Real World]] › [[Nen]] › [[Learning Nen]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › [[0 Learning Nen|Learning Nen]]
 
 A student learning Nen trains to manually open and close their aura nodes so that they can control the flow of their aura. There are two ways to achieve this; one is the slow and careful way, in which one gradually learns this process through meditation. The other method is the fast and risky way, colloquially called Initiation, achieved by forcing the aura nodes to open via an influx of external aura, such as by having someone who is already able to control their aura channel a light burst of aura into the students body. 
 

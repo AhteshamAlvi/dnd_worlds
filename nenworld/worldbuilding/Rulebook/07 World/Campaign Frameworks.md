@@ -1,17 +1,15 @@
-# Campaign Frameworks
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › World
 
-[[00 Read Me First|Rulebook]] › World
-
-Ten ready structures. Each lists: premise, native region, band range, session rhythm, and seeds. All assume the [[00 Read Me First|first-arc awakening]] unless marked veteran. Mix freely — most long campaigns chain three or four.
+Ten ready structures. Each lists: premise, native region, band range, session rhythm, and seeds. All assume the [[0 Rulebook|first-arc awakening]] unless marked veteran. Mix freely — most long campaigns chain three or four.
 
 ## 1 · The Examination
 *Fodder to Licensed, on the record.* — Karuna or any Registry hall · Tier 0 → novice · The default first arc.
-**Rhythm:** written theory (INT checks with study prep), technique demonstrations (fixed-DC ladders from [[Society Law and Licenses]]), then the practicum: a live scenario (escort, search, holdout) where examiners watch *judgment*, not power. Awakening and [[Awakening and the Path|the Principles]] happen across prep chapters.
+**Rhythm:** written theory (INT checks with study prep), principle demonstrations (fixed-DC ladders from [[Society Law and Licenses]]), then the practicum: a live scenario (escort, search, holdout) where examiners watch *judgment*, not power. Awakening and [[Awakening and the Path|the Principles]] happen across prep chapters.
 **Seeds:** a rival cohort with a Clan scion who's never been told no; a practicum that goes off-script because something real got in; an examiner who fails passing students for reasons that turn out to be right.
 
 ## 2 · The Tournament
 *Brackets, betting, and rules with loopholes.* — Anywhere with a circuit · novice → elite · Veteran-friendly.
-**Rhythm:** alternating prep/intel sessions and bouts. Publish the ruleset (ring-out, yield, no Manipulation of persons, medical [[Nen Techniques (Rules)|Yū]] on site) and let players lawyer it — tournament arcs are [[Hatsu Design]] showcases. Seed the bracket with two fights the party can't win fairly and one they shouldn't win at all.
+**Rhythm:** alternating prep/intel sessions and bouts. Publish the ruleset (ring-out, yield, no Manipulation of persons, medical [[Nen Principles (Rules)|Yū]] on site) and let players lawyer it — tournament arcs are [[Hatsu Design]] showcases. Seed the bracket with two fights the party can't win fairly and one they shouldn't win at all.
 **Seeds:** a betting ring fixing bouts via a Soliciting-grade [[Types and Affinity (Rules)|Manipulator]]; a masked entrant whose filed ability name is a lie; the sponsor's real prize is scouting for [[The World of Sorane|Dazan]].
 
 ## 3 · Bounty Work

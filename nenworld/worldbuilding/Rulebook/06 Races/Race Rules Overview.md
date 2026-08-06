@@ -1,8 +1,6 @@
-# Race Rules Overview
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Races
 
-[[00 Read Me First|Rulebook]] › Races
-
-How the vault's [[Race|race taxonomy]] becomes table rules. Three companion files hold the entries: [[Humans and Subtypes (Races)]], [[Peoples (Races)]], [[Supernatural Races]].
+How the vault's [[0 Races|race taxonomy]] becomes table rules. Three companion files hold the entries: [[Humans and Subtypes (Races)]], [[Peoples (Races)]], [[Supernatural Races]].
 
 ## What a race entry contains
 
@@ -16,7 +14,7 @@ The races are **not** equal, and the lore forbids pretending they are. Balance c
 
 1. **Everyone starts Nen-less at base level** (design brief). No racial Nen, no abilities, no fruit powers at creation. A [[Fanalis]] teenager out-punches a human soldier; neither can touch aura yet.
 2. **Creation packages are bounded** (+3 to +5 net attribute points, priced traits). The spread at session 1 is real but modest.
-3. **Aura doesn't care about tonnage.** AP/AO/Control grow by [[Nen Growth]] rules for every race alike; only explicit traits touch them. Since endgame power is overwhelmingly aura, races converge as campaigns mature — bodies are a head start, not a destiny. (This is the lore's own position: [[Race]] — "none of these races are inherently tied to Nen"; [[Humans]] — humans hold their own *because* everything is built.)
+3. **Aura doesn't care about tonnage.** AP/AO/Control grow by [[Nen Growth]] rules for every race alike; only explicit traits touch them. Since endgame power is overwhelmingly aura, races converge as campaigns mature — bodies are a head start, not a destiny. (This is the lore's own position: [[0 Races|Race]] — "none of these races are inherently tied to Nen"; [[Humans]] — humans hold their own *because* everything is built.)
 4. **The restricted list.** Some races are a GM headache by construction — absurd progression curves, party-breaking logistics, or power floors above the campaign. They're statted for NPCs and *possible* as PCs, but only by explicit GM opt-in.
 
 ## Availability tiers
@@ -25,7 +23,7 @@ The races are **not** equal, and the lore forbids pretending they are. Balance c
 
 **Regional (open if the campaign starts where they live):** [[Merfolk|Imuchakk]], deep-desert and high-sky variants, specific [[Race Rules Overview|clan]] homelands — the GM's starting-region list decides ([[The World of Sorane]]).
 
-**Restricted (GM opt-in, one per party at most):** [[Fanalis]] (package strength), Saiyan (Zenkai progression is deliberately absurd — see entry), turned [[Vampires|Vampire]], lucid [[Infernal]], sapient [[Constructs|Construct]], [[Beastfolk|Winged Beastfolk and Shifters]] (flight/form logistics), [[Humans|Jinchūriki]] (a campaign in themselves), Celestial Dragon (a *social* nuke), Nen-null [[Mutations|Mutant]] (a different game — entry in the Humans file).
+**Restricted (GM opt-in, one per party at most):** [[Fanalis]] (package strength), Saiyan (Zenkai progression is deliberately absurd — see entry), turned [[Vampires|Vampire]], lucid [[Infernal]], sapient [[0 Artificial Species|Construct]], [[Beastfolk|Winged Beastfolk and Shifters]] (flight/form logistics), [[Humans|Jinchūriki]] (a campaign in themselves), Celestial Dragon (a *social* nuke), Nen-null [[0 Mutants|Mutant]] (a different game — entry in the Humans file).
 
 **GM-only (NPC races):** [[Giant]]s, all [[Hollow]] grades and Arrancar, [[Spirits]] (Blessed/Cursed), [[Elementals]], [[Sky People|Angels]], Original and Made-Original [[Vampires]], [[Monsters]] and Awakened Beasts, Treants, Lunarians. Reasons are always one of: power floor above campaign start, progression curve that outpaces a party (the design-brief examples: Giants, Hollows), or a nature that fights the premise (a Cursed Spirit PC is a hostage negotiation with the initiative order).
 
@@ -43,7 +41,7 @@ Common where peoples mingle ([[Merfolk]] interbreed freely; [[Variant Tribes]] a
 
 | Race | Mature | Lifespan |
 |---|---|---|
-| Human | 16–18 | ~80–100 (Nen-tempered: +decades; [[Nen Techniques (Rules)|Ten]] slows aging) |
+| Human | 16–18 | ~80–100 (Nen-tempered: +decades; [[Nen Principles (Rules)|Ten]] slows aging) |
 | Elf | ~25 | Centuries |
 | Dwarf | ~25 | ~300 |
 | Orckin / Goblinkin | 14 / 12 | ~70 / ~60 |

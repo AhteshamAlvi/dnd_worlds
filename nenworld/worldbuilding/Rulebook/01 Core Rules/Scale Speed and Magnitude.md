@@ -1,8 +1,6 @@
-# Scale, Speed, and Magnitude
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules
 
-[[00 Read Me First|Rulebook]] › Core Rules
-
-This is the file that lets one game hold both a street brawl and a [[Monsters|Tailed Beast]]. The lore demands it: "an above average Nen user can reach levels of strength, speed and lethality comparable to modern day weapons of war… Mach speeds and Megaton strengths" ([[Progression and Training]]). Nenworld does not compress that into tiers — the numbers are real, and the notation keeps them playable.
+This is the file that lets one game hold both a street brawl and a [[Monsters|Tailed Beast]]. The lore demands it: "an above average Nen user can reach levels of strength, speed and lethality comparable to modern day weapons of war… Mach speeds and Megaton strengths" ([[Rulebook/05 Progression/Progression and Training]]). Nenworld does not compress that into tiers — the numbers are real, and the notation keeps them playable.
 
 ## Magnitude notation
 
@@ -109,6 +107,10 @@ SF is distinct from **Surface Units** (SU), the *area* measure that drives aura 
 | Warship hull section | 100 | 5k |
 
 Lore check: "a proficient Enhancer… more durable than a bunker" — an elite Enhancer's combat Guard Soak does exceed 60 ([[Balance and Math]]). ✓
+
+## Strength magnitude (Force Factor) vs Scale Factor
+
+Two different multipliers govern "how much force": **Force Factor** is *quality* of muscle (the [[Strength|STR]] curve, `2^((STR−10)/4)`, ×1 at STR 10 → ×32 at STR 30 ≈ 3.2 t deadlift); **Scale Factor** is *quantity* of creature (mass/durability). They compose: a being's raw physical output ≈ its Force Factor × its Scale Factor. The 1–30 STR line tops out around **3.2 t** of unaided force — past that, might comes from **SF**, not a higher score, which is why a Tailed Beast is rated by SF and not STR 60. A concentrated human strike's *physical* Power is its weapon-dice average × Force Factor ([[Combat Core]]); aura Strike stacks on top and is what actually reaches "megaton" magnitudes.
 
 ## Collisions and falls
 

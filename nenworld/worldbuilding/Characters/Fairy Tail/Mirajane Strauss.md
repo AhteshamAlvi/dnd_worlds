@@ -1,4 +1,4 @@
-[[Ideal Power System For the Real World]]
+[[0 Index|Index]] › [[0 Characters|Characters]] › [[0 Fairy Tail|Fairy Tail]]
 
 **Nen Type:** 
 

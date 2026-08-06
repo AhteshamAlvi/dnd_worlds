@@ -1,6 +1,4 @@
-# Sample Characters
-
-[[00 Read Me First|Rulebook]] › Characters
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Characters
 
 Three builds, each shown at **creation** (Nen-less), **end of first arc** (awakened novice), and **year two** (professional) — demonstrating that the sheet grows in play exactly the way [[Nen Growth]] promises. All arithmetic is shown; use these as templates and calibration.
 
@@ -18,7 +16,7 @@ Gear: knife (1d6), lockpicks, 200 ryn. Aura block: **blank**.
 *In play she's a scout and second-story artist. A militia thug (P 12) is a real fight. Her CON 13 is invisible now — it's the deep aura ceiling she'll grow into; her DEX 14 will place every strike and shape every future construct.*
 
 **End of arc 1 (~14 weeks, crisis Initiation in session 3).**
-On awakening she has her full **CON-13 pool: max AP 123** (30 × 1.6³ — derived, [[Aura Statistics]]). The first arc is two fresh-nodes CON breakthroughs (→ **CON 15, AP 315**) and the climb to Ren II. Techniques: Ten II, Zetsu I, Ren II, Hatsu I. **AO 25** (Ren II 8%) · Control 1 (×2) · regen resting 5%/hr (VIT 10) · Ten shroud Guard ~3.
+On awakening she has her full **CON-13 pool: max AP 123** (30 × 1.6³ — derived, [[Aura Statistics]]). The first arc is two fresh-nodes CON breakthroughs (→ **CON 15, AP 315**) and the climb to Ren II. Principles: Ten II, Zetsu I, Ren II, Hatsu I. **AO 25** (Ren II 8%) · Control 1 (×2) · regen resting 5%/hr (VIT 10) · Ten shroud Guard ~3.
 Divination (GM's sealed roll): **Transmuter.** The water tasted of copper and rain. *(The reveal was a [[Nen Manifestation|Water Divination]] scene, not a die she controlled.)*
 *Fights now: +25 Strike on a knife (P ~30) — DEX +2 lands it, and a professional's even Ken (Soak 6) barely notices. Her pool is deep for her band; her *output* (Ren) is the constraint. She has started noticing her aura goes* sharp *when she's showing off — the Seed.*
 

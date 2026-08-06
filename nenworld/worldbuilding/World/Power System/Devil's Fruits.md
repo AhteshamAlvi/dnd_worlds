@@ -1,6 +1,4 @@
-# Devil's Fruits
-
-[[Ideal Power System For the Real World]] › [[World Building]] › [[Power System]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]]
 
 Devil's Fruits are strange fruits that can be found anywhere in the world, growing at random with no known pattern to their appearance. There is no central sea, no single archipelago, and no organization that catalogues them. A Devil's Fruit is just as likely to turn up in a back-alley market stall or a forgotten orchard.
 

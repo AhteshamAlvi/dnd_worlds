@@ -1,6 +1,4 @@
-# Supernatural Races
-
-[[00 Read Me First|Rulebook]] › Races
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Races
 
 Beings arising from death, emotion, energy, or craft. Mostly GM-only ([[Race Rules Overview]]); the playable exceptions carry their whole cosmology as baggage, which is the point of playing one. Full NPC stat guidance: [[NPCs Creatures and Encounters]].
 
@@ -11,7 +9,7 @@ The vault's clean taxonomy, load-bearing for everything below ([[Nen and Nature]
 | Being | Recipe |
 |---|---|
 | **Nen user** | Trained aura; requires genuine intelligence |
-| **Monster/animal** | Natural energy; instinct-grade techniques at most |
+| **Monster/animal** | Natural energy; instinct-grade principles at most |
 | **Spirit** | Nen + natural energy, shaped by *collective emotion* (Blessed/Cursed) |
 | **Hollow** | A dead person's lingering Nen + natural energy, shaped by *one desire* |
 | **Elemental** | Natural energy alone, patterned by a place |
@@ -52,11 +50,11 @@ Rule of thumb at the table: **natural-energy beings are magnitude; Nen beings ar
 - **The social truth:** most Infernals are mourned as dead and feared as bombs; lucid ones live in the gap ([[Infernal]]). The disease cosmology (carrier insects, infectious burns, cures) is a campaign framework hook, not PC bookkeeping — unless the PC wants the cure, which is a *great* want.
 - Mindless Infernals: GM creatures — grief with a heat signature; put-downs are tragedies, write them that way.
 
-## Constructs ([[Constructs]])
+## Constructs ([[0 Artificial Species|Artificial Species]])
 
 **Sapient Construct** *(restricted PC)* — made, then woke up:
 - Chassis in place of biology: choose frame — *fleshcraft* (as human +2 VIT), *machine* (+2 STR, +1 Soak plating; healing = repairs: Craft/Technology, not Medicine; poison/disease immune), *puppet-shell* (+2 DEX, modular parts).
-- **Nen requires the mind, not the meat** ([[Nen and Nature]], [[Constructs]]): a sapient Construct awakens and trains normally. SPI is rolled/assigned like anyone — souls aren't issued by factories, a fact theologians in [[The World of Sorane|Sorane]] fight about in print.
+- **Nen requires the mind, not the meat** ([[Nen and Nature]], [[0 Artificial Species|Artificial Species]]): a sapient Construct awakens and trains normally. SPI is rolled/assigned like anyone — souls aren't issued by factories, a fact theologians in [[The World of Sorane|Sorane]] fight about in print.
 - **Maker's shadow:** someone built you; the sheet owes the GM the who and the why.
 
 ## Elementals ([[Elementals]])

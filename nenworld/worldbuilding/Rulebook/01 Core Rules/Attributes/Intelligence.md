@@ -1,6 +1,4 @@
-# Intelligence (INT)
-
-[[00 Read Me First|Rulebook]] › Core Rules › [[Attributes]]
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules › [[0 Attributes|Attributes]]
 
 **Intelligence is learned knowledge — what you have studied, remember, and can reason out.** It is book-and-lab knowledge; the *understanding* of Nen itself lives in [[Wisdom|WIS]].
 
@@ -8,14 +6,14 @@
 
 - **Academics** — history, law, geography, the sciences.
 - **Investigation** — searching, deducing, cross-referencing evidence, research projects ([[Social Exploration and Investigation]]).
-- **Medicine** — treating injuries and illness, stabilizing the dying (Medicine DC 13), and setting a broken bone or diagnosing before [[Nen Techniques (Rules)|Yū]] can mend it; a botched complex Yū repair is a failed **INT (Medicine)** check.
+- **Medicine** — treating injuries and illness, stabilizing the dying (Medicine DC 13), and setting a broken bone or diagnosing before [[Nen Principles (Rules)|Yū]] can mend it; a botched complex Yū repair is a failed **INT (Medicine)** check.
 - **Technology** — machines, vehicles, electronics, security, and the modern infrastructure of [[The World of Sorane|Sorane]].
 - **Memory, logic, and hard reasoning** — raw INT checks for recall, calculation, and puzzle-solving.
 
 ## INT vs WIS (the knowledge split)
 
 - **INT knows facts.** History, law, anatomy, how a machine works, what a text says.
-- **[[Wisdom|WIS]] understands Nen.** Nen Theory — recognizing a technique, deducing an ability's [[Conditions]], reading intent — moved to WIS. INT reads the manual; WIS grasps what the aura is *doing*.
+- **[[Wisdom|WIS]] understands Nen.** Nen Theory — recognizing a principle, deducing an ability's [[Conditions]], reading intent — moved to WIS. INT reads the manual; WIS grasps what the aura is *doing*.
 - The **Knowledge gate** of a [[Nen Manifestation]] ("do you understand what you're attempting?") is WIS (Nen Theory), not INT.
 
 ## The Intelligence scale (1–30)

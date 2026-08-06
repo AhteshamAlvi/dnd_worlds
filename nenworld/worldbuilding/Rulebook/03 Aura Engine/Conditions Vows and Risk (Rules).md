@@ -1,6 +1,4 @@
-# Conditions, Vows, and Risk (Rules)
-
-[[00 Read Me First|Rulebook]] › Aura Engine
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
 The lore's power economy ([[Conditions]], [[Vows and Limitations]], [[Risk]]) is how anyone punches above their magnitude. This chapter prices it. One sentence holds the whole design: **Conditions buy *shape*, Vows buy *power*, Risk buys *moments* — and sincerity is the currency behind all three.**
 

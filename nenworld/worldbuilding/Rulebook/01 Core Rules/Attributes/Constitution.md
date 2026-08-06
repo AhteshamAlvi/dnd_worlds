@@ -1,6 +1,4 @@
-# Constitution (CON)
-
-[[00 Read Me First|Rulebook]] › Core Rules › [[Attributes]]
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Core Rules › [[0 Attributes|Attributes]]
 
 **Constitution is capacity — how much aura you hold and how long your body can push.** For a Nen user it is the single defining stat: **your maximum Aura Pool is derived directly from CON, and your CON score doubles as your power band.**
 
@@ -11,8 +9,8 @@
   Each point of CON multiplies the pool by ~1.6 (**+3 CON ≈ ×4, +6 CON ≈ ×16**). You do not accumulate aura points toward a ceiling — you raise CON, and the pool follows.
 - **Stamina, fatigue, and sustained exertion** — forced marches, holding your breath, working past exhaustion.
 - **Resistance to poison, disease, and environment** — the **Fortitude (CON)** save (as distinct from Fortitude (VIT), which resists bodily *damage*) ([[Attributes and Skills]]).
-- **Endurance** skill (CON): forced march, breath-holding, resisting exhaustion, and **Concentration under fire** — holding a sustained technique while taking Body damage is a **CON (Endurance)** check, DC 10 + damage÷10 ([[Combat Core]], [[Nen Techniques (Rules)]]). [[Ten]] III+ holds itself.
-- **Aura-training checks** run on CON (Endurance): the awakening **Meditation** program, learning [[Ten]] and [[Zetsu]], and sustaining [[En]] past (CON mod + 2) minutes ([[Awakening and the Path]], [[Nen Techniques (Rules)]]).
+- **Endurance** skill (CON): forced march, breath-holding, resisting exhaustion, and **Concentration under fire** — holding a sustained principle while taking Body damage is a **CON (Endurance)** check, DC 10 + damage÷10 ([[Combat Core]], [[Nen Principles (Rules)]]). [[Ten]] III+ holds itself.
+- **Aura-training checks** run on CON (Endurance): the awakening **Meditation** program, learning [[Ten]] and [[Zetsu]], and sustaining [[En]] past (CON mod + 2) minutes ([[Awakening and the Path]], [[Nen Principles (Rules)]]).
 - **Suffocation** lasts CON *score* in rounds of effort before Dying; **extreme cold/heat** is a CON save ([[Injury Recovery and Conditions]]).
 
 ## Growing CON — the aura engine
@@ -60,7 +58,7 @@ Because the pool is derived from CON, **you grow your reserves by raising CON** 
 | 20 | +5 | The human limit of endurance and vigor. | 3.3k |
 | 21 | +5 | Just past the human limit of endurance — the threshold Nen-tempered body. Only sustained aura-tempering, a racial gift, or a Mutation reaches here. | 5.3k |
 | 22 | +6 | **Superhuman (Nen-tempered):** shrugs off exertion that would fell an athlete. | 8.4k |
-| 23 | +6 | The professional Nen body; holds a technique through injuries that would drop most fighters. | 14k |
+| 23 | +6 | The professional Nen body; holds a principle through injuries that would drop most fighters. | 14k |
 | 24 | +7 | The elite Nen body. | 22k |
 | 25 | +7 | Master-tier constitution; fights at full output long after others collapse. | 35k |
 | 26 | +8 | Days of combat without flagging. | 55k |
@@ -69,4 +67,4 @@ Because the pool is derived from CON, **you grow your reserves by raising CON** 
 | 29 | +9 | An ocean of aura; near-unkillable stamina. | 227k |
 | 30 | +10 | Apex — inexhaustible, [[Meruem]]-tier reserves. | 363k |
 
-*Only CON reaches the superhuman rows through training; every other attribute needs race, [[Mutations|Mutation]], or temporary [[Nen Techniques (Rules)|Chū]].*
+*Only CON reaches the superhuman rows through training; every other attribute needs race, [[0 Mutants|Mutation]], or temporary [[Nen Principles (Rules)|Chū]].*

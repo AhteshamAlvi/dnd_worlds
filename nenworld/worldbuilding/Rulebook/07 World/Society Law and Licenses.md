@@ -1,6 +1,4 @@
-# Society, Law, and Licenses
-
-[[00 Read Me First|Rulebook]] › World
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › World
 
 The rules layer of [[Nen in Society]]: Nen is public, taught in theory at school, licensed in practice, and monitored — "use of Nen abilities to cause harm is punished swiftly." Institutions below are design additions built to host exactly that lore.
 
@@ -17,14 +15,14 @@ The treaty body (chartered by the Accord, operating nearly everywhere) that exam
 | Tier | Grants | Typical holder |
 |---|---|---|
 | **Provisional** | Supervised training; awakening under an accredited teacher | Students |
-| **Licensed** | Work requiring Nen (guard, response, guide); technique use in public | Professional band |
+| **Licensed** | Work requiring Nen (guard, response, guide); principle use in public | Professional band |
 | **Chartered** | Hatsu use in sanctioned work; bounty collection; **ability registration required** (below) | Established professionals |
 | **Elite Charter** | Hollowlands entry; command of response crews; cross-border reciprocity | Elite band |
 | **Crown Charter** | Registry authority itself: audits, warrants, exam design | A handful per region |
 
 **Ability registration:** Chartered+ must file an ability's **name and class** (offense/defense/sensory/control/other) — *never* its mechanics or [[Conditions]]. The compromise is deliberate and politically alive: disclosure hawks want conditions on file; every working user knows a filed condition is a published death warrant ([[Running the Game]] — information is the real currency). Filed names are searchable by warrant. Yes, people file misleading names. Yes, that's a crime. Yes, everyone does it anyway.
 
-**Exams** (framework in [[Campaign Frameworks]]): staged skill-challenges — written theory (INT Nen Theory), controlled technique demonstration (checks against fixed DCs per tier), and a live practicum the Registry is legally required to make survivable and does not always manage. Passing Licensed ≈ requires the [[Four Major Principles]] at rank I–II and Control 2.
+**Exams** (framework in [[Campaign Frameworks]]): staged skill-challenges — written theory (INT Nen Theory), controlled principle demonstration (checks against fixed DCs per tier), and a live practicum the Registry is legally required to make survivable and does not always manage. Passing Licensed ≈ requires the [[0 Four Major Principles|Four Major Principles]] at rank I–II and Control 2.
 
 ## Law (the short table)
 
@@ -52,7 +50,7 @@ Currency: **ryn**. Modest week ≈ 50 ryn. Illustrative rates:
 | Chartered bounty: professional-band target | 2k–10k |
 | Elite-band bounty | 50k+ and a reputation |
 | Hollowlands expedition share | 10k–ruinous; survival not included |
-| Yū-clinic limb regeneration | 20k+ (weeks of a master's pool — [[Nen Techniques (Rules)|Yū]] priced into the economy) |
+| Yū-clinic limb regeneration | 20k+ (weeks of a master's pool — [[Nen Principles (Rules)|Yū]] priced into the economy) |
 | Devil's Fruit at Berrin auction, unidentified | 100k+; identified: an heirloom's ransom ([[Devils Fruits (Rules)]]) |
 
 Sports and circuits: licensed dueling leagues, En-tag, transmuter exhibition circuits — legal fame paths ([[Nen in Society]]: "many sports have to do with Nen"). Athlete background + arena framework = a whole campaign.
@@ -69,7 +67,7 @@ Sports and circuits: licensed dueling leagues, En-tag, transmuter exhibition cir
 ## How Nen bends the ordinary (GM levers)
 
 - **Medicine:** Yū clinics exist, are few, and are priced above (waiting lists = plot). Ordinary medicine still does most of the world's healing.
-- **Law enforcement:** aura forensics (residue reads — [[Nen Techniques (Rules)|Gyō]] traces, DC 13–20 by age) makes Nen crime scenes *legible* to experts, which makes [[Zetsu]]-clean crews elite.
+- **Law enforcement:** aura forensics (residue reads — [[Nen Principles (Rules)|Gyō]] traces, DC 13–20 by age) makes Nen crime scenes *legible* to experts, which makes [[Zetsu]]-clean crews elite.
 - **War:** Dazan doctrine treats elite users as strategic assets under treaty counting rules — an arms-control regime for people ([[Campaign Frameworks]] war arcs).
 - **Exploration:** charters, survey bonds, and the Registry's grim ledger of the Hollowlands.
 - **Commerce:** Shū-certified couriers, Conjurer-notarized contracts (a conjured seal is *visible* proof — [[Conjuration]]), In-swept boardrooms.

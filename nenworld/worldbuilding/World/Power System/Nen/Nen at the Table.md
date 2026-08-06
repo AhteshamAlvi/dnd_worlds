@@ -1,27 +1,25 @@
-# Nen at the Table
-
-[[Ideal Power System For the Real World]] › [[Nen]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]]
 
 This page turns the Nen lore into levers a GM and players can actually use, without tying it to any one game's dice or math. It's deliberately system-light: relative scales, trade-offs, and rulings, not fixed numbers. Drop it onto whatever system you're running.
 
 ## Aura is a resource
 
-Treat aura as a pool tied to stamina and focus (see [[Aura]]). Everyday things are free; the more forceful the technique, the more it draws:
+Treat aura as a pool tied to stamina and focus (see [[Aura]]). Everyday things are free; the more forceful the principle, the more it draws:
 
 - **Free / always-on** once trained: [[Ten]], sensing aura, walking around in a light shroud.
 - **Cheap, sustained:** [[Ren]], [[Gyō]], [[Ken]] — holding these costs a trickle the whole time they're up.
-- **Expensive, spiky:** big [[Hatsu]] outputs, [[Advanced Techniques]], a signature ability firing at full.
+- **Expensive, spiky:** big [[Hatsu]] outputs, [[0 Advanced Principles|Advanced Principles]], a signature ability firing at full.
 
 When the pool runs low, the user tires; when it's gone, they're exhausted, sloppy, and leaking (exactly the state a fresh awakener is stuck in). Recovery comes from rest, calm, and [[Zetsu]] — closing the flow off entirely refills fastest but leaves you defenseless. **Rule of thumb:** if a player wants to do something flashy and repeatable, that's a resource question; if they want to do something impossible, that's a [[Conditions|Conditions]] question.
 
 ## Affinity is the dial for how well it works
 
-Your [[Types of Nen|aura type]] already gives you a built-in scaling dial — the 100 / 80 / 60 / 40 efficiencies. Read them as *how strong and how reliable* an effect is, not as dice:
+Your [[0 Types of Nen|aura type]] already gives you a built-in scaling dial — the 100 / 80 / 60 / 40 efficiencies. Read them as *how strong and how reliable* an effect is, not as dice:
 
 - **In-type (100%)** — full force, dependable, room to master.
 - **Adjacent (80%) / far (60%)** — usable, visibly less crisp, costs more aura for the same result.
 - **Opposite (40%)** — clumsy and expensive; possible, rarely worth it.
-- **Specialization** — the exception; you either can or can't, no partial (see [[Types of Nen]]).
+- **Specialization** — the exception; you either can or can't, no partial (see [[0 Types of Nen|Types of Nen]]).
 
 Lean a player's signature effects toward their strong end. Let weak-affinity stunts happen, but make them cost more and land softer.
 
@@ -37,7 +35,7 @@ This is the main way anyone punches above their tier, and the system's central t
 
 ## Pacing power through the path
 
-Use [[The Nen Path]] as the gate — but the gate is *dependency, not a fixed ladder.* Past the shared foundation (the [[Four Major Principles]]), a character learns intermediate techniques, advanced techniques, and their signature ability in whatever order suits them; one PC may craft an ability early and thin out on techniques, another may skip half the [[Intermediate Techniques]] and reach straight for a specific [[Advanced Techniques|advanced]] one. The only hard limit is that anything they do must rest on something they *actually hold*. This keeps growth legible: advancement means *learning a specific new technique* or *earning the next stage* (see [[Developing a Nen Ability]]), never just "getting stronger" in the abstract.
+Use [[The Nen Path]] as the gate — but the gate is *dependency, not a fixed ladder.* Past the shared foundation (the [[0 Four Major Principles|Four Major Principles]]), a character learns intermediate principles, advanced principles, and their signature ability in whatever order suits them; one PC may craft an ability early and thin out on principles, another may skip half the [[0 Intermediate Principles|Intermediate Principles]] and reach straight for a specific [[0 Advanced Principles|advanced]] one. The only hard limit is that anything they do must rest on something they *actually hold*. This keeps growth legible: advancement means *learning a specific new principle* or *earning the next stage* (see [[Developing a Nen Ability]]), never just "getting stronger" in the abstract.
 
 ## A few standing rulings
 

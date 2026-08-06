@@ -1,6 +1,4 @@
-# Social, Exploration, and Investigation
-
-[[00 Read Me First|Rulebook]] › GM Tools
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › GM Tools
 
 The noncombat systems. One engine throughout ([[Core Resolution]]): intent → leverage → check → consequence. Nen bends every procedure here somewhere — and each section names where, and where it *can't*.
 
@@ -45,12 +43,12 @@ The noncombat systems. One engine throughout ([[Core Resolution]]): intent → l
 
 **Camps — the Zetsu dilemma** (the setting's signature camping rule): sleeping in [[Zetsu]] recovers aura ×3 and hides you from everything aura-sensed — *and you are defenseless and blind to the aura layer.* Watch rotations, alarm perimeters (a tripwire [[Hatsu Library|Razor Psalm]], a 2 m [[En]] on the sentry) become real decisions. Aura-dense zones ([[Injury Recovery and Conditions]]) double recovery and tax the mind daily.
 
-**Discovery pays:** first-contact finds (a region, a ruin, a people, a live Elemental) are TP events ([[Progression and Training]]) and Renown events. Exploration is a career, not a transition.
+**Discovery pays:** first-contact finds (a region, a ruin, a people, a live Elemental) are TP events ([[Rulebook/05 Progression/Progression and Training]]) and Renown events. Exploration is a career, not a transition.
 
 ## Projects (research, crafting, building)
 
-One frame for all long work: **Project = threshold points · a check per interval · quality of tools/site as multiplier** (mirrors [[Progression and Training]] training programs — one bookkeeping idiom everywhere).
-Crafting: DEX or INT Craft; masterwork results grant +1 circumstance to their specific use (never stacking past +2). Nen-integrated gear: [[Nen Techniques (Rules)|Shū]]-tuned weapons (fitted to a user's flow: +1 accuracy for them alone), conjured-notarized documents, warded rooms (a hired Conjurer's rule-effect, priced as services — [[Society Law and Licenses]]).
+One frame for all long work: **Project = threshold points · a check per interval · quality of tools/site as multiplier** (mirrors [[Rulebook/05 Progression/Progression and Training]] training programs — one bookkeeping idiom everywhere).
+Crafting: DEX or INT Craft; masterwork results grant +1 circumstance to their specific use (never stacking past +2). Nen-integrated gear: [[Nen Principles (Rules)|Shū]]-tuned weapons (fitted to a user's flow: +1 accuracy for them alone), conjured-notarized documents, warded rooms (a hired Conjurer's rule-effect, priced as services — [[Society Law and Licenses]]).
 
 ## Criminal operations
 

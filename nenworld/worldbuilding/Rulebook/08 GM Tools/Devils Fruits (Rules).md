@@ -1,12 +1,10 @@
-# Devil's Fruits (Rules)
-
-[[00 Read Me First|Rulebook]] › GM Tools
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › GM Tools
 
 Mechanics for [[Devil's Fruits]]. The lore is complete on flavor: random growth, no catalogue, one power for one curse, eating one is "a foolish, reckless gamble." These rules keep every word of that true at the table.
 
 ## The gamble
 
-- **No identification.** Nothing — no ability, no archive, no [[Nen Techniques (Rules)|Gyō]] — reads an uneaten fruit's contents. (Fruits are not Nen; aura senses have nothing to grip.) The Berrin auction sells *provenance stories*, not knowledge ([[Society Law and Licenses]]).
+- **No identification.** Nothing — no ability, no archive, no [[Nen Principles (Rules)|Gyō]] — reads an uneaten fruit's contents. (Fruits are not Nen; aura senses have nothing to grip.) The Berrin auction sells *provenance stories*, not knowledge ([[Society Law and Licenses]]).
 - **Eating (one bite suffices):** the GM secretly rolls or picks **one power and one curse** — the lore's d25 lists ([[Devil's Fruits]]) or original designs. Both reveal themselves *through play*, the power usually within days, the curse exactly when it hurts most.
 - **One fruit per person, ever.** A second fruit kills — no save, no exceptions, discovered by history's least lucky people. *(Design addition, flagged: prevents stacking and matches the setting's dread of the things.)*
 - **PCs never start with one** (everyone starts base — [[Character Creation]]); a campaign fruit is found, stolen, auctioned, or inherited in play.
@@ -26,7 +24,7 @@ Per the lore's GM-only distinction ([[Devil's Fruits]]):
 |---|---|
 | Can Gyō see a fruit effect? | No — it isn't aura. (Terrifying, and the design point: Nen users' whole sensory toolkit has a blind spot here.) |
 | Does Guard soak fruit-powered attacks? | Yes — physics is physics; a fruit-flung boulder is still P vs Soak. |
-| Can [[Nen Techniques (Rules)|Jū]] reject a fruit effect on me? | No — Jū rejects Nen. A fruit's petrification is a Fortitude problem, not a rejection problem. |
+| Can [[Nen Principles (Rules)|Jū]] reject a fruit effect on me? | No — Jū rejects Nen. A fruit's petrification is a Fortitude problem, not a rejection problem. |
 | Can Manipulation control the power? | The *person*, yes (conditions met); the power itself, never. |
 | Can a [[Humans and Subtypes (Races)|Nen-null]] eat one? | **Yes.** The one supernatural door open to them — expect them to walk through it. |
 | Do fruit effects and Hatsu stack? | Freely; they're different economies. The audit only prices the Nen half. |
@@ -43,7 +41,7 @@ Curse (rolled separately, say #1): can never swim; sinks, helpless in water deep
 *Auction history: eaten by a dockworker who never learned what the sea now was to him. Sold cheap, cost everything.*
 
 **The Clear Fruit** *(active — 10 aura/round)*
-Power (#2): invisibility at will. Rules: mundane sight fails entirely (Stealth auto-wins the visual layer); **Gyō/aura-sense unaffected in principle — but there's no aura to see either**, so only sound, scent, footprints, and [[Nen Techniques (Rules)|En]]'s touch-field work (En feels the *shape*, not aura: contest at +0).
+Power (#2): invisibility at will. Rules: mundane sight fails entirely (Stealth auto-wins the visual layer); **Gyō/aura-sense unaffected in principle — but there's no aura to see either**, so only sound, scent, footprints, and [[Nen Principles (Rules)|En]]'s touch-field work (En feels the *shape*, not aura: contest at +0).
 Curse (#2): casts no reflection, cannot be photographed or recorded — including licensing photographs, which is its own biography.
 
 **The Vitrine Fruit** *(active — 15 per use)*

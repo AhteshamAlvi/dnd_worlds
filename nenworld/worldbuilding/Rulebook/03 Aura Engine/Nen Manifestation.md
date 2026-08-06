@@ -1,6 +1,4 @@
-# Nen Manifestation (Spirit)
-
-[[00 Read Me First|Rulebook]] › Aura Engine
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
 This chapter defines the one thing **Spirit (SPI)** does. SPI is not a pool, a recovery rate, a knowledge stat, a control stat, or a ceiling — every one of those belongs to another attribute now ([[Attributes and Skills]]). SPI is **innate Nen talent**, and talent only shows itself at a single moment: when everything that *can* be prepared has been prepared, and it still isn't certain the Nen will take. That moment is a **Manifestation roll**.
 
@@ -14,7 +12,7 @@ The order of operations makes it concrete. A manifestation has up to five gates,
 Knowledge     → WIS   Do you understand what you're attempting? (Nen Theory)
 Manipulation  → DEX   Can your hands shape the aura precisely enough?
 Resources     → AP/AO Do you have the aura the attempt physically costs?
-Validity      → Rules Is the attempt legal under the technique/ability rules?
+Validity      → Rules Is the attempt legal under the principle/ability rules?
 Manifestation → SPI   Given all of the above — does the Nen take?
 ```
 
@@ -49,7 +47,7 @@ Emotion and stakes help exactly as elsewhere ([[Conditions Vows and Risk (Rules)
 
 ## Why SPI is rare-but-decisive
 
-Because SPI is off the moment-to-moment sheet, two Nen users of identical pool, output, control, and technique can differ entirely in what they can *bring into being*. The high-SPI prodigy seats a new Condition on the first try, forges the Contract under pressure, and stabilizes the desperate new form mid-fight; the low-SPI grinder gets there too, but needs the calm, the prep, the second and third attempt. This is the fiction's "some people are just *gifted* at Nen" made mechanical without letting the gift touch raw power — a prodigy doesn't hit harder or last longer, they simply **make the impossible thing hold**.
+Because SPI is off the moment-to-moment sheet, two Nen users of identical pool, output, control, and principle can differ entirely in what they can *bring into being*. The high-SPI prodigy seats a new Condition on the first try, forges the Contract under pressure, and stabilizes the desperate new form mid-fight; the low-SPI grinder gets there too, but needs the calm, the prep, the second and third attempt. This is the fiction's "some people are just *gifted* at Nen" made mechanical without letting the gift touch raw power — a prodigy doesn't hit harder or last longer, they simply **make the impossible thing hold**.
 
 Raising SPI is therefore the rarest advancement in the game and stays gated to extraordinary causes ([[Nen Growth]]): near-death, a sacred baptism, a decade-vow fulfilled, certain [[Devils Fruits (Rules)|fruits]] or relics. It buys no pool and no Soak — only better odds at the table's most important single roll.
 

@@ -1,6 +1,4 @@
-# Transmutation
-
-[[Ideal Power System For the Real World]] › [[Nen]] › [[Types of Nen]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › [[0 Types of Nen|Types of Nen]]
 
 If a student changes the taste of the water in the glass during their Water Divination, then that student is a **Transmuter**. 
 

@@ -1,6 +1,4 @@
-# Character Creation
-
-[[00 Read Me First|Rulebook]] › Characters
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Characters
 
 Creation builds an **ordinary person**: no Nen, no abilities, no fruit powers (design commitment #1). Skills and gear come from the life they've lived. Power comes later, from play — which means creation's real product is the *reasons* this person will chase power and the *life* that will shape their [[Hatsu]]. Everything here should take a table one session.
 
@@ -60,7 +58,7 @@ The character is **Tier 0 — Ordinary** ([[The Nen Path]]). Now, privately:
 - If the player chose **discussed pick** for affinity, record it sealed.
 - Otherwise pre-roll their d100 type and d20 variation ([[Types and Affinity (Rules)]]) and seal both.
 - Note their CON (their eventual aura ceiling and growth pace) and SPI (their manifestation edge) — [[Nen Growth]], [[Nen Manifestation]].
-- Optional: 1-in-1000 humans are Nen-null ([[Mutations]]) — **only with player buy-in**, it's a different game for them ([[Race Rules Overview]], Mutations section).
+- Optional: 1-in-1000 humans are Nen-null ([[0 Mutants|Mutants]]) — **only with player buy-in**, it's a different game for them ([[Race Rules Overview]], Mutations section).
 
 ## Step 9 — Ties
 
@@ -72,7 +70,7 @@ GM reads the party as a set: shared reason to be together, at least two ties cro
 
 ## Variant: veteran start
 
-For campaigns skipping the fodder phase: build as above, then apply [[Nen Growth]] retroactively — GM sets in-fiction years of training; typical **professional start**: awakened, AP 600–1k, Ren II–III, Control 2–3, two intermediate techniques at I–II, Hatsu II with one designed form, and 10 TP already spent on the above. The affinity reveal still deserves its scene — run the Water Divination as a flashback.
+For campaigns skipping the fodder phase: build as above, then apply [[Nen Growth]] retroactively — GM sets in-fiction years of training; typical **professional start**: awakened, AP 600–1k, Ren II–III, Control 2–3, two intermediate principles at I–II, Hatsu II with one designed form, and 10 TP already spent on the above. The affinity reveal still deserves its scene — run the Water Divination as a flashback.
 
 ## Different races, one party
 

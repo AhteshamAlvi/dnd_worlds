@@ -1,10 +1,8 @@
-# Progression and Training
-
-[[00 Read Me First|Rulebook]] › Progression
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Progression
 
 Nenworld's advancement is a **two-currency system** (per the design brief):
 
-1. **Training Points (TP)** — earned in sessions, spent on *skill*: proficiencies, technique ranks, attributes (including **CON**), Hatsu ranks. **Every spend needs an in-fiction justification** — training time, a teacher, a breakthrough, or the growth loop. TP is permission *plus* pacing; fiction is the gate.
+1. **Training Points (TP)** — earned in sessions, spent on *skill*: proficiencies, principle ranks, attributes (including **CON**), Hatsu ranks. **Every spend needs an in-fiction justification** — training time, a teacher, a breakthrough, or the growth loop. TP is permission *plus* pacing; fiction is the gate.
 2. **Time trained** — the weeks every TP-spend requires. Rates in [[Nen Growth]]. **You never buy aura points directly:** max pool is derived from CON ([[Aura Statistics]]), so you grow it by raising CON — a TP + time + breakthrough regimen like any attribute, never a number you spend TP to inflate.
 
 There are no levels and no XP. The sheet grows where the character actually grew.
@@ -16,7 +14,7 @@ There are no levels and no XP. The sheet grows where the character actually grew
 | Per session | **2** |
 | Survived real danger (the table believed it) | +1 |
 | Advanced a personal goal or tie materially | +1 |
-| Discovery (first contact with a race, region, faction, technique, or truth of the world — this is an exploration game; pay for it) | +1 |
+| Discovery (first contact with a race, region, faction, principle, or truth of the world — this is an exploration game; pay for it) | +1 |
 | Upheld a vow/flaw at genuine cost | +1 |
 | *Session cap* | **5** |
 | Arc completed | +2 |
@@ -35,13 +33,13 @@ All costs; fiction gates in the right column. Time can run concurrently with adv
 | Attribute +1 (physical) | 5 | 8-week regimen; racial cap — **except CON**, which Nen-tempering drives into the superhuman band (double time past 20; grows the aura pool — [[Nen Growth]]) |
 | Attribute +1 (mental/social) | 5 | 8 weeks study/immersion |
 | **SPI +1** | 10 | Extraordinary event only ([[Nen Growth]]) |
-| Technique rank I–V | 2/3/4/6/8 | Programs and gates in [[Nen Growth]] |
+| Principle rank I–V | 2/3/4/6/8 | Programs and gates in [[Nen Growth]] |
 | Control rank | 2/4/6/8 | Drills and gates in [[Nen Growth]] |
 | Hatsu rank | 2/4/6/8/10 | Growth triggers ([[Nen Growth]]) |
 | New ability form | 0 TP | EP budget + earned trigger ([[Hatsu Design]]) — forms are grown, not bought |
 | Formalize a contact/safehouse/title | 2 | Played on screen |
 
-**Downtime throughput limit:** per downtime block, at most **2 technique ranks + 1 Control rank**, *or* **1 Hatsu rank**, *or* one attribute regimen. Aura growth weeks always tick alongside. (Design: prevents downtime-stuffing; matches the lore's insistence that Nen is long discipline, not a shopping trip.)
+**Downtime throughput limit:** per downtime block, at most **2 principle ranks + 1 Control rank**, *or* **1 Hatsu rank**, *or* one attribute regimen. Aura growth weeks always tick alongside. (Design: prevents downtime-stuffing; matches the lore's insistence that Nen is long discipline, not a shopping trip.)
 
 ## Training programs (general system)
 
@@ -69,7 +67,7 @@ A program = **focus + duration + weekly check + success threshold** ([[Awakening
 
 - **Supervised:** teacher multipliers ([[Nen Growth]]): the main axis of quality.
 - **Solo:** ×2 time, DC +3, nat-1 Strain rule. Heroic, slow, occasionally crippling — accurate.
-- **Observation:** watching a technique in live use 3+ times + INT (Nen Theory) DC 16 → ×¾ time when you train it later. Watching a *Hatsu* teaches you its Conditions if you win the reads, never the ability ([[Hatsu Design]]: copying caps and taxes).
+- **Observation:** watching a principle in live use 3+ times + INT (Nen Theory) DC 16 → ×¾ time when you train it later. Watching a *Hatsu* teaches you its Conditions if you win the reads, never the ability ([[Hatsu Design]]: copying caps and taxes).
 - **Stolen methods** (the risky accelerants):
 
 | Method | Gain | Price |
@@ -77,7 +75,7 @@ A program = **focus + duration + weekly check + success threshold** ([[Awakening
 | Forced Initiation of a student "before they're ready" | Skip the awakening program | The full [[Awakening and the Path]] risk table; reputations end this way |
 | Aura stimulants (black-market) | One week counts double | CON save DC 16 or 2 Strain; addiction track on repeats |
 | Leech-training (master channels aura *through* student) | CON breakthroughs come ×2 faster for the block (deeper aura, [[Nen Growth]]) | Dependency: −10% AO when the master's aura isn't nearby, until a season passes clean |
-| Crucible past sane limits (unsanctioned death games) | CON breakthroughs ×2 faster and a technique week discount | Real death chance on the table, every week — [[Society Law and Licenses|and it's illegal]] |
+| Crucible past sane limits (unsanctioned death games) | CON breakthroughs ×2 faster and a principle week discount | Real death chance on the table, every week — [[Society Law and Licenses|and it's illegal]] |
 
 ## Montages and time skips
 

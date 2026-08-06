@@ -1,5 +1,5 @@
-[[Ideal Power System For the Real World]]
-**Race**: [[Humans|Human]] -> [[Mutations|Mutant]] (Lacks all Nen)
+[[0 Index|Index]] › [[0 Characters|Characters]] › [[0 Black Clover|Black Clover]]
+**Race**: [[Humans|Human]] -> [[0 Mutants|Mutant]] (Lacks all Nen)
 **Nen Type:** [[Specialization|Specialist]]
 
 ![[specialization.png]]

@@ -1,6 +1,4 @@
-# Aura Statistics
-
-[[00 Read Me First|Rulebook]] › Aura Engine
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
 Every awakened character tracks **seven aura quantities**. Seven, not one, because the lore insists these are different things: having a lot of aura, being able to release a lot at once, wasting none of what you release, and *where on the body it sits* are explicitly distinguished ([[Aura]], [[Ren]], [[Gojo]]'s Six Eyes being *efficiency* not volume, [[Kō]]/[[Gyō]] being *location*). Reducing Nen to a mana bar would erase exactly the differences the setting is about. Each quantity roots in a **different attribute**, so no single stat is "the Nen stat."
 
@@ -9,7 +7,7 @@ Every awakened character tracks **seven aura quantities**. Seven, not one, becau
 | **Aura Pool (AP)** | How much do you have? | **CON** — capacity/stamina ([[Aura]]) |
 | **Aura Output (AO)** | How much can you project per round? | **[[Ren]] rank** — the skill of outputting volume |
 | **Control** | How much do you waste? | Trained economy; Six Eyes = perfect ([[Gojo]]) |
-| **Efficiency (%)** | How well does aura convert per category? | Your birth type ([[Types of Nen]]) |
+| **Efficiency (%)** | How well does aura convert per category? | Your birth type ([[0 Types of Nen|Types of Nen]]) |
 | **Regeneration** | How fast does it come back? | **VIT** — recovery ([[Nen at the Table]]) |
 | **Sense / Conceal** | Can you feel it — and hide it? | **PER** (sense), **DEX** (conceal) |
 | **Density** | Where is it, and how concentrated? | [[Aura Density and Concentration|Surface-area distribution]] |
@@ -38,13 +36,13 @@ Each point of CON multiplies your reserves by ~1.6; **+3 CON ≈ ×4 aura, +6 CO
 | 28 | 142k | Calamity |
 | 30 | 363k | Apex ([[Meruem]]) |
 
-**How the pool grows: raise CON.** You don't accumulate aura points toward a ceiling — you *temper your constitution*, and the pool follows the formula upward. Sustained Nen aura-training (the daily [[Ten]]/[[Ren]] discipline the lore insists on) is precisely what raises a practitioner's CON, and **it is the one thing that can push CON past the mundane racial cap (20 for humans) into the superhuman band (21–30)** — which is the mechanical reason trained Nen users become physically superhuman ([[Progression and Training]]: "comparable to weapons of war"). No ceiling exists; rarity comes from how hard each further point of CON is won, not from an artificial wall ([[Nen Growth]]). (SPI plays **no** part in how much aura you have — a prodigy and a plodder of equal CON hold identical pools; the prodigy's gift shows only in [[Nen Manifestation]].)
+**How the pool grows: raise CON.** You don't accumulate aura points toward a ceiling — you *temper your constitution*, and the pool follows the formula upward. Sustained Nen aura-training (the daily [[Ten]]/[[Ren]] discipline the lore insists on) is precisely what raises a practitioner's CON, and **it is the one thing that can push CON past the mundane racial cap (20 for humans) into the superhuman band (21–30)** — which is the mechanical reason trained Nen users become physically superhuman ([[Rulebook/05 Progression/Progression and Training]]: "comparable to weapons of war"). No ceiling exists; rarity comes from how hard each further point of CON is won, not from an artificial wall ([[Nen Growth]]). (SPI plays **no** part in how much aura you have — a prodigy and a plodder of equal CON hold identical pools; the prodigy's gift shows only in [[Nen Manifestation]].)
 
 *Why a fresh awakener is still weak:* a CON-10 novice has a 30-point pool, but their [[Ren]] rank caps output at 2–5% (AO of ~1) and their Control wastes half — pool size is only one of the three things that make aura useful (Output §2, Control §3 below), and the novice is short on all three.
 
 ## 2 · Aura Output (AO)
 
-The most aura you can **project in one round** — to strikes, Guard, Drive, techniques, abilities, in any combination. Your pool is a reservoir; AO is the pipe, and **[[Ren]] is the width of the pipe.** Ren determines *output*, never *pool*: two users with identical AP but different Ren rank command wildly different amounts per round from the same reserves.
+The most aura you can **project in one round** — to strikes, Guard, Drive, principles, abilities, in any combination. Your pool is a reservoir; AO is the pipe, and **[[Ren]] is the width of the pipe.** Ren determines *output*, never *pool*: two users with identical AP but different Ren rank command wildly different amounts per round from the same reserves.
 
 > **AO = AP × Output %**, set by your [[Ren]] rank:
 
@@ -78,7 +76,7 @@ Raising Control is training ([[Nen Growth]]). **Bookkeeping note:** apply the mu
 
 ## 4 · Efficiency (%)
 
-Category conversion — how well your aura becomes *effect* in each of the six [[Types of Nen]]. Default: **100% in-type, 80% adjacent, 60% far, 40% opposite** (personal variations exist: [[Types and Affinity (Rules)]]).
+Category conversion — how well your aura becomes *effect* in each of the six [[0 Types of Nen|Types of Nen]]. Default: **100% in-type, 80% adjacent, 60% far, 40% opposite** (personal variations exist: [[Types and Affinity (Rules)]]).
 
 > **Effect = aura committed × Efficiency.** **Cost = aura committed × Control multiplier.**
 
@@ -104,12 +102,12 @@ How fast the pool refills — a **rate derived directly from VIT**, the same sta
 
 - **Passive Aura Sense** = 10 + **PER** mod + Aura Sense proficiency (sensing is noticing — PER's job). Feels presence, rough direction, and rough band (one band resolution: can't tell Elite from Master, can tell Novice from Elite) of any *unconcealed* aura within **10 m × proficiency rank** (Trained 20 m … Legendary 80 m). Powerful auras read further: +10 m per band above yours.
 - **Active read** (action, opposed by nothing if target is flaring [[Ren]]): learn their band, and with a **Nen Theory (WIS)** check DC 16, their apparent type. (You *notice* the aura with PER; you *understand* its type with WIS — the two-stat split in one action.)
-- **Concealment**: [[Zetsu]] removes your presence entirely (finding you is mundane Perception, or the DC 32 gaze-detection check). [[In]] hides constructs and active aura: opposed check, In user's **DEX** + In rank (concealment is aura-control) vs seeker's **PER** + [[Gyō]] rank — detailed in [[Nen Techniques (Rules)]].
+- **Concealment**: [[Zetsu]] removes your presence entirely (finding you is mundane Perception, or the DC 32 gaze-detection check). [[In]] hides constructs and active aura: opposed check, In user's **DEX** + In rank (concealment is aura-control) vs seeker's **PER** + [[Gyō]] rank — detailed in [[Nen Principles (Rules)]].
 - **Unawakened people sense nothing** — but *feel* bloodlust as dread (Composure/CON saves), per [[Ren]].
 
 ## 7 · Density
 
-Not a number you write once — a value that changes every round with how you distribute your AO across your body. **Density = aura ÷ surface it occupies**, and it decides both how hard you are to penetrate at a spot (Soak = density × 10) and how hard [[Chū]] tempers your flesh there. It's the whole of [[Gyō]], [[Kō]], [[Ken]], and [[Ryū]], and it has its own chapter: [[Aura Density and Concentration]]. Carry this much on the stat sheet: your **normal density = AO ÷ 100** (spread evenly), and everything the concentration techniques do is moving that number up in one place by stripping it from everywhere else.
+Not a number you write once — a value that changes every round with how you distribute your AO across your body. **Density = aura ÷ surface it occupies**, and it decides both how hard you are to penetrate at a spot (Soak = density × 10) and how hard [[Chū]] tempers your flesh there. It's the whole of [[Gyō]], [[Kō]], [[Ken]], and [[Ryū]], and it has its own chapter: [[Aura Density and Concentration]]. Carry this much on the stat sheet: your **normal density = AO ÷ 100** (spread evenly), and everything the concentration principles do is moving that number up in one place by stripping it from everywhere else.
 
 ## The four worked examples
 

@@ -1,6 +1,4 @@
-# Aura
-
-[[Ideal Power System For the Real World]] › [[Nen]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › Fundamentals
 
 **Aura** is the life energy produced by all living bodies, it is vital for survival and directly linked to one's stamina. The points on the body from which aura flows out are called "**aura nodes**”, essentially additional pores in the body (though not on the skin. They are more or less on the spiritual body). Additionally, aura is invisible to non-Nen users, it can only be seen after the aura nodes in the eyes are opened. Nonetheless, sensitive individuals can feel its presence without being aware of its existence.
 

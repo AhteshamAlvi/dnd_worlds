@@ -1,6 +1,4 @@
-# Hatsu Design
-
-[[00 Read Me First|Rulebook]] › Aura Engine
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
 The system for building original abilities. It implements the lore scaffold ([[Developing a Nen Ability]]) with numbers: a **budget** (Effect Points) that grows with [[Hatsu]] rank, a **menu** of priced components, **Efficiency** scaling by category, and the [[Conditions Vows and Risk (Rules)|power economy]] on top. The player designs; the GM audits; the world validates growth.
 
@@ -73,7 +71,7 @@ Off-type components cost **EP × the learning multiplier** of that category for 
 | Forensic echo (impressions of past events from places/objects) | 9 |
 | True divination (future, far, or hidden knowledge) | 12, Specialists only |
 
-**Healing** (see [[Nen Techniques (Rules)|Yū]] for base rates)
+**Healing** (see [[Nen Principles (Rules)|Yū]] for base rates)
 | Grant Yū-rate healing through the ability (no Yū prereq) | 5 |
 |---|---|
 | Improved conversion (−20% cost) | +3 |
@@ -86,7 +84,7 @@ Off-type components cost **EP × the learning multiplier** of that category for 
 | Pseudo-coercive (body OR forced-choice traps) | 8 |
 | Coercive (total control) | 12 |
 
-Control is contested: target's **Spirit save (SPI)** vs your DC (below) at conditions-met; thereafter [[Nen Techniques (Rules)|Jū]] or outside help. Order complexity by target per lore (sentient > machine > simple object).
+Control is contested: target's **Spirit save (SPI)** vs your DC (below) at conditions-met; thereafter [[Nen Principles (Rules)|Jū]] or outside help. Order complexity by target per lore (sentient > machine > simple object).
 
 **Movement**
 | +1 SR travel mode | 3 | +2 SR burst (1 round) | 5 | Short-range translocation (Emission, 20 m default) | 10 |
@@ -115,7 +113,7 @@ Control is contested: target's **Spirit save (SPI)** vs your DC (below) at condi
 
 ## Growth in play
 
-A new form sticks when: (1) it leans only on techniques the user actually holds (**Technique test**), (2) it grew from something that really happened (**Truth test**), (3) the player pays its EP price from budget headroom, and (4) it **manifests** — the first time the form is called into being, the user makes a **Manifestation roll** (d20 + SPI + Hatsu, DC by ambition — [[Nen Manifestation]]); success seats it permanently, failure means the idea is sound but the Nen didn't take *yet*. [[Developing a Nen Ability]], now with a bill and a moment of truth. If budget is full, growth waits for the next Hatsu rank ([[Nen Growth]]) or a refit.
+A new form sticks when: (1) it leans only on principles the user actually holds (**Principle test**), (2) it grew from something that really happened (**Truth test**), (3) the player pays its EP price from budget headroom, and (4) it **manifests** — the first time the form is called into being, the user makes a **Manifestation roll** (d20 + SPI + Hatsu, DC by ambition — [[Nen Manifestation]]); success seats it permanently, failure means the idea is sound but the Nen didn't take *yet*. [[Developing a Nen Ability]], now with a bill and a moment of truth. If budget is full, growth waits for the next Hatsu rank ([[Nen Growth]]) or a refit.
 
 ## GM audit checklist
 

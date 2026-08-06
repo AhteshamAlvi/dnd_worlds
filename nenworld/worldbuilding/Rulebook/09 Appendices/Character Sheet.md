@@ -1,6 +1,4 @@
-# Character Sheet
-
-[[00 Read Me First|Rulebook]] › Appendices
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Appendices
 
 Copy this file per character. Sections marked ⌛ stay blank until earned in play ([[Character Creation]] step 6, [[Awakening and the Path]]).
 
@@ -44,7 +42,7 @@ GEAR                            ryn: [      ]
   Ten shroud (1–2.5% AP): [    ]
   Passive Aura Sense (10+PER+prof): [    ]
 ───────────────────────────────────────────────
-⌛ TECHNIQUES (rank I–V each)
+⌛ PRINCIPLES (rank I–V each)
   Ten [ ]  Zetsu [ ]  Ren [ ]  Hatsu [ ]
   Gyō [ ]  In [ ]  En [ ]  Shū [ ]  Ken [ ]  Chū [ ]
   Kō [ ]  Ryū [ ]  Fū [ ]  Jū [ ]  Yū [ ]

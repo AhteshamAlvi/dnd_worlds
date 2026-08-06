@@ -1,8 +1,6 @@
-# Humans and Subtypes (Races)
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Races
 
-[[00 Read Me First|Rulebook]] › Races
-
-Rules for [[Humans]], their scattered subtypes, [[Clans]], and [[Mutations]]. Format and grades per [[Race Rules Overview]].
+Rules for [[Humans]], their scattered subtypes, [[0 Clans|Clans]], and [[0 Mutants|Mutants]]. Format and grades per [[Race Rules Overview]].
 
 ## Human (baseline)
 
@@ -26,7 +24,7 @@ The measuring stick ([[Humans]]). SF ×1 · base SR 1 (2 with AGI 14+ or Athleti
 
 **[[Humans|Jinchūriki]]** *(GM-only as origin; a campaign premise)* — human package + a sealed [[Monsters|Monster]]. Mechanics if run: +4 VIT/CON split, healing ×2, and **the Tenant**: a hostile NPC inside the sheet with its own agenda; drawing its power = borrowed AP/AO at escalating control checks (**Spirit save (SPI)** DC 13/16/20/24 by draw depth; failure hands the body over). Not balanced. Not meant to be.
 
-## Clans ([[Clans]] with bodily traits)
+## Clans ([[0 Clans|Clans]] with bodily traits)
 
 A creation-legal clan trait costs its grade in attribute points from your racial package (Minor 2 / Major 4 / Defining 6 — [[Race Rules Overview]]), replacing Adaptable's bonuses as needed. One bloodline trait per character. The name comes with the trait: enemies, duties, expectations — the GM is owed a clan complication per arc. Statted exemplars (build others on the framework):
 
@@ -34,7 +32,7 @@ A creation-legal clan trait costs its grade in attribute points from your racial
 |---|---|---|
 | **[[Kurta]]** | Major | *Scarlet Eyes:* under strong emotion — aura sight as untrained eyes-[[Gyō]] (free, no upkeep), +2 WIS checks reading aura; the state is involuntary and *visible*. Hunted: the eyes are worth fortunes dead. |
 | **[[Hyuga]]** | Major | *Byakugan:* activate (5 upkeep): 360° vision (can't be flanked), see aura flows as rank-II eyes-Gyō, read allocation at +2. Blind spot known to insiders (one narrow arc; a clan secret worth killing over). |
-| **[[Uchiha]]** | Major | *Sharingan (awakens at a defining trauma, not creation):* +2 on combat reads; observation learning ×½ instead of ×¾; may copy one witnessed *technique* program per arc at ×½ time. Copying [[Hatsu]] still obeys the caps ([[Hatsu Design]]). |
+| **[[Uchiha]]** | Major | *Sharingan (awakens at a defining trauma, not creation):* +2 on combat reads; observation learning ×½ instead of ×¾; may copy one witnessed *principle* program per arc at ×½ time. Copying [[Hatsu]] still obeys the caps ([[Hatsu Design]]). |
 | **[[Kaguya]]** | Major | *Shikotsumyaku:* bone weapons at will (1d8, count as armed; +1 natural Soak); VIT +1 included. Reckless culture is a background, not the gene. |
 | **[[Uzumaki]]** | Major | *Vitality:* +2 VIT, +1 CON (a deeper native aura pool — pool is CON-derived, [[Aura Statistics]]), natural healing ×2, lifespan +50%. |
 | **[[Inuzuka]]** | Minor | *Feral senses:* scent-tracking as Survival advantage; +2 Perception (smell/hearing); bonded beast companion (use ally rules). |
@@ -49,12 +47,12 @@ A creation-legal clan trait costs its grade in attribute points from your racial
 | **[[Fanalis]]** | Restricted package (not a trait) | +2 STR, +2 AGI, base SR 3, caps STR/AGI 24; SPI cap 16 and no leaning ([[Fanalis]]: the body is the whole gift). The party's monster — and everyone who sees them run knows exactly what they are. |
 | **[[Vinsmoke]]** | Restricted | Engineered line: +1 STR/AGI/VIT, wound-closing (×2 natural healing), −2 CHA cap *or* the family's defect-label for feeling anything. Construct-descended ([[Vinsmoke]]). |
 
-Technique-and-secret clans (Nara shadow drills, Zoldyck conditioning, Zenin forms, Kamado breath) are **backgrounds and training packages**, not blood: build them from [[Character Creation]] + teacher access in [[Nen Growth]]. This is the lore's own division ([[Clans]]: bloodline clans vs. houses of technique/rank/wealth).
+Technique-and-secret clans (Nara shadow drills, Zoldyck conditioning, Zenin forms, Kamado breath) are **backgrounds and training packages**, not blood: build them from [[Character Creation]] + teacher access in [[Nen Growth]]. This is the lore's own division ([[0 Clans|Clans]]: bloodline clans vs. houses of technique/rank/wealth).
 
 ## Mutations
 
-One-off deviations ([[Mutations]]) — player-proposed, GM-priced on the trait grades, always with a visible cost or story hook. The showcase:
+One-off deviations ([[0 Mutants|Mutants]]) — player-proposed, GM-priced on the trait grades, always with a visible cost or story hook. The showcase:
 
-**Nen-null (Asta-pattern)** *(restricted; session-zero consent)* — born without nodes. **No aura statistics, ever.** No techniques, no Hatsu, immune to nothing — Nen effects hit them like anyone; they just can't answer in kind.
+**Nen-null (Asta-pattern)** *(restricted; session-zero consent)* — born without nodes. **No aura statistics, ever.** No principles, no Hatsu, immune to nothing — Nen effects hit them like anyone; they just can't answer in kind.
 Compensation package: +2 to three physical attributes; physical caps 24; +4 extra Trained picks; TP costs for physical skills halved; and one **anti-Nen implement** may find them in play (a [[Devils Fruits (Rules)|fruit-grown]] or [[Supernatural Races|Spirit-Tool]] weapon that eats aura — the [[Asta]] pattern: his file reads "lacks all Nen" *and* lists an ability; this book renders that as mutation + artifact, so the power lives in a thing that can be lost, stolen, and fought over, which is proper drama).
 Design intent: the Nen-null PC is the party's blind spot and its unhexable hand — Manipulation can't string what has no aura to mix with ([[Manipulation]] requires the mingling), and Zetsu-perfect by birth. They will never scale like their friends. The player must want *that story*.

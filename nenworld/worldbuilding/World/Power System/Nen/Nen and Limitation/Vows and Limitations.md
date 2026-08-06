@@ -1,6 +1,4 @@
-# Vows and Limitations
-
-[[Ideal Power System For the Real World]] › [[Nen]] › [[Nen and Limitation]]
+[[0 Index|Index]] › [[0 World|World]] › [[0 Power System|Power System]] › [[0 Nen|Nen]] › [[0 Nen and Limitation|Nen and Limitation]]
 
 A student of Nen can increase the overall power of an individual skill by stating a self-imposed restriction that forces even more conditions on it. For example, if one consciously decides something like "I will only use this skill on Thursdays" or "I will only use this skill against short people" and manages to abide by that rule, that particular skill will become stronger. These restrictions are called "Limitations" ("Rules"), and the act of swearing to respect them "Binding Vows" ("Pacts"). The stricter the limitation, the stronger the user's resolve, and thus the more their ability is strengthened. Limitations seem to strengthen an ability to a greater degree than Conditions. However, limitations are also considered liabilities, since the power they grant is inconsistent.
 

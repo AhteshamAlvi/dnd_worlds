@@ -1,6 +1,4 @@
-# Glossary and Quick Reference
-
-[[00 Read Me First|Rulebook]] › Appendices
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Appendices
 
 ## Glossary
 
@@ -26,7 +24,7 @@
 | **Manifestation** | SPI roll to make new Nen *hold* (after all prep) | [[Nen Manifestation]] |
 | **Strain** | Aura-overuse wear: −1 d20s, −10% AO each | [[Injury Recovery and Conditions]] |
 | **Overdraw** | Burning Body HP as aura (1:2) at 0 AP | [[Injury Recovery and Conditions]] |
-| **TP — Training Points** | Session-earned advancement currency (never buys AP) | [[Progression and Training]] |
+| **TP — Training Points** | Session-earned advancement currency (never buys AP) | [[Rulebook/05 Progression/Progression and Training]] |
 | **EP — Effect Points** | Hatsu design budget (rank + Conditions) | [[Hatsu Design]] |
 | **Condition** | Unbreakable ability parameter; grants EP | [[Conditions Vows and Risk (Rules)]] |
 | **Vow (Limitation)** | Breakable oath; multiplies Power (×1.25–×3, riders ×1.5/×2) | [[Conditions Vows and Risk (Rules)]] |

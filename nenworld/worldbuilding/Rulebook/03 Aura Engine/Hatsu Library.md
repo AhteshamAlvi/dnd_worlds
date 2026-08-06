@@ -1,6 +1,4 @@
-# Hatsu Library
-
-[[00 Read Me First|Rulebook]] › Aura Engine
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Aura Engine
 
 Twelve fully-costed abilities across all six categories and the game's major roles — offense, defense, support, healing, tracking, deception, mobility, investigation, battlefield control, social manipulation. Each shows its complete arithmetic so GMs can price by comparison. (A thirteenth worked example, *Ember Hound* — Conjuration, tracking — lives in [[Hatsu Design]]; the canon flagship, [[Ryomen Sukuna|Sukuna's]] *Dismantle*, is rebuilt line-by-line in [[Canon Benchmarks]].)
 
@@ -12,7 +10,7 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 **User:** Boru, professional Enhancer. Hatsu II (budget 20), AO 100, Control 2 (×1.6), Kō I. Efficiency: ENH 100%.
 **Build:** Power multiplier +50% (6 EP). **Conditions:** must plant both feet and name his target aloud (Minor, +2 EP); only against someone who has harmed him or an ally this scene (Major, +5 EP). Budget 20+7 = 27; spent 6.
 **Vow:** "Never against someone fleeing" — Serious, ×1.5 (audited: his enemies *will* flee).
-**In play:** he dumps his whole output as Fuel through a [[Nen Techniques (Rules)|Kō]] fist (concentration is the *delivery*, not a separate multiplier — an ability already committing full Fuel doesn't double-dip; [[Aura Density and Concentration]]): Fuel 100 → P = 100 × 1.0 (ENH) × 1.5 (multiplier) × 1.5 (vow) = **P 225**, rolled as 2d10 ×10 + 5. Pool cost 160. One punch that deletes professionals and dents elites — and while it's up, every region but that fist is Soak 0.
+**In play:** he dumps his whole output as Fuel through a [[Nen Principles (Rules)|Kō]] fist (concentration is the *delivery*, not a separate multiplier — an ability already committing full Fuel doesn't double-dip; [[Aura Density and Concentration]]): Fuel 100 → P = 100 × 1.0 (ENH) × 1.5 (multiplier) × 1.5 (vow) = **P 225**, rolled as 2d10 ×10 + 5. Pool cost 160. One punch that deletes professionals and dents elites — and while it's up, every region but that fist is Soak 0.
 **Counters/Failure:** the foot-plant is a read (Insight DC 13); mid-Kō he is naked everywhere else. Wrong target named → fizzles, Fuel lost.
 **Growth trigger:** surviving a duel he *chose* not to end with it (→ defensive form: the planted stance as immovable Guard).
 
@@ -27,14 +25,14 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 **User:** Sylle, professional Transmuter. Hatsu III (35), AO 130, Control 3 (×1.4), In III. TRA 100%.
 **Build:** monofilament aura wire — Range 20 m (2), In-woven (3), sustained duration (1), Power +25% (3) = 9 EP. **Conditions:** both ends must anchor to surfaces she has touched bare-handed (Major, +5); she must hum the psalm while placing it — continuous (Minor +2, continuous +2 = +4). Budget 35+9 = 44; spent 9.
 **In play:** Fuel 60 → wire of P 60 × 1.25 = **P 75** against whatever crosses it (2d10 ×10 − 35 flat rider... rolled as 1d10 ×10 + 20). Hidden: her DEX+In III vs finder's PER+Gyō. Costs 84 + 25% In premium ≈ 105 pool per placement.
-**Counters/Failure:** win the Gyō contest; [[Nen Techniques (Rules)|Fū]] dampens it at the boundary; shatter her anchors. If the hum stops, every wire drops at once — grab her throat.
+**Counters/Failure:** win the Gyō contest; [[Nen Principles (Rules)|Fū]] dampens it at the boundary; shatter her anchors. If the hum stops, every wire drops at once — grab her throat.
 **Growth trigger:** an enemy who *heard the hum* and walked the wires anyway (→ silent psalm: buy off the hum by upgrading the anchor condition to Defining).
 
 ## 4 · Slack Tide — Transmutation, debuff/battlefield control
 **User:** as Sylle's rival, same band. Hatsu III.
 **Build:** numbing mist — 5 m radius (4), Major paralytic rider (5), sustained (1) = 10 EP. **Conditions:** exhale-borne, drifts only with the air (Major, +5); user must hold their breath while it persists — continuous (Major +5 +2 = +7). Budget 35+12 = 47; spent 10.
 **In play:** Fuel 90 × 1.5 (AoE surcharge) = 135 committed (189 pool at ×1.4): everyone in the cloud saves Fortitude DC 10+3(SPI)+3(Hatsu) = **DC 16** each round: fail = Numbed (−2 all d20s, Strike halved); fail by 5+ (or any unawakened) = Paralyzed 1 round.
-**Counters/Failure:** hold your breath (delays 3 rounds), wind, [[Nen Techniques (Rules)|Jū]] purge, or hit the breath-holding user — one solid Body hit forces the Concentration check and the tide dies with his lungs.
+**Counters/Failure:** hold your breath (delays 3 rounds), wind, [[Nen Principles (Rules)|Jū]] purge, or hit the breath-holding user — one solid Body hit forces the Concentration check and the tide dies with his lungs.
 **Growth trigger:** the day the mist saves a hostage by dropping *everyone* (→ selective tide: allies exempt, bought as a Defining condition rework).
 
 ## 5 · Starving Arrow — Emission, offense (sniper)
@@ -69,7 +67,7 @@ Format: **User** (band; the aura stats that matter) → **Build** (EP math) → 
 ## 9 · Coachman's Needle — Manipulation, control (coercive)
 **User:** "the Coachman," elite Manipulator. Hatsu IV (55), AO 450, Control 4, SPI 18 (+4). MAN 100%.
 **Build:** Coercive control (12), range 100 m (4), scene duration (5) = 21 EP. **Mandatory conditions:** medium — a silver needle from his family's estate must pierce the target's skin (Major, +5); target must have willingly accepted a gift from him (Defining, +10). Budget 55+15 = 70; spent 21.
-**In play:** conditions met → **Spirit save (SPI)** DC 10+4(SPI)+4(Hatsu) = **18** or total control, scene-long, at up to 100 m. Commits Fuel 200/round upkeep; the target's allies see a friend turn. [[Nen Techniques (Rules)|Jū]] contest: rejection must reach P 200 committed — 2–3× that in practice for a general defense.
+**In play:** conditions met → **Spirit save (SPI)** DC 10+4(SPI)+4(Hatsu) = **18** or total control, scene-long, at up to 100 m. Commits Fuel 200/round upkeep; the target's allies see a friend turn. [[Nen Principles (Rules)|Jū]] contest: rejection must reach P 200 committed — 2–3× that in practice for a general defense.
 **Counters/Failure:** refuse gifts; find and pull the needle (action, DC 13 Medicine); force him past AO with multiple puppets (each is separate upkeep). If the save succeeds, the target *feels the strings* and knows exactly what he tried.
 **Growth trigger:** canon-style escalation — a puppet made of someone already dead (new form; corpse-puppets at Pseudo-coercive price, no save, but Defining condition: only the willing dead).
 

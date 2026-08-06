@@ -1,4 +1,4 @@
-[[Ideal Power System For the Real World]]
+[[0 Index|Index]] › [[0 Characters|Characters]] › [[0 Frieren Journey's End|Frieren Journey's End]]
 
 **Nen Type:** [[Emission|Emitter]]
 ![[emission.png]]

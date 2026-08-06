@@ -1,8 +1,6 @@
-# Peoples (Races)
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Races
 
-[[00 Read Me First|Rulebook]] › Races
-
-The mortal, born-not-made peoples ([[Other]]). Availability tiers per [[Race Rules Overview]]. Every entry: body only — culture comes from backgrounds.
+The mortal, born-not-made peoples ([[0 Current Species|Current Species]]). Availability tiers per [[Race Rules Overview]]. Every entry: body only — culture comes from backgrounds.
 
 ## Beastfolk ([[Beastfolk]])
 

@@ -1,6 +1,4 @@
-# Running the Game
-
-[[00 Read Me First|Rulebook]] › GM Tools
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › GM Tools
 
 GM craft for Nenworld specifically. The system hands you three unusual levers — **magnitude honesty**, **hidden information**, and **the sincerity audit** — and this file is about pulling them well.
 
@@ -8,22 +6,22 @@ GM craft for Nenworld specifically. The system hands you three unusual levers �
 
 Use the ladder in [[Core Resolution]] (default 13). Nen-specific guidance:
 
-- **Technique-vs-technique is contests, not DCs** ([[In]] vs [[Gyō]], reads, grapples). Only set a DC when one side is the world (a wall, a lock, a memory).
+- **Principle-vs-principle is contests, not DCs** ([[In]] vs [[Gyō]], reads, grapples). Only set a DC when one side is the world (a wall, a lock, a memory).
 - **Never roll magnitude.** If the answer is decided by Power vs Soak or an SR gap, say what happens. Rolling implies the die could change it; at 10× disparity it can't, and pretending otherwise teaches players the numbers lie.
 - **Roll once per intention.** One Stealth check crosses the compound, not one per corridor. Failed forward: caught *where it's most interesting*, not stopped.
 
 ## When not to roll
 
-No stakes, no roll. No uncertainty, no roll. Failure boring? Spend time instead. The specific Nenworld addition: **training weeks roll** ([[Progression and Training]]) because their drama is real but sparse — one check per week is the right granularity; per-day rolling turns discipline into slot machines.
+No stakes, no roll. No uncertainty, no roll. Failure boring? Spend time instead. The specific Nenworld addition: **training weeks roll** ([[Rulebook/05 Progression/Progression and Training]]) because their drama is real but sparse — one check per week is the right granularity; per-day rolling turns discipline into slot machines.
 
 ## Hidden information (the heart of this game)
 
-Players chose a discovery campaign ([[00 Read Me First]]). Protect it:
+Players chose a discovery campaign ([[0 Rulebook|Rulebook]]). Protect it:
 
 - **GM rolls secretly:** all detection contests (In/Gyō, Zetsu notices), divination results before the reveal scene, sincerity audits, NPC ability activations whose [[Conditions]] haven't been deduced, and anything touching SPI or affinity spreads.
 - **Describe effects, never mechanics**, for unknown abilities: "the air between you thickens — your lunge lands short" — not "his barrier has Soak 40." When players deduce the mechanism *in fiction* (Nen Theory checks, experiments, captured intel), hand them real numbers as the prize. Mechanics-knowledge **is** the reward economy of investigation ([[Campaign Frameworks]] §9).
 - **Conditions are sacred.** An NPC's ability conditions are the true hit points of a boss fight. Never volunteer them; never retcon them once revealed; always leave them *discoverable* (two clues minimum in play before the fight where they matter — the fight is the exam, the clues are the course).
-- **Character knowledge vs player knowledge:** the table will learn the system across campaigns. The characters didn't. Enforce gently through action declarations — "how does Tessa *know* Kō leaves the body open?" is a fair question exactly once per topic; after that, either she learned it in play (fine) or the player rephrases as experiment. Reward in-fiction learning with TP (discovery, [[Progression and Training]]) so the incentive points the right way.
+- **Character knowledge vs player knowledge:** the table will learn the system across campaigns. The characters didn't. Enforce gently through action declarations — "how does Tessa *know* Kō leaves the body open?" is a fair question exactly once per topic; after that, either she learned it in play (fine) or the player rephrases as experiment. Reward in-fiction learning with TP (discovery, [[Rulebook/05 Progression/Progression and Training]]) so the incentive points the right way.
 
 ## Adjudicating novel Nen
 
@@ -57,13 +55,13 @@ Elite combat wrecks terrain by rule (P vs object Soak, [[Scale Speed and Magnitu
 | Vow-stacking to absurd multipliers | ×5 product cap; narrow-parameter cap ×10, max two ([[Conditions Vows and Risk (Rules)]]) |
 | Cosmetic restrictions for free power | Sincerity audit, teeth column, fade-to-×1 |
 | Chip-damage sieging something huge | Penetration threshold: P ≤ Soak does nothing, ever |
-| Zetsu-camping to regen mid-fight | Zetsu = defenseless: any Nen-enhanced hit doubles on Body ([[Nen Techniques (Rules)]]) |
-| En always-on radar | Upkeep = radius/round + Strain clock ([[Nen Techniques (Rules)]]) |
-| Yū heal-tanking in combat | Full-action channel, no other Nen, brutal rates ([[Nen Techniques (Rules)]]) |
-| Downtime-stuffing ranks | Throughput limit ([[Progression and Training]]) |
+| Zetsu-camping to regen mid-fight | Zetsu = defenseless: any Nen-enhanced hit doubles on Body ([[Nen Principles (Rules)]]) |
+| En always-on radar | Upkeep = radius/round + Strain clock ([[Nen Principles (Rules)]]) |
+| Yū heal-tanking in combat | Full-action channel, no other Nen, brutal rates ([[Nen Principles (Rules)]]) |
+| Downtime-stuffing ranks | Throughput limit ([[Rulebook/05 Progression/Progression and Training]]) |
 | Overdraw as free fuel | 1 HP : 2 aura *and* Strain — it's a mortgage, and [[Injury Recovery and Conditions|Strain]] compounds |
 | Minion-swarming a wall | Minions below penetration threshold add zero ([[NPCs Creatures and Encounters]]) |
-| "My ability does X" mid-scene invention | Forms are pre-built purchases with triggers ([[Hatsu Design]]) — improvisation uses techniques, not new powers |
+| "My ability does X" mid-scene invention | Forms are pre-built purchases with triggers ([[Hatsu Design]]) — improvisation uses principles, not new powers |
 
 ## Disagreements
 
@@ -71,7 +69,7 @@ Rule at the table for tonight; log it; settle it between sessions against this b
 
 ## Introducing lore without lectures
 
-The vault is deep ([[World Building]]); the players start shallow, on purpose. Deliver world through: work (bounty postings teach bands), institutions (exam questions teach theory), consequences (the first Initiation felony teaches law), and *NPC incomprehension* (the Clanlands guide who can't believe you don't know what a Hyuga is). One page of lore per session, in-fiction, attached to a decision. TP for discovery pays the players to dig; let them.
+The vault is deep ([[0 World|World Building]]); the players start shallow, on purpose. Deliver world through: work (bounty postings teach bands), institutions (exam questions teach theory), consequences (the first Initiation felony teaches law), and *NPC incomprehension* (the Clanlands guide who can't believe you don't know what a Hyuga is). One page of lore per session, in-fiction, attached to a decision. TP for discovery pays the players to dig; let them.
 
 ## Secret rolls worth pre-rolling
 

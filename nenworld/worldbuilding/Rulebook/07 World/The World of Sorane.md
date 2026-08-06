@@ -1,10 +1,8 @@
-# The World of Sorane
+[[0 Index|Index]] › [[0 Rulebook|Rulebook]] › World
 
-[[00 Read Me First|Rulebook]] › World
+**Everything on this page is a system-design addition.** The vault establishes a "Real world +" setting ([[0 World|World Building]]) with modern institutions ([[Nen in Society]]) and no geography. This file supplies an original map that *hosts* every established element — races, clans, [[Hollow]] caverns, [[Spirits]], [[Infernal]] outbreaks, [[Devil's Fruits]] — without contradicting any of it. Rename, cut, or redraw freely; the mechanical hooks survive any renaming.
 
-**Everything on this page is a system-design addition.** The vault establishes a "Real world +" setting ([[World Building]]) with modern institutions ([[Nen in Society]]) and no geography. This file supplies an original map that *hosts* every established element — races, clans, [[Hollow]] caverns, [[Spirits]], [[Infernal]] outbreaks, [[Devil's Fruits]] — without contradicting any of it. Rename, cut, or redraw freely; the mechanical hooks survive any renaming.
-
-Players know **their home region and rumors.** The rest is discovery ([[00 Read Me First]]).
+Players know **their home region and rumors.** The rest is discovery ([[0 Rulebook|Rulebook]]).
 
 ## The shape of the world
 
@@ -31,7 +29,7 @@ Where default campaigns start. Schools teach Nen theory, licenses gate work, and
 - **The Accord of Yth** — the supranational authority founded by the old kings, seated in the spire-city **Ythmar**. Sets licensing treaties, runs the [[Society Law and Licenses|Registry]]'s charter, and shelters the **[[Celestial Dragons]]** caste whose legal untouchability is the Accord's original sin. *Play here:* politics, diplomatic escort, the Gilded Bureau (Accord secret police) as patron or problem. *Threat it creates:* justice with a carve-out at the top.
 - **Karuna Republic** — reform-minded republic; the friendliest place to be young and licensed. Home of **Sella Polytechnic of Applied Nen** and the **Civil Response Program** (licensed emergency-Nen service — hero work with paperwork). *Play:* exams, response calls, campus arcs ([[Campaign Frameworks]]).
 - **Empire of Dazan** — conscription empire on Veldra's east; treats Nen users as strategic materiel, runs state training crucibles ([[Nen Growth]] crucible rules, institutionalized). *Play:* war arcs, defection stories, license reciprocity crises.
-- **Clanlands of Homura** — mountain patchwork where the great bloodline [[Clans]] hold their valleys (Hyuga terraces, Yuki high passes, Kaguya bone-shrines; the [[Kurta]] survivors are *not* on any map, which is the point). Accord law runs thin; clan law runs deep. *Play:* clan intrigue, bloodline hunters, the [[Humans and Subtypes (Races)|trait]] economy at its ugliest.
+- **Clanlands of Homura** — mountain patchwork where the great bloodline [[0 Clans|Clans]] hold their valleys (Hyuga terraces, Yuki high passes, Kaguya bone-shrines; the [[Kurta]] survivors are *not* on any map, which is the point). Accord law runs thin; clan law runs deep. *Play:* clan intrigue, bloodline hunters, the [[Humans and Subtypes (Races)|trait]] economy at its ugliest.
 - **Free City of Berrin** — port free-city, auction capital of everything that shouldn't be sold: relics, [[Devils Fruits (Rules)|fruits]], Spirit Tools, and — in the deep rings — people with traits. House **Nostrade** brokers; the **Sable Troupe** steals what brokers won't sell. *Play:* underworld campaigns, heists, the moral floor of the setting.
 
 ## Ostreva — the old world
@@ -67,4 +65,4 @@ The **Tailed Beasts** ([[Monsters]]) are scattered: three ranging the Hollowland
 
 ## Using the map
 
-Every region above names: what players *do* there, which [[Campaign Frameworks|framework]] it runs natively, and what threat scales there. Start campaigns in one region; let the rest arrive as rumors, refugees, and freight. The world is big on purpose — discovery is the reward economy ([[Progression and Training]] pays TP for it).
+Every region above names: what players *do* there, which [[Campaign Frameworks|framework]] it runs natively, and what threat scales there. Start campaigns in one region; let the rest arrive as rumors, refugees, and freight. The world is big on purpose — discovery is the reward economy ([[Rulebook/05 Progression/Progression and Training]] pays TP for it).
