@@ -1,4 +1,6 @@
-// React entry point. Mounts <App /> into #root.
-// Not yet written.
+/*
+ * React entry point. Mounts <App /> into #root.
+ * Not yet written.
+ */
 
 export {};
