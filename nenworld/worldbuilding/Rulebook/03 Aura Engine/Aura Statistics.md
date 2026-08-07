@@ -46,16 +46,18 @@ The most aura you can **project in one round** — to strikes, Guard, Drive, pri
 
 > **AO = AP × Output %**, set by your [[Ren]] rank:
 
-| Ren rank | Output % | Meaning |
-|---|---|---|
-| None (awakened only) | 2% | You can barely push |
-| Ren I | 5% | First real bursts |
-| Ren II | 8% | Combat-functional |
-| Ren III | 12% | Professional |
-| Ren IV | 16% | Elite |
-| Ren V | 20% | Total command |
+> **Output % = 2 × Ren mastery rank.**
 
-*Consequence (intended):* masters can burn their whole pool in ~5 rounds of all-out war; novices can't empty theirs in twenty. Restraint is a novice's virtue and a master's choice. [[Aura Density and Concentration|Concentration]] ([[Gyō]]/[[Kō]]) decides *where* your AO sits and how densely; nothing raises the AO total itself except Ren rank and AP (CON).
+| Ren | Output % | | Ren | Output % | Meaning |
+|---|---:|---|---|---:|---|
+| None (awakened only) | 2% | | VI | 12% | Professional |
+| I | 2% | | VII | 14% | |
+| II | 4% | | VIII | 16% | Elite |
+| III | 6% | | IX | 18% | |
+| IV | 8% | Combat-functional | X | 20% | Total command |
+| V | 10% | | | | |
+
+*Consequence (intended):* masters can burn their whole pool in ~5 rounds of all-out war; novices can't empty theirs in twenty. Restraint is a novice's virtue and a master's choice. [[Aura Density and Concentration|Concentration]] ([[Gyō]]/[[Kō]]) decides *where* your AO sits and how densely; nothing raises the AO total itself except Ren mastery and AP (CON).
 
 ## 3 · Control
 

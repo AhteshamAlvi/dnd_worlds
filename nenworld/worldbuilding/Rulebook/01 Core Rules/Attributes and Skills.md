@@ -12,7 +12,7 @@ Because CON now sets the aura ceiling and VIT sets recovery, a player's array *i
 
 ## Skills
 
-Skills are proficiencies added to attribute checks (ranks and TP costs in [[Rulebook/05 Progression/Progression and Training]]). Short list; anything uncovered is a raw attribute check.
+Skills are proficiencies added to attribute checks (ranks and Stat Point costs in [[Rulebook/05 Progression/Progression and Training]]). Short list; anything uncovered is a raw attribute check.
 
 | Skill | Attr | Covers |
 |---|---|---|

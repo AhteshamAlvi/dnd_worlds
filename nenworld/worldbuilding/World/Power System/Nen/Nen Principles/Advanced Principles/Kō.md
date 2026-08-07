@@ -5,3 +5,6 @@
 The drawback is that it leaves the rest of the user's body completely unprotected. If one Nen user uses *Kō* offensively and another uses it defensively, then unless there is a major disparity in their strength, the defensive *Kō* would be able to protect against the offensive *Kō* easily enough; however, if the defender is hit anywhere that is not protected by *Kō*, then they are sure to be destroyed. Due to the risk it carries, *Kō* is generally regarded as a purely offensive principle. 
 
 An incomplete version of this principle can be utilized without *[[Ren]]*, primarily to master the other steps before increasing the amount of aura to concentrate and contain. Some Nen users, Enhancers in particular, employ *Kō* as a Nen ability by adding conditions to it.
+
+Kō De -> Uses Chū
+Kō Yo -> Does not use Chū

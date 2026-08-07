@@ -34,7 +34,7 @@ Creature bands run on natural energy: same columns, but read Guard/Soak as hide-
 
 **Nen-user by band:** take the band row, pick 2–4 principles by concept (bodyguard: Ken+Gyō; assassin: Zetsu+In+Kō; sensor: En+Gyō), one ability per rule 3. Done.
 
-**Creature traits (attach 1–3):** *Massive* (SF per [[Scale Speed and Magnitude]]) · *Regenerating* (Body 10%/round unless fire/aura-cut) · *Instinct-principle* (one, rank I–II — [[Nen Principles (Rules)]]) · *Sense-hunter* (tracks by aura; Zetsu blinds it) · *No mind* (immune Manipulation-of-mind, reads, fear) · *Desire-bound* (Hollow: compelled toward its fixation — the exploitable tell, [[Hollow]]).
+**Creature traits (attach 1–3):** *Massive* (SF per [[Scale Speed and Magnitude]]) · *Regenerating* (Body 10%/round unless fire/aura-cut) · *Instinct-principle* (one, rank II–IV — [[Nen Principles (Rules)]]) · *Sense-hunter* (tracks by aura; Zetsu blinds it) · *No mind* (immune Manipulation-of-mind, reads, fear) · *Desire-bound* (Hollow: compelled toward its fixation — the exploitable tell, [[Hollow]]).
 
 ## Boss mechanics
 
@@ -58,13 +58,13 @@ Band shorthand once you trust it: same band Dangerous · +1 Deadly-but-possible 
 
 **Street pack (4× T0 toughs):** EVA 11 · Soak 1 · Body 30 · P 6 knives · Tactics: surround, bluff, fold at first Nen flare. *First-arc calibration: they endanger pre-awakening PCs and evaporate after.*
 
-**Registry Examiner (T2):** EVA 13 · Soak 8 · Guard 80 · Body 36 · SR 2 · staff P 60 · Ten III, Ren II, Gyō II, Ken II · **Ability "Red Ink"** — marks a touched examinee: knows their location/state 24 h (condition: must announce the mark; tell: ink-stained thumb) · Tactics: measure, never maim.
+**Registry Examiner (T2):** EVA 13 · Soak 8 · Guard 80 · Body 36 · SR 2 · staff P 60 · Ten VI, Ren IV, Gyō IV, Ken IV · **Ability "Red Ink"** — marks a touched examinee: knows their location/state 24 h (condition: must announce the mark; tell: ink-stained thumb) · Tactics: measure, never maim.
 
-**Watch Response Captain (T3):** EVA 14 · Soak 30 · Guard 300 · Body 42 · SR 4 (burst 6) · saber P 350 · Ten IV, Ren IV, Ken III, Gyō III, En II (10 m) · **"Hold the Lantern"** — projects Guard 150 onto all allies in En (condition: she cannot move her feet while holding; tell: plants her stance) · Tactics: anchor, shield, call bands honestly over the radio.
+**Watch Response Captain (T3):** EVA 14 · Soak 30 · Guard 300 · Body 42 · SR 4 (burst 6) · saber P 350 · Ten VIII, Ren VIII, Ken VI, Gyō VI, En IV (10 m) · **"Hold the Lantern"** — projects Guard 150 onto all allies in En (condition: she cannot move her feet while holding; tell: plants her stance) · Tactics: anchor, shield, call bands honestly over the radio.
 
-**Sable Troupe Blade (T3–4):** EVA 15 · Soak 40 · Guard 400 · Body 40 · SR 5 · paired knives P 500 (Kō III) · Zetsu IV, In IV, Gyō III, Ryū II · **"Curtain Call"** — In-hidden thrown blade returns to hand via Emission (condition: only blades she has named; tell: lips move) · Tactics: opens from Zetsu (surprise = flat-footed math), reads, leaves when winning stops being cheap.
+**Sable Troupe Blade (T3–4):** EVA 15 · Soak 40 · Guard 400 · Body 40 · SR 5 · paired knives P 500 (Kō VI) · Zetsu VIII, In VIII, Gyō VI, Ryū IV · **"Curtain Call"** — In-hidden thrown blade returns to hand via Emission (condition: only blades she has named; tell: lips move) · Tactics: opens from Zetsu (surprise = flat-footed math), reads, leaves when winning stops being cheap.
 
-**Adjuchas Hollow (T4 creature):** EVA 13 · Soak 250 (mass + aura) · Guard 800 · Body 400 (SF ×2) · SR 6 (Sonído burst 8) · claws P 1.5k · **Cero** P 2.5k line (tell: gathering glow, 1 round) · real Nen: In II, reads at +2 · *Desire-bound* and it *talks* · Tactics: intelligent hunger; will trade information for prey it wants more.
+**Adjuchas Hollow (T4 creature):** EVA 13 · Soak 250 (mass + aura) · Guard 800 · Body 400 (SF ×2) · SR 6 (Sonído burst 8) · claws P 1.5k · **Cero** P 2.5k line (tell: gathering glow, 1 round) · real Nen: In IV, reads at +2 · *Desire-bound* and it *talks* · Tactics: intelligent hunger; will trade information for prey it wants more.
 
 **Gillian (T5 wall):** EVA 8 · Soak 800 · Body 6k (SF ×100) · SR 3 · footfall/beam P 3k · no reads, no vows, no mind · Kūmon travel · *The tutorial in penetration math: a T3 party cannot hurt it and must not try. Evacuate, delay, call for a Master.*
 

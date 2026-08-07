@@ -15,7 +15,7 @@
 
 ## Growth and limits
 
-- SPI rises only through **extraordinary cause** — 10 TP *and* an event: surviving death, a sacred baptism, a decade-vow fulfilled, certain [[Devils Fruits (Rules)|fruits]] or relics ([[Nen Growth]]). Human cap 20 (24 with a [[0 Mutants|Mutation]]); **creation cap 16**.
+- SPI rises only through **extraordinary cause** — the Stat Point cost *and* an event: surviving death, a sacred baptism, a decade-vow fulfilled, certain [[Devils Fruits (Rules)|fruits]] or relics ([[Nen Growth]]). Human cap 20 (24 with a [[0 Mutants|Mutation]]); **creation cap 16**.
 - Raising SPI buys **no** pool and no Soak — only better odds on the game's most important single roll and its saves. It is the rarest, most valuable advancement in the game.
 - Two Nen users of identical CON/VIT/DEX are **mechanically identical in a fight** regardless of SPI; the high-SPI one simply *makes* what others only wish for.
 

@@ -7,7 +7,7 @@ Nenworld resolves uncertainty with a **d20 check**. Everything a D&D player know
 > **d20 + attribute modifier + proficiency bonus vs DC**
 
 - **Attribute modifier** — from one of the ten attributes ([[Attributes and Skills]]). Human range roughly −2 to +5; hard ceiling in practice +10 (attribute 30, reachable only by extreme races and decades of Nen reinforcement).
-- **Proficiency bonus** — from a skill or principle rank: Untrained +0, Trained +2, Expert +4, Master +6, Legendary +8. Bought with Training Points ([[Rulebook/05 Progression/Progression and Training]]).
+- **Proficiency bonus** — from a skill or principle rank: Untrained +0, Trained +2, Expert +4, Master +6, Legendary +8. Bought with Stat Points ([[Rulebook/05 Progression/Progression and Training]]).
 - Situational modifiers should be handled with **advantage/disadvantage**, not stacking +1s. If you're tempted to add a third numeric modifier, use advantage instead.
 
 **Design note.** Modifiers are bounded (max ≈ +18 for a legendary master with attribute 30) because power in this game is expressed through Guard, damage magnitude, and Speed Rating — a Vasto Lorde doesn't hit *more accurately* than a boxer by +50; it hits with force no boxer can survive or stop. This is a system-design decision that implements the lore's insistence that skill and raw power are different things ([[Nen at the Table]]).

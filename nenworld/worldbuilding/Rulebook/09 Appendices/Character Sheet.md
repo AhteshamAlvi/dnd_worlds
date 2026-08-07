@@ -42,7 +42,7 @@ GEAR                            ryn: [      ]
   Ten shroud (1–2.5% AP): [    ]
   Passive Aura Sense (10+PER+prof): [    ]
 ───────────────────────────────────────────────
-⌛ PRINCIPLES (rank I–V each)
+⌛ PRINCIPLES (mastery I–X each)
   Ten [ ]  Zetsu [ ]  Ren [ ]  Hatsu [ ]
   Gyō [ ]  In [ ]  En [ ]  Shū [ ]  Ken [ ]  Chū [ ]
   Kō [ ]  Ryū [ ]  Fū [ ]  Jū [ ]  Yū [ ]
@@ -61,7 +61,14 @@ GEAR                            ryn: [      ]
 ───────────────────────────────────────────────
 TRAINING LOG (week / focus / check / result)
 
-TP:  earned [    ]  spent [    ]  banked [    ]
+LEVEL: [  ] / 30    XP: [     ] / next [     ]   (5+L+ceil(L^2/12))
+  Stat Points:   earned [    ] spent [    ] banked [    ]
+  Dedicated SP:  STR[  ] AGI[  ] DEX[  ] CON[  ] VIT[  ]
+                 INT[  ] WIS[  ] PER[  ] CHA[  ] SPI[  ]
+  Growth Points: earned [    ] spent [    ] banked [    ]
+  Committed toward: __________ rank [   ]  GP in [    ] / [    ]
+  Catalysts completed:
+  Breakthroughs: (d20+SPI vs DC 15/18/22 for VIII/IX/X)
 ═══════════════════════════════════════════════
 COMBAT REMINDER: Allocate (≤AO) → Strike/Guard/Drive/Focus/Fuel + where (even/concentrated)
 Accuracy d20+DEX → Penetration (P>Soak? Soak=density×10) → Damage (−Soak → Guard → Body)

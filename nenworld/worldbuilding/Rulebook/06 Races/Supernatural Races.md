@@ -20,7 +20,7 @@ Rule of thumb at the table: **natural-energy beings are magnitude; Nen beings ar
 
 **Turned Vampire** *(restricted PC)* — human sheet, plus:
 - +2 STR, +1 AGI, +1 VIT; **regeneration** 5 Body HP/round (not vs fire/beheading wounds); unaging.
-- **Blood Demon Art:** a GM-co-designed mini-ability (10 EP equivalent, grows by feeding milestones, not TP) — *separate from Nen*; a Vampire may additionally train Nen like anyone ([[Vampires]] lore).
+- **Blood Demon Art:** a GM-co-designed mini-ability (10 EP equivalent, grows by feeding milestones, not Growth Points) — *separate from Nen*; a Vampire may additionally train Nen like anyone ([[Vampires]] lore).
 - **The hunger:** feed on human flesh/blood weekly or gain 1 Strain/week (max stacking) and Composure checks vs frenzy near blood. Feeding is the moral engine; the sheet won't hide it.
 - **Ends:** sunlight = P 50/round unsoakable by Guard; beheading at 0 HP = death; silver: attacks vs you +2 and wounds don't regenerate. **Tethered:** if your Original dies, you die — your maker is a second character sheet the GM keeps.
 - **Made Original** (in-play evolution, feeding-milestone-gated): sunlight immunity, tether broken, silver downgraded to irritant. Keeps the self. The campaign about *getting there* writes itself.

@@ -70,7 +70,7 @@ GM reads the party as a set: shared reason to be together, at least two ties cro
 
 ## Variant: veteran start
 
-For campaigns skipping the fodder phase: build as above, then apply [[Nen Growth]] retroactively — GM sets in-fiction years of training; typical **professional start**: awakened, AP 600–1k, Ren II–III, Control 2–3, two intermediate principles at I–II, Hatsu II with one designed form, and 10 TP already spent on the above. The affinity reveal still deserves its scene — run the Water Divination as a flashback.
+For campaigns skipping the fodder phase: build as above, then apply [[Nen Growth]] retroactively — GM sets in-fiction years of training; typical **professional start**: awakened, AP 600–1k, Ren IV–VI, Control 2–3, two intermediate principles at II–IV, Hatsu IV with one designed form, and roughly level 13–15 with its Stat and Growth Points already invested. The affinity reveal still deserves its scene — run the Water Divination as a flashback.
 
 ## Different races, one party
 

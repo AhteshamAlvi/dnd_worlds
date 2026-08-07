@@ -24,7 +24,7 @@
 | **Manifestation** | SPI roll to make new Nen *hold* (after all prep) | [[Nen Manifestation]] |
 | **Strain** | Aura-overuse wear: −1 d20s, −10% AO each | [[Injury Recovery and Conditions]] |
 | **Overdraw** | Burning Body HP as aura (1:2) at 0 AP | [[Injury Recovery and Conditions]] |
-| **TP — Training Points** | Session-earned advancement currency (never buys AP) | [[Rulebook/05 Progression/Progression and Training]] |
+| **XP / SP / GP** | The three advancement currencies: Experience (levels), Stat Points (attributes), Growth Points (mastery). None converts into another; none buys AP | [[Rulebook/05 Progression/Progression and Training]] |
 | **EP — Effect Points** | Hatsu design budget (rank + Conditions) | [[Hatsu Design]] |
 | **Condition** | Unbreakable ability parameter; grants EP | [[Conditions Vows and Risk (Rules)]] |
 | **Vow (Limitation)** | Breakable oath; multiplies Power (×1.25–×3, riders ×1.5/×2) | [[Conditions Vows and Risk (Rules)]] |
@@ -63,7 +63,7 @@ Saves: Reflex (AGI) · Fortitude (VIT body / CON systemic) · **Spirit (SPI)** v
 
 **Density:** = region aura ÷ region SU. **Soak = density × 10.** Normal = AO ÷ 100.
 **Gyō transfer %:** I 40 · II 55 · III 70 · IV 85 · V 100. **Ten containment %:** I 80 · II 88 · III 94 · IV 98 · V 100.
-**Ten shroud:** 1% AP (I–II) · 1.5% (III) · 2% (IV) · 2.5% (V).
+**Ten shroud:** 1% AP (II–IV) · 1.5% (VI) · 2% (VIII) · 2.5% (X).
 **En:** radius = 2/5/10/25/50 m by rank; upkeep = radius/round.
 **Kō:** Ren→Gyō→Zetsu→Ten→Chū, all AO into one region (emergent, no flat ×2). Offense ≈ full AO delivered; region Soak = density × 10; every other region Soak 0.
 **Chū:** bonus = round(k·log₂(1+density)), k=1 (2 Enhancer), rank cap +2/+4/+6/+8/+10.
@@ -76,5 +76,5 @@ Saves: Reflex (AGI) · Fortitude (VIT body / CON systemic) · **Spirit (SPI)** v
 
 **Encounter check:** penetration both ways → one-hit check → RTD ratio (≤0.75 easy · ~1 dangerous · >2 don't) → endurance. Bands: +1 deadly-possible · +2 not by force.
 
-**TP:** 2/session + up to 3 (danger/goal/discovery/vow-kept), +2 per arc. **Aura grows by raising CON** (pool = 30×1.6^(CON−10), derived, no cap): CON breakthroughs via regimens + events; Nen-tempering breaks the mundane cap 20 — [[Nen Growth]].
+**XP:** a fight's Development Value (Pressure 0–4 + Novelty 0–2 + Adaptation 0–2 + Stakes 0–1 + Insight 0–1), plus quests and discoveries; next level = 5+L+⌈L²/12⌉. **Each level:** 12 Stat Points + 12 Growth Points. **Stat cost** 1+⌊S/8⌋+⌈S²/200⌉ · **Mastery cost** ⌈R(R+1)/4⌉ · **Breakthrough** d20+SPI vs 15/18/22 for VIII/IX/X, failure burns half the stake. **Aura grows by raising CON** (pool = 30×1.6^(CON−10), derived, no cap): CON breakthroughs via regimens + events; Nen-tempering breaks the mundane cap 20 — [[Nen Growth]].
 **Manifestation (SPI):** d20 + SPI + prof vs DC — only after Knowledge (WIS) / execution (DEX) / resources (AP) / rules are all met. Awaken Hatsu 13 · bind Condition 13–16 · Contract 16 · unprecedented 20–24.

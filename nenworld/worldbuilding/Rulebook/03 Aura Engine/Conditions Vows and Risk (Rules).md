@@ -18,7 +18,7 @@ Mechanically, Conditions grant **Effect Points (EP)** to an ability's design bud
 - **Tolls** are Conditions that only *cost* (pain, a day of your memory, a week of numbness in the arm): graded by real story-weight, same EP values.
 - **Optional-boost procedures** (the [[Ryomen Sukuna|Sukuna]] pattern): telegraphing procedures the user *may* perform — pointing, tracing, a chant, a hand sign. Each performed step grants **+25% Power on that use** (max +100%), and each *gives the enemy real information* (direction, timing: they gain +2 EVA or a free reaction against it). Steps must genuinely telegraph or they grant nothing.
 
-**Redundancy clause:** at Hatsu V a user may retire one Minor Condition per ability as their skill outgrows it ([[Conditions]] lore: "occasionally rendered redundant by high proficiency"), refunding its EP.
+**Redundancy clause:** at Hatsu X a user may retire one Minor Condition per ability as their skill outgrows it ([[Conditions]] lore: "occasionally rendered redundant by high proficiency"), refunding its EP.
 
 ## Vows (Limitations) — breakable oaths, multiplied power
 
@@ -75,7 +75,7 @@ Any "no" → the clause is **cosmetic: it grants ×1 / +0 EP.** Tell the player 
 
 ## Worked example — one blast, three ways
 
-Sera, Emitter (AO 200, Control 4 ×1.25, Hatsu III), fires her bolt with 100 committed Fuel:
+Sera, Emitter (AO 200, Control 4 ×1.25, Hatsu VI), fires her bolt with 100 committed Fuel:
 
 - **Plain:** P = 100 × 100% = **100**. Pool cost 125.
 - **Conditioned:** she adds a chant + palm-point (two optional-boost steps, +50%, enemy gets +2 EVA vs it): P = **150**, same cost.

@@ -20,7 +20,7 @@ Months of guided practice. In downtime terms ([[Rulebook/05 Progression/Progress
 ### The fast way — Initiation
 An awakened user forces the student's nodes open with a burst of their own aura (an "attack," in the lore's pointed phrasing). One action by the initiator; the student immediately awakens and immediately starts **leaking**:
 
-- **Leaking:** lose 5% of max AP per hour awake; while leaking, all checks take **−2** and sleep restores only half. Ends when the student learns [[Ten]] rank I.
+- **Leaking:** lose 5% of max AP per hour awake; while leaking, all checks take **−2** and sleep restores only half. Ends when the student learns [[Ten]] rank II.
 - The student makes a CON check DC 13 at Initiation. Fail: **Aura Shock** — bedridden, Exhausted, and unable to attempt Ten for 1 week per point failed by. Fail by 10+: roll on the injury table ([[Injury Recovery and Conditions]]); malicious or botched Initiations have killed.
 - An unwilling target resists with a **Spirit save (SPI)** vs the initiator's **10 + SPI mod + Ren rank** — forced Initiation is one person's Nen prised into another, a [[Nen Manifestation|manifestation]] the target's own spirit fights.
 - **Indirect awakening** (healing, "first-class Manipulation," repeated exposure to Hatsu used *on* the person) uses the same mechanics at GM discretion, usually with the CON check at advantage — gentler, rarer, and a great story lever.
@@ -32,22 +32,22 @@ Any partial event (interrupted meditation program at 2–3 successes, surviving 
 
 Once awakened, the [[0 Four Major Principles|Four Major Principles]] come **in order** — each is the foundation of the next (this is the one fixed sequence in the whole system; after Hatsu, the Path branches freely, dependency-gated — [[The Nen Path]]).
 
-Each principle is learned to rank I via a **training program** ([[Rulebook/05 Progression/Progression and Training]] has the general system; specific programs below) and deepened later (ranks II–V) as its entry in [[Nen Principles (Rules)]] describes.
+Each principle is learned to rank I via a **training program** ([[Rulebook/05 Progression/Progression and Training]] has the general system; specific programs below) and deepened later (ranks II–X) as its entry in [[Nen Principles (Rules)]] describes.
 
 | Principle | Baseline program (with teacher) | Self-taught | Program check |
 |---|---|---|---|
 | [[Ten]] I | 1 week | 3 weeks | CON (Endurance) DC 10, 3 successes |
-| [[Zetsu]] I | 1 week (requires Ten I) | 2 weeks | CON (Endurance) DC 13, 2 successes |
-| [[Ren]] I | 2 weeks (requires Ten I) | 6 weeks | CON (Endurance) DC 13, 3 successes |
-| [[Hatsu]] I | 2 weeks (requires Ren I) | 4 weeks | SPI check DC 13, 2 successes |
+| [[Zetsu]] I | 1 week (requires Ten II) | 2 weeks | CON (Endurance) DC 13, 2 successes |
+| [[Ren]] I | 2 weeks (requires Ten II) | 6 weeks | CON (Endurance) DC 13, 3 successes |
+| [[Hatsu]] I | 2 weeks (requires Ren II) | 4 weeks | SPI check DC 13, 2 successes |
 
 - Checks are made per training week; a week with a failed check still counts toward time but not successes.
 - **Crisis learning:** the first rank of any Principle can instead snap into place at a dramatic moment (drowning in your own leak, a killer's bloodlust washing over you): the player declares the attempt, makes the program check at DC +3 — success grants rank I on the spot, failure inflicts one level of Strain ([[Injury Recovery and Conditions]]). Once per principle. This is the action-movie version of the lore's "learn or die" awakenings, budgeted so it can't replace training wholesale.
-- A **teacher** must hold the principle at rank II+ to teach rank I ([[Nen Growth]] for teacher quality effects).
+- A **teacher** must hold the principle at least two ranks above what they teach (so rank III+ to teach rank I) ([[Nen Growth]] for teacher quality effects).
 
 ## Water Divination (Tier 3 — Discovery)
 
-Requires Ren I. The character performs [[Water Divination]] — glass, water, leaf, Ren — and their type shows itself ([[Types and Affinity (Rules)]] for determination and what the GM secretly rolls). Non-negotiable stage direction: **the player should not know the mechanics behind the reveal.** The water moves, or sweetens, or fouls; let a teacher (or a library, or a bar bet) interpret it in-fiction.
+Requires Ren II. The character performs [[Water Divination]] — glass, water, leaf, Ren — and their type shows itself ([[Types and Affinity (Rules)]] for determination and what the GM secretly rolls). Non-negotiable stage direction: **the player should not know the mechanics behind the reveal.** The water moves, or sweetens, or fouls; let a teacher (or a library, or a bar bet) interpret it in-fiction.
 
 After divination, the character may:
 - Train their natural category (Hatsu exercises — the geyser drill from [[Hatsu Training]]),
@@ -71,7 +71,7 @@ Zetsu ┴──► In               │      ├──► Jū  (Ken+Chū+Hatsu)
 Hatsu ───────────────────────────────► Yū  (Ren+Hatsu+Gyō+Chū) · Fū · Jū · abilities
 ```
 
-Full prerequisites, ranks, costs, and effects: [[Nen Principles (Rules)]]. Time and TP costs: [[Nen Growth]] and [[Rulebook/05 Progression/Progression and Training]].
+Full prerequisites, ranks, costs, and effects: [[Nen Principles (Rules)]]. Time and Growth Point costs: [[Nen Growth]] and [[Rulebook/05 Progression/Progression and Training]].
 
 ## GM pacing dials
 

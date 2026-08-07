@@ -40,17 +40,17 @@ Full-commit rounds by band exemplar: T1 ≈ 10 · T2 ≈ 6 · T3 ≈ 5.7 · T4 �
 
 ## 5 · Lore-fidelity spot checks
 
-- **"Ken ≈ 10× Ten"** ([[Ken]]): initial design had Ten's shroud at 2% of AP → came out 4.5×, **failed.** Fixed: shroud = 1% (ranks I–II) — a working professional's Ken (~100 committed, whole-body Soak via density = 100/100×10 = 10) over their Ten shroud (11 → Soak ~1) = **9–10×.** ✓ Recorded in [[Nen Principles (Rules)]]. *(Honest label: both percentages are design inventions; only the 10× ratio is lore.)*
+- **"Ken ≈ 10× Ten"** ([[Ken]]): initial design had Ten's shroud at 2% of AP → came out 4.5×, **failed.** Fixed: shroud = 1% (ranks II–IV) — a working professional's Ken (~100 committed, whole-body Soak via density = 100/100×10 = 10) over their Ten shroud (11 → Soak ~1) = **9–10×.** ✓ Recorded in [[Nen Principles (Rules)]]. *(Honest label: both percentages are design inventions; only the 10× ratio is lore.)*
 - **"More durable than a bunker… force of tactical missiles"** ([[Rulebook/05 Progression/Progression and Training]]): elite Enhancer Kō delivers ~its full AO into one fist (P ~900+ at AO 960, × Enhancement × any vows) vs bunker wall (Soak 60, HP 2k) → down in a couple of blows; elite Ken Guard 600 → whole-body Soak 60 = bunker-grade skin. ✓ (The old "×2 Kō = P 1,280" is gone; the density engine delivers ~AO instead, landing at the same order of magnitude — see §5b.)
 - **"Mach speeds for powerful non-Enhancers"**: elite Drive + Chū stack reaches SR 6–7 (≈ Mach 1) at sustainable cost; Enhancers exceed it (half-cost Chū). ✓
-- **En 2 m minimum / 50 m mastery** ([[En]]): reproduced as rank I/V radii, upkeep = radius/round makes 50 m "extremely tiring" for anyone below elite (50/round vs a pro's AO 120). ✓
+- **En 2 m minimum / 50 m mastery** ([[En]]): reproduced as rank II / X radii, upkeep = radius/round makes 50 m "extremely tiring" for anyone below elite (50/round vs a pro's AO 120). ✓
 - **Yū "consumes far more aura than any other principle"** ([[Yū]]): 20 HP of internal repair ≈ 700 pool from a professional's 1,100 — day-scale, never combat-spam. ✓
 
 ## 5b · The density engine (surface-area revision)
 
 The concentration mechanics ([[Aura Density and Concentration]]) were verified to *reproduce* the legacy magnitudes while removing the "×2 Kō" fudge — the numbers didn't move, the reason did:
 
-- **Kō ≈ old ×2, emergent.** Pro AO 130, fist 2.5 SU, Gyō III (70%) + Zetsu (→~100%) + Ten III (94% containment): final fist aura **122**, offensive Power (×0.8 TRA) **98.** Old model: 2 × 60 Strike × 0.8 = **96.** Match within 2%. ✓ The ×2 was always "put your whole output in one point"; the surface-area math *is* that, with a reason and a leak (Ten containment) the old hack couldn't express.
+- **Kō ≈ old ×2, emergent.** Pro AO 130, fist 2.5 SU, Gyō VI (70%) + Zetsu (→~100%) + Ten VI (94% containment): final fist aura **122**, offensive Power (×0.8 TRA) **98.** Old model: 2 × 60 Strike × 0.8 = **96.** Match within 2%. ✓ The ×2 was always "put your whole output in one point"; the surface-area math *is* that, with a reason and a leak (Ten containment) the old hack couldn't express.
 - **No double-dip for abilities.** A basic strike concentrated by Kō ≈ 2× a balanced (half-AO) strike — the ×2 lives there, for basic strikes only. An *ability* already commits full Fuel, so Kō adds it no damage, only spatial concentration and nakedness. This closes the old exploit of stacking "×2 Kō" on top of a full-Fuel ability nuke (which is why [[Hatsu Library|Mountain Splitter]] dropped from a mispriced P 675 to a correct P 225).
 - **Defensive Kō beats offensive Kō** ([[Kō]] lore): same 122 fist aura, *defending*, gives local Soak = density × 10 = **488** — four times the 122 it would *deliver* attacking. So a defensive Kō turns aside an offensive Kō head-on, while a hit anywhere else (Soak 0) is lethal. The asymmetry is the physics (penetration is pressure/area; damage is total energy), and it hands the lore its exact ruling for free. ✓
 - **Chū stays bounded.** With k = 1 (Enhancers k = 2), the log curve gives whole-body Chū (density ~2) **+2** (Enhancer +3), a Kō-concentrated fist (density ~49) **+6 base / Enhancer +11 → rank-capped at +10.** Diminishing returns *plus* the rank cap mean density can spike 40× while the attribute bonus rises only from +2 to a capped +10 — no runaway, and the reinforcement stays a supplement to the aura-Power, never the main event. ✓
@@ -82,7 +82,7 @@ T2 pro with a maximum ×5 vow stack: one P 600 hit — a T3-grade *moment* on a 
 ## 9 · Known rough edges (watch in play)
 
 Honesty section — items verified *survivable*, not *perfect*:
-- **T4+ full-commit sustain (4.5 rounds)** runs a hair under the 5–6 target; masters end fights abruptly. Intended flavor, but if it feels twitchy, let Ken's discount apply to one more allocation slot at rank V.
+- **T4+ full-commit sustain (4.5 rounds)** runs a hair under the 5–6 target; masters end fights abruptly. Intended flavor, but if it feels twitchy, let Ken's discount apply to one more allocation slot at rank X.
 - **Control 4 at low AP** (Fern pattern) is the strongest legal early build; the gate is fiction (Control 4 needs a rare teacher — [[Nen Growth]]). GMs who hand out Control-4 teachers cheap will see why the gate exists.
 - **AoE fuel surcharge (×1.5)** may still underprice large-radius control against minion-heavy tables; if AoE dominates, raise to ×2 — single knob, no cascade.
 - **The Nen-null compensation package** ([[Humans and Subtypes (Races)]]) is deliberately *not* equal at high band; it's a premise, priced for the story it buys, and says so.
@@ -113,3 +113,49 @@ STR gained a derived magnitude — **Force Factor = 2^((STR−10)/4)**, ×1.00 a
 - **Human calibration is honest.** STR 20 (the once-a-generation record) = 566 kg deadlift, just past the real all-time equipped record (~500 kg); STR 19 = 476 kg ≈ the real raw-ish ceiling. The mundane cap lands where reality runs out, and 21+ is flagged superhuman-only. ✓
 
 The Force Factor is an addition to STR's *physical* magnitude, not a rebalance of aura combat — §§1–10's canary checks were rerun above and still pass. *(Honest label: the 100 kg/50 kg STR-10 anchors and the per-+4 doubling are design inventions chosen to land the human cap on reality; only "strength scales exponentially while the die stays linear" is the load-bearing principle.)*
+
+## 13 · The three-track progression overhaul (levels, Stat Points, Growth Points)
+
+The advancement layer was replaced wholesale ([[Rulebook/05 Progression/Progression and Training|Progression and Training]], [[Nen Growth]]). Every figure below was computed, not asserted.
+
+**XP is the supplied curve, unchanged.** `5 + L + ⌈L²/12⌉` gives 7 / 13 / 24 / 39 / 59 / 83 / 105 at levels 1 / 5 / 10 / 15 / 20 / 25 / 29, summing to **1,310** for 1 → 30 (119 to reach 10, 502 to reach 20). ✓
+
+**Both cost curves were then loosened to raise the ceiling**, on the brief that a level-30 character going all out — levels *and* quests — should be able to reach total mastery of one advanced principle, while doing it everywhere stays impossible.
+
+| Curve | Was | Now | Effect |
+|---|---|---|---|
+| Stat Point cost | `1 + ⌊S/6⌋ + ⌈S²/120⌉` | **`1 + ⌊S/8⌋ + ⌈S²/200⌉`** | 10 → 30 falls 157 → **110**; 10 → 28 falls 132 → **93** |
+| Growth Point cost | `R(R+1)/2` | **`⌈R(R+1)/4⌉`** | one principle to X falls 220 → **113** |
+| Per level | 8 SP + 8 GP | **12 SP + 12 GP** | 348 of each across 29 level-ups |
+
+Both remain strictly increasing per step (SP 2 → 9, GP 1 → 28), so every additional point and rank still costs more than the last.
+
+**The foundation cap is what makes total mastery expensive, not the curve.** Mastery X in an advanced principle drags every prerequisite to X with it. Computed closures: [[Fū]] needs 5 principles at X (itself + En, Hatsu, Ten, Ren) · [[Kō]] needs 6 · [[Ryū]], [[Jū]], and [[Yū]] need 7 each. So the cheapest complete advanced mastery is **5 × 113 = 565 GP nominal**, and the dearest is 791.
+
+**Breakthrough variance was the real wall, and it was fixed rather than ignored.** Under the old all-or-nothing failure rule a Fū-X path cost **1,113 GP in expectation** at SPI +4 — twice the nominal price, and unreachable. Two changes bring it into range:
+
+1. **Failure destroys half the committed GP** (9 / 12 / 14 at VIII / IX / X), not all of it.
+2. **An explicit modifier table** ([[Nen Growth]]), making +4 to +8 over raw SPI the *expected* state of a prepared attempt rather than a rarity.
+
+Expected GP for one principle taken to X, and for the cheapest advanced path:
+
+| Total modifier | p(VIII / IX / X) | Per principle to X | Fū path (×5) |
+|---|---|---:|---:|
+| +4 | 50% / 35% / 15% | 223 | 1,113 |
+| +6 | 60% / 45% / 25% | 175 | 875 |
+| +8 | 70% / 55% / 35% | 152 | **761** |
+| +10 | 80% / 65% / 45% | 139 | 693 |
+
+**The three targets, checked.**
+
+- *Levels alone cannot buy an advanced X.* 29 level-ups pay **348 GP** against a 761-expected path at +8. A levels-only character reaches **43%** of it. ✓
+- *Levels plus a campaign of questing can.* At +8 the shortfall is ~413 GP from quests, roughly matching what levelling paid — so questing is genuinely required, and roughly doubles a dedicated character's income. ✓
+- *Everything at X stays impossible.* All fifteen principles to X costs **1,695 GP nominal** and ~2,280 in expectation, against ~760 for an all-out career — and all ten attributes to 30 costs **1,100 SP** against 348 from levels. Both are three to four times beyond a completionist's entire budget. ✓
+
+**Stat side.** One attribute from 10 to 30 now costs **110 SP**, about a third of what levelling pays across a whole career: affordable once, deliberately, if quests carry the rest of the sheet. A second pinnacle is not something a career has room for. The mastery-X gate stays at 28 (**93 SP**), so the last two points to 30 cost a further **17 SP and unlock nothing mechanical** — 30 remains an achievement past the point of usefulness, exactly as specified. ✓
+
+**Downstream figures rechecked.** Control ranks were rescaled with the GP curve (2 / 4 / 7 / 11 for Control 2–5, holding their old share of a principle's cost). §§1–3 (accuracy bounds, penetration walls) depend on attribute *values* and density, not on how those values were purchased, and are unaffected. `30 × 1.6^(CON−10)` is likewise untouched — CON simply costs Stat Points now. At the new cap CON 30 still implies a pool of **363k**, consistent with the top of [[Canon Benchmarks]].
+
+⚠ **Watch in play.** DC 22 for Mastery X is still unreachable on a bare d20 + SPI at average SPI (+0 gives 0%). That is now intentional — the modifier table is the route, and X is meant to be a prepared, supported, once-in-a-career attempt. If it proves too fiddly at the table, drop DC X to 20 rather than inflating SPI.
+
+*(Honest labels: the XP formula, mastery thresholds, Catalyst and Breakthrough gates, and the foundation-cap rule are supplied design. The **two cost curves**, the **12 SP + 12 GP per level** grant, the **half-loss failure rule**, the **Breakthrough modifier table**, **Control's GP prices**, **skills costing Stat Points**, the **Hatsu EP budget across I–X**, and the **Ren/Chū continuous scales** are this book's inventions, chosen to land the supplied curves on the power bands this book already had.)*

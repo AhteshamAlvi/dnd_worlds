@@ -65,4 +65,4 @@ The **Tailed Beasts** ([[Monsters]]) are scattered: three ranging the Hollowland
 
 ## Using the map
 
-Every region above names: what players *do* there, which [[Campaign Frameworks|framework]] it runs natively, and what threat scales there. Start campaigns in one region; let the rest arrive as rumors, refugees, and freight. The world is big on purpose — discovery is the reward economy ([[Rulebook/05 Progression/Progression and Training]] pays TP for it).
+Every region above names: what players *do* there, which [[Campaign Frameworks|framework]] it runs natively, and what threat scales there. Start campaigns in one region; let the rest arrive as rumors, refugees, and freight. The world is big on purpose — discovery is the reward economy ([[Rulebook/05 Progression/Progression and Training]] pays XP for it).

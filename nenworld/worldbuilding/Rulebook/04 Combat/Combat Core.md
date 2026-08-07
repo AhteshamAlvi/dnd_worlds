@@ -6,7 +6,7 @@ Rounds are **6 seconds**. Distances are meters. The heart of Nen combat is the *
 
 - **Initiative:** d20 + **PER** mod, once per combat — reacting first is *noticing* first, PER's job ([[Attributes and Skills]]). Ties: higher PER.
 - **Speed override:** anyone with SR 3+ above an opponent acts before them regardless of the roll ([[Scale Speed and Magnitude]]).
-- **Surprise:** attackers unseen and unsensed (Stealth vs Perception; [[Zetsu]]/[[In]] vs Aura Sense/[[Gyō]] for the aura layer) get one **surprise round**. The surprised are *flat-footed*: no reactions, no Allocation — their only Guard is a standing [[Ten]] shroud (rank II+). This is why assassination works in this world, and why masters sleep in Ten IV.
+- **Surprise:** attackers unseen and unsensed (Stealth vs Perception; [[Zetsu]]/[[In]] vs Aura Sense/[[Gyō]] for the aura layer) get one **surprise round**. The surprised are *flat-footed*: no reactions, no Allocation — their only Guard is a standing [[Ten]] shroud (rank IV+). This is why assassination works in this world, and why masters sleep in Ten VIII.
 
 ## Your turn
 
@@ -24,7 +24,7 @@ Allocation has **two axes**: *how much* AO goes to each purpose, and *where on t
 
 - **Strike** — offense: aura carried into your attacking region. Delivered as damage = (region aura × Efficiency × multipliers) ([[Aura Statistics]]).
 - **Guard** — defense: aura spread as a protective layer. **Whole-body Soak = Guard ÷ 10** (this is the density formula for even spread — [[Aura Density and Concentration]]); damage depletes Guard before Body. Refreshes each turn; [[Nen Principles (Rules)|Ken]] discounts sustained Guard.
-- **Drive** — speed: +1 SR for 10/round; each further +1 doubles (20, 40, 80…). Max steps: **1**, +1 at Ren III, + [[Nen Principles (Rules)|Chū]] SR on top.
+- **Drive** — speed: +1 SR for 10/round; each further +1 doubles (20, 40, 80…). Max steps: **1**, +1 at Ren VI, + [[Nen Principles (Rules)|Chū]] SR on top.
 - **Focus** — senses: eyes-[[Gyō]] (5/round), [[En]] (radius/round), Chū-sense boosts.
 - **Fuel** — abilities ([[Hatsu Design]]) and principle charges (Fū boundary, Jū rejection).
 
@@ -32,11 +32,11 @@ Allocation has **two axes**: *how much* AO goes to each purpose, and *where on t
 - **Even** (default / [[Nen Principles (Rules)|Ken]]): Guard spread over 100 SU → uniform Soak = Guard ÷ 10, no thin spot to exploit.
 - **Concentrated** ([[Gyō]]/[[Kō]]): aura pulled into one region → that region's density (and Soak, and delivered Power) spikes; everywhere else thins.
 - **Weighted** ([[Ryū]]): any split, recomputed per region.
-At the table you only compute the regions in play (your striking limb, the limb that gets hit). The module computes all of them. **Most fighters below Ren II fight "even" and never touch Axis 2** — concentration is a learned toolkit.
+At the table you only compute the regions in play (your striking limb, the limb that gets hit). The module computes all of them. **Most fighters below Ren IV fight "even" and never touch Axis 2** — concentration is a learned toolkit.
 
 **Committed aura is spent** (× Control — it's flowing out of you; that's what [[Ren]] *is*). Unspent AO doesn't bank. Novices commit small; that's realism, not punishment.
 
-**Default for the unpracticed:** until Ren II, one crude thing per round — all Strike *or* all Guard, even distribution. [[Gyō]] I unlocks concentration; Ren II unlocks splitting purposes; [[Ryū]] unlocks *reshaping* mid-round.
+**Default for the unpracticed:** until Ren IV, one crude thing per round — all Strike *or* all Guard, even distribution. [[Gyō]] I unlocks concentration; Ren IV unlocks splitting purposes; [[Ryū]] unlocks *reshaping* mid-round.
 
 ## Attacks: accuracy → penetration → damage
 
@@ -78,7 +78,7 @@ Opposed **STR Grappling** (attacker) vs **STR Grappling or AGI Acrobatics** (def
 
 ## Sustaining principles under fire
 
-Any Body damage (post-Guard) while maintaining sustained principles → **CON (Endurance) check** DC 10 + damage÷10 (max +10) — holding aura together while hurt is stamina, not a lost willpower stat. One check covers all held principles. Fail: they drop at your action's end. [[Nen Principles (Rules)|Ten]] rank III+ protects itself.
+Any Body damage (post-Guard) while maintaining sustained principles → **CON (Endurance) check** DC 10 + damage÷10 (max +10) — holding aura together while hurt is stamina, not a lost willpower stat. One check covers all held principles. Fail: they drop at your action's end. [[Nen Principles (Rules)|Ten]] rank VI+ protects itself.
 
 ## Nonlethal, called shots, executions
 
@@ -88,11 +88,11 @@ Any Body damage (post-Guard) while maintaining sustained principles → **CON (E
 
 ## Worked round (professional duel)
 
-Darun (AP 1.1k, AO 130, Control ×1.4, **DEX 12 (+1)**, STR 14 (+2), Weapons Expert +4, Transmuter, Ten III, Gyō III, Zetsu II, Chū II, Ken II) vs a Coachman puppet (Guard 300 even, Soak 30, attack P 90). Transmuter using raw force runs at adjacent-Enhancement 80%.
+Darun (AP 1.1k, AO 130, Control ×1.4, **DEX 12 (+1)**, STR 14 (+2), Weapons Expert +4, Transmuter, Ten VI, Gyō VI, Zetsu IV, Chū IV, Ken IV) vs a Coachman puppet (Guard 300 even, Soak 30, attack P 90). Transmuter using raw force runs at adjacent-Enhancement 80%.
 
 *Round 1 — even stance.* Allocation 60 Guard (even → whole-body Soak 6) + 60 Strike (into the sword arm) + 10 eyes-Gyō = 130 AO ✓ (pool ~180).
 His attack: Physical Force = sword 1d10 (5.5) × **2.0 (STR 14 Force Factor)** = 11, + 60 Strike × 0.8 (48 aura) = P ~59. **Penetration: 59 > Soak 30 ✓.** *Accuracy:* d20 **+ 1 (DEX) + 4 (Weapons)** vs EVA 12 — DEX decides the landing, STR's Force Factor set only how hard, never whether it landed. Hits, damage 1d10×10 (≈P 55 row), a low roll of 44 − 30 Soak = **14** into puppet Guard. He's chipping — wrong tool.
 
-*Round 2 — Kō, after a Read.* His PER (Insight) + Gyō III beats the puppet's control: its Guard is even, no thin spot, but also no surprise coming. He commits to [[Nen Principles (Rules)|Kō]] — the full sequence ([[Aura Density and Concentration]]): Ren gives AO 130 → Gyō III + Zetsu drive ~100% of it into his fist → Ten III contains 94% → **Final fist aura ≈ 122, density ≈ 49**. Chū II reads that density → **+4 STR** (capped), raising his effective STR to 18 (Force Factor ×4.0). 
+*Round 2 — Kō, after a Read.* His PER (Insight) + Gyō VI beats the puppet's control: its Guard is even, no thin spot, but also no surprise coming. He commits to [[Nen Principles (Rules)|Kō]] — the full sequence ([[Aura Density and Concentration]]): Ren gives AO 130 → Gyō VI + Zetsu drive ~100% of it into his fist → Ten VI contains 94% → **Final fist aura ≈ 122, density ≈ 49**. Chū IV reads that density → **+4 STR** (capped), raising his effective STR to 18 (Force Factor ×4.0). 
 Attack Power = Physical Force (5.5 blade × 4.0 = 22) + 122 × 0.8 (98 aura) = **P ~120.** Penetration 120 > 30 ✓; damage 2d10×10 (≈P 110 row) ≈ 110 − 30 = **80** into puppet Guard — about 2× the even swing's Power, from the *same* 130 AO, just concentrated (with a Chū-boosted fist behind it). **The price:** every region but that fist is Soak 0 — if the puppet's P 90 counter lands anywhere else, it hits bare Body.
 *The lesson players learn:* DEX lands it, STR and concentration make it hurt, density decides *whether* it penetrates, reads decide *where*, and Kō's power buys itself with your own safety.

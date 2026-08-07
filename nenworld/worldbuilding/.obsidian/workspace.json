@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "World/Power System/Nen/Nen Principles/Advanced Principles/Kō.md",
+                "file": "Rulebook/01 Core Rules/Attributes/0 Attributes.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Kō"
+              "title": "0 Attributes"
             }
           }
         ]
@@ -208,6 +208,7 @@
   },
   "active": "be4a1dc5a8941022",
   "lastOpenFiles": [
+    "World/Power System/Nen/Nen Principles/Advanced Principles/Kō.md",
     "Rulebook/01 Core Rules/Attributes/0 Attributes.md",
     "Rulebook/01 Core Rules/Attributes/Agility.md",
     "World/Groups/Organizations/0 Organizations.md",
@@ -233,7 +234,6 @@
     "Characters/Bleach/0 Bleach.md",
     "Characters/Demon Slayer/0 Demon Slayer.md",
     "Characters/HunterXHunter/0 HunterXHunter.md",
-    "Characters/Black Clover/0 Black Clover.md",
     "World/Power System/Nen/Nen Path.canvas",
     "World/Races/Current Species/Racial Subtypes",
     "World/Races/Current Species/Mutants",

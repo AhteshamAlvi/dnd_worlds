@@ -1,0 +1,11 @@
+{
+  "name": "nenworld",
+  "private": true,
+  "type": "module",
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "npm run dev -w @nenworld/workbench",
+    "test": "npm run test -w @nenworld/engine",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

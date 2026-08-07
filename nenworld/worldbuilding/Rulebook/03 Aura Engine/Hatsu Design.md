@@ -16,19 +16,21 @@ The system for building original abilities. It implements the lore scaffold ([[D
 
 > **Total EP = Hatsu rank budget + Condition EP (per ability)**
 
-| Hatsu rank | Budget (EP) | What it feels like |
-|---|---|---|
-| I | 10 | A seed: one modest form |
-| II | 20 | A real signature move |
-| III | 35 | Two or three forms; a professional's name-maker |
-| IV | 55 | A mature, feared ability |
-| V | 80 | A life's work |
+| Hatsu | Budget (EP) | What it feels like | | Hatsu | Budget (EP) |
+|---|---:|---|---|---|---:|
+| I | 5 | The first spark | | VI | 35 |
+| II | 10 | A seed: one modest form | | VII | 45 |
+| III | 15 | | | VIII | 55 |
+| IV | 20 | A real signature move | | IX | 67 |
+| V | 27 | | | X | 80 |
+
+At a glance: **II** is a seed, **IV** a real signature move, **VI** a professional's name-maker, **VIII** a mature and feared ability, **X** a life's work.
 
 - The budget is shared across **all** the user's abilities and forms (three small abilities or one great one — [[Fern]] vs [[Yami Sukehiro|Yami]] patterns both legal).
 - **Forms/stages** are separate purchases from the same pool, each unlocked by an earned growth trigger — never bought mid-scene, never granted by rank-up alone.
 - At each Hatsu rank-up the player may also **refit** (rebuild forms with current wisdom, EP-neutral) — abilities are grown, and growth includes pruning.
 - **Off-type primary:** an ability whose *primary* category isn't yours permanently locks 10% of your total budget (the lore's stagnation risk, priced). Mastery ceilings by category apply ([[Types and Affinity (Rules)]]).
-- **Copied abilities** (learned from watching someone else): capped at rank III equivalence, never grow forms, and lock 20% budget. "You can't copy your way to mastery" ([[Nen at the Table]]).
+- **Copied abilities** (learned from watching someone else): capped at rank VI equivalence, never grow forms, and lock 20% budget. "You can't copy your way to mastery" ([[Nen at the Table]]).
 
 ## Component menu
 

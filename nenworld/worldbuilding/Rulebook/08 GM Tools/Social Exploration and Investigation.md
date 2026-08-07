@@ -43,7 +43,7 @@ The noncombat systems. One engine throughout ([[Core Resolution]]): intent → l
 
 **Camps — the Zetsu dilemma** (the setting's signature camping rule): sleeping in [[Zetsu]] recovers aura ×3 and hides you from everything aura-sensed — *and you are defenseless and blind to the aura layer.* Watch rotations, alarm perimeters (a tripwire [[Hatsu Library|Razor Psalm]], a 2 m [[En]] on the sentry) become real decisions. Aura-dense zones ([[Injury Recovery and Conditions]]) double recovery and tax the mind daily.
 
-**Discovery pays:** first-contact finds (a region, a ruin, a people, a live Elemental) are TP events ([[Rulebook/05 Progression/Progression and Training]]) and Renown events. Exploration is a career, not a transition.
+**Discovery pays:** first-contact finds (a region, a ruin, a people, a live Elemental) are XP events ([[Rulebook/05 Progression/Progression and Training]]) and Renown events. Exploration is a career, not a transition.
 
 ## Projects (research, crafting, building)
 

@@ -86,7 +86,7 @@ Read it off the table, or let Foundry compute it:
 | 128 | +7 | +14 |
 | 256 | +8 | +16 |
 
-Chū rank caps the final bonus (+2/+4/+6/+8/+10 for I–V). The bonus applies to a physical attribute *score* — STR (adds to Attack Power), VIT (Body durability), AGI/DEX (speed, reflex), or the senses (dynamic vision, +reaction). **Whole-body Chū** reinforces at low density (spread thin → modest, even boost); **Chū focused into one limb** (or riding a [[Kō]]) reinforces that limb enormously. The density table is the same one Soak reads — one physical fact, two uses.
+Chū mastery caps the final bonus at **+1 per rank** (+1 at I … +10 at X). The bonus applies to a physical attribute *score* — STR (adds to Attack Power), VIT (Body durability), AGI/DEX (speed, reflex), or the senses (dynamic vision, +reaction). **Whole-body Chū** reinforces at low density (spread thin → modest, even boost); **Chū focused into one limb** (or riding a [[Kō]]) reinforces that limb enormously. The density table is the same one Soak reads — one physical fact, two uses.
 
 ## Kō as an emergent sequence (no flat multiplier)
 

@@ -21,13 +21,13 @@ Players chose a discovery campaign ([[0 Rulebook|Rulebook]]). Protect it:
 - **GM rolls secretly:** all detection contests (In/Gyō, Zetsu notices), divination results before the reveal scene, sincerity audits, NPC ability activations whose [[Conditions]] haven't been deduced, and anything touching SPI or affinity spreads.
 - **Describe effects, never mechanics**, for unknown abilities: "the air between you thickens — your lunge lands short" — not "his barrier has Soak 40." When players deduce the mechanism *in fiction* (Nen Theory checks, experiments, captured intel), hand them real numbers as the prize. Mechanics-knowledge **is** the reward economy of investigation ([[Campaign Frameworks]] §9).
 - **Conditions are sacred.** An NPC's ability conditions are the true hit points of a boss fight. Never volunteer them; never retcon them once revealed; always leave them *discoverable* (two clues minimum in play before the fight where they matter — the fight is the exam, the clues are the course).
-- **Character knowledge vs player knowledge:** the table will learn the system across campaigns. The characters didn't. Enforce gently through action declarations — "how does Tessa *know* Kō leaves the body open?" is a fair question exactly once per topic; after that, either she learned it in play (fine) or the player rephrases as experiment. Reward in-fiction learning with TP (discovery, [[Rulebook/05 Progression/Progression and Training]]) so the incentive points the right way.
+- **Character knowledge vs player knowledge:** the table will learn the system across campaigns. The characters didn't. Enforce gently through action declarations — "how does Tessa *know* Kō leaves the body open?" is a fair question exactly once per topic; after that, either she learned it in play (fine) or the player rephrases as experiment. Reward in-fiction learning with XP (discovery, [[Rulebook/05 Progression/Progression and Training]]) so the incentive points the right way.
 
 ## Adjudicating novel Nen
 
 The four-step procedure in [[Core Resolution]] (magnitude → specificity → conditions → opposed SPI). Three standing rulings from the lore, restated as GM law:
 
-1. **You can't copy your way to mastery** ([[Nen at the Table]]) — cap borrowed/copied anything at rank III equivalence.
+1. **You can't copy your way to mastery** ([[Nen at the Table]]) — cap borrowed/copied anything at rank VI equivalence.
 2. **Emotion and risk amplify** — when a player puts something real on the line, the multipliers in [[Conditions Vows and Risk (Rules)]] are yours to *offer*, not just approve.
 3. **The user's own fairness binds them** — a player gaming their own condition's wording gets the lore's answer: their Nen agrees with the *spirit* they believed when they swore it. This is the anti-lawyer clause; invoke it kindly and without exception.
 
@@ -69,7 +69,7 @@ Rule at the table for tonight; log it; settle it between sessions against this b
 
 ## Introducing lore without lectures
 
-The vault is deep ([[0 World|World Building]]); the players start shallow, on purpose. Deliver world through: work (bounty postings teach bands), institutions (exam questions teach theory), consequences (the first Initiation felony teaches law), and *NPC incomprehension* (the Clanlands guide who can't believe you don't know what a Hyuga is). One page of lore per session, in-fiction, attached to a decision. TP for discovery pays the players to dig; let them.
+The vault is deep ([[0 World|World Building]]); the players start shallow, on purpose. Deliver world through: work (bounty postings teach bands), institutions (exam questions teach theory), consequences (the first Initiation felony teaches law), and *NPC incomprehension* (the Clanlands guide who can't believe you don't know what a Hyuga is). One page of lore per session, in-fiction, attached to a decision. XP for discovery pays the players to dig; let them.
 
 ## Secret rolls worth pre-rolling
 

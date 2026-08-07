@@ -29,7 +29,7 @@ Her file establishes the lopsided spread: **EMI 100 / MAN 90 / ENH 70 / TRA 50 /
 ## Yami Sukehiro — T3–T4 (elite captain)
 
 File: Transmuter; **Dark Eclipse** — transmuted darkness-aura ([[Yami Sukehiro]]).
-`T3-4 · EVA 14 · Soak 45 · Guard 500 · Body 48 · SR 4 (burst 6) · CON 20 → AP 3.5k · AO 560 · Control 4 · Ren IV, Ken III, Kō III, Gyō III, Ryū II`
+`T3-4 · EVA 14 · Soak 45 · Guard 500 · Body 48 · SR 4 (burst 6) · CON 20 → AP 3.5k · AO 560 · Control 4 · Ren VIII, Ken VI, Kō VI, Gyō VI, Ryū IV`
 - **Dark Cloaked Blade** (TRA 100%): katana + darkness Strike — standing P 450; with Kō (his full AO ~560 concentrated into the blade, then his darkness multipliers), **P 1.1k**.
 - **Dark Moon** (TRA+CONJ 80%): crescent arc, 10 m line, P 600, the *visible* finisher (optional-boost chant +25% when he names it).
 - Condition thread: the darkness *absorbs* — small incoming Emission effects (P ≤ 100) are eaten by his Guard, feeding 25% back as Fuel. Tell: the blade drinks light first.
@@ -38,14 +38,14 @@ File: Transmuter; **Dark Eclipse** — transmuted darkness-aura ([[Yami Sukehiro
 ## Mereoleona Vermillion — T4 (master, double-type)
 
 File: **Double type TRA + ENH** ([[Types and Affinity (Rules)|variation 18–19]]): both at 100, pool computed at **effective CON −1** (aura spread across two masteries) — she paid the tax and never noticed.
-`T4 · EVA 15 · Soak 120 · Guard 1.6k · Body 54 · SR 6 (burst 8) · CON 22 → AP 8k · AO 1.4k · Control 4 · Chū V (Enhancer half-cost), Ryū IV`
+`T4 · EVA 15 · Soak 120 · Guard 1.6k · Body 54 · SR 6 (burst 8) · CON 22 → AP 8k · AO 1.4k · Control 4 · Chū X (Enhancer half-cost), Ryū VIII`
 - **Flame Incarnation** (TRA+ENH→SPE-flavored): her whole body as transmuted flame — melee P 1.8k sustained, every round, without Kō (the double-type dividend: full-price Strike *and* full-price rider). Grapplers take P 300/round ambient.
 - No ranged game worth naming — her file's truth: she walks at you, and the walk is the threat. Counter-shape: kiting at SR 7+, or a Fū boundary she must burn through.
 
 ## Isaac Netero — T5 (the human summit)
 
 File empty; this build is the "vow-built apex human" archetype the lore demands ([[Nen Growth]] soft-cap grind + [[Conditions Vows and Risk (Rules)]] at full stack).
-`T5 · EVA 16 · Soak 350 · Guard 4k · Body 40 (an old man's meat — the point) · SR 7 (strikes arrive SR 9) · CON 23 → AP 14k (sixty years drove his constitution deep into the superhuman band) · AO 2.8k · Control 5 · SPI 18 (his prayer-ability was a lifetime's manifestation) · Ten V, Zetsu V, Ren V, everything V`
+`T5 · EVA 16 · Soak 350 · Guard 4k · Body 40 (an old man's meat — the point) · SR 7 (strikes arrive SR 9) · CON 23 → AP 14k (sixty years drove his constitution deep into the superhuman band) · AO 2.8k · Control 5 · SPI 18 (his prayer-ability was a lifetime's manifestation) · Ten X, Zetsu X, Ren X, everything V`
 - **The Grateful Guest** (CONJ 100%, decades of a single prayer): conjured many-armed bodhisattva. Activation: his prayer bow (Minor condition, and the *only* tell). Strikes: P 8k at SR 9 (Grave vow "only after my bow of thanks" ×2 × narrow-vow on arrival speed) — faster than the enemy's round, from a seated old man.
 - **The Final Vow** (death-rider, pre-sworn): his death in battle releases everything at once — P 40k, 20 m, unsoakable by Guard (it's *inside* the vow's terms to be a gift). The lesson he teaches the ladder: the human ceiling is not talent; it's what you're willing to owe.
 
@@ -61,14 +61,14 @@ File establishes: Conjurer 100%, **Six Eyes: minimum 80% across all types except
 ## Ryomen Sukuna — T6 (the flagship math)
 
 His file is the system's Rosetta stone — fully written, and every line below maps one of its steps to a rule already in this book. Spread per file: **EMI 100 / TRA 100 (double type) / ENH 90 / CONJ 80 / MAN 80 → sacrificed.**
-`T6 · EVA 17 · Soak 900 · Guard 10k · Body 50 · SR 9 · CON 25 → AP 40k · AO 8k · Control 5 · In V, Gyō V, Fū (via ability), all Principles V`
+`T6 · EVA 17 · Soak 900 · Guard 10k · Body 50 · SR 9 · CON 25 → AP 40k · AO 8k · Control 5 · In X, Gyō X, Fū (via ability), all Principles V`
 
 **Dismantle** (EMI+TRA composite; file steps 1–10 → system):
 1–2. *Slash shaping + "cutting" property:* Fuel F → slash of P = F × 1.0; the cutting rider ignores half of object/structure Soak. Target-tier ladder (file step 2): solids at listed cost; intangibles ×10 Fuel; ethereals ×100; concepts — GM-gated, Conditions required.
 3. *Optional boosts* (point **or** trace, chant, handsign — file's mutual-exclusion kept): +25% each, max 3 concurrent (+75%), each telegraphing per [[Conditions Vows and Risk (Rules)]].
 4–5. *Travel:* base slash speed SR 5. **Defining sacrifice** (all Manipulation, forever) as narrow-parameter vow: **×10 travel → SR 8–9**; no steering after release (the sacrifice's teeth: a Δ-SR defense or Fū boundary that survives the hit is *safe* — he cannot curve it).
 6–7. *Second narrow vow:* multi-slash surrendered → **activation near-instant** (no wind-up to read without the optional boosts — which is why he *uses* the chants: they're his own difficulty setting, priced exactly as the file says).
-8–9. *In-woven slashes* (In V): invisible even to Gyō below IV; and the file's elegant inversion as a Condition: **a slash's In strength scales inversely with its % of his pool** — a 0.1% slash (Fuel 40, P 40) is functionally undetectable; the 5% executioner (Fuel 2k, P 2k) can be seen coming. Small cuts you never see; big cuts you see and cannot stop. That asymmetry is the fight.
+8–9. *In-woven slashes* (In X): invisible even to Gyō below IV; and the file's elegant inversion as a Condition: **a slash's In strength scales inversely with its % of his pool** — a 0.1% slash (Fuel 40, P 40) is functionally undetectable; the 5% executioner (Fuel 2k, P 2k) can be seen coming. Small cuts you never see; big cuts you see and cannot stop. That asymmetry is the fight.
 10. Mastery scaling: above.
 
 **Cleave** (touch): three vows per file — range zero; **auto-calculation**: pays aura equal to target's (current Guard + Body + 10 × Soak) and bisects (Dying + Maiming) if his pool covers it, **drains him to 0 AP if it doesn't** (the vow's real risk, kept live); living targets only.

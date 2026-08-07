@@ -22,7 +22,7 @@ The treaty body (chartered by the Accord, operating nearly everywhere) that exam
 
 **Ability registration:** Chartered+ must file an ability's **name and class** (offense/defense/sensory/control/other) — *never* its mechanics or [[Conditions]]. The compromise is deliberate and politically alive: disclosure hawks want conditions on file; every working user knows a filed condition is a published death warrant ([[Running the Game]] — information is the real currency). Filed names are searchable by warrant. Yes, people file misleading names. Yes, that's a crime. Yes, everyone does it anyway.
 
-**Exams** (framework in [[Campaign Frameworks]]): staged skill-challenges — written theory (INT Nen Theory), controlled principle demonstration (checks against fixed DCs per tier), and a live practicum the Registry is legally required to make survivable and does not always manage. Passing Licensed ≈ requires the [[0 Four Major Principles|Four Major Principles]] at rank I–II and Control 2.
+**Exams** (framework in [[Campaign Frameworks]]): staged skill-challenges — written theory (INT Nen Theory), controlled principle demonstration (checks against fixed DCs per tier), and a live practicum the Registry is legally required to make survivable and does not always manage. Passing Licensed ≈ requires the [[0 Four Major Principles|Four Major Principles]] at rank II–IV and Control 2.
 
 ## Law (the short table)
 
