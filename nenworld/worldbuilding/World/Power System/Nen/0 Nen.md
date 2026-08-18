@@ -3,7 +3,7 @@
 ## Contents
 
 - [[The Nen Path]]
-- [[Aura]]
+- [[0 Aura|Aura]]
 - [[Nen and Nature]]
 - [[Nen in Society]]
 - [[0 Learning Nen|Learning Nen]]

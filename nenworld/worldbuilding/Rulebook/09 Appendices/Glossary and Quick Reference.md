@@ -4,11 +4,11 @@
 
 | Term | Meaning | Defined in |
 |---|---|---|
-| **AP — Aura Pool** | Max reserves = **30 × 1.6^(CON−10)** (derived, no cap); + current | [[Aura Statistics]] |
-| **AO — Aura Output** | Max aura projectable per round (AP × Ren %) | [[Aura Statistics]] |
+| **AP — Aura Pool** | Max reserves, derived from the *average* of CON and VIT (no cap); + current | [[Aura Statistics]] · [[Aura Mathematics]] |
+| **AO — Aura Output** | min(Current Aura, CON-derived Output Capacity × Ren access %) | [[Aura Statistics]] · [[Aura Mathematics]] |
 | **Control** | Rank 1–6; cost multiplier / economy (×2.0 → ×1.0). *Not* precision — that's DEX | [[Aura Statistics]] |
 | **Efficiency (%)** | Category conversion of aura → effect (100/80/60/40) | [[Types and Affinity (Rules)]] |
-| **Regeneration** | Aura refill rate, **derived from VIT**: resting VIT÷2 %/hr | [[Aura Statistics]] |
+| **Regeneration** | Aura refill rate, **derived from VIT** as a flat Aura/hour capacity (G); resting = G÷2 | [[Aura Statistics]] · [[Aura Mathematics]] |
 | **Density** | Aura ÷ surface it occupies; drives Soak & Chū | [[Aura Density and Concentration]] |
 | **SU — Surface Unit** | Body-area unit; human = 100 SU, fist = 2.5 SU | [[Aura Density and Concentration]] |
 | **Allocation** | Turn-start split of AO (purpose) **and** where on the body it sits (location) | [[Combat Core]] |
@@ -31,7 +31,7 @@
 | **Sincerity audit** | GM test that prices vows by real teeth | [[Conditions Vows and Risk (Rules)]] |
 | **The read game** | PER+Gyō vs DEX+Ryū over aura distribution | [[Combat Core]] |
 | **Band (T0–T7)** | Descriptive magnitude label; never a rule | [[NPCs Creatures and Encounters]] |
-| **Power band = CON** | Your CON score is your band: 10 fresh · 16 pro · 20 elite · 24 master · 29 apex | [[Aura Statistics]] |
+| **Power band = CON (+VIT)** | Your CON/VIT band: 10 fresh · 16 pro · 20 elite · 24 master · 29 apex | [[Aura Statistics]] |
 | **Category codes** | ENH · TRA · **CONJ** · SPE · MAN · EMI (CONJ ≠ CON attribute) | [[Types and Affinity (Rules)]] |
 | **Leak** | Unawakened/post-Initiation aura loss state | [[Awakening and the Path]] |
 | **ryn** | Currency (~50/week modest living) | [[Society Law and Licenses]] |
@@ -55,11 +55,11 @@ Saves: Reflex (AGI) · Fortitude (VIT body / CON systemic) · **Spirit (SPI)** v
 
 **SR:** 1=5 m/s · 2=10 · 3=20 · 4=40 · 5=80 · 7=Mach 1 · each +1 doubles. Gaps: Δ2 ±2 · Δ3 no reactions · Δ5 auto-hit/uncatchable. En senses: −2 Δ for defense.
 
-**Max AP = 30 × 1.6^(CON−10)** (derived, no cap; +3 CON ≈ ×4). Grow it by raising CON — Nen-tempering breaks the mundane cap 20.
-**Ren → AO:** none 2% · I 5% · II 8% · III 12% · IV 16% · V 20%.
+**Max AP = R(10 × M((CON+VIT)/2))**, 1-sig-fig rounded (derived, no cap) — [[Aura Mathematics]]. Grow it by raising CON and/or VIT — Nen-tempering breaks the mundane CON cap 20.
+**Aura Output = min(Current Aura, Physiological Output Capacity(CON) × Ren Access %)**, Access = 10% × Ren rank (I 10% … X 100%) — [[Aura Mathematics]].
 **Control cost:** 1 ×2.0 · 2 ×1.6 · 3 ×1.4 · 4 ×1.25 · 5 ×1.1 · 6 ×1.0.
 **Efficiency:** own 100 · adjacent 80 · far 60 · opposite 40 · Specialization binary.
-**Regen/hr (derived from VIT):** active VIT÷10 % · rest VIT÷2 % · sleep VIT % · Zetsu ×3 (defenseless) · distress ½.
+**Regen (derived from VIT):** G = R(M(VIT)) Aura/hr · active G÷10 · rest G÷2 · sleep G · Zetsu ×3 (defenseless) · distress ½ — [[Aura Mathematics]].
 
 **Density:** = region aura ÷ region SU. **Soak = density × 10.** Normal = AO ÷ 100.
 **Gyō transfer %:** I 40 · II 55 · III 70 · IV 85 · V 100. **Ten containment %:** I 80 · II 88 · III 94 · IV 98 · V 100.
@@ -76,5 +76,5 @@ Saves: Reflex (AGI) · Fortitude (VIT body / CON systemic) · **Spirit (SPI)** v
 
 **Encounter check:** penetration both ways → one-hit check → RTD ratio (≤0.75 easy · ~1 dangerous · >2 don't) → endurance. Bands: +1 deadly-possible · +2 not by force.
 
-**XP:** a fight's Development Value (Pressure 0–4 + Novelty 0–2 + Adaptation 0–2 + Stakes 0–1 + Insight 0–1), plus quests and discoveries; next level = 5+L+⌈L²/12⌉. **Each level:** 12 Stat Points + 12 Growth Points. **Stat cost** 1+⌊S/8⌋+⌈S²/200⌉ · **Mastery cost** ⌈R(R+1)/4⌉ · **Breakthrough** d20+SPI vs 15/18/22 for VIII/IX/X, failure burns half the stake. **Aura grows by raising CON** (pool = 30×1.6^(CON−10), derived, no cap): CON breakthroughs via regimens + events; Nen-tempering breaks the mundane cap 20 — [[Nen Growth]].
+**XP:** a fight's Development Value (Pressure 0–4 + Novelty 0–2 + Adaptation 0–2 + Stakes 0–1 + Insight 0–1), plus quests and discoveries; next level = 5+L+⌈L²/12⌉. **Each level:** 12 Stat Points + 12 Growth Points. **Stat cost** 1+⌊S/8⌋+⌈S²/200⌉ · **Mastery cost** ⌈R(R+1)/4⌉ · **Breakthrough** d20+SPI vs 15/18/22 for VIII/IX/X, failure burns half the stake. **Aura grows by raising CON and/or VIT** (pool = R(10×M((CON+VIT)/2)), derived, no cap — [[Aura Mathematics]]): CON/VIT breakthroughs via regimens + events; Nen-tempering breaks the mundane CON cap 20 — [[Nen Growth]].
 **Manifestation (SPI):** d20 + SPI + prof vs DC — only after Knowledge (WIS) / execution (DEX) / resources (AP) / rules are all met. Awaken Hatsu 13 · bind Condition 13–16 · Contract 16 · unprecedented 20–24.

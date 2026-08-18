@@ -1,0 +1,2102 @@
+/*
+ * Workbench global styles.
+ *
+ * Visual language: a field notebook crossed with a character dossier. Cream
+ * paper, dark ink, restrained rules, typed data — archival field research,
+ * not medieval parchment and not an instrument panel. Debugger capability is
+ * present everywhere but never the thing you see first.
+ *
+ * Four rules this file is built on:
+ *
+ *   1. Fewer boundaries. Regions may carry a rule; groups inside a region are
+ *      separated by space, type, and a faint tint instead. Nothing gets a box
+ *      just for being a thing.
+ *   2. Colour is never the only signal. Every status pairs a hue with a glyph
+ *      and a word, so the UI survives greyscale and colour blindness intact.
+ *   3. Serif for language, mono for data. Prose, labels and diagnostics are
+ *      Source Serif 4; values, identifiers, formulas and JSON are IBM Plex
+ *      Mono. The split is what makes a number look like a number.
+ *   4. There is a fourth state. Beyond pass/warn/fail, anything the engine
+ *      cannot supply yet is marked UNRESOLVED — deliberately unfinished, not
+ *      disabled, and never quietly filled in by the UI.
+ *
+ * Tokens live in :root. The palette retunes from there; the structural rules
+ * below (which things get a container, which get a rule) do not.
+ */
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* ------------------------------------------------------------------ */
+
+:root {
+  /* Surfaces. Panels are wells sunk into the page, not cards floating
+     above it, so each step is a small tint rather than a new elevation. */
+  --paper: #f2f1ec; /* page */
+  --well: #eceae3; /* panel */
+  --well-2: #e7e5dd; /* inset: inputs, JSON, code */
+  --sel: #e2e0d6; /* selected row */
+
+  /* Ink, primary to faintest. */
+  --ink: #1f1e1a;
+  --ink-2: #4a4841;
+  --ink-3: #7e7b71;
+
+  /* Boundaries. Two weights only: a rule you should notice, and a hairline
+     you shouldn't. Reach for neither before trying spacing. */
+  --rule: #cfccc1;
+  --hair: #e1ded4;
+
+  /* The accent: a very dark, desaturated forest. Dark enough to read as
+     ink at text sizes, which is the point — it accents by depth, not glare. */
+  --accent: #2c4136;
+  --accent-2: #4a6152;
+
+  /* Status. Always accompanied by a glyph; see .badge. */
+  --pass: #3d5c3a;
+  --warn: #7d5c14;
+  --fail: #8c3527;
+
+  /* The fourth state: engine does not supply this yet. */
+  --unres: #6b6558;
+
+  --font-serif: "Source Serif 4", Charter, Georgia, serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, monospace;
+
+  /* Spacing scale. Every gap in the app is one of these six. */
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 18px;
+  --s5: 26px;
+  --s6: 38px;
+
+  /* Width of the label gutter. Labels sit in a fixed column so every value
+     in a panel lines up — the page reads as a typed form, not a list. */
+  --gutter: 132px;
+
+  --radius: 3px;
+
+  color-scheme: light;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* ------------------------------------------------------------------ */
+/* Base                                                               */
+/* ------------------------------------------------------------------ */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/*
+ * Paper grain. Deliberately at the edge of perception — it should register
+ * as "this surface isn't flat", never as texture you can point at.
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.035;
+  mix-blend-mode: multiply;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.005em;
+}
+
+/* Keyboard navigation is a first-class way to drive this tool, so the focus
+   ring is loud on purpose — the one place brightness is welcome. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Scrollbars tinted to the paper so overflow never punches a bright hole. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Transparent inset rather than a paper-coloured one: the same thumb now sits
+   correctly on the page, inside a well, and inside an inset. */
+::-webkit-scrollbar-thumb {
+  background: var(--rule);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Application frame                                                   */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A full-width header over three columns. The left and right columns each
+ * stack two panels — the second of each pair (Build Palette, Combat/Run,
+ * Inspector) takes the larger share. There is no footer: the event log is a
+ * tab of the Inspector.
+ */
+.app {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 288px minmax(0, 1fr) 372px;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+}
+
+.app__header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  border-bottom: 1px solid var(--rule);
+}
+
+.app__title {
+  font-size: 20px;
+  color: var(--ink);
+}
+
+.app__subtitle {
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+/* Pushes the header's status summary to the far right. */
+.app__header-spacer {
+  margin-left: auto;
+}
+
+/*
+ * The three columns. Columns are separated by a hairline — a region boundary,
+ * which is one of the few places a rule is still the right answer.
+ *
+ * A column never scrolls. Each panel inside it scrolls its own body instead,
+ * so a long roster can't push the Build Palette off the bottom of the screen,
+ * and scrolling the Inspector can't take the Function Sandbox with it. The
+ * two panels in a column are genuinely independent regions and have to behave
+ * like it.
+ */
+.app__column {
+  overflow: hidden;
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.app__column--left {
+  border-right: 1px solid var(--hair);
+  /* The roster and palette are narrow; a full-width gutter would leave no
+     room for the value. */
+  --gutter: 96px;
+}
+
+.app__column--right {
+  border-left: 1px solid var(--hair);
+  --gutter: 112px;
+}
+
+/* Nothing in a column may refuse to shrink; without this, a flex child sizes
+   to its content and overflows the panel it's supposed to live inside — which
+   is what makes a panel's background stop halfway down its own content. */
+.app__column > * {
+  min-height: 0;
+}
+
+/* Panels in a column are flex columns themselves, so a fixed header can sit
+   above a body that scrolls. .drop-target is the wrapper the Character Panel
+   is dragged onto and has to pass the constraint through to the panel. */
+.app__column > .panel,
+.app__column > .drop-target,
+.drop-target > .panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/*
+ * The upper panel (roster / sandbox) takes only what it needs, up to a share
+ * of the column; the lower one (palette / inspector) takes the rest. Past
+ * that share the upper panel scrolls internally rather than growing — which
+ * is what keeps the Build Palette in place no matter how long the roster gets.
+ */
+.app__column > .panel:first-child {
+  /* No shrink: the cap alone decides how tall this gets. Left free to shrink,
+     flexbox divides the overflow proportionally and a long roster collapses
+     to a header — the opposite of what the cap is for. */
+  flex: 0 0 auto;
+  max-height: 45%;
+}
+
+.app__column > *:last-child,
+.drop-target > .panel {
+  flex: 1 1 auto;
+}
+
+/* ------------------------------------------------------------------ */
+/* Panel                                                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A panel is a faint well with no outline. The heading is a mono kicker over
+ * a mixed-case serif title, underlined by a short accent rule — enough to
+ * mark where a region begins without drawing a box around it.
+ */
+.panel {
+  background: var(--well);
+  border-radius: var(--radius);
+}
+
+/* The heading stays put while the body scrolls under it. */
+.panel__header {
+  flex: none;
+  padding: var(--s3) var(--s4) 0;
+}
+
+/* The short accent rule under every panel heading. */
+.panel__header::after {
+  content: "";
+  display: block;
+  width: 26px;
+  height: 2px;
+  background: var(--accent);
+  margin-top: var(--s2);
+}
+
+.panel__kicker {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--ink-3);
+}
+
+/* Wraps rather than crushes: in a 288px column the actions drop to their own
+   line before anything gets truncated. */
+.panel__titleline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+}
+
+/* The title is the one thing that is never abbreviated — a character's name
+   half-eaten by an ellipsis is worse than a wrapped header. */
+.panel__title {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 17px;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The subtitle names the engine function behind the panel and is the only
+ * part that may be shortened: it shrinks and ellipsises so the status badge
+ * on the right is never pushed out of the panel.
+ */
+/* Wraps to its own line rather than shrinking: "1 saved" abbreviated to
+   "1 sav…" is noise where a second line costs nothing. */
+.panel__subtitle {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  flex: 0 0 auto;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panel__actions {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+/*
+ * The body is the scroll region, not the column. Because the scrollbar lives
+ * inside the well, the well's background always covers everything drawn in
+ * it — content can no longer spill past the tint it's supposed to sit on.
+ */
+.panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--s3) var(--s4) var(--s4);
+}
+
+.panel__body--flush {
+  padding: 0;
+}
+
+/*
+ * Expanded. The panel is lifted out of its column and pinned over the window
+ * — same element, same React state, just repositioned. This is the one place
+ * the design allows a shadow: it's a popover, which is exactly the exception
+ * a flat, printed-looking interface should make.
+ */
+.panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: rgba(31, 30, 26, 0.34);
+}
+
+.panel--expanded {
+  position: fixed;
+  inset: 8vh 10vw;
+  z-index: 60;
+  box-shadow: 0 20px 60px rgba(31, 30, 26, 0.28);
+}
+
+/*
+ * A confirmation modal sits above everything, including an expanded panel —
+ * it is asking about something that cannot be taken back, so nothing may
+ * cover it. Darker than the panel backdrop for the same reason: this one is
+ * not a convenience popover you can drift out of.
+ */
+.panel-backdrop--modal {
+  z-index: 79;
+  background: rgba(31, 30, 26, 0.44);
+}
+
+.confirm {
+  position: fixed;
+  z-index: 80;
+  top: 22vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 2 * var(--s4)));
+
+  padding: var(--s4) var(--s4) var(--s3);
+  background: var(--paper);
+  border-radius: var(--radius);
+
+  /* The popover exception to the flat-and-printed rule. */
+  box-shadow: 0 20px 60px rgba(31, 30, 26, 0.28);
+}
+
+/* The short accent rule a panel header carries, so the dialog reads as part
+   of the same stationery rather than a browser alert. */
+.confirm__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  padding-bottom: var(--s2);
+  border-bottom: 2px solid var(--accent);
+}
+
+.confirm__body {
+  margin: var(--s3) 0 var(--s4);
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.confirm__body p {
+  margin: 0 0 var(--s2);
+}
+
+.confirm__body p:last-child {
+  margin-bottom: 0;
+}
+
+/* The thing being acted on is data, so it is mono — and it is the one word in
+   the dialog that has to be unmistakable. */
+.confirm__subject {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.confirm__note {
+  color: var(--warn);
+}
+
+.confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s2);
+}
+
+/* A dialog that asks for something rather than confirming something. Wider,
+   because it holds fields. */
+.confirm--form {
+  width: min(460px, calc(100vw - 2 * var(--s4)));
+}
+
+.confirm__meta {
+  margin: var(--s2) 0 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.confirm__error {
+  margin: var(--s2) 0 0;
+  color: var(--fail);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Species mixer                                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Ancestry is a proportion, so the panel leads with the proportion. The bar
+ * is the reason this is a panel and not four number fields: an 80/15/5 split
+ * is legible at a glance as widths and is arithmetic as digits.
+ */
+.mixer {
+  position: fixed;
+  z-index: 80;
+  top: 16vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(400px, calc(100vw - 2 * var(--s4)));
+
+  padding: var(--s4);
+  background: var(--paper);
+  border-radius: var(--radius);
+  box-shadow: 0 20px 60px rgba(31, 30, 26, 0.28);
+}
+
+.mixer__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding-bottom: var(--s2);
+}
+
+.mixer__title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+/* The running total is the number the save button is gated on, so it is the
+   one figure in the panel that changes weight when it comes right. */
+.mixer__total {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--warn);
+}
+
+.mixer__total--complete {
+  color: var(--pass);
+  font-weight: 600;
+}
+
+.mixer__bar {
+  display: flex;
+  height: 10px;
+  margin-bottom: var(--s3);
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--well-2);
+}
+
+.mixer__slice {
+  height: 100%;
+  transition: width 120ms ease-out;
+}
+
+/*
+ * Four tints of the accent rather than four hues. The mix is one thing seen
+ * in parts, and a rainbow would read as four unrelated categories — and the
+ * swatch beside each row is what carries the identification anyway, so this
+ * never has to be told apart by colour alone.
+ */
+.mixer__slice--0 {
+  background: var(--accent);
+}
+.mixer__slice--1 {
+  background: var(--accent-2);
+}
+.mixer__slice--2 {
+  background: #6f8577;
+}
+.mixer__slice--3 {
+  background: #9aa89e;
+}
+
+.mixer__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.mixer__empty {
+  margin: 0;
+  padding: var(--s2) 0;
+}
+
+.mixer__row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.mixer__swatch {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+}
+
+.mixer__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mixer__percentage {
+  width: 68px;
+  text-align: right;
+}
+
+.mixer__unit {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.mixer__add {
+  display: flex;
+  gap: var(--s2);
+  margin-top: var(--s3);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hair);
+}
+
+.mixer__select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A share the engine would reject on its own — 0, negative, over 100. */
+.mixer__percentage--bad {
+  border-color: var(--fail);
+  color: var(--fail);
+}
+
+.mixer__blocked {
+  margin: var(--s3) 0 0;
+  font-size: 12.5px;
+  color: var(--warn);
+}
+
+.mixer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Feature sections                                                    */
+/* ------------------------------------------------------------------ */
+
+.features__section + .features__section {
+  margin-top: var(--s4);
+}
+
+.features__empty {
+  margin: 0;
+}
+
+.features__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.features__entry {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: 2px 0;
+}
+
+.features__name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A Mutation's element, kept subordinate to the Mutation's own name. */
+.features__variant {
+  margin-left: var(--s2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+
+.features__share {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.features__add {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-top: var(--s2);
+}
+
+/* An inline NumberField + button, e.g. the Aura tab's "advance N hours"
+   control. flex-end aligns the button against the input's baseline rather
+   than the field's label. */
+.field-row {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--s2);
+}
+
+.field-row .field {
+  flex: 0 0 auto;
+}
+
+.features__select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 220px;
+}
+
+/* Beats the 45% cap the upper panel in a column carries. */
+.app__column > .panel.panel--expanded {
+  max-height: none;
+}
+
+/* At full size a panel has room to breathe, and the content it was cramping
+   (the label gutter especially) should use it. */
+.panel--expanded {
+  --gutter: 168px;
+}
+
+.panel--expanded .panel__header {
+  padding: var(--s4) var(--s5) 0;
+}
+
+.panel--expanded .panel__body {
+  padding: var(--s4) var(--s5) var(--s5);
+}
+
+.panel--expanded .panel__body--flush {
+  padding: 0;
+}
+
+.panel--expanded .panel__title {
+  font-size: 21px;
+}
+
+/* Content inside a flush panel that does need the panel's own padding back —
+   a tab body, a form under a row of tabs. */
+.panel__inset {
+  padding: var(--s3) var(--s4) var(--s4);
+}
+
+.panel__inset-tight {
+  padding: var(--s2) var(--s4);
+}
+
+/* ------------------------------------------------------------------ */
+/* Form controls                                                       */
+/* ------------------------------------------------------------------ */
+
+/* Label in the gutter, control in the content column. */
+.field {
+  display: grid;
+  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--s1) var(--s3);
+  padding: 3px 0;
+}
+
+.field__label {
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+.field__hint {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.field--wide {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.field--wide .field__hint {
+  grid-column: 1;
+}
+
+input[type="number"],
+input[type="text"],
+select,
+textarea {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--well-2);
+  border: 1px solid transparent;
+  border-bottom-color: var(--rule);
+  border-radius: var(--radius);
+  padding: 4px 7px;
+  width: 100%;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.5;
+}
+
+input[type="number"] {
+  width: 92px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-bottom-color: var(--ink-3);
+}
+
+/* Invalid inputs get an oxblood edge and a glyph from whatever renders
+   them — never the edge alone. */
+input[aria-invalid="true"] {
+  border-bottom-color: var(--fail);
+  border-bottom-width: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Search                                                              */
+/* ------------------------------------------------------------------ */
+
+/*
+ * WorkbenchSearch. A well like every other input, not the platform's rounded
+ * search chrome — see the component doc comment for why it's built this way
+ * rather than styled off input[type="search"] directly.
+ */
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  background: var(--well-2);
+  border: 1px solid transparent;
+  border-bottom-color: var(--rule);
+  border-radius: var(--radius);
+  padding: 5px 8px;
+}
+
+.search:hover {
+  border-bottom-color: var(--ink-3);
+}
+
+/* A second, quieter echo of the input's own focus ring — the accent line
+   confirms which field is live even when the ring itself is out of the
+   corner of your eye. */
+.search:focus-within {
+  border-bottom-color: var(--accent);
+}
+
+.search--disabled {
+  opacity: 0.5;
+}
+
+.search__icon {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  color: var(--ink-3);
+}
+
+.search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--ink);
+  background: none;
+  border: none;
+  padding: 0;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* The prompt is prose, not data yet — serif italic, same split the rest of
+   the app draws between language and typed values. */
+.search__input::placeholder {
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--ink-3);
+  opacity: 1; /* Firefox dims placeholders by default; the italic already
+                 does the job of reading as secondary. */
+}
+
+.search__input::-webkit-search-cancel-button,
+.search__input::-webkit-search-decoration {
+  appearance: none;
+  -webkit-appearance: none;
+  display: none;
+}
+
+.search__clear {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: none;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.search__clear:hover {
+  color: var(--ink);
+}
+
+.search__clear:disabled {
+  cursor: not-allowed;
+  color: var(--ink-3);
+}
+
+.button {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.button:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+
+/* Selection has to beat hover decisively, so the active state fills. */
+.button--active {
+  color: var(--paper);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.button--active:hover {
+  color: var(--paper);
+  border-color: var(--accent);
+}
+
+/* The "confirm delete?" state — a clear but not alarming warning colour. */
+.button--danger {
+  color: var(--fail);
+  border-color: var(--fail);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Keeps hover from lighting up a button that can't be pressed, without
+   overriding the accent colour of an active-styled one. */
+.button:disabled:hover {
+  border-color: var(--rule);
+  color: var(--ink-2);
+}
+
+/* A small square button holding a single glyph (target, duplicate, delete). */
+.button--icon {
+  padding: 2px 5px;
+  line-height: 1.2;
+}
+
+/* A tab for an engine domain that doesn't exist yet. Same fourth-state
+   vocabulary as the reserved panel it opens onto. */
+.button--reserved {
+  border-style: dashed;
+  color: var(--unres);
+}
+
+.button--reserved:hover {
+  color: var(--unres);
+  border-color: var(--unres);
+}
+
+/* ------------------------------------------------------------------ */
+/* Data display                                                        */
+/* ------------------------------------------------------------------ */
+
+/* A label/value pair in the gutter form. Values are mono and left-aligned
+   in their column, so a run of them scans as a single stack of figures. */
+.stat {
+  display: grid;
+  grid-template-columns: var(--gutter) minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--s3);
+  padding: 3px 0;
+}
+
+.stat__label {
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+.stat__value {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.stat__value--emphasis {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.stat__note {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+
+/*
+ * Status. A glyph and a hue, in that order of importance — no word. The
+ * shapes (✓ ✕ !) are what keep this readable in greyscale or to someone who
+ * can't separate the greens from the reds; the full sentence still exists as
+ * this element's title/aria-label, just off the page rather than on it.
+ */
+.badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap; /* keeps the glyph and its count on one line */
+}
+
+.badge__count {
+  font-variant-numeric: tabular-nums;
+}
+
+.badge--ok {
+  color: var(--pass);
+}
+
+.badge--warn {
+  color: var(--warn);
+}
+
+.badge--fail {
+  color: var(--fail);
+}
+
+.badge--muted {
+  color: var(--ink-3);
+}
+
+/*
+ * The fourth state. Not an error and not a disabled control: a value the
+ * engine has not been taught to produce. Italic mono in a colour that
+ * belongs to no other meaning in the app.
+ */
+.unresolved {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--unres);
+}
+
+/* Attribute grid: two columns of ten short numeric fields. */
+.attributes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s1) var(--s6);
+}
+
+.attribute {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2);
+}
+
+.attribute__key {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.attribute input[type="number"] {
+  width: 62px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Character roster                                                    */
+/* ------------------------------------------------------------------ */
+
+/* Search box on top, sort row beneath — both live in the same
+   .panel__inset-tight strip above the roster list. */
+.roster__toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.roster__sort-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.roster__sort {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* A reserved sort option (Age, Race — nothing on Character models them yet)
+   renders the same muted, italic fourth-state ink as .unresolved. Support
+   for styling individual <option> elements varies by browser; where it's
+   ignored, the option is still marked disabled and its label still says why. */
+.roster__sort option:disabled {
+  color: var(--unres);
+  font-style: italic;
+}
+
+/*
+ * A grid, not a stacked list. It fans out to 2-3 columns once the panel is
+ * expanded and there's real width to give back; auto-fit (rather than
+ * auto-fill) is what lets a short roster's rows stretch to fill that width
+ * instead of sitting narrow at the left with empty tracks beside them.
+ *
+ * The minmax() floor is wrapped in min(300px, 100%) rather than a bare
+ * 300px: a plain minmax(300px, 1fr) track never shrinks below 300px even
+ * when the column itself is narrower than that (a collapsed panel, or any
+ * narrow viewport) — the row then renders 300px wide regardless, pushing
+ * the status badge past the visible edge. min() lets the single track fall
+ * back to 100% of whatever width is actually available below 300px, so a
+ * narrow column always gets one full-width column instead of one
+ * partially-offscreen one.
+ */
+.roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  column-gap: var(--s4);
+}
+
+.roster__row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--s1) var(--s2);
+  padding: 5px var(--s4);
+  border-bottom: 1px solid var(--hair);
+}
+
+.roster__row:last-child {
+  border-bottom: none;
+}
+
+/* Hover is quiet; selection is not. */
+.roster__row:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.roster__row--active,
+.roster__row--active:hover {
+  background: var(--sel);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.roster__row--active .roster__name {
+  font-weight: 600;
+}
+
+.roster__select {
+  flex: 1 1 130px;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  color: var(--ink);
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster__tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent-2);
+  border: 1px solid var(--accent-2);
+  border-radius: 2px;
+  padding: 0 4px;
+  flex: none;
+}
+
+/* Unsaved work: a dot and a word, visible but not shouting. It only needs
+   to get loud at the point something is about to be discarded. */
+.roster__dirty {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  color: var(--warn);
+  flex: none;
+}
+
+.roster__dirty-word {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.roster__actions {
+  flex: none;
+  display: flex;
+  gap: 3px;
+}
+
+/*
+ * Ephemeral scratch characters. A dashed edge and a SCRATCH tag, because the
+ * one mistake that must never happen is confusing one of these with a
+ * character that lives in the vault.
+ */
+.scratch-tag {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-3);
+  border: 1px dashed var(--rule);
+  border-radius: 2px;
+  padding: 0 4px;
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ */
+/* Reserved panel (an engine domain that doesn't exist yet)            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * Reserved, not dead. The title and the reason stay fully readable — this
+ * doubles as the roadmap, in front of you while you work. The hatching says
+ * "nothing is built here"; the stamp says which of the four states it's in.
+ */
+.locked-panel {
+  position: relative;
+  padding: var(--s3) var(--s4) var(--s3) var(--s3);
+  border: 1px dashed var(--rule);
+  border-radius: var(--radius);
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent,
+    transparent 7px,
+    rgba(107, 101, 88, 0.05) 7px,
+    rgba(107, 101, 88, 0.05) 14px
+  );
+}
+
+.locked-panel__stamp {
+  position: absolute;
+  top: var(--s2);
+  right: var(--s2);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--unres);
+  border: 1px solid var(--unres);
+  border-radius: 2px;
+  padding: 1px 5px;
+  opacity: 0.8;
+}
+
+.locked-panel__title {
+  font-size: 14.5px;
+  color: var(--ink-2);
+  margin: 0 70px var(--s1) 0;
+}
+
+.locked-panel__reason {
+  margin: 0;
+  max-width: 62ch;
+  color: var(--ink-3);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------------ */
+/* Diagnostics                                                         */
+/* ------------------------------------------------------------------ */
+
+/* Glyph in its own column, everything else hanging off it. No box, no rule:
+   the indent is what groups the lines. */
+.diagnostic {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 1px var(--s2);
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.diagnostic:last-child {
+  border-bottom: none;
+}
+
+.diagnostic__glyph {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.diagnostic--error .diagnostic__glyph {
+  color: var(--fail);
+}
+
+.diagnostic--warning .diagnostic__glyph {
+  color: var(--warn);
+}
+
+.diagnostic__message {
+  font-size: 14px;
+}
+
+.diagnostic__code {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.diagnostic__detail {
+  grid-column: 2;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.diagnostic__resolution {
+  grid-column: 2;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--ink-2);
+  margin-top: 2px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Trace tree                                                          */
+/* ------------------------------------------------------------------ */
+
+/*
+ * An outline, not a connector tree. Depth is carried by indentation and a
+ * faint guide, the way a derivation in a notebook is: claim on the line,
+ * working underneath it, result in the margin.
+ */
+.trace {
+  font-size: 14px;
+}
+
+.trace__node {
+  margin-left: 7px;
+  padding-left: var(--s3);
+  border-left: 1px solid var(--hair);
+}
+
+/* The root node has no ancestor line to hang from. */
+.trace__node--root {
+  border-left: none;
+  margin-left: 0;
+  padding-left: 0;
+}
+
+.trace__row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.trace__row:hover .trace__label {
+  color: var(--accent);
+}
+
+.trace__caret {
+  font-family: var(--font-mono);
+  color: var(--ink-3);
+  font-size: 10px;
+  width: 10px;
+  flex: none;
+}
+
+.trace__label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--ink);
+}
+
+/*
+ * The result sits out in the margin, where a worked answer belongs. Capped
+ * to a fraction of the row and allowed to shrink/wrap itself — a node whose
+ * output is a multi-key object (e.g. Replenish Aura's rawRegeneration /
+ * regenerationPerHour / recoveredAura / …) would otherwise stay at its full
+ * content width and squeeze .trace__label down to nothing, wrapping the
+ * label one character per line.
+ */
+.trace__output {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 60%;
+  margin-left: auto;
+  padding-left: var(--s3);
+  overflow-wrap: anywhere;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.trace__details {
+  padding: 2px 0 var(--s2) 22px;
+  color: var(--ink-2);
+}
+
+.trace__formula {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--ink-2);
+  padding: 1px 0 3px;
+}
+
+.trace__inputs {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--s3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.trace__input-name {
+  color: var(--ink-3);
+}
+
+.trace__input-value {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+/* Provenance. `rule` and `decision` are unset on every node the engine
+   currently emits; that gap is printed rather than hidden. */
+.trace__provenance {
+  margin-top: var(--s1);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0 var(--s3);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.trace__provenance-value {
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* JSON inspector                                                      */
+/* ------------------------------------------------------------------ */
+
+.json {
+  margin: 0;
+  padding: var(--s3);
+  background: var(--well-2);
+  border-radius: var(--radius);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-2);
+  max-height: 380px;
+  overflow: auto;
+  white-space: pre;
+}
+
+/* Four categories, all muted. Reading JSON here is about shape, not colour. */
+.json__key {
+  color: var(--ink);
+}
+
+.json__string {
+  color: var(--pass);
+}
+
+.json__number {
+  color: var(--accent);
+}
+
+.json__literal {
+  color: var(--warn);
+}
+
+.json__punct {
+  color: var(--ink-3);
+}
+
+/* ------------------------------------------------------------------ */
+/* Body diagram                                                        */
+/* ------------------------------------------------------------------ */
+
+.body-diagram {
+  display: flex;
+  align-items: center;
+  gap: var(--s5);
+}
+
+.body-diagram__figure {
+  flex: none;
+}
+
+.body-diagram__readout {
+  flex: 1;
+  min-width: 0;
+}
+
+/* The silhouette outline. Fill opacity is driven by aura density. */
+.body-diagram__part {
+  stroke: var(--accent-2);
+  stroke-width: 1;
+  fill: var(--accent);
+}
+
+/* ------------------------------------------------------------------ */
+/* Tabs                                                                */
+/* ------------------------------------------------------------------ */
+
+.tabs {
+  display: flex;
+  gap: var(--s1);
+  padding: var(--s2) var(--s4);
+  flex-wrap: wrap;
+}
+
+/* A tab row inside a scrolling panel body stays put. Scrolling deep into a
+   trace shouldn't cost you the switcher that got you there. */
+.panel__body > .tabs {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--well);
+}
+
+/* ------------------------------------------------------------------ */
+/* Build Palette                                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A top-level, collapsible palette category (Character, Stats, Aura, …).
+ * The header is a plain button styled to read as a heading rather than a
+ * control — same mono-kicker/uppercase treatment as .palette__category,
+ * just clickable, with a chevron carrying the expand/collapse state instead
+ * of colour alone.
+ */
+.palette__group {
+  border-bottom: 1px solid var(--rule);
+}
+
+.palette__group:last-child {
+  border-bottom: none;
+}
+
+.palette__group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+  padding: var(--s3) var(--s4);
+  background: none;
+  border: 0;
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-2);
+}
+
+.palette__group-header:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.palette__group-chevron {
+  flex: 0 0 auto;
+  width: 1em;
+  color: var(--ink-3);
+}
+
+.palette__group-label {
+  flex: 1 1 auto;
+}
+
+.palette__group-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  font-size: 10.5px;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.palette__group-body {
+  padding-bottom: var(--s2);
+}
+
+.palette__category {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: var(--s3) var(--s4) var(--s1);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--ink-3);
+}
+
+.palette__lock {
+  font-size: 10px;
+}
+
+.palette__locked-reason {
+  margin: 0 var(--s4) var(--s2);
+  color: var(--ink-3);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+/* Wraps one category's rows, separately from its heading, so the grid only
+   ever reflows the items — see .roster for why auto-fit and the min(…, 100%)
+   floor are what keep a narrow column at one full-width item per row instead
+   of one clipped, horizontally-scrolling item. */
+.palette__items {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr));
+  column-gap: var(--s4);
+}
+
+.palette__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  border-bottom: 1px solid var(--hair);
+  cursor: grab;
+}
+
+.palette__item:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.palette__item:active {
+  cursor: grabbing;
+}
+
+.palette__item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.palette__item-name {
+  color: var(--ink);
+  font-size: 14.5px;
+}
+
+.palette__item-description {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+/* A catalog row is picked, not dragged: only packages carry a drag payload,
+   so only they get the grab cursor. */
+.palette__item:not([draggable="true"]) {
+  cursor: default;
+}
+
+.palette__item:not([draggable="true"]):active {
+  cursor: default;
+}
+
+/*
+ * Two small marks on a catalog entry's name, in the same vocabulary: a word,
+ * not a colour. "yours" says this came from the catalog file rather than the
+ * engine; "held" says the active character already has it — which is why the
+ * add button stays enabled rather than disappearing, since re-adding a
+ * Mutation is how you change its element.
+ */
+.palette__own,
+.palette__held {
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  vertical-align: 1px;
+}
+
+.palette__own {
+  color: var(--accent);
+  border: 1px solid var(--rule);
+}
+
+.palette__held {
+  color: var(--ink-3);
+  background: var(--well-2);
+}
+
+.palette__variant {
+  max-width: 120px;
+  font-size: 12px;
+}
+
+/* The authoring button sits in the category heading, so it reads as "a new
+   one of these" rather than as another item in the list. */
+.palette__new {
+  margin-left: auto;
+  margin-right: 0;
+}
+
+.palette__issues {
+  color: var(--warn);
+  font-size: 12.5px;
+  font-style: italic;
+}
+
+/* A button sized to sit inside a heading without setting its line height. */
+.button--tiny {
+  padding: 1px 6px;
+  font-size: 10.5px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* A label above its control rather than beside it, for dialogs too narrow to
+   spend the gutter on. */
+.field--stacked {
+  display: block;
+}
+
+.field--stacked + .field--stacked {
+  margin-top: var(--s3);
+}
+
+.field--stacked .field__label {
+  display: block;
+  width: auto;
+  margin-bottom: 2px;
+}
+
+.field--stacked input,
+.field--stacked textarea {
+  width: 100%;
+}
+
+/* ------------------------------------------------------------------ */
+/* Drop target                                                         */
+/* ------------------------------------------------------------------ */
+
+/* Wraps the Character Panel so a dragged palette item has somewhere to
+   land. Invisible until something is actually hovering over it. */
+.drop-target {
+  border-radius: var(--radius);
+  outline: 2px dashed transparent;
+  outline-offset: 2px;
+}
+
+.drop-target--over {
+  outline-color: var(--accent-2);
+}
+
+/* ------------------------------------------------------------------ */
+/* Combat / Run                                                        */
+/* ------------------------------------------------------------------ */
+
+/* The centre column's workspace switcher. Sits above the panel rather
+   than inside one, so it reads as choosing a workspace. */
+.app__centre-tabs {
+  padding: 0 0 var(--s1);
+  flex: none;
+}
+
+/* Two combatants with a small "vs" between them. Collapses to stacked
+   if the column is ever too narrow for a real comparison. */
+.combat {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: var(--s4);
+  align-items: start;
+}
+
+.combatant {
+  min-width: 0;
+}
+
+.combatant__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+}
+
+/* Sits level with the two combatant dropdowns rather than centred against
+   the columns — they're different heights, so centring puts it adrift. */
+.combat__versus {
+  align-self: start;
+  color: var(--ink-3);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 15px;
+  padding-top: 32px;
+}
+
+/* A scratch combatant never reaches the vault, and says so. */
+.combatant__ephemeral {
+  margin: var(--s2) 0 0;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+.combat__run {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--hair);
+}
+
+/* The engine gaps a real round still needs. Collapsed by default — it's a
+   reference list, not something to read every time. */
+.combat__missing {
+  margin-top: var(--s4);
+}
+
+.combat__missing summary {
+  cursor: pointer;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.combat__missing-list {
+  list-style: none;
+  margin: var(--s2) 0 0;
+  padding: 0;
+}
+
+.combat__missing-list li {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--s2) 0;
+  border-bottom: 1px solid var(--hair);
+}
+
+.combat__missing-list li:last-child {
+  border-bottom: none;
+}
+
+.combat__missing-name {
+  color: var(--ink-2);
+  font-size: 13.5px;
+}
+
+.combat__missing-detail {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Function Sandbox                                                    */
+/* ------------------------------------------------------------------ */
+
+.sandbox__category {
+  padding: var(--s3) var(--s4) var(--s1);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--ink-3);
+}
+
+/* Wraps one category's entries, separately from its heading — see
+   .palette__items, same reasoning. */
+.sandbox__entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  column-gap: var(--s4);
+}
+
+/* One registry entry in the list. A button styled as a two-line row. */
+.sandbox__entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: var(--s2) var(--s4);
+  border: none;
+  border-bottom: 1px solid var(--hair);
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sandbox__entry:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+.sandbox__entry-name {
+  color: var(--ink);
+  font-size: 14.5px;
+}
+
+.sandbox__entry-description {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sandbox__description {
+  margin: 0 0 var(--s3);
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* A nested object parameter, indented so its shape is visible at a glance. */
+.sandbox__group {
+  margin: var(--s2) 0;
+  padding-left: var(--s3);
+  border-left: 1px solid var(--hair);
+}
+
+.sandbox__hint {
+  margin: 0 0 var(--s1);
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Inspector history banner                                            */
+/* ------------------------------------------------------------------ */
+
+/* Shown whenever the Inspector is pinned to a past event rather than
+   live state, so old numbers are never mistaken for current ones. */
+.inspector__history-banner {
+  margin: var(--s3) var(--s4) 0;
+  padding: var(--s2) var(--s3);
+  background: var(--well-2);
+  border-left: 2px solid var(--warn);
+  border-radius: 2px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+
+/* ------------------------------------------------------------------ */
+/* Event log                                                           */
+/* ------------------------------------------------------------------ */
+
+/*
+ * A ledger, narrowed. Three columns don't fit in the Inspector, so an entry
+ * wraps: time and operation on the first line, what changed on the second,
+ * indented into the time gutter. Ruling every row is still correct here —
+ * that is what makes a ledger a ledger, and it's the one place in the app
+ * where a rule per item earns its keep.
+ */
+.log__toolbar {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding-bottom: var(--s1);
+  border-bottom: 1px solid var(--rule);
+}
+
+/* Rows are <button>s (clickable, selectable) styled to read as plain rows. */
+.log__row {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  gap: 0 var(--s2);
+  width: 100%;
+  padding: var(--s1) 0;
+  border: none;
+  border-bottom: 1px solid var(--hair);
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.log__row:last-child {
+  border-bottom: none;
+}
+
+.log__row:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* The event currently pinned in the Inspector. Selection has to be obvious:
+   the other three tabs are showing that event's frozen numbers. */
+.log__row--selected,
+.log__row--selected:hover {
+  background: var(--sel);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+
+.log__time {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+
+.log__label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Second line, hanging in the content column so it reads as this row's
+   result rather than as a new entry. */
+.log__detail {
+  grid-column: 2;
+  color: var(--ink-2);
+  overflow-wrap: anywhere;
+}
+
+/* ------------------------------------------------------------------ */
+/* Utilities                                                           */
+/* ------------------------------------------------------------------ */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+}
+
+.muted {
+  color: var(--ink-3);
+}
+
+/* Prose inside a panel: an empty state, an explanation, a caveat. */
+.note {
+  margin: 0;
+  max-width: 66ch;
+  color: var(--ink-3);
+  font-size: 13.5px;
+}
+
+/* A group heading one level below a panel title. Uppercase is reserved for
+   these and for panel kickers — nothing else shouts. */
+.section-label {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--ink-3);
+  margin-bottom: var(--s1);
+}

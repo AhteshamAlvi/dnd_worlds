@@ -34,9 +34,9 @@ GEAR                            ryn: [      ]
 
 ═══════════════════════════════════════════════
 ⌛ AURA  (blank until awakening)
-  Aura Pool max = 30×1.6^(CON−10), no cap: [     ]  current: [     ]
-  Aura Output (AP × Ren%): [     ]
-  Control rank: [ ]  (cost ×    )   Regen/hr: rest VIT÷2 % [    ]
+  Aura Pool max = R(10×M((CON+VIT)/2)), no cap [[Aura Mathematics]]: [     ]  current: [     ]
+  Physiological Output Capacity = R(2×M(CON)): [     ]   Ren access % (10×rank): [    ]   Aura Output = min(current, capacity×access): [     ]
+  Control rank: [ ]  (cost ×    )   Regen Capacity G = R(M(VIT)): [    ]   rest = G÷2 [    ]
   Type: ⌛          Efficiency spread: ⌛
   Normal density (AO÷100): [    ]   Ten containment %: [    ]
   Ten shroud (1–2.5% AP): [    ]

@@ -95,13 +95,34 @@ Because damage dice, Guard, Soak, and pools all scale by the same ×10 notation 
 
 Verifying the finalized attribute spine ([[Attributes and Skills]]) behaves:
 
-- **AP is a derived stat, no cap.** Max AP = 30 × 1.6^(CON−10), computed directly from CON exactly as Body HP is computed from VIT — there is no ceiling and no separate accumulator. The exponential maps CON straight onto the power bands: CON 10 → 30 (fresh), 16 → 503 (pro), 20 → 3.3k (elite), 24 → 22k (master), 29 → 250k (apex/[[Canon Benchmarks|Meruem]]). Every legacy band-pool survives; it's now *keyed to a constitution score* instead of grown toward a wall. Growth = raising CON (a hard-won breakthrough that ×1.6s the pool), and Nen-tempering uniquely pushes CON past the mundane 20 — the mechanism of superhuman Nen users. Rarity is arithmetic (twelve breakthroughs to Master), not a cap. ✓
-- **CON and VIT are genuinely independent, both clean derivations.** Pool = f(CON) (size); regen = f(VIT) (rate): resting = VIT÷2 % of max per hour. CON 20 / VIT 8 = a 3.3k pool refilling at 4%/hr (a hoard that trickles); CON 14 / VIT 16 = a 197 pool refilling at 8%/hr (a cup that refills between fights). VIT drives HP *and* regen; nothing drives VIT. Neither stat dominates the other — one sizes, one paces — which was the whole reason to split them. ✓
+- **AP is a derived stat, no cap.** *(Superseded by §11b below — kept here as historical record.)* This section originally verified Max AP = 30 × 1.6^(CON−10), computed directly from CON exactly as Body HP is computed from VIT — there is no ceiling and no separate accumulator. The exponential mapped CON straight onto the power bands: CON 10 → 30 (fresh), 16 → 503 (pro), 20 → 3.3k (elite), 24 → 22k (master), 29 → 250k (apex/[[Canon Benchmarks|Meruem]]). Growth = raising CON (a hard-won breakthrough that ×1.6s the pool), and Nen-tempering uniquely pushes CON past the mundane 20 — the mechanism of superhuman Nen users. Rarity is arithmetic (twelve breakthroughs to Master), not a cap. The CON-only formula and the specific figures above are no longer current; see §11b.
+- **CON and VIT are genuinely independent, both clean derivations.** *(Still true; the mechanism changed, not the claim.)* Pool now reads CON and VIT jointly, as their average (§11b); regen still = f(VIT) alone (rate). VIT drives HP *and* regen; nothing drives VIT. Neither stat dominates the other — one paces, and the two together size the reservoir — which was the whole reason to split them. ✓
 - **DEX ≠ accuracy inflation.** Moving all accuracy to DEX and all precise-aura to DEX did not touch the bounded −2…+14 band (§1) — DEX is one attribute mod like any other; the read game (PER vs DEX) and In contests (DEX vs PER) are opposed rolls, not stacking bonuses. ✓
 - **SPI touches no combat number.** SPI was removed from pool, output, Soak, damage, and accuracy entirely; it appears only on the [[Nen Manifestation]] roll (make new Nen *hold*) and on Spirit saves (resist Nen-on-soul). A high-SPI prodigy and a low-SPI grinder of equal CON/VIT/DEX are *mechanically identical in a fight* — the prodigy's edge is entirely in what they can bring into being. This is exactly the design intent (talent ≠ power), and it means no balance check in §§1–10 depends on SPI at all. ✓
 - **Willpower's removal left no orphaned checks.** Every former WIL call re-homed: Concentration/Composure → CON, reading/Initiative → PER, Manipulation-resistance → Spirit (SPI). A full-text sweep confirms zero remaining WIL references outside the "where it went" note. ✓
 
-None of §§1–7's results move under the overhaul — the pool/output/Soak *magnitudes* are unchanged, only their attribute sources are renamed and split. The overhaul is a re-rooting, not a rebalance, and the canary checks still pass.
+None of §§1–7's results moved under *that* overhaul — the pool/output/Soak *magnitudes* were unchanged, only their attribute sources were renamed and split. That overhaul was a re-rooting, not a rebalance. §11b below is a different kind of change.
+
+## 11b · The Aura Mathematics revision (magnitude curve replaces the CON-only exponential)
+
+§11 verified `Max AP = 30 × 1.6^(CON−10)`, CON-only. That formula has since been **replaced wholesale** by [[Aura Mathematics]]: Maximum Aura Pool now reads the *average* of CON and VIT through an accelerating quadratic-exponent curve, and Aura Output is no longer `AP × Ren%` but a two-stage model — a CON-derived physiological ceiling, accessed via a Ren-derived fraction, capped by Current Aura. Unlike §11's attribute overhaul, **this one does move the numbers**, deliberately: it's a new formula, not a re-rooting of the old one.
+
+Every formula, benchmark table, and rounding example supplied for this revision was checked in Python and matched exactly (see [[Aura Mathematics]] for the full derivation). Recomputed at the CON = VIT baseline this book already used throughout:
+
+| CON = VIT | Old AP (30×1.6^(CON−10)) | New AP | Old AO (≈Ren-rank % of pool) | New Physiological Output Capacity |
+|--:|--:|--:|--:|--:|
+| 10 | 30 | 10 | ~1 | 2 |
+| 17 | ~1.4k | 3k | ~140 | 600 |
+| 20 | 3.3k | 50k | ~330–660 | 10,000 |
+| 22 | 8.4k | 400k | ~840–1.7k | 80,000 |
+| 24 | 22k | 3M | ~2.2k–4.4k | 700,000 |
+| 25 | 40k | 10M | ~4k–8k | 2,000,000 |
+| 29 | 250k | 1B | — | 200,000,000 |
+| 30 | 363k | 4B | — | 800,000,000 |
+
+**What this revision touched, and what it didn't.** [[Aura Statistics]] §§1, 2, and 5 (Pool, Output, Regeneration) and [[Canon Benchmarks]]'s AP/AO figures have been recomputed to match the new curve. **§§1–10 and §12 of this appendix have not.** Their worked examples — Fern at AP 900/AO 110, a "T2 pro AO 130," "master P 2.5k," the Darun figures reused in §12's STR Force Factor check — were calibrated against the *old* AP/AO curve and are now numerically stale, off by orders of magnitude from what the same characters compute to today. They're flagged here rather than silently left wrong or silently rewritten: fixing them honestly means re-running the whole combat-economy calibration (accuracy, Guard, Soak, damage pacing in §§2, 4, 6, 7), which is a combat-balance pass in its own right, not a byproduct of an Aura-reserve formula change. **Treat §§1–10 and §12's specific numeric examples as provisional pending that dedicated pass; the qualitative claims they make (penetration walls hold, accuracy stays bounded, skill beats raw pool at ≤2× disparity, the density engine reproduces Kō's old ×2) are not invalidated by this change — only the illustrative numbers attached to them are.**
+
+*(Honest label: the magnitude curve M(x) = 50ⁿ·2^(n(n−1)/2), the ×10/×2/×1 pool/output/regen scale factors, the one-significant-figure rounding rule, and the 10%-per-Ren-rank access fraction are this book's inventions — supplied whole by design and verified here against the given benchmark tables, not derived from lore. Only the underlying [[The Standard Slime|Standard Slime measurement scale]] is lore.)*
 
 ## 12 · STR Force Factor (physical-Power scaling)
 
@@ -154,7 +175,7 @@ Expected GP for one principle taken to X, and for the cheapest advanced path:
 
 **Stat side.** One attribute from 10 to 30 now costs **110 SP**, about a third of what levelling pays across a whole career: affordable once, deliberately, if quests carry the rest of the sheet. A second pinnacle is not something a career has room for. The mastery-X gate stays at 28 (**93 SP**), so the last two points to 30 cost a further **17 SP and unlock nothing mechanical** — 30 remains an achievement past the point of usefulness, exactly as specified. ✓
 
-**Downstream figures rechecked.** Control ranks were rescaled with the GP curve (2 / 4 / 7 / 11 for Control 2–5, holding their old share of a principle's cost). §§1–3 (accuracy bounds, penetration walls) depend on attribute *values* and density, not on how those values were purchased, and are unaffected. `30 × 1.6^(CON−10)` is likewise untouched — CON simply costs Stat Points now. At the new cap CON 30 still implies a pool of **363k**, consistent with the top of [[Canon Benchmarks]].
+**Downstream figures rechecked.** Control ranks were rescaled with the GP curve (2 / 4 / 7 / 11 for Control 2–5, holding their old share of a principle's cost). §§1–3 (accuracy bounds, penetration walls) depend on attribute *values* and density, not on how those values were purchased, and are unaffected. Aura Pool math has since moved on from `30 × 1.6^(CON−10)` to [[Aura Mathematics]]'s CON+VIT curve (§11b below) — CON (and VIT) simply cost Stat Points now, same as before, just feeding a different formula. At the new formula's balanced CON 30 / VIT 30 benchmark the pool is **4B**, and [[Canon Benchmarks|Meruem's own CON 29 anchor]] recomputes to **AP 1B**.
 
 ⚠ **Watch in play.** DC 22 for Mastery X is still unreachable on a bare d20 + SPI at average SPI (+0 gives 0%). That is now intentional — the modifier table is the route, and X is meant to be a prepared, supported, once-in-a-career attempt. If it proves too fiddly at the table, drop DC X to 20 rather than inflating SPI.
 

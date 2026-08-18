@@ -50,17 +50,17 @@ Elite combat wrecks terrain by rule (P vs object Soak, [[Scale Speed and Magnitu
 
 ## Preventing rules abuse (known edges, pre-patched)
 
-| Attempted exploit | The rule that catches it |
-|---|---|
-| Vow-stacking to absurd multipliers | ×5 product cap; narrow-parameter cap ×10, max two ([[Conditions Vows and Risk (Rules)]]) |
-| Cosmetic restrictions for free power | Sincerity audit, teeth column, fade-to-×1 |
-| Chip-damage sieging something huge | Penetration threshold: P ≤ Soak does nothing, ever |
-| Zetsu-camping to regen mid-fight | Zetsu = defenseless: any Nen-enhanced hit doubles on Body ([[Nen Principles (Rules)]]) |
-| En always-on radar | Upkeep = radius/round + Strain clock ([[Nen Principles (Rules)]]) |
-| Yū heal-tanking in combat | Full-action channel, no other Nen, brutal rates ([[Nen Principles (Rules)]]) |
-| Downtime-stuffing ranks | Throughput limit ([[Rulebook/05 Progression/Progression and Training]]) |
-| Overdraw as free fuel | 1 HP : 2 aura *and* Strain — it's a mortgage, and [[Injury Recovery and Conditions|Strain]] compounds |
-| Minion-swarming a wall | Minions below penetration threshold add zero ([[NPCs Creatures and Encounters]]) |
+| Attempted exploit                       | The rule that catches it                                                                                       |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Vow-stacking to absurd multipliers      | ×5 product cap; narrow-parameter cap ×10, max two ([[Conditions Vows and Risk (Rules)]])                       |
+| Cosmetic restrictions for free power    | Sincerity audit, teeth column, fade-to-×1                                                                      |
+| Chip-damage sieging something huge      | Penetration threshold: P ≤ Soak does nothing, ever                                                             |
+| Zetsu-camping to regen mid-fight        | Zetsu = defenseless: any Nen-enhanced hit doubles on Body ([[Nen Principles (Rules)]])                         |
+| En always-on radar                      | Upkeep = radius/round + Strain clock ([[Nen Principles (Rules)]])                                              |
+| Yū heal-tanking in combat               | Full-action channel, no other Nen, brutal rates ([[Nen Principles (Rules)]])                                   |
+| Downtime-stuffing ranks                 | Throughput limit ([[Rulebook/05 Progression/Progression and Training]])                                        |
+| Overdraw as free fuel                   | 1 HP : 2 aura *and* Strain — it's a mortgage, and [[Injury Recovery and Conditions\|Strain]] compounds         |
+| Minion-swarming a wall                  | Minions below penetration threshold add zero ([[NPCs Creatures and Encounters]])                               |
 | "My ability does X" mid-scene invention | Forms are pre-built purchases with triggers ([[Hatsu Design]]) — improvisation uses principles, not new powers |
 
 ## Disagreements

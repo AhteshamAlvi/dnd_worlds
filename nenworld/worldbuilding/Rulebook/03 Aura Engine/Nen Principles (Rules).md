@@ -22,23 +22,23 @@ The fifteen principles from the lore ([[0 Four Major Principles|Four Major Princ
 
 Every principle names the attributes that gate its mastery. Thresholds per rank are in [[Nen Growth]] (Primary 3→28, Secondary 2→24, Tertiary 1→21 across I→X). Majors use a Primary alone; Intermediates add a Secondary; Advanced principles use all three.
 
-| Principle | Primary | Secondary | Tertiary | Why |
-|---|---|---|---|---|
-| [[Ten]] | DEX | — | — | Precise, continuous control of aura already being released |
-| [[Zetsu]] | DEX | — | — | Closing every node exactly, and holding it closed |
-| [[Ren]] | CON | — | — | Capacity, exertion, and sustaining extreme output |
-| [[Hatsu]] | *individual* | *optional* | *optional* | Set per ability ([[Hatsu Design]]) |
-| [[Gyō]] | DEX | PER | — | Concentrating accurately; reading what comes back |
-| [[In]] | INT | DEX | — | Understanding what makes aura legible; hiding it while it still works |
-| [[En]] | CON | PER | — | Producing the field; distinguishing everything inside it |
-| [[Shū]] | DEX | INT | — | Wrapping the object; understanding its structure well enough to own it |
-| [[Ken]] | CON | VIT | — | Sustaining whole-body Ren; surviving the strain of it |
-| [[Chū]] | DEX | VIT | — | Driving aura inward precisely; a body that integrates the reinforcement |
-| [[Kō]] | DEX | CON | WIS | Total concentration, the output to fill it, the judgment to commit |
-| [[Ryū]] | WIS | DEX | PER | Deciding the ratio, executing it, reading the opponent who forces it |
-| [[Fū]] | INT | CON | PER | Constructing the boundary, sustaining it, noticing what crosses |
-| [[Jū]] | SPI | WIS | CON | Will against hostile Nen, recognition of what to reject, aura to power it |
-| [[Yū]] | VIT | DEX | INT | Regeneration, cellular control, and knowing what to rebuild |
+| Principle | Primary      | Secondary  | Tertiary   | Why                                                                       |
+| --------- | ------------ | ---------- | ---------- | ------------------------------------------------------------------------- |
+| [[Ten]]   | DEX          | —          | —          | Precise, continuous control of aura already being released                |
+| [[Zetsu]] | DEX          | —          | —          | Closing every node exactly, and holding it closed                         |
+| [[Ren]]   | CON          | —          | —          | Capacity, exertion, and sustaining extreme output                         |
+| [[Hatsu]] | *individual* | *optional* | *optional* | Set per ability ([[Hatsu Design]])                                        |
+| [[Gyō]]   | DEX          | WIS        | —          | Concentrating accurately; reading what comes back                         |
+| [[In]]    | WIS          | PER        | —          | Understanding what makes aura legible; hiding it while it still works     |
+| [[En]]    | CON          | PER        | —          | Producing the field; distinguishing everything inside it                  |
+| [[Shū]]   | DEX          | PER        | —          | Wrapping the object; understanding its structure well enough to own it    |
+| [[Ken]]   | CON          | VIT        | —          | Sustaining whole-body Ren; surviving the strain of it                     |
+| [[Chū]]   | DEX          | PER        | —          | Driving aura inward precisely; a body that integrates the reinforcement   |
+| [[Kō]]    | DEX          | CON        | WIS        | Total concentration, the output to fill it, the judgment to commit        |
+| [[Ryū]]   | DEX          | WIS        | INT        | Deciding the ratio, executing it, reading the opponent who forces it      |
+| [[Fū]]    | INT          | PER        | WIS        | Constructing the boundary, sustaining it, noticing what crosses           |
+| [[Jū]]    | WIS          | INT        | CON        | Will against hostile Nen, recognition of what to reject, aura to power it |
+| [[Yū]]    | INT          | WIS        | VIT        | Regeneration, cellular control, and knowing what to rebuild               |
 
 **The division that matters most:** *PER notices the evidence. INT explains the mechanism. WIS decides what it means and what to do. DEX executes the response.* PER catches an opponent's aura shifting whenever someone answers a question; INT deduces the Hatsu triggers on a lie; WIS spots that they're baiting another activation; DEX decides whether the aura answer actually lands.
 

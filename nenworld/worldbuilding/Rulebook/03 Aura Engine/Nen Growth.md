@@ -129,9 +129,9 @@ Growth Points are the cost; time is the other cost. Base dedicated training time
 - **Observation learning:** watching a principle used in earnest (3+ scenes) + INT (Nen Theory) DC 16 → ×¾ time, once per principle. Watching is not having — the check unlocks faster study, never the rank.
 - Training weeks for mastery and for CON regimens overlap freely; it is all aura work, and a week counts for both.
 
-## Growing your aura capacity (raise CON)
+## Growing your aura capacity (raise CON and/or VIT)
 
-Max aura pool is **derived from CON** ([[Aura Statistics]]: `30 × 1.6^(CON−10)`), so reserves grow by **raising CON** — there is no separate aura track and no cap. For a Nen user the daily [[Ten]]/[[Ren]] discipline the lore insists on *is* the CON regimen. Because each +1 multiplies the pool by ~1.6, growth feels like the shonen breakthrough it is.
+Max aura pool is **derived from the average of CON and VIT** ([[Aura Statistics]] · [[Aura Mathematics]]), so reserves grow by **raising either** — there is no separate aura track and no cap. CON alone additionally raises your physiological Output ceiling, so it stays the pricier, more load-bearing half of the pair. For a Nen user the daily [[Ten]]/[[Ren]] discipline the lore insists on *is* the CON regimen. The curve accelerates hard past baseline, so growth feels like the shonen breakthrough it is — later points are worth far more than early ones.
 
 **Raising CON +1** costs Stat Points on the standard curve ([[Rulebook/05 Progression/Progression and Training|Progression and Training]]) plus an 8-week dedicated block, with Nen accelerators:
 

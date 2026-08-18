@@ -4,7 +4,7 @@ This page turns the Nen lore into levers a GM and players can actually use, with
 
 ## Aura is a resource
 
-Treat aura as a pool tied to stamina and focus (see [[Aura]]). Everyday things are free; the more forceful the principle, the more it draws:
+Treat aura as a pool tied to stamina and focus (see [[0 Aura|Aura]]). Everyday things are free; the more forceful the principle, the more it draws:
 
 - **Free / always-on** once trained: [[Ten]], sensing aura, walking around in a light shroud.
 - **Cheap, sustained:** [[Ren]], [[Gyō]], [[Ken]] — holding these costs a trickle the whole time they're up.

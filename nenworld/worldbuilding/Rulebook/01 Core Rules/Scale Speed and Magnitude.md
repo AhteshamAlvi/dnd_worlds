@@ -43,7 +43,9 @@ This is deliberate and load-bearing: a party dealing 20–40 damage is *mechanic
 
 Speed is a logarithmic track, not a modifier. **Each SR step doubles speed.** SR n ≈ 5 × 2^(n−1) m/s.
 
-| SR | Speed | Anchor | Combat move (per 6s round) |
+Combat move is speed spent across half of your turn's actual fictional length (the other half is spent acting): **Combat move = Speed (m/s) × (Δt_game ÷ 2)**, where Δt_game is your turn's converted fictional duration for this fight's Combat Scale ([[Combat Time]]). The reference column below holds Δt_game at the old flat 6-second assumption (i.e. Speed × 3) for quick lookup at the table; at a Duel's ~12-second full turn, double it.
+
+| SR | Speed | Anchor | Combat move (reference, at 6s/turn) |
 |---|---|---|---|
 | 0 | 2 m/s | Child, elderly | 6 m |
 | 1 | 5 m/s | Average adult, flat out | 15 m |
@@ -89,7 +91,7 @@ Scale Factor is the *biological* magnitude multiplier — how much creature ther
 | ×100 | [[Hollow|Gillian]], building-sized Monsters |
 | ×1k+ | [[Monsters|Tailed Beasts]], mountain-scale entities |
 
-SF multiplies: **Body HP**, **Body Soak**, carrying/dragging, and structural damage dealt by sheer mass. SF does **not** multiply aura statistics — aura comes from life-force and training, not tonnage ([[Aura]]); a Gillian's enormity is mostly natural energy and meat. (Some races carry a separate *aura multiplier*; that's a racial trait, not SF — see [[Race Rules Overview]].)
+SF multiplies: **Body HP**, **Body Soak**, carrying/dragging, and structural damage dealt by sheer mass. SF does **not** multiply aura statistics — aura comes from life-force and training, not tonnage ([[0 Aura|Aura]]); a Gillian's enormity is mostly natural energy and meat. (Some races carry a separate *aura multiplier*; that's a racial trait, not SF — see [[Race Rules Overview]].)
 
 SF is distinct from **Surface Units** (SU), the *area* measure that drives aura density ([[Aura Density and Concentration]]): SF is about mass/durability, SU about skin. A large creature has both a high SF (hard to hurt) and a high SU (its aura spreads thin unless concentrated) — which is why a giant is durable yet its unfocused aura is easy to out-penetrate with a concentrated human strike. Read the two independently.
 

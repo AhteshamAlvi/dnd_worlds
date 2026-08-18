@@ -5,8 +5,8 @@
 ## What DEX governs
 
 - **All attack accuracy** ([[Combat Core]]):
-  > **Accuracy = d20 + DEX mod + combat proficiency (Martial Arts / Weapons / Marksmanship) vs Evasion**
-  Melee and ranged alike. STR sets a melee blow's *power*, never its accuracy.
+	  **Accuracy = d20 + DEX mod + combat proficiency (Martial Arts / Weapons / Marksmanship) vs Evasion**
+	  Melee and ranged alike. STR sets a melee blow's *power*, never its accuracy.
 - **All precise aura work** — shaping, threading, and executing Nen:
   - **Ability attack rolls** = d20 + DEX mod (or [[Perception|PER]] for a sensed/tracked target) + **Hatsu** proficiency ([[Hatsu Design]]).
   - **Constructing and executing** conjured objects, transmuted shapes, aura threads, fine [[Nen Principles (Rules)|Shū]] and cellular [[Nen Principles (Rules)|Yū]] work (a DEX check + the principle's minimum Control rank).
@@ -27,35 +27,71 @@ A high-DEX / low-Control user threads a perfect aura needle and pays double for 
 
 ## The Dexterity scale (1–30)
 
-| Score | Mod | What this DEX looks like |
-|---|---|---|
-| 1 | −5 | Cannot hold a spoon steady; no usable aim or fine control. |
-| 2 | −4 | Drops things constantly; can't tie a knot. |
-| 3 | −4 | Still very shaky, but can manage a clumsy knot on the second try. |
-| 4 | −3 | Very clumsy hands; poor shot, shaky work. |
-| 5 | −3 | A little steadier, but still can't aim a thrown stone reliably. |
-| 6 | −2 | Below average coordination; fumbles under pressure. |
-| 7 | −2 | Slightly more coordinated, but still unreliable when rushed. |
-| 8 | −1 | A little uncoordinated. |
-| 9 | −1 | Mildly clumsy; competent enough not to draw notice. |
-| 10 | +0 | Average adult — writes legibly, fair aim. |
-| 11 | +0 | A touch above average — competent with tools, steady hands. |
-| 12 | +1 | Neat-handed; a decent shot. |
-| 13 | +1 | Tidy craftsman; consistently precise work. |
-| 14 | +2 | Trained — marksman, tradesperson, duelist. |
-| 15 | +2 | Seasoned — clean aura shapes, rarely a wasted motion. |
-| 16 | +3 | Exceptional; surgeon-steady. |
-| 17 | +3 | Elite; a crack shot, precise constructs. |
-| 18 | +4 | Peak human — master marksman/surgeon. |
-| 19 | +4 | World-class — threads a needle mid-motion. |
-| 20 | +5 | The human ceiling of precision; flawless under any pressure. |
-| 21 | +5 | Just past the human ceiling of precision. Only Nen-tempering, a racial gift, a Mutation, or similarly special circumstances reach here. |
-| 22 | +6 | Superhuman: places aura to the millimetre in freefall. |
-| 23 | +6 | Superhuman: splits a bullet, weaves constructs mid-fight. |
-| 24 | +7 | Never fumbles a shot. |
-| 25 | +7 | Never fumbles a construct, however complex. |
-| 26 | +8 | Aura obeys like a fifth limb. |
-| 27 | +8 | Invisible threads, perfect feints, nothing telegraphed. |
-| 28 | +9 | Executes the impossible-looking as routine — cell-perfect healing. |
-| 29 | +9 | Construction no eye can follow, mid-fight, without a wasted motion. |
-| 30 | +10 | Apex precision — no wasted motion ever; the aura is as exact as thought (Six-Eyes-tier execution). |
+| Score | Mod | What this DEX looks like                                                                                                                |
+| ----- | --- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 1     | −5  | Cannot hold a spoon steady; no usable aim or fine control.                                                                              |
+| 2     | −4  | Drops things constantly; can't tie a knot.                                                                                              |
+| 3     | −4  | Still very shaky, but can manage a clumsy knot on the second try.                                                                       |
+| 4     | −3  | Very clumsy hands; poor shot, shaky work.                                                                                               |
+| 5     | −3  | A little steadier, but still can't aim a thrown stone reliably.                                                                         |
+| 6     | −2  | Below average coordination; fumbles under pressure.                                                                                     |
+| 7     | −2  | Slightly more coordinated, but still unreliable when rushed.                                                                            |
+| 8     | −1  | A little uncoordinated.                                                                                                                 |
+| 9     | −1  | Mildly clumsy; competent enough not to draw notice.                                                                                     |
+| 10    | +0  | Average adult — writes legibly, fair aim.                                                                                               |
+| 11    | +0  | A touch above average — competent with tools, steady hands.                                                                             |
+| 12    | +1  | Neat-handed; a decent shot.                                                                                                             |
+| 13    | +1  | Tidy craftsman; consistently precise work.                                                                                              |
+| 14    | +2  | Trained — marksman, tradesperson, duelist.                                                                                              |
+| 15    | +2  | Seasoned — clean aura shapes, rarely a wasted motion.                                                                                   |
+| 16    | +3  | Exceptional; surgeon-steady.                                                                                                            |
+| 17    | +3  | Elite; a crack shot, precise constructs.                                                                                                |
+| 18    | +4  | Peak human — master marksman/surgeon.                                                                                                   |
+| 19    | +4  | World-class — threads a needle mid-motion.                                                                                              |
+| 20    | +5  | The human ceiling of precision; flawless under any pressure.                                                                            |
+| 21    | +5  | Just past the human ceiling of precision. Only Nen-tempering, a racial gift, a Mutation, or similarly special circumstances reach here. |
+| 22    | +6  | Superhuman: places aura to the millimetre in freefall.                                                                                  |
+| 23    | +6  | Superhuman: splits a bullet, weaves constructs mid-fight.                                                                               |
+| 24    | +7  | Never fumbles a shot.                                                                                                                   |
+| 25    | +7  | Never fumbles a construct, however complex.                                                                                             |
+| 26    | +8  | Aura obeys like a fifth limb.                                                                                                           |
+| 27    | +8  | Invisible threads, perfect feints, nothing telegraphed.                                                                                 |
+| 28    | +9  | Executes the impossible-looking as routine — cell-perfect healing.                                                                      |
+| 29    | +9  | Construction no eye can follow, mid-fight, without a wasted motion.                                                                     |
+| 30    | +10 | Apex precision — no wasted motion ever; the aura is as exact as thought (Six-Eyes-tier execution).                                      |
+
+
+
+| Score  | Physical                                                                                     | Princples Required                       | Nen                                                                                                      | What this DEX looks like                                                                                                                |
+| ------ | -------------------------------------------------------------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| 0      | Incapable of moving anything but eyes                                                        |                                          | —                                                                                                        | Complete paralysis, Quadriplegic                                                                                                        |
+| 1      | —                                                                                            |                                          | —                                                                                                        | Almost no usable limb control.                                                                                                          |
+| 2      | —                                                                                            |                                          | —                                                                                                        | Extremely limited coordination; can barely grasp objects.                                                                               |
+| 3      | Limited control over limbs. Poor motor control or partial paralysis.                         |                                          | —                                                                                                        | Severe coordination issues; drops things constantly.                                                                                    |
+| 4      | —                                                                                            |                                          | —                                                                                                        | Very clumsy; struggles with basic fine-motor tasks.                                                                                     |
+| 5      | —                                                                                            |                                          | —                                                                                                        | Poor coordination; shaky and unreliable.                                                                                                |
+| 6      | Control over large segments. Arm. Leg. Torso. Head. Not good with hands.                     | Has not unlocked Ren or Ten              | Incapable of controlling Nen even if unlocked. Forced Zetsu.                                             | Below-average coordination; often fumbles under pressure.                                                                               |
+| 7      | —                                                                                            |                                          | —                                                                                                        | Noticeably uncoordinated, but functional.                                                                                               |
+| 8      | —                                                                                            |                                          | —                                                                                                        | Slightly clumsy; everyday tasks are manageable.                                                                                         |
+| 9      | Control over limbs down to major segments (hands, arms segments, upper and lower torso, etc) | Has unlocked Ren but not Ten             | Can only barely switch between Zetsu and Ren. Prolonged control like Ten is impossible.                  | Nearly average coordination.                                                                                                            |
+| **10** | —                                                                                            |                                          | —                                                                                                        | Average adult — writes legibly, fair aim. BASELINE                                                                                      |
+| 11     | —                                                                                            |                                          | —                                                                                                        | A touch above average — competent with tools, steady hands.                                                                             |
+| 12     | Can control down to fingers and extremities, as well as general muscle groups.               | Unlocked Ren and Ten<br>(both Mastery I) | After unlocking Nen, can use Ten and Ren, meaning only control over entire body as one whole.            | Neat-handed; a decent shot.                                                                                                             |
+| 13     | —                                                                                            |                                          | —                                                                                                        | Tidy craftsman; consistently precise work.                                                                                              |
+| 14     | —                                                                                            |                                          | —                                                                                                        | Trained — marksman, tradesperson, duelist.                                                                                              |
+| 15     | Complete and perfect control over every SU of your entire body.                              |                                          | Control Nen over large segments. Arm. Leg. Torso. Head.                                                  | Seasoned — clean aura shapes, rarely a wasted motion.                                                                                   |
+| 16     | —                                                                                            |                                          | —                                                                                                        | Exceptional; surgeon-steady.                                                                                                            |
+| 17     | —                                                                                            |                                          | —                                                                                                        | Elite; a crack shot, precise constructs.                                                                                                |
+| 18     | x1.5 force multiplier                                                                        |                                          | Nen control over limbs down to major segments (hands, arm segments, fingers, upper and lower torso, etc) | Peak human — master marksman/surgeon.                                                                                                   |
+| 19     | —                                                                                            |                                          | —                                                                                                        | World-class — threads a needle mid-motion.                                                                                              |
+| 20     | —                                                                                            |                                          | —                                                                                                        | The human ceiling of precision; flawless under any pressure.                                                                            |
+| 21     | x2 force multiplier                                                                          |                                          | Can direct Nen to individual muscles.                                                                    | Just past the human ceiling of precision. Only Nen-tempering, a racial gift, a Mutation, or similarly special circumstances reach here. |
+| 22     | —                                                                                            |                                          | —                                                                                                        | Superhuman: places aura to the millimetre in freefall.                                                                                  |
+| 23     | —                                                                                            |                                          | —                                                                                                        | Superhuman: splits a bullet, weaves constructs mid-fight.                                                                               |
+| 24     | x3 force multiplier                                                                          |                                          | Complete and perfect control of Aura to every SU of your entire body.                                    | Never fumbles a shot.                                                                                                                   |
+| 25     | —                                                                                            |                                          | —                                                                                                        | Never fumbles a construct, however complex.                                                                                             |
+| 26     | —                                                                                            |                                          | —                                                                                                        | Aura obeys like a fifth limb.                                                                                                           |
+| 27     | x5 force multiplier                                                                          |                                          | x2 aura efficiency multiplier                                                                            | Invisible threads, perfect feints, nothing telegraphed.                                                                                 |
+| 28     | —                                                                                            |                                          | —                                                                                                        | Executes the impossible-looking as routine — cell-perfect healing.                                                                      |
+| 29     | —                                                                                            |                                          | —                                                                                                        | Construction no eye can follow, mid-fight, without a wasted motion.                                                                     |
+| 30     | x10 force multiplier<br>                                                                     |                                          | x5 aura efficiency multiplier                                                                            | Apex precision — no wasted motion ever; the aura is as exact as thought.                                                                |

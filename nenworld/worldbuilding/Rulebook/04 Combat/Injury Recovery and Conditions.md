@@ -69,14 +69,14 @@ Injuries stack. This table is the game's tax on fighting up a band — you can s
 
 ## Environmental hazards
 
-| Hazard | Rule |
-|---|---|
-| Fire (ordinary) | P 10/round exposed; P 30 engulfed. Guard soaks it — walking through fire is a Nen party trick |
-| Falls | Impact rules in [[Scale Speed and Magnitude]] (speed = 5 m/s per second, cap 55) |
-| Suffocation | CON score in rounds of effort (×2 prepared); then Dying |
-| Poison/disease | CON save vs listed DC; on fail, listed track. [[Nen Principles (Rules)|Jū]] can reject *Nen-borne* affliction only |
-| Extreme cold/heat | CON save DC 13/hour or 1 Strain-equivalent fatigue ([[Race Rules Overview|races]] modify: Yuki, Merfolk, Plantfolk…) |
-| Aura-dense zones (Hollowlands, sacred sites) | Regeneration ×2 but Composure (CHA) DC 13/day or emotional bleed — see [[The World of Sorane]] |
+| Hazard                                       | Rule                                                                                                                |
+| -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Fire (ordinary)                              | P 10/round exposed; P 30 engulfed. Guard soaks it — walking through fire is a Nen party trick                       |
+| Falls                                        | Impact rules in [[Scale Speed and Magnitude]] (speed = 5 m/s per second, cap 55)                                    |
+| Suffocation                                  | CON score in rounds of effort (×2 prepared); then Dying                                                             |
+| Poison/disease                               | CON save vs listed DC; on fail, listed track. [[Nen Principles (Rules)\|Jū]] can reject *Nen-borne* affliction only |
+| Extreme cold/heat                            | CON save DC 13/hour or 1 Strain-equivalent fatigue ([[Race Rules Overview\|races]] modify: , Merfolk, Plantfolk…)   |
+| Aura-dense zones (Hollowlands, sacred sites) | Regeneration ×2 but Composure (CHA) DC 13/day or emotional bleed — see [[The World of Sorane]]                      |
 
 ## Chases and escapes
 

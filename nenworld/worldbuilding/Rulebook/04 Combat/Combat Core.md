@@ -1,6 +1,6 @@
 [[0 Index|Index]] › [[0 Rulebook|Rulebook]] › Combat
 
-Rounds are **6 seconds**. Distances are meters. The heart of Nen combat is the **Allocation** step — the lore's aura war ([[Ryū]], [[Kō]], [[Ken]]) made into the turn's central decision. Everything else will feel like D&D on purpose.
+A "round" is one actor's timed turn — the unit everything below (Allocation, Action, Move, Minor, Reaction) is built on. Its *fictional length* is no longer a flat constant: it's set per-fight by the Combat Clock ([[Combat Time]]), and runs ~12 fictional seconds for a full turn at Duel scale, not the old flat 6. Distances are meters. The heart of Nen combat is the **Allocation** step — the lore's aura war ([[Ryū]], [[Kō]], [[Ken]]) made into the turn's central decision. Everything else will feel like D&D on purpose.
 
 ## Initiative and surprise
 
@@ -10,13 +10,13 @@ Rounds are **6 seconds**. Distances are meters. The heart of Nen combat is the *
 
 ## Your turn
 
-| Piece | You get | Examples |
-|---|---|---|
-| **Allocation** | Free, at turn start | Commit up to AO into Strike / Guard / Drive / Focus / Fuel |
-| **Action** | 1 | Attack (with your attack routine), use an ability, raise [[En]], enter [[Zetsu]], Dash (double move), disengage, aid, stabilize |
-| **Move** | 1 | Up to combat move for your SR |
-| **Minor** | 1 | Enter [[Ken]]/[[Nen Principles (Rules)|Kō]]/[[Gyō]] focus, draw/sheathe, shout a sentence, drop prone |
-| **Reaction** | 1/round | Dodge (+2 EVA vs one attack you can perceive), Block (move your Guard: treat one location as full-Guard), [[Ryū]] reallocation, readied action, counter (below) |
+| Piece          | You get             | Examples                                                                                                                                                        |
+| -------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Allocation** | Free, at turn start | Commit up to AO into Strike / Guard / Drive / Focus / Fuel                                                                                                      |
+| **Action**     | 1                   | Attack (with your attack routine), use an ability, raise [[En]], enter [[Zetsu]], Dash (double move), disengage, aid, stabilize                                 |
+| **Move**       | 1                   | Up to combat move for your SR                                                                                                                                   |
+| **Minor**      | 1                   | Enter [[Ken]]/[[Nen Principles (Rules)\|Kō]]/[[Gyō]] focus, draw/sheathe, shout a sentence, drop prone                                                          |
+| **Reaction**   | 1/round             | Dodge (+2 EVA vs one attack you can perceive), Block (move your Guard: treat one location as full-Guard), [[Ryū]] reallocation, readied action, counter (below) |
 
 Allocation has **two axes**: *how much* AO goes to each purpose, and *where on the body* it sits. The first is the familiar lane split; the second is the [[Aura Density and Concentration|density]] layer that decides Soak and concentrated Power.
 
@@ -67,7 +67,7 @@ This loop — read, feint, reallocate, exploit — is where the lore's aura ches
 
 ## Movement and the battlefield
 
-- **Combat move by SR** ([[Scale Speed and Magnitude]]): SR 2 = 30 m … SR 7 = 1 km. At SR 6+, run zones (rooftop, street, plaza) instead of squares.
+- **Combat move by SR** ([[Scale Speed and Magnitude]]): SR 2 = 30 m … SR 7 = 1 km at the 6-second reference turn — scale with your turn's actual fictional length per [[Combat Time]] (double it on a full ~12-second Duel-scale turn). At SR 6+, run zones (rooftop, street, plaza) instead of squares.
 - **Cover:** +2 EVA (partial) / +5 (heavy); cover has Soak & HP ([[Scale Speed and Magnitude]] objects table) and attacks that beat it keep going (subtract cover Soak from Power, once).
 - **Terrain interaction is expected at magnitude:** a P 300 miss demolishes the wall behind ([[Running the Game]] for collateral guidance and why cities fear elite duels).
 - **Disengage:** Action, or free if 3+ SR faster.

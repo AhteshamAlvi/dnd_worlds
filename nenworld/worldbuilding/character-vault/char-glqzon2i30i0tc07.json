@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 4,
+  "id": "char-glqzon2i30i0tc07",
+  "name": "Gon Freecs",
+  "character": {
+    "id": "char-glqzon2i30i0tc07",
+    "name": "Gon Freecs",
+    "attributes": {
+      "str": 10,
+      "agi": 10,
+      "dex": 10,
+      "con": 13,
+      "vit": 13,
+      "int": 10,
+      "wis": 10,
+      "per": 10,
+      "spi": 10,
+      "cha": 10
+    },
+    "body": {
+      "surfaceUnits": 100
+    },
+    "species": [
+      {
+        "speciesId": "human",
+        "percentage": 100
+      }
+    ],
+    "clans": [],
+    "mutations": [],
+    "traits": [],
+    "abilities": [],
+    "techniques": [],
+    "skills": [],
+    "conditions": []
+  },
+  "workbench": {
+    "auraPool": {
+      "current": 100
+    },
+    "renAccessFraction": 0.1,
+    "notes": ""
+  },
+  "updatedAt": "2026-08-17T21:40:17.115Z"
+}

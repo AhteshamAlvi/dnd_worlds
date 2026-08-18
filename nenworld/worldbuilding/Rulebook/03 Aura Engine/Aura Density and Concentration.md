@@ -4,13 +4,11 @@ This chapter is the physical engine under [[Gyō]], [[Kō]], [[Ken]], [[Ryū]], 
 
 ## Surface Units (SU)
 
-A body is measured in **Surface Units** — one SU ≈ **0.02 m²** of surface. An average adult humanoid is **100 SU** (≈ 2.0 m² of skin, the real figure). Aura sits *on and through* the body proportional to surface, so SU is the denominator of every density calculation.
-
-The region map uses the medical Rule-of-Nines (why it's grounded, not invented):
+A body is measured in **Surface Units** — one SU ≈ **0.02 m²** of surface. An average adult humanoid is **100 SU** (≈ 2.0 m² of skin, the real figure). Aura sits *on and through* the body proportional to surface, so SU is the denominator of every density calculation. Where a body's regions and their SU actually come from — Base SU vs. Actual SU, how height and build scale them, additional anatomy — is now its own chapter: [[0 Body|Body]]. The region breakdown this chapter's math runs on, reproduced from [[Standard Anatomy]] (a medical-Rule-of-Nines subdivision down to a fist):
 
 | Region | SU | | Region | SU |
 |---|---|---|---|---|
-| Head | 9 | | Upper arm (each) | 3.5 |
+| Head | 8 | | Upper arm (each) | 3.5 |
 | Neck / throat | 1 | | Forearm (each) | 3 |
 | Torso front | 18 | | **Hand / fist (each)** | **2.5** |
 | Torso back | 18 | | Thigh (each) | 9.5 |
@@ -19,9 +17,11 @@ The region map uses the medical Rule-of-Nines (why it's grounded, not invented):
 
 Sum = 100 SU. A **hand/fist is 2.5 SU** — the number every Kō calculation turns on. Held weapons add their own SU via [[Shū]] (a sword ≈ 3 SU, a tower shield ≈ 12).
 
+*(Head reads 8 here, not the 9 this table used before [[0 Body|Body]] was written — the old Head 9 + everything else summed to 101, not 100; Head 8 is the fix. Every other value, including the load-bearing Hand = 2.5, is unchanged.)*
+
 ## Normal aura distribution
 
-Your **Aura Output (AO)** — the aura you have active this round ([[Aura Statistics]], set by [[Ren]]) — spreads across your body proportional to surface unless you deliberately move it. Two derived quantities:
+Your **Aura Output (AO)** — the aura you have active this round ([[Aura Statistics]]; a physiological ceiling from CON, accessed via [[Ren]] rank — [[Aura Mathematics]]) — spreads across your body proportional to surface unless you deliberately move it. Two derived quantities:
 
 > **Normal aura density** = AO ÷ Total SU  (for a human: AO ÷ 100)
 >
@@ -116,6 +116,8 @@ Because Zetsu pushes transfer toward 100% and Ten toward full containment, a mas
 Surface area scales with the **square of linear size**, so a larger creature's SU rises fast and its **normal aura density falls** unless it pours in proportionally more aura. SU is *area* and is computed independently of [[Scale Speed and Magnitude|Scale Factor]] (the mass/durability multiplier); the two describe different facts about a big body and are read separately:
 
 > **Body SU = 100 × (height ÷ 1.75 m)²**
+
+*(This is the proportional special case of [[Height and Build|Body's now-finalized Physical Surface Multiplier]] (`Height Ratio × Build Multiplier`) — it's what that formula collapses to when Build Multiplier is set equal to Height Ratio, i.e. a creature that's simply a scaled-up human rather than unusually broad or narrow for its own size. The giant/Gillian figures below are unaffected; only the reference-height mismatch, 1.75 m here vs. the 170/160 cm split there, remains an open loose end.)*
 
 | Being | Height | Body SU | Hand/limb SU | (SF) |
 |---|---|---|---|---|

@@ -8,7 +8,7 @@ The [[Nen Path|Nen Path canvas]] shows the principles as a map; each stop links 
 
 These come in roughly this order for nearly everyone, because each genuinely depends on the one before it.
 
-**Tier 0 — Ordinary.** No control over aura. It leaks constantly (see [[Aura]]) and is invisible to them; sensitive people only feel it as a vague presence. Everyone begins here.
+**Tier 0 — Ordinary.** No control over aura. It leaks constantly (see [[0 Aura|Aura]]) and is invisible to them; sensitive people only feel it as a vague presence. Everyone begins here.
 
 **Tier 1 — Awakening.** The aura nodes are forced or coaxed open — slowly through meditation, or fast and risky through [[Initiation]]. The person can now *sense* and *leak* aura in force, but can't yet control it, and is dangerously exhausted until they can. This is the doorway, not the destination.
 
