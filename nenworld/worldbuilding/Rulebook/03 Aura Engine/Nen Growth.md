@@ -41,21 +41,9 @@ The [[0 Four Major Principles|Four Major Principles]] use a Primary only. [[0 In
 
 ### Growth Points
 
-GP represent accumulated practice, refinement, and experimentation *inside that one discipline*. Attributes cannot substitute for them, and they cannot substitute for attributes.
+GP represent accumulated practice, refinement, and experimentation *inside that one discipline*. Attributes cannot substitute for them, and they cannot substitute for attributes. Every rank attempt costs GP, at a cost that rises with rank — **the next attempt**, not a running total: buying rank R and abandoning it doesn't refund what earlier ranks cost.
 
-> **GP to attempt rank R = ⌈R(R+1) / 4⌉**
-
-| Rank | GP | | Rank | GP |
-|---|---:|---|---|---:|
-| I | 1 | | VI | 11 |
-| II | 2 | | VII | 14 |
-| III | 3 | | VIII | 18 |
-| IV | 5 | | IX | 23 |
-| V | 8 | | X | 28 |
-
-This is the cost of **the next attempt**, not a running total. Going from Ten VII to Ten VIII means committing 18 GP toward Ten VIII; the GP that bought ranks I–VII are spent and gone, and count toward nothing.
-
-Cumulatively, one principle from nothing to X costs **113 GP** — reachable. What is *not* reachable is doing it everywhere: all fifteen would cost **1,695**, several times what a whole campaign pays out, before counting a single failed Breakthrough. And because of the **foundation cap** below, total mastery of an *advanced* principle is never one principle's bill — the cheapest route ([[Fū]], resting on [[Ten]], [[Ren]], [[En]], and [[Hatsu]]) is five principles at X, **565 GP** nominal. That is the shape of the endgame: one summit, chosen early and paid for over a career ([[Balance and Math]] §13).
+⚠ **GP cost per rank is not decided yet.** An earlier draft priced this as `⌈R(R+1)/4⌉` (1 GP at rank I, 28 at rank X, ~113 to walk one principle to X), tuned against a since-changed per-level GP supply ([[Rulebook/05 Progression/Progression and Training|Progression and Training]] §4, [[Balance and Math]] §13). That pricing was never actually settled and is pulled here rather than left standing as if it were — the real cost curve, and the cumulative cost of one principle, an advanced principle's foundation-cap closure, and the full fifteen, are all pending a proper pass against the current 3 GP/level supply.
 
 ### Mastery Catalyst
 
@@ -65,43 +53,9 @@ A Catalyst is **specific to the rank it qualifies**. What earned Ten VI does not
 
 ### Breakthrough
 
-Masteries **VIII, IX, and X** require one. Thresholds, Catalyst, and Growth Points together buy only the *right to attempt*.
+Masteries **VIII, IX, and X** require one. Thresholds, Catalyst, and Growth Points together buy only the *right to attempt*. The check is **d20 + SPI modifier**, plus modifiers earned in play (a Catalyst that tested the principle to destruction, a master teacher present, an aura-dense site, a Vow staked on the attempt, rare materials) against a per-target DC. On success the committed GP are consumed and the principle advances; on failure the principle doesn't advance but nothing already earned is lost outright — some portion of the committed GP is meant to burn, forcing a partial re-commit rather than a full retry.
 
-> **Breakthrough Check = d20 + SPI modifier**
-
-| Target | DC |
-|---|---:|
-| VIII | 15 |
-| IX | 18 |
-| X | 22 |
-
-Training, a legendary teacher, a suitable location, vows, rare materials, or an unusually apt Catalyst may modify the check when explicitly earned in play.
-
-**On success:** the committed GP are consumed and the principle advances one rank.
-
-**On failure:** the principle does not advance; mastery, stat qualifications, and the completed Catalyst all persist — but **half the Growth Points committed to that attempt are destroyed** (round up), and the shortfall must be raised again before retrying. A failed Ten VII → VIII attempt burns 9 of its 18 GP; the character re-commits 9 and tries again.
-
-| Failed attempt at | GP burned |
-|---|---:|
-| VIII | 9 |
-| IX | 12 |
-| X | 14 |
-
-A path to X crosses three Breakthroughs per principle, so the top of the ladder is paid for twice over in expectation — once in Growth Points and once in failures. It is the sharpest argument in the game for [[Spirit|SPI]] being worth something to a practitioner who will never cast a Manipulation in their life, and the reason nobody stumbles into total mastery by accident.
-
-### Breakthrough modifiers
-
-A bare attempt is d20 + SPI, and at DC 22 that is not a realistic route to X. **Modifiers are the intended path** — earned in play, never bought:
-
-| Circumstance | Modifier |
-|---|---:|
-| Catalyst that genuinely tested this principle to destruction | +2 (+4 if the GM calls it exceptional) |
-| Master teacher present who holds the principle at X | +2 |
-| Aura-dense site, sacred ground, or a school's ancestral hall | +2 |
-| A Vow staked on the attempt itself ([[Conditions Vows and Risk (Rules)]]) | +2 |
-| Rare material, relic, or a [[Devils Fruits (Rules)|fruit]]-touched reagent | +1 to +3 |
-
-A well-prepared practitioner attempts X at roughly **SPI +4 to +8** on top of their modifier. A desperate one attempts it cold and usually pays for it.
+⚠ **The actual DCs, the modifier values, and the failure-burn fraction are not decided yet.** An earlier draft used DC 15/18/22 for VIII/IX/X, a flat +2 per favorable circumstance, and a half-GP burn on failure (9/12/14 GP) — all tuned as a package against the GP-cost curve above and the per-level GP supply, neither of which is settled either. Pulled pending a proper pass; **[[Balance and Math]] §13** has the supply-side context.
 
 ### Foundation caps
 
@@ -139,27 +93,27 @@ Max aura pool is **derived from the average of CON and VIT** ([[Aura Statistics]
 - **Crucible** (sanctioned danger — hostile terrain, live-fire, war): ×½ time, and each crucible week risks 1 Strain (CON check DC 13).
 - **Fresh-nodes surge:** the first two CON gains after awakening come at ½ time. Fast early ramp, then honest.
 
-**Breaking the mundane cap.** Ordinary conditioning caps human CON at 20 — but **Nen aura-tempering is the one thing that drives CON into the superhuman band**, uniquely among attributes, because that is literally what years of holding vast aura do to a constitution. Past 20 the Stat Point cost curve bites hard on its own (8 per point at 20, 13 at 29) and each point takes **double time**; nothing walls it off.
+**Breaking the mundane cap.** Ordinary conditioning caps human CON at 20 — but **Nen aura-tempering is the one thing that drives CON into the superhuman band**, uniquely among attributes, because that is literally what years of holding vast aura do to a constitution. The Stat Point cost stays flat at 1 SP per point past 20 same as anywhere else on the ladder — it's the **doubled regimen time** past the mundane cap that does the gating, not an escalating price; nothing walls the point cost off.
 
-**Event breakthroughs** grant CON progress directly, on top of regimens — these are the natural home for **Dedicated CON Points**:
+**Event breakthroughs** grant CON progress directly, on top of regimens — these are the natural home for **Limited CON Points**:
 
 | Event | Grant | Limit |
 |---|---|---|
-| A life-or-death arc of near-constant combat | a full dedicated CON block, or 3 Dedicated CON Points | 1/arc |
+| A life-or-death arc of near-constant combat | a full dedicated CON block, or 3 Limited CON Points | 1/arc |
 | Near-death survived (Dying and back) | completes an in-progress CON regimen, or ½ toward the next | 1/arc |
 | Emotional crucible tied to the character's core | ½ toward the next CON regimen | 1/arc |
 | Fulfilling a sworn long-term Vow | completes one CON regimen | per vow |
 
 ## Control ranks
 
-Precision drills: hovering a coin on a thread of aura, splitting a leaf's leak, stilling a bowl you're flaring over. Control is not a principle and has no mastery track, but it is Nen proficiency, so it is bought with **Growth Points**.
+Precision drills: hovering a coin on a thread of aura, splitting a leaf's leak, stilling a bowl you're flaring over. Control is not a principle and has no mastery track, but it is Nen proficiency, so it is bought with **Growth Points**. ⚠ The GP price per rank is priced off the same not-yet-decided GP cost curve above and is pulled pending that pass; time and gates below aren't GP-dependent and stand.
 
 | Control | GP | Time | Gate |
 |---|---:|---|---|
-| 2 | 2 | 4 weeks | — |
-| 3 | 4 | 12 weeks | — |
-| 4 | 7 | 24 weeks | Teacher with Control 4+, or a Defining discipline (a year of daily unbroken drill in fiction) |
-| 5 | 11 | 48 weeks | Breakthrough event |
+| 2 | *pending* | 4 weeks | — |
+| 3 | *pending* | 12 weeks | — |
+| 4 | *pending* | 24 weeks | Teacher with Control 4+, or a Defining discipline (a year of daily unbroken drill in fiction) |
+| 5 | *pending* | 48 weeks | Breakthrough event |
 | 6 | — | — | Not trainable for baseline humans: traits ([[Gojo|Six Eyes]]), rare [[0 Mutants|Mutants]], or a lifetime (GM's gift, never a purchase) |
 
 ## Hatsu mastery
@@ -182,7 +136,7 @@ Precision drills: hovering a coin on a thread of aura, splitting a leaf's leak, 
 
 ## SPI
 
-**SPI is special.** It raises no pool and no Soak. It raises your odds on the two rolls that decide whether effort becomes reality: the [[Nen Manifestation]] that seats a new form, and every **Breakthrough Check** at Mastery VIII and above. It is bought with Stat Points like any attribute but demands an extraordinary cause on top — surviving death, a sacred site's baptism, a decade-vow fulfilled, certain [[Devils Fruits (Rules)|fruits]] or relics. Human cap 20 (24 with a [[0 Mutants|Mutation]]). Treat each point with matching ceremony.
+**SPI is special.** It raises no pool and no Soak. It raises your odds on the two rolls that decide whether effort becomes reality: the [[Nen Manifestation]] that seats a new form, and every **Breakthrough Check** at Mastery VIII and above. It cannot be raised with ordinary Stat Points at all — it's rolled at character creation, and the only way it moves afterward is a Limited Stat Point grant tied to an extraordinary cause: surviving death, a sacred site's baptism, a decade-vow fulfilled, certain [[Devils Fruits (Rules)|fruits]] or relics ([[Rulebook/05 Progression/Progression and Training|Progression and Training]] §3). Human cap 20 (24 with a [[0 Mutants|Mutation]]). Treat each point with matching ceremony.
 
 ## Teachers, texts, and resources
 
@@ -196,6 +150,8 @@ Precision drills: hovering a coin on a thread of aura, splitting a leaf's leak, 
 
 ## Worked growth curves (calibration)
 
-- **Riko** awakens at CON 10 → pool 30. Two fresh-nodes CON blocks in the first arc take her to **CON 12 (pool 77)**, then a third toward 13; she ends the arc near **CON 13, pool ~123**, Ten III, Ren II, Control 1, about 16 GP spent. Her power that arc came far more from reaching Ren II than from the pool. ✓
-- **Year one–two** (regimens, a good teacher, a near-death breakthrough): **CON 15–16 → pool 315–503**, Ren IV, Control 2, roughly 60–80 GP invested across five or six principles — the professional band on schedule.
-- **Elite in ~10–14 years**: **CON 18–20 → pool 1.3k–3.3k**, with 200–300 GP spread across a *chosen* handful of principles and one or two Breakthroughs survived. There is no wall to brush against — only the doubling time past CON 20, the GP curve, and the finite years of a life. The endgame of growth is *choices*: which principles to push into the Breakthrough band, and which to leave at VI forever.
+- **Riko** awakens at CON 10 → pool 30. Two fresh-nodes CON blocks in the first arc take her to **CON 12 (pool 77)**, then a third toward 13; she ends the arc near **CON 13, pool ~123**, Ten III, Ren II, Control 1. Her power that arc came far more from reaching Ren II than from the pool. ✓
+- **Year one–two** (regimens, a good teacher, a near-death breakthrough): **CON 15–16 → pool 315–503**, Ren IV, Control 2 — the professional band on schedule.
+- **Elite in ~10–14 years**: **CON 18–20 → pool 1.3k–3.3k**, one or two Breakthroughs survived. There is no wall to brush against — only the doubling time past CON 20 and the finite years of a life. The endgame of growth is *choices*: which principles to push into the Breakthrough band, and which to leave at VI forever.
+
+⚠ GP figures for these calibration points (spent, invested, budgeted) are pending the GP cost-curve decision above and have been pulled rather than left stale.

@@ -6,9 +6,16 @@
  * carries is the table's own Species, Clans, Traits and so on — content the
  * engine's source does not contain and therefore has to be handed to it on
  * every boot before any character that references it can be validated.
+ *
+ * On disk this is one vault directory per domain (species-vault, trait-vault,
+ * ...), one JSON file per entry — see vite.config.ts's catalogPlugin. That
+ * shape is entirely hidden behind this file: callers still deal in one
+ * CustomCatalog object, load once, save the whole thing on change. Nothing
+ * above this file needed to change when the storage moved from a single
+ * workbench-catalog.json to per-domain vault folders.
  */
 
-import type { CatalogDomain, Definition } from "@nenworld/engine";
+import { CATALOG_DOMAINS, type CatalogDomain, type Definition } from "@nenworld/engine";
 
 export const CURRENT_CATALOG_SCHEMA_VERSION = 1;
 
@@ -49,27 +56,57 @@ async function parseOrThrow(response: Response): Promise<unknown> {
   return body;
 }
 
-// Returns the empty catalog rather than null when nothing has been written
-// yet, so callers have one shape to handle instead of two.
+async function loadDomainVault(
+  domain: CatalogDomain,
+): Promise<readonly Definition[]> {
+  const body = await parseOrThrow(await fetch(`/__catalog/${domain}`));
+
+  return Array.isArray(body) ? (body as Definition[]) : [];
+}
+
+async function saveDomainVault(
+  domain: CatalogDomain,
+  entries: readonly Definition[],
+): Promise<void> {
+  await parseOrThrow(
+    await fetch(`/__catalog/${domain}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entries),
+    }),
+  );
+}
+
+// Loads every domain's vault in parallel and assembles them into one
+// CustomCatalog, so a caller that only cares about "the whole registry"
+// never has to know there are eight directories behind it.
 export async function loadCustomCatalog(): Promise<CustomCatalog> {
-  const body = await parseOrThrow(await fetch("/__catalog"));
+  const perDomain = await Promise.all(
+    CATALOG_DOMAINS.map(
+      async (domain) => [domain, await loadDomainVault(domain)] as const,
+    ),
+  );
 
-  if (body === null || typeof body !== "object") return EMPTY_CATALOG;
+  const definitions: Partial<Record<CatalogDomain, readonly Definition[]>> = {};
 
-  const catalog = body as Partial<CustomCatalog>;
+  for (const [domain, entries] of perDomain) {
+    if (entries.length > 0) definitions[domain] = entries;
+  }
 
   return {
-    schemaVersion: catalog.schemaVersion ?? CURRENT_CATALOG_SCHEMA_VERSION,
-    definitions: catalog.definitions ?? {},
+    schemaVersion: CURRENT_CATALOG_SCHEMA_VERSION,
+    definitions,
   };
 }
 
+// Replaces every domain's vault wholesale, in parallel. A domain absent from
+// `catalog.definitions` is saved as an empty array — the same "nothing left
+// here" signal an empty array already carried in the single-file format,
+// now expressed as an empty (or absent) vault directory.
 export async function saveCustomCatalog(catalog: CustomCatalog): Promise<void> {
-  await parseOrThrow(
-    await fetch("/__catalog", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(catalog),
-    }),
+  await Promise.all(
+    CATALOG_DOMAINS.map((domain) =>
+      saveDomainVault(domain, catalog.definitions[domain] ?? []),
+    ),
   );
 }

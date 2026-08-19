@@ -43,7 +43,7 @@ Injuries stack. This table is the game's tax on fighting up a band — you can s
 ## Aura exhaustion and Overdraw
 
 - **0 AP: Exhausted** — disadvantage on everything, no principles, SR −1, visibly leaking; recover via [[Aura Statistics]] rates (Zetsu triples, at the price of being defenseless).
-- **Overdraw (desperation):** at 0 AP you may burn Body HP as aura, **1 HP : 2 aura**, +1 Strain per round doing it. This is the lore's "temporarily exceed your limits" made mechanical — the surge that wins the day and hospitalizes the hero. It cannot exceed your AO per round, and the GM should narrate it as the body cannibalizing itself, because it is.
+- **Overdraw (desperation):** at 0 AP you may burn Body HP as aura, **1 HP : 2 aura**, gaining Strain each round doing it (*rate pending — written for the old flat 6s round, now stale against the variable-length [[Combat Time|Combat Clock]] turn*). This is the lore's "temporarily exceed your limits" made mechanical — the surge that wins the day and hospitalizes the hero. It cannot exceed your AO per round, and the GM should narrate it as the body cannibalizing itself, because it is.
 - **Desperation Surge (1/arc):** at a moment of true emotional extremity, +50% AO for the scene; afterward gain 2 Strain and lose access to the surge until the next arc. Pairs with the Risk rules ([[Conditions Vows and Risk (Rules)]]).
 
 ## Natural recovery
@@ -71,7 +71,7 @@ Injuries stack. This table is the game's tax on fighting up a band — you can s
 
 | Hazard                                       | Rule                                                                                                                |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Fire (ordinary)                              | P 10/round exposed; P 30 engulfed. Guard soaks it — walking through fire is a Nen party trick                       |
+| Fire (ordinary)                              | Power/round exposed, more if engulfed — *figures pending: written for the old flat 6s round, now stale against the variable-length [[Combat Time|Combat Clock]] turn*. Guard soaks it — walking through fire is a Nen party trick |
 | Falls                                        | Impact rules in [[Scale Speed and Magnitude]] (speed = 5 m/s per second, cap 55)                                    |
 | Suffocation                                  | CON score in rounds of effort (×2 prepared); then Dying                                                             |
 | Poison/disease                               | CON save vs listed DC; on fail, listed track. [[Nen Principles (Rules)\|Jū]] can reject *Nen-borne* affliction only |

@@ -61,9 +61,9 @@ GEAR                            ryn: [      ]
 ───────────────────────────────────────────────
 TRAINING LOG (week / focus / check / result)
 
-LEVEL: [  ] / 30    XP: [     ] / next [     ]   (5+L+ceil(L^2/12))
+LEVEL: [  ] / 30    XP: [     ] / next [     ]   (5+0.75L+L^3/75)
   Stat Points:   earned [    ] spent [    ] banked [    ]
-  Dedicated SP:  STR[  ] AGI[  ] DEX[  ] CON[  ] VIT[  ]
+  Limited SP:    STR[  ] AGI[  ] DEX[  ] CON[  ] VIT[  ]
                  INT[  ] WIS[  ] PER[  ] CHA[  ] SPI[  ]
   Growth Points: earned [    ] spent [    ] banked [    ]
   Committed toward: __________ rank [   ]  GP in [    ] / [    ]

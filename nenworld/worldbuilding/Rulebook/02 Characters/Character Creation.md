@@ -8,9 +8,9 @@ One sentence: who are you and what do you want? Then pick a race **from the camp
 
 ## Step 2 — Attributes
 
-**Standard array** — assign 15, 14, 13, 12, 11, 10, 10, 9, 8, 8 across the ten attributes ([[Attributes and Skills]]) — or **point buy** (all start 8; 24 points; 1 pt/step to 13, 2 pts/step to 16). Then apply racial adjustments (creation cap 18 after race; SPI creation cap 16 for humans).
+**Starting array** — assign 11, 11, 10, 10, 10, 10, 9, 9 across the eight ordinary attributes: STR, AGI, DEX, CON, VIT, INT, WIS, PER ([[Attributes and Skills]]). Then apply racial adjustments to those eight. **SPI and CHA are not part of the array** — each is rolled separately instead, and only a Limited Stat Point grant can raise either one later. *(Open item: the SPI/CHA roll itself, and whether the old racial-adjustment caps still apply at this much lower starting array, are not yet settled.)*
 
-Tell players what SPI is ("innate Nen talent") and nothing about what it does. Where they put it is already a story bet. **A quiet note for the GM only:** once these characters awaken, **CON** will set their aura pool and its lifetime ceiling, **VIT** their aura recovery and Body HP, **DEX** their aura execution and all accuracy, and **SPI** their odds on the rare make-or-break Nen manifestations ([[Aura Statistics]], [[Nen Manifestation]]). None of that is visible at creation — the fodder phase runs on the physical and social stats — but the array a player picks is the Nen build they'll grow into. Don't tell them; let it be discovered.
+Tell players what SPI is ("innate Nen talent") and nothing about what it does. Where the array goes and where SPI rolls are already a story bet. **A quiet note for the GM only:** once these characters awaken, **CON** will set their aura pool and its lifetime ceiling, **VIT** their aura recovery and Body HP, **DEX** their aura execution and all accuracy, and **SPI** their odds on the rare make-or-break Nen manifestations ([[Aura Statistics]], [[Nen Manifestation]]). None of that is visible at creation — the fodder phase runs on the physical and social stats — but the array a player picks and the SPI roll they get are the Nen build they'll grow into. Don't tell them; let it be discovered.
 
 ## Step 3 — Background (the life so far)
 

@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Rulebook/04 Combat/Combat Time.md",
+                "file": "Rulebook/01 Core Rules/Attributes/0 Attributes.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Combat Time"
+              "title": "0 Attributes"
             }
           }
         ]
@@ -206,16 +206,29 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "be4a1dc5a8941022",
+  "active": "d686cdf3941deb1e",
   "lastOpenFiles": [
+    "Vault/species-vault/elf.json",
+    "Vault/item-vault",
+    "Vault/injury-vault",
+    "Vault/condition-vault",
+    "Vault/skill-vault",
+    "Vault/technique-vault",
+    "Vault/trait-vault",
+    "Vault/clan-vault",
+    "Vault/species-vault",
+    "Vault/character-vault/char-glqzon2i30i0tc07.json",
+    "Vault/character-vault",
+    "Rulebook/01 Core Rules/Attributes and Skills.md",
+    "Rulebook/01 Core Rules/Attributes/0 Attributes.md",
+    "Rulebook/09 Appendices/Balance and Math.md",
+    "Rulebook/05 Progression/Progression and Training.md",
+    "Rulebook/04 Combat/Combat Time.md",
     "Rulebook/08 GM Tools/Canon Benchmarks.md",
     "Rulebook/08 GM Tools/NPCs Creatures and Encounters.md",
     "Rulebook/08 GM Tools/Running the Game.md",
-    "Rulebook/09 Appendices/Balance and Math.md",
-    "Rulebook/01 Core Rules/Attributes/0 Attributes.md",
     "Rulebook/01 Core Rules/Scale Speed and Magnitude.md",
     "Rulebook/01 Core Rules/Core Resolution.md",
-    "Rulebook/01 Core Rules/Attributes and Skills.md",
     "Rulebook/01 Core Rules/Attributes/Dexterity.md",
     "World/Power System/Nen/Nen Path.canvas",
     "World/Power System/Nen/Nen Principles/Advanced Principles/Fū.md",
@@ -224,7 +237,6 @@
     "World/Power System/Nen/Nen Principles/Intermediate Principles/En.md",
     "World/Power System/Nen/The Nen Path.md",
     "Rulebook/03 Aura Engine/Aura Mathematics.md",
-    "character-vault/char-glqzon2i30i0tc07.json",
     "Rulebook/03 Aura Engine/Aura Statistics.md",
     "World/Power System/Nen/Aura/Aura Reserves.md",
     "World/Power System/Nen/Aura/Aura Distribution and Density.md",
@@ -233,18 +245,6 @@
     "World/Power System/Nen/Nen Principles/Advanced Principles/Kō.md",
     "World/Power System/Nen/Nen Principles/Intermediate Principles/Gyō.md",
     "World/Power System/Nen/Nen Principles/Intermediate Principles/Chū.md",
-    "World/Power System/Nen/Nen Principles/Intermediate Principles/Shū.md",
-    "World/Power System/Nen/Nen Principles/Intermediate Principles/Ken.md",
-    "World/Power System/Nen/Nen Principles/Intermediate Principles/In.md",
-    "Rulebook/03 Aura Engine/Body",
-    "World/Power System/Nen/Aura",
-    "workbench-catalog.json",
-    "character-vault/char-w4m3plmr1766g8v2.json",
-    "character-vault/char-2q89n1dz6ytbk145.json",
-    "character-vault/char-qj0nsdncgikyi6bf.json",
-    "character-vault/char-5p99q5m6gh8atcok.json",
-    "character-vault/char-sc04xixplb2owzd8.json",
-    "character-vault/char-0z6kkejpfd6khw6u.json",
     "Untitled.canvas",
     "Nen/Nen Path.canvas",
     "attachments/transmutation.png",
