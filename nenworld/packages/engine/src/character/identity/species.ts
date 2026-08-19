@@ -1,5 +1,5 @@
 /*
- * Species — what a character is descended from.
+ * Species — what a character is descended from, and the narrower kinds of it.
  *
  * Not a single value. Mixed ancestry is ordinary in this world, so a
  * character carries a *mix*: a list of Species each with the share of them it
@@ -12,14 +12,31 @@
  * edit, and the engine says so rather than normalising the numbers behind the
  * author's back.
  *
+ * ── Sub-species ─────────────────────────────────────────────────────────
+ *
+ * A Sub-species is a Species with a parent, not a second kind of thing:
+ *
+ *   Human
+ *   └── Firebender
+ *
+ * A character listing Firebender is a Human Firebender. Every rule that asks
+ * about Human is satisfied by that character, because lineage is walked when
+ * the question is asked (see speciesAncestry). This is why Sub-species need
+ * no machinery of their own — one parent field buys the whole relationship.
+ *
+ * Species may contribute Effects like any other content: a Sub-species that
+ * means something mechanically grants a Trait rather than special-casing
+ * itself into attribute resolution.
+ *
  * Source when the catalog is filled out: Rulebook "06 Races".
  */
 
 import {
   createRegistry,
   scanReferences,
-  type Definition,
 } from "../../infrastructure/registry";
+
+import type { EffectfulDefinition } from "../rules/content";
 
 /**
  * Stable semantic identifier for a Species definition.
@@ -27,11 +44,18 @@ import {
  * Unlike CharacterId, these are authored rule identifiers and stay stable
  * across characters, saves, tests and consumers.
  *
- * Examples: "human", "yuki", "merfolk".
+ * Examples: "human", "firebender", "merfolk".
  */
 export type SpeciesId = string;
 
-export type SpeciesDefinition = Definition;
+export interface SpeciesDefinition extends EffectfulDefinition {
+  /**
+   * The Species this one is a narrower kind of.
+   *
+   * Present makes this a Sub-species. Absent makes it a root Species.
+   */
+  readonly parentSpeciesId?: SpeciesId;
+}
 
 /**
  * One Species in a character's ancestry, and how much of it they are.
@@ -49,6 +73,72 @@ export const SPECIES_DEFINITIONS = {
     id: "human",
     name: "Human",
     description: "A member of the human species.",
+  },
+
+  /*
+   * Benders were a Mutation with an element variant. They are Sub-species
+   * now: the element is not a parameter of one thing, it is six different
+   * things that happen to share an ancestor — which is exactly what a
+   * Sub-species is, and it costs no variant rules to say so.
+   *
+   * Each grants the Trait that represents the capability itself. The Trait is
+   * what other content asks about, so a character who gained Firebending some
+   * other way satisfies the same requirements.
+   */
+  firebender: {
+    id: "firebender",
+    name: "Firebender",
+    description: "A human lineage able to generate and manipulate fire.",
+    parentSpeciesId: "human",
+    effects: [{ type: "grantTrait", traitId: "firebending" }],
+  },
+
+  waterbender: {
+    id: "waterbender",
+    name: "Waterbender",
+    description: "A human lineage able to manipulate water.",
+    parentSpeciesId: "human",
+    effects: [{ type: "grantTrait", traitId: "waterbending" }],
+  },
+
+  earthbender: {
+    id: "earthbender",
+    name: "Earthbender",
+    description: "A human lineage able to manipulate earth and stone.",
+    parentSpeciesId: "human",
+    effects: [{ type: "grantTrait", traitId: "earthbending" }],
+  },
+
+  airbender: {
+    id: "airbender",
+    name: "Airbender",
+    description: "A human lineage able to manipulate air.",
+    parentSpeciesId: "human",
+    effects: [{ type: "grantTrait", traitId: "airbending" }],
+  },
+
+  lightningbender: {
+    id: "lightningbender",
+    name: "Lightningbender",
+    description: "A human lineage able to generate and direct lightning.",
+    parentSpeciesId: "human",
+    effects: [{ type: "grantTrait", traitId: "lightningbending" }],
+  },
+
+  metalbender: {
+    id: "metalbender",
+    name: "Metalbender",
+    description: "A human lineage able to manipulate worked metal.",
+    parentSpeciesId: "human",
+    effects: [{ type: "grantTrait", traitId: "metalbending" }],
+  },
+
+  bloodkin: {
+    id: "bloodkin",
+    name: "Bloodkin",
+    description:
+      "A human lineage carrying the blood of a beast or monster.",
+    parentSpeciesId: "human",
   },
 } as const satisfies Record<string, SpeciesDefinition>;
 
@@ -70,6 +160,74 @@ export function getSpeciesDefinition(
 }
 
 export const speciesRegistry = SPECIES_REGISTRY;
+
+/* ── Lineage ────────────────────────────────────────────────────────────── */
+
+// A parent chain longer than this is a malformed catalog, not a deep
+// taxonomy. The walk stops rather than looping if one is ever registered.
+const MAX_SPECIES_DEPTH = 16;
+
+/** Whether this Species is a narrower kind of another one. */
+export function isSubspecies(speciesId: SpeciesId): boolean {
+  return getSpeciesDefinition(speciesId)?.parentSpeciesId !== undefined;
+}
+
+/**
+ * A Species and every Species it descends from, nearest first.
+ *
+ * Firebender → ["firebender", "human"]. An unknown id returns just itself:
+ * validation is what reports it, and a broken lineage should not take the
+ * rest of resolution down with it.
+ */
+export function speciesAncestry(
+  speciesId: SpeciesId,
+): readonly SpeciesId[] {
+  const lineage: SpeciesId[] = [speciesId];
+  const seen = new Set<SpeciesId>([speciesId]);
+
+  let current = getSpeciesDefinition(speciesId)?.parentSpeciesId;
+
+  while (current !== undefined && lineage.length < MAX_SPECIES_DEPTH) {
+    if (seen.has(current)) break;
+
+    lineage.push(current);
+    seen.add(current);
+
+    current = getSpeciesDefinition(current)?.parentSpeciesId;
+  }
+
+  return lineage;
+}
+
+/**
+ * Every Species a character counts as, across their whole ancestry mix.
+ *
+ * This is the set a "hasSpecies" requirement is tested against, which is why
+ * a Human Firebender satisfies a Human requirement without the author of
+ * either rule having to think about it.
+ */
+export function collectSpeciesAncestry(
+  species: readonly CharacterSpecies[],
+): readonly SpeciesId[] {
+  const all = new Set<SpeciesId>();
+
+  for (const entry of species) {
+    for (const ancestor of speciesAncestry(entry.speciesId)) {
+      all.add(ancestor);
+    }
+  }
+
+  return [...all];
+}
+
+/** The Sub-species directly beneath one Species, for a picker to offer. */
+export function listSubspecies(
+  parentSpeciesId: SpeciesId,
+): readonly SpeciesDefinition[] {
+  return SPECIES_REGISTRY.all().filter(
+    (definition) => definition.parentSpeciesId === parentSpeciesId,
+  );
+}
 
 /* ── The 100% rule ──────────────────────────────────────────────────────── */
 
@@ -175,5 +333,36 @@ export function findSpeciesValidationIssues(
 }
 
 export function findSpeciesCatalogIssues(): readonly string[] {
-  return SPECIES_REGISTRY.findCatalogIssues();
+  const issues = [...SPECIES_REGISTRY.findCatalogIssues()];
+
+  for (const definition of SPECIES_REGISTRY.all()) {
+    const parentId = definition.parentSpeciesId;
+
+    if (parentId === undefined) continue;
+
+    if (parentId === definition.id) {
+      issues.push(`Species "${definition.id}" is its own parent.`);
+      continue;
+    }
+
+    if (!isKnownSpeciesId(parentId)) {
+      issues.push(
+        `Species "${definition.id}" descends from unknown Species "${parentId}".`,
+      );
+      continue;
+    }
+
+    // speciesAncestry stops at a repeat rather than looping, so a cycle shows
+    // up as a lineage that never reaches a parentless root.
+    const lineage = speciesAncestry(definition.id);
+    const root = lineage[lineage.length - 1];
+
+    if (root !== undefined && getSpeciesDefinition(root)?.parentSpeciesId !== undefined) {
+      issues.push(
+        `Species "${definition.id}" has a circular or excessively deep parent chain.`,
+      );
+    }
+  }
+
+  return issues;
 }

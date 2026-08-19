@@ -14,6 +14,7 @@ import {
   CATALOG_DOMAINS,
   clearCustomDefinitions,
   exportCustomDefinitions,
+  findCatalogReferenceIssues,
   getDefinition,
   isKnownDefinitionId,
   listCustomDefinitions,
@@ -102,8 +103,9 @@ describe("registerDefinition", () => {
         id: "house-rule",
         name: "House Rule",
         description: "Registered in every domain.",
-        // Skills are the one domain with a required extra field.
+        // Skills and Techniques are the domains with required extra fields.
         timings: ["action"],
+        maximumMastery: 10,
       });
 
       expect(result).toEqual({ ok: true });
@@ -140,6 +142,167 @@ describe("exportCustomDefinitions", () => {
     expect(exported.species).toEqual([YUKI]);
     expect(exported.clan.map((entry) => entry.id)).toEqual(["kurta"]);
     expect(exported.trait).toEqual([]);
+  });
+});
+
+/*
+ * Cross-catalog references are the check that keeps data-driven content
+ * honest. A Trait granting a Skill and a Skill requiring a Technique are both
+ * claims about another catalog, and neither domain can verify its own.
+ */
+describe("findCatalogReferenceIssues", () => {
+  it("passes over the authored catalogs", () => {
+    expect(findCatalogReferenceIssues()).toEqual([]);
+  });
+
+  it("reports a grant pointing at a Skill that does not exist", () => {
+    registerDefinition("trait", {
+      id: "spider-mutation",
+      name: "Spider Mutation",
+      description: "A test Trait.",
+      effects: [{ type: "grantSkill", skillId: "wall-stickng" }],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining('grants unknown Skill "wall-stickng"'),
+    ]);
+  });
+
+  it("reports a requirement pointing at a Technique that does not exist", () => {
+    registerDefinition("skill", {
+      id: "riposte",
+      name: "Riposte",
+      description: "A test Skill.",
+      timings: ["reaction"],
+      maximumMastery: 10,
+      requirements: [
+        { type: "techniqueMastery", techniqueId: "swordsmanshp", minimumMastery: 4 },
+      ],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining('requires unknown Technique "swordsmanshp"'),
+    ]);
+  });
+
+  it("looks inside compound requirements", () => {
+    registerDefinition("skill", {
+      id: "twin-strike",
+      name: "Twin Strike",
+      description: "A test Skill.",
+      timings: ["action"],
+      maximumMastery: 10,
+      requirements: [
+        {
+          type: "all",
+          requirements: [
+            { type: "hasTechnique", techniqueId: "martial-arts" },
+            {
+              type: "any",
+              requirements: [
+                { type: "hasTrait", traitId: "ambidextrous" },
+                { type: "hasTrait", traitId: "one-armed" },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining('requires unknown Trait "ambidextrous"'),
+    ]);
+  });
+
+  it("checks the ranks of a Mastery track, not only the definition", () => {
+    registerDefinition("technique", {
+      id: "swordsmanship",
+      name: "Swordsmanship",
+      description: "A test Technique.",
+      maximumMastery: 10,
+      ranks: [
+        { rank: 1, effects: [{ type: "grantSkill", skillId: "direct-thrust" }] },
+      ],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining('(rank 1) grants unknown Skill "direct-thrust"'),
+    ]);
+  });
+
+  // Conditions and injuries progress through stages rather than Mastery
+  // ranks, but the cross-reference walk is the same machinery.
+  it("checks the stages of a Condition's progression, not only the definition", () => {
+    registerDefinition("condition", {
+      id: "worsening-curse",
+      name: "Worsening Curse",
+      description: "A test Condition.",
+      stages: [
+        {
+          stage: 2,
+          effects: [{ type: "grantTrait", traitId: "cursed-mark" }],
+        },
+      ],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining('(stage 2) grants unknown Trait "cursed-mark"'),
+    ]);
+  });
+
+  it("checks both halves of an Item's rules", () => {
+    registerDefinition("item", {
+      id: "spirit-blade",
+      name: "Spirit Blade",
+      description: "A test Item.",
+      equippedEffects: [
+        { type: "grantTechnique", techniqueId: "spirit-forms" },
+      ],
+      equipRequirements: [{ type: "hasTrait", traitId: "spirit-touched" }],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('grants unknown Technique "spirit-forms"'),
+        expect.stringContaining('requires unknown Trait "spirit-touched"'),
+      ]),
+    );
+  });
+
+  it("reports a structurally malformed rule as well as a missing one", () => {
+    registerDefinition("trait", {
+      id: "broken",
+      name: "Broken",
+      description: "A test Trait.",
+      effects: [
+        { type: "modifyBaseAttribute", attribute: "str", amount: Number.NaN },
+      ],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining("malformed rule: invalid-effect-amount"),
+    ]);
+  });
+
+  // Content is resolvable the moment it is registered, so a reference to
+  // another custom definition is as valid as one to an authored definition.
+  it("accepts a reference between two registered definitions", () => {
+    registerDefinition("skill", {
+      id: "wall-sticking",
+      name: "Wall Sticking",
+      description: "A test Skill.",
+      timings: ["action"],
+      maximumMastery: 3,
+    });
+
+    registerDefinition("trait", {
+      id: "spider-mutation",
+      name: "Spider Mutation",
+      description: "A test Trait.",
+      effects: [{ type: "grantSkill", skillId: "wall-sticking" }],
+    });
+
+    expect(findCatalogReferenceIssues()).toEqual([]);
   });
 });
 

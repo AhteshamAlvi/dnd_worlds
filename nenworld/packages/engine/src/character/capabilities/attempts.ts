@@ -1,14 +1,32 @@
 /*
- * What a character can try to do, defined or otherwise.
+ * What a character is trying to do, when the outcome is uncertain.
  *
- * Resolution of the check and DC behind either kind of attempt is not
- * implemented yet; this is the shape the resolver will consume.
+ * An Attempt is not a Skill check. It is the broader thing: an action whose
+ * result has to be resolved rather than simply happening. A Defined Skill
+ * attempt is the case where the character has a trained answer for it; an
+ * improvised attempt is the case where they are making it up, which the
+ * Rulebook allows and the engine has to be able to represent.
+ *
+ * That distinction is why this file survived the capability refactor
+ * unchanged in substance. It describes the *question* being put to a
+ * resolver, not the capability being used, so redesigning Skills around
+ * Mastery did not change what an Attempt is.
+ *
+ * Resolution of the check and DC behind either kind is not implemented yet;
+ * this is the shape the resolver will consume. When it arrives, an Attempt
+ * will also be able to carry the resolved Mastery of the Skill being used —
+ * depth is what a check should be reading — but adding that field before
+ * anything rolls would be guessing at the resolver's signature.
  */
 
 import type { SkillId } from "./skills";
 
 /**
- * An attempt to use a Defined Skill already known by the character.
+ * An attempt to use a Skill the character has access to.
+ *
+ * Access, not authorship: a Skill granted by a Trait or an Item is as usable
+ * as one the character trained, so this names the Skill and lets capability
+ * resolution answer whether they have it.
  */
 export interface DefinedSkillAttempt {
   readonly type: "defined";
@@ -16,8 +34,7 @@ export interface DefinedSkillAttempt {
 }
 
 /**
- * An action conceived by the player that does not exist as a Defined Skill
- * the character possesses.
+ * An action conceived by the player that no Skill covers.
  */
 export interface ImprovisedSkillAttempt {
   readonly type: "improvised";

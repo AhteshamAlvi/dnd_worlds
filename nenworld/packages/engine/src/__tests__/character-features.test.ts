@@ -1,10 +1,16 @@
 /*
  * Tests the per-character feature lists that are validated the same way:
- * Traits, Abilities, Techniques and Conditions.
+ * Traits, Techniques, Conditions, injuries and inventory.
  *
- * All four are "does this id exist, and is it listed once" over an authored
- * catalog, so they share a file. Traits carry the extra weight of feeding
- * attribute resolution, which is checked here too.
+ * All of them are "does this id exist, and is it listed once" over an
+ * authored catalog, so they share a file. Traits carry the extra weight of
+ * being resolvable from other sources as well as from the sheet, which is
+ * checked here too.
+ *
+ * Abilities used to be a fourth list. They were a capability category that
+ * only ever said "this character can do this at all" — which is what a Trait
+ * says — so Firebending is a Trait now and the Ability tests are gone rather
+ * than rewritten.
  */
 
 import { describe, expect, it } from "vitest";
@@ -14,20 +20,14 @@ import {
   findTraitValidationIssues,
   getTraitDefinition,
   isKnownTraitId,
+  resolveTraits,
+  resolvedTraitIds,
   TRAIT_DEFINITIONS,
 } from "../character/identity/traits";
 
-import {
-  findAbilityCatalogIssues,
-  isKnownAbilityId,
-} from "../character/capabilities/abilities";
-
 import { findTechniqueCatalogIssues } from "../character/capabilities/techniques";
 
-import {
-  findAbilityValidationIssues,
-  findTechniqueValidationIssues,
-} from "../character/capabilities/validation";
+import { findTechniqueValidationIssues } from "../character/capabilities/validation";
 
 import {
   findConditionCatalogIssues,
@@ -35,21 +35,15 @@ import {
   getConditionDefinition,
 } from "../character/status/conditions";
 
-import { resolveAttributes } from "../character/foundation/attributes/resolution";
-import type { Attributes } from "../character/foundation/attributes/types";
+import {
+  findInjuryCatalogIssues,
+  findInjuryValidationIssues,
+} from "../character/status/injuries";
 
-const TEST_ATTRIBUTES: Attributes = {
-  str: 10,
-  agi: 10,
-  dex: 15,
-  con: 10,
-  vit: 10,
-  int: 10,
-  wis: 10,
-  per: 10,
-  spi: 10,
-  cha: 10,
-};
+import {
+  findItemCatalogIssues,
+  findItemValidationIssues,
+} from "../character/equipment/index";
 
 describe("traits", () => {
   it("resolves a known Trait", () => {
@@ -58,6 +52,16 @@ describe("traits", () => {
     expect(getTraitDefinition("one-armed")).toEqual(
       TRAIT_DEFINITIONS["one-armed"],
     );
+  });
+
+  it("expresses its mechanics as universal Effects", () => {
+    expect(getTraitDefinition("one-armed")?.effects).toEqual([
+      {
+        type: "modifyBaseAttribute",
+        attribute: "dex",
+        amount: -2,
+      },
+    ]);
   });
 
   it("rejects an unknown Trait id", () => {
@@ -96,107 +100,102 @@ describe("traits", () => {
   it("has a valid authored Trait catalog", () => {
     expect(findTraitCatalogIssues()).toEqual([]);
   });
-});
 
-describe("attribute resolution", () => {
-  it("applies permanent Attribute modifiers", () => {
-    const resolved = resolveAttributes(TEST_ATTRIBUTES, [
-      {
-        traitId: "one-armed",
-      },
-    ]);
-
-    expect(resolved.dex).toBe(13);
-  });
-
-  it("does not mutate the stored/base Attributes", () => {
-    resolveAttributes(TEST_ATTRIBUTES, [
-      {
-        traitId: "one-armed",
-      },
-    ]);
-
-    expect(TEST_ATTRIBUTES.dex).toBe(15);
-  });
-
-  it("leaves unrelated Attributes unchanged", () => {
-    const resolved = resolveAttributes(TEST_ATTRIBUTES, [
-      {
-        traitId: "one-armed",
-      },
-    ]);
-
-    expect(resolved.str).toBe(10);
-    expect(resolved.agi).toBe(10);
-    expect(resolved.con).toBe(10);
-  });
-
-  it("ignores an unknown Trait rather than throwing", () => {
-    const resolved = resolveAttributes(TEST_ATTRIBUTES, [
-      {
-        traitId: "not-a-real-trait",
-      },
-    ]);
-
-    expect(resolved).toEqual(TEST_ATTRIBUTES);
-  });
-
-  it("returns the stored Attributes when there are no Traits", () => {
-    expect(resolveAttributes(TEST_ATTRIBUTES)).toEqual(TEST_ATTRIBUTES);
+  it("does not resolve inherited object properties as Trait ids", () => {
+    expect(isKnownTraitId("constructor")).toBe(false);
+    expect(isKnownTraitId("toString")).toBe(false);
   });
 });
 
-describe("abilities", () => {
-  it("allows no Abilities", () => {
-    expect(findAbilityValidationIssues([])).toEqual([]);
+describe("resolved traits", () => {
+  it("marks a Trait on the sheet as authored", () => {
+    const resolved = resolveTraits([{ traitId: "one-armed" }], []);
+
+    expect(resolved["one-armed"]).toEqual({
+      traitId: "one-armed",
+      isAuthored: true,
+      grantedBy: [],
+    });
   });
 
-  it("accepts a known Ability", () => {
-    expect(
-      findAbilityValidationIssues([
+  it("records who granted a Trait the sheet does not list", () => {
+    const resolved = resolveTraits(
+      [],
+      [
         {
-          abilityId: "firebending",
+          source: { type: "species", id: "firebender" },
+          traitId: "firebending",
         },
-      ]),
-    ).toEqual([]);
-  });
+      ],
+    );
 
-  it("rejects an unknown Ability", () => {
-    expect(
-      findAbilityValidationIssues([
-        {
-          abilityId: "not-real",
-        },
-      ]),
-    ).toEqual([
-      {
-        type: "unknown-ability",
-        abilityId: "not-real",
-      },
+    expect(resolved["firebending"]?.isAuthored).toBe(false);
+    expect(resolved["firebending"]?.grantedBy).toEqual([
+      { type: "species", id: "firebender" },
     ]);
   });
 
-  it("rejects duplicate Abilities", () => {
-    expect(
-      findAbilityValidationIssues([
+  // Removing one granter must not remove access another still supplies, so
+  // both have to be remembered rather than the second being folded away.
+  it("keeps every source that grants the same Trait", () => {
+    const resolved = resolveTraits(
+      [],
+      [
         {
-          abilityId: "firebending",
+          source: { type: "species", id: "firebender" },
+          traitId: "firebending",
         },
         {
-          abilityId: "firebending",
+          source: { type: "item", id: "ember-ring" },
+          traitId: "firebending",
         },
-      ]),
-    ).toEqual([
-      {
-        type: "duplicate-ability",
-        abilityId: "firebending",
-      },
-    ]);
+      ],
+    );
+
+    expect(resolved["firebending"]?.grantedBy).toHaveLength(2);
   });
 
-  it("does not resolve inherited object properties as Ability ids", () => {
-    expect(isKnownAbilityId("constructor")).toBe(false);
-    expect(isKnownAbilityId("toString")).toBe(false);
+  it("records one source once, however many times it grants", () => {
+    const grant = {
+      source: { type: "trait", id: "spider-mutation" },
+      traitId: "superstrength",
+    };
+
+    const resolved = resolveTraits([], [grant, grant]);
+
+    expect(resolved["superstrength"]?.grantedBy).toHaveLength(1);
+  });
+
+  it("keeps an authored Trait authored when something also grants it", () => {
+    const resolved = resolveTraits(
+      [{ traitId: "firebending" }],
+      [
+        {
+          source: { type: "species", id: "firebender" },
+          traitId: "firebending",
+        },
+      ],
+    );
+
+    expect(resolved["firebending"]?.isAuthored).toBe(true);
+    expect(resolved["firebending"]?.grantedBy).toHaveLength(1);
+  });
+
+  it("lists every Trait the character has, from either source", () => {
+    const resolved = resolveTraits(
+      [{ traitId: "one-armed" }],
+      [
+        {
+          source: { type: "species", id: "firebender" },
+          traitId: "firebending",
+        },
+      ],
+    );
+
+    expect([...resolvedTraitIds(resolved)].sort()).toEqual([
+      "firebending",
+      "one-armed",
+    ]);
   });
 });
 
@@ -292,10 +291,71 @@ describe("conditions", () => {
   });
 });
 
+describe("injuries", () => {
+  it("allows no injuries", () => {
+    expect(findInjuryValidationIssues([])).toEqual([]);
+  });
+
+  // The catalog is empty until the d10 table is authored, so every id is
+  // unknown — which is the honest answer, not a gap in validation.
+  it("rejects an injury the catalog does not define", () => {
+    expect(
+      findInjuryValidationIssues([{ injuryId: "battered" }]),
+    ).toEqual([
+      {
+        type: "unknown-injury",
+        injuryId: "battered",
+      },
+    ]);
+  });
+});
+
+describe("items", () => {
+  it("allows an empty inventory", () => {
+    expect(findItemValidationIssues([])).toEqual([]);
+  });
+
+  it("accepts a known Item", () => {
+    expect(
+      findItemValidationIssues([
+        { itemId: "gauntlets", quantity: 1, equipped: true },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("rejects an unknown Item", () => {
+    expect(
+      findItemValidationIssues([
+        { itemId: "not-real", quantity: 1, equipped: false },
+      ]),
+    ).toEqual([
+      {
+        type: "unknown-item",
+        itemId: "not-real",
+      },
+    ]);
+  });
+
+  it("rejects a fractional quantity", () => {
+    expect(
+      findItemValidationIssues([
+        { itemId: "gauntlets", quantity: 1.5, equipped: false },
+      ]),
+    ).toEqual([
+      {
+        type: "invalid-item-quantity",
+        itemId: "gauntlets",
+        quantity: 1.5,
+      },
+    ]);
+  });
+});
+
 describe("authored catalogs", () => {
-  it("has valid Ability, Technique and Condition catalogs", () => {
-    expect(findAbilityCatalogIssues()).toEqual([]);
+  it("has valid Technique, Condition, injury and Item catalogs", () => {
     expect(findTechniqueCatalogIssues()).toEqual([]);
     expect(findConditionCatalogIssues()).toEqual([]);
+    expect(findInjuryCatalogIssues()).toEqual([]);
+    expect(findItemCatalogIssues()).toEqual([]);
   });
 });

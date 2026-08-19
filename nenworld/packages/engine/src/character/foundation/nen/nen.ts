@@ -39,7 +39,11 @@
  */
 
 
-import type { EngineResult } from "../../../infrastructure/result";
+import type { EngineError } from "../../../infrastructure/diagnostics";
+import type {
+  EngineResult,
+  NonEmptyArray,
+} from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 
 import type {
@@ -839,7 +843,9 @@ export function validateNenAdvancement(
           audience: "player",
           required: {
             targetRank,
-            prerequisites,
+            // Spread because a readonly array is not JSON-assignable, and a
+            // diagnostic has to survive serialisation to reach a UI.
+            prerequisites: [...prerequisites],
           },
           actual: {
             blockingPrerequisites:
@@ -870,7 +876,16 @@ export function validateNenAdvancement(
   };
 
 
-  traceNode.output = payload;
+  // Spelled out rather than assigning the payload directly: an interface has
+  // no index signature, so it is not assignable to JsonValue even when every
+  // field in it is JSON-safe.
+  traceNode.output = {
+    principleId: payload.principleId,
+    currentRank: payload.currentRank,
+    targetRank: payload.targetRank,
+    maximumAllowedByGraph: payload.maximumAllowedByGraph,
+    allowedByGraph: payload.allowedByGraph,
+  };
 
 
   return {
@@ -910,7 +925,7 @@ export function validateNenState(
   });
 
 
-  const errors = [];
+  const errors: EngineError[] = [];
 
 
   for (
@@ -969,7 +984,9 @@ export function validateNenState(
       audience: "developer" as const,
       required:
         "all mastery ranks equal 0 while Nen is unawakened",
-      actual: state.mastery,
+      // Copied rather than passed through: a readonly record is not a
+      // JsonObject, and a diagnostic has to be serialisable.
+      actual: { ...state.mastery },
     });
   }
 
@@ -1029,7 +1046,9 @@ export function validateNenState(
 
       warnings: [],
 
-      errors,
+      // The length check is the guarantee; the type system cannot carry it
+      // across the branch. Same cast the other validators make.
+      errors: errors as NonEmptyArray<EngineError>,
     };
   }
 

@@ -1,30 +1,54 @@
 /*
- * Conditions — temporary states a character is currently under.
+ * Conditions — what is currently happening to a character.
  *
  * Source: Rulebook "04 Combat/Injury Recovery and Conditions.md", condition
  * glossary.
  *
- * The catalog is the authored list and its effects as written. Turning those
- * effects into numbers — the d20 penalties, the halved Strike, the advantage
- * swings — is resolution.ts's job, and that needs the combat layer to exist
- * first. Until then a Condition is something a sheet can carry, display and
- * validate, but not yet something the engine arithmetic reads.
+ * The line against Traits is integration, not duration: a Condition is
+ * something affecting the character, a Trait is something that has become
+ * part of them. A long infection is still a Condition; what it leaves behind
+ * when it finishes is a Trait.
+ *
+ * Conditions contribute the same universal Effects as every other content
+ * source. They usually modify the Resolved layer, because that is what
+ * "currently" means — but nothing here enforces that. A Condition that
+ * permanently costs the character something says modifyBaseAttribute, and a
+ * Condition granting a Skill or a Trait uses the ordinary grant Effects.
+ *
+ * A Condition may also progress through stages, stack in severity, and
+ * expire — see status/stage.ts for that shared vocabulary. None of the
+ * entries below use it; the eleven Rulebook conditions are catalog
+ * *classification* only, with no Effects authored onto them at all. That is
+ * deliberate, not an oversight: their d20 penalties, halved Strike and
+ * advantage swings are not expressible as Effects yet — those need combat
+ * mechanics that do not exist, which is a missing *mechanic*, the case where
+ * the engine is supposed to gain code rather than the content gaining a
+ * workaround. What effects any Condition carries — combat or otherwise — is
+ * for the Workbench to author.
  */
 
 import {
   createRegistry,
   scanReferences,
-  type Definition,
 } from "../../infrastructure/registry";
+
+import type { EffectfulDefinition } from "../rules/content";
+import {
+  findStagedEntryValidationIssues,
+  findStageTrackIssues,
+  type StagedCharacterEntry,
+  type StagedContent,
+  type StagedEntryValidationIssue,
+} from "./stage";
 
 export type ConditionId = string;
 
-export type ConditionDefinition = Definition;
+export interface ConditionDefinition extends EffectfulDefinition, StagedContent {}
 
 /**
  * A Condition currently affecting a character.
  */
-export interface CharacterCondition {
+export interface CharacterCondition extends StagedCharacterEntry {
   readonly conditionId: ConditionId;
 }
 
@@ -132,12 +156,17 @@ export type ConditionValidationIssue =
   | {
       readonly type: "duplicate-condition";
       readonly conditionId: ConditionId;
+    }
+  | {
+      readonly type: "invalid-condition-lifecycle";
+      readonly conditionId: ConditionId;
+      readonly issue: StagedEntryValidationIssue;
     };
 
 export function findConditionValidationIssues(
   conditions: readonly CharacterCondition[],
 ): readonly ConditionValidationIssue[] {
-  return scanReferences(
+  const issues: ConditionValidationIssue[] = scanReferences(
     conditions.map((condition) => condition.conditionId),
     isKnownConditionId,
   ).map((issue) => ({
@@ -145,10 +174,56 @@ export function findConditionValidationIssues(
       issue.kind === "unknown" ? "unknown-condition" : "duplicate-condition",
     conditionId: issue.id,
   }));
+
+  const unknown = new Set(
+    issues
+      .filter((issue) => issue.type === "unknown-condition")
+      .map((issue) => issue.conditionId),
+  );
+
+  // A repeated Condition's lifecycle fields are the same ones judged on its
+  // first appearance; the duplicate is already reported once above.
+  const checked = new Set<ConditionId>();
+
+  for (const condition of conditions) {
+    if (
+      unknown.has(condition.conditionId) ||
+      checked.has(condition.conditionId)
+    ) {
+      continue;
+    }
+
+    checked.add(condition.conditionId);
+
+    const definition = getConditionDefinition(condition.conditionId);
+
+    if (definition === undefined) continue;
+
+    for (const lifecycleIssue of findStagedEntryValidationIssues(
+      definition,
+      condition,
+    )) {
+      issues.push({
+        type: "invalid-condition-lifecycle",
+        conditionId: condition.conditionId,
+        issue: lifecycleIssue,
+      });
+    }
+  }
+
+  return issues;
 }
 
 export function findConditionCatalogIssues(): readonly string[] {
-  return CONDITION_REGISTRY.findCatalogIssues();
+  const issues = [...CONDITION_REGISTRY.findCatalogIssues()];
+
+  for (const condition of CONDITION_REGISTRY.all()) {
+    issues.push(
+      ...findStageTrackIssues("Condition", condition.id, condition),
+    );
+  }
+
+  return issues;
 }
 
 // Exposed for the catalog index, which needs every registry in one map.

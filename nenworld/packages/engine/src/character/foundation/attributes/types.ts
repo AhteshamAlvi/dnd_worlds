@@ -1,5 +1,5 @@
 /*
- * The ten character attributes.
+ * The ten character attributes, and the three stages a score passes through.
  *
  * Source: Rulebook "01 Core Rules/Attributes". The legal range lives in
  * base.ts and is enforced in validation.ts, not by these types — a number out
@@ -23,3 +23,39 @@ export interface Attributes {
 
 // The name of any one attribute.
 export type AttributeKey = keyof Attributes;
+
+/*
+ * The three stages, as aliases rather than distinct structures.
+ *
+ * They are the same ten numbers throughout; what differs is how much has been
+ * applied to them. Naming the stages costs nothing and makes a signature say
+ * which one it wants, but branding them would force conversions at every step
+ * of a pipeline whose whole job is to move between them.
+ *
+ *   Stored
+ *      ↓ permanent effects   (modifyBaseAttribute)
+ *   Base
+ *      ↓ active effects      (modifyResolvedAttribute)
+ *   Resolved
+ */
+
+/** The player's authored scores. Progression writes these; nothing else does. */
+export type StoredAttributes = Attributes;
+
+/** Stored plus permanent effects — what the sheet shows as the character's score. */
+export type BaseAttributes = Attributes;
+
+/** Base plus whatever is currently true — what a check actually rolls against. */
+export type ResolvedAttributes = Attributes;
+
+/**
+ * All three stages together.
+ *
+ * Returned as a set because a sheet showing "DEX 14 (11)" needs two of them at
+ * once, and an explanation of how 16 became 11 needs all three.
+ */
+export interface AttributeLayers {
+  readonly stored: StoredAttributes;
+  readonly base: BaseAttributes;
+  readonly resolved: ResolvedAttributes;
+}

@@ -38,7 +38,7 @@ export function createTestCharacter(
 
   return {
     id: createCharacterId(),
-    name: "Test Character",
+    details: { name: "Test Character" },
 
     body: STANDARD_BODY,
 
@@ -50,13 +50,15 @@ export function createTestCharacter(
     ],
 
     clans: [],
-    mutations: [],
     traits: [],
 
-    abilities: [],
     techniques: [],
     skills: [],
+
+    items: [],
+
     conditions: [],
+    injuries: [],
 
     ...rest,
 

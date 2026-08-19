@@ -1,8 +1,14 @@
 /*
- * Tests the identity catalogs: Species, Clans and Mutations.
+ * Tests the identity catalogs: Species, Sub-species and Clans.
  *
- * The interesting rules here are the Mutation variant ones — a Bender is
- * always a Bender of something, while a Bloodkin is just a Bloodkin.
+ * The interesting rules here are ancestry: shares that must total 100, and
+ * the lineage walk that makes a Human Firebender count as Human without
+ * either rule's author having to arrange it.
+ *
+ * Mutations used to live here as a third identity domain with a variant
+ * system of its own. A Bender-of-fire is now a Sub-species, which is why
+ * those tests are gone rather than rewritten — the concept they covered no
+ * longer exists.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
@@ -15,14 +21,13 @@ import {
 } from "../character/identity/clans";
 
 import {
-  findMutationCatalogIssues,
-  findMutationValidationIssues,
-} from "../character/identity/mutations";
-
-import {
+  collectSpeciesAncestry,
   findSpeciesCatalogIssues,
   findSpeciesValidationIssues,
   isCompleteSpeciesMix,
+  isSubspecies,
+  listSubspecies,
+  speciesAncestry,
   speciesTotalPercentage,
 } from "../character/identity/species";
 
@@ -158,6 +163,76 @@ describe("character classifications", () => {
     });
   });
 
+  describe("sub-species", () => {
+    it("knows which Species are narrower kinds of another", () => {
+      expect(isSubspecies("firebender")).toBe(true);
+      expect(isSubspecies("human")).toBe(false);
+    });
+
+    it("walks a Sub-species up to its root", () => {
+      expect(speciesAncestry("firebender")).toEqual(["firebender", "human"]);
+      expect(speciesAncestry("human")).toEqual(["human"]);
+    });
+
+    // The whole reason Sub-species are Species with a parent: a rule written
+    // about Human applies to a Firebender without naming them.
+    it("counts a Human Firebender as Human", () => {
+      expect(
+        collectSpeciesAncestry([
+          { speciesId: "firebender", percentage: 100 },
+        ]),
+      ).toEqual(["firebender", "human"]);
+    });
+
+    it("does not repeat a shared ancestor across a mix", () => {
+      expect(
+        collectSpeciesAncestry([
+          { speciesId: "firebender", percentage: 50 },
+          { speciesId: "waterbender", percentage: 50 },
+        ]),
+      ).toEqual(["firebender", "human", "waterbender"]);
+    });
+
+    it("lists what descends directly from a Species", () => {
+      const ids = listSubspecies("human").map((entry) => entry.id);
+
+      expect(ids).toContain("firebender");
+      expect(ids).toContain("bloodkin");
+      expect(ids).not.toContain("human");
+    });
+
+    it("treats an unknown Species as its own root rather than throwing", () => {
+      expect(speciesAncestry("not-real")).toEqual(["not-real"]);
+    });
+
+    it("rejects a registered Sub-species whose parent does not exist", () => {
+      registerDefinition("species", {
+        id: "orphan",
+        name: "Orphan",
+        description: "Descends from nothing that exists.",
+        parentSpeciesId: "not-real",
+      });
+
+      expect(findSpeciesCatalogIssues()).toEqual([
+        expect.stringContaining("unknown Species"),
+      ]);
+    });
+
+    it("survives a Sub-species registered as its own parent", () => {
+      registerDefinition("species", {
+        id: "ouroboros",
+        name: "Ouroboros",
+        description: "Its own ancestor.",
+        parentSpeciesId: "ouroboros",
+      });
+
+      expect(speciesAncestry("ouroboros")).toEqual(["ouroboros"]);
+      expect(findSpeciesCatalogIssues()).toEqual([
+        expect.stringContaining("its own parent"),
+      ]);
+    });
+  });
+
   describe("clans", () => {
     it("allows no Clan", () => {
       expect(findClanValidationIssues([])).toEqual([]);
@@ -207,123 +282,10 @@ describe("character classifications", () => {
     });
   });
 
-  describe("mutations", () => {
-    it("allows no Mutations", () => {
-      expect(findMutationValidationIssues([])).toEqual([]);
-    });
-
-    it("accepts a Fire Bender", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "bender",
-            variantId: "fire",
-          },
-        ]),
-      ).toEqual([]);
-    });
-
-    it("accepts a variantless Mutation", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "bloodkin",
-          },
-        ]),
-      ).toEqual([]);
-    });
-
-    it("requires a Bender element", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "bender",
-          },
-        ]),
-      ).toEqual([
-        {
-          type: "missing-mutation-variant",
-          mutationId: "bender",
-        },
-      ]);
-    });
-
-    it("rejects an unknown Bender element", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "bender",
-            variantId: "ice",
-          },
-        ]),
-      ).toEqual([
-        {
-          type: "unknown-mutation-variant",
-          mutationId: "bender",
-          variantId: "ice",
-        },
-      ]);
-    });
-
-    it("rejects multiple Bender variants", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "bender",
-            variantId: "fire",
-          },
-          {
-            mutationId: "bender",
-            variantId: "lightning",
-          },
-        ]),
-      ).toEqual([
-        {
-          type: "duplicate-mutation",
-          mutationId: "bender",
-        },
-      ]);
-    });
-
-    it("rejects variants on non-variant Mutations", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "bloodkin",
-            variantId: "wolf",
-          },
-        ]),
-      ).toEqual([
-        {
-          type: "unexpected-mutation-variant",
-          mutationId: "bloodkin",
-          variantId: "wolf",
-        },
-      ]);
-    });
-
-    it("does not check the variant of an unknown Mutation", () => {
-      expect(
-        findMutationValidationIssues([
-          {
-            mutationId: "not-real",
-            variantId: "fire",
-          },
-        ]),
-      ).toEqual([
-        {
-          type: "unknown-mutation",
-          mutationId: "not-real",
-        },
-      ]);
-    });
-  });
-
   describe("authored catalogs", () => {
-    it("has valid Species, Clan and Mutation catalogs", () => {
+    it("has valid Species and Clan catalogs", () => {
       expect(findSpeciesCatalogIssues()).toEqual([]);
       expect(findClanCatalogIssues()).toEqual([]);
-      expect(findMutationCatalogIssues()).toEqual([]);
     });
   });
 });

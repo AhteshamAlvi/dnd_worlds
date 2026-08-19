@@ -26,11 +26,6 @@ import {
 } from "./identity/clans";
 
 import {
-  findMutationValidationIssues,
-  type MutationValidationIssue,
-} from "./identity/mutations";
-
-import {
   findSpeciesValidationIssues,
   type SpeciesValidationIssue,
 } from "./identity/species";
@@ -50,16 +45,31 @@ import {
   type ConditionValidationIssue,
 } from "./status/conditions";
 
+import {
+  findInjuryValidationIssues,
+  type InjuryValidationIssue,
+} from "./status/injuries";
+
+import type { StagedEntryValidationIssue } from "./status/stage";
+
+import {
+  findItemValidationIssues,
+  type ItemValidationIssue,
+} from "./equipment/index";
+
+import { resolveCharacter } from "./resolution";
+
 import type { Character } from "./types";
 
 // Everything a character can get wrong by referencing an authored catalog.
 type CharacterReferenceIssue =
   | SpeciesValidationIssue
   | ClanValidationIssue
-  | MutationValidationIssue
   | TraitValidationIssue
   | CapabilityValidationIssue
-  | ConditionValidationIssue;
+  | ConditionValidationIssue
+  | InjuryValidationIssue
+  | ItemValidationIssue;
 
 /*
  * How each kind of issue is reported.
@@ -115,36 +125,6 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     resolution: "Remove the repeated Clan.",
   },
 
-  "unknown-mutation": {
-    code: "character.mutation.unknown",
-    describe: (issue) => `Unknown Mutation "${issue.mutationId}".`,
-    resolution: "Choose a Mutation the engine defines, or remove it.",
-  },
-  "duplicate-mutation": {
-    code: "character.mutation.duplicate",
-    describe: (issue) =>
-      `Mutation "${issue.mutationId}" is listed more than once.`,
-    resolution: "Remove the repeated Mutation.",
-  },
-  "missing-mutation-variant": {
-    code: "character.mutation.variant_missing",
-    describe: (issue) =>
-      `Mutation "${issue.mutationId}" requires a variant, but none was chosen.`,
-    resolution: "Choose one of the Mutation's variants.",
-  },
-  "unexpected-mutation-variant": {
-    code: "character.mutation.variant_unexpected",
-    describe: (issue) =>
-      `Mutation "${issue.mutationId}" has no variants, but "${issue.variantId}" was chosen.`,
-    resolution: "Remove the variant.",
-  },
-  "unknown-mutation-variant": {
-    code: "character.mutation.variant_unknown",
-    describe: (issue) =>
-      `Mutation "${issue.mutationId}" has no variant "${issue.variantId}".`,
-    resolution: "Choose one of the Mutation's defined variants.",
-  },
-
   "unknown-trait": {
     code: "character.trait.unknown",
     describe: (issue) => `Unknown Trait "${issue.traitId}".`,
@@ -154,18 +134,6 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     code: "character.trait.duplicate",
     describe: (issue) => `Trait "${issue.traitId}" is listed more than once.`,
     resolution: "Remove the repeated Trait.",
-  },
-
-  "unknown-ability": {
-    code: "character.ability.unknown",
-    describe: (issue) => `Unknown Ability "${issue.abilityId}".`,
-    resolution: "Choose an Ability the engine defines, or remove it.",
-  },
-  "duplicate-ability": {
-    code: "character.ability.duplicate",
-    describe: (issue) =>
-      `Ability "${issue.abilityId}" is listed more than once.`,
-    resolution: "Remove the repeated Ability.",
   },
 
   "unknown-technique": {
@@ -179,6 +147,19 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
       `Technique "${issue.techniqueId}" is listed more than once.`,
     resolution: "Remove the repeated Technique.",
   },
+  "invalid-technique-mastery": {
+    code: "character.technique.mastery_invalid",
+    describe: (issue) =>
+      `Technique "${issue.techniqueId}" is at Mastery ${issue.mastery}, but its track ends at ${issue.maximumMastery}.`,
+    resolution: "Lower the Mastery to one the Technique defines.",
+  },
+  "unsatisfied-technique-requirements": {
+    code: "character.technique.requirements_unsatisfied",
+    describe: (issue) =>
+      `Technique "${issue.techniqueId}" requires something the character does not have.`,
+    resolution:
+      "Meet the Technique's prerequisites, or remove the Technique.",
+  },
 
   "unknown-skill": {
     code: "character.skill.unknown",
@@ -190,12 +171,18 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     describe: (issue) => `Skill "${issue.skillId}" is listed more than once.`,
     resolution: "Remove the repeated Skill.",
   },
+  "invalid-skill-mastery": {
+    code: "character.skill.mastery_invalid",
+    describe: (issue) =>
+      `Skill "${issue.skillId}" is at Mastery ${issue.mastery}, but its track ends at ${issue.maximumMastery}.`,
+    resolution: "Lower the Mastery to one the Skill defines.",
+  },
   "unsatisfied-skill-requirements": {
     code: "character.skill.requirements_unsatisfied",
     describe: (issue) =>
-      `Skill "${issue.skillId}" requires an Ability or Technique the character does not have.`,
+      `Skill "${issue.skillId}" requires something the character does not have.`,
     resolution:
-      "Add the required Ability or Technique, or remove the Skill.",
+      "Meet the Skill's prerequisites, or remove the Skill.",
   },
 
   "unknown-condition": {
@@ -209,7 +196,69 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
       `Condition "${issue.conditionId}" is applied more than once.`,
     resolution: "Remove the repeated Condition.",
   },
+  "invalid-condition-lifecycle": {
+    code: "character.condition.lifecycle_invalid",
+    describe: (issue) =>
+      `Condition "${issue.conditionId}" ${describeStagedEntryIssue(issue.issue)}.`,
+    resolution:
+      "Fix the Condition's stage, severity, or remaining duration.",
+  },
+
+  "unknown-injury": {
+    code: "character.injury.unknown",
+    describe: (issue) => `Unknown injury "${issue.injuryId}".`,
+    resolution: "Choose an injury the engine defines, or remove it.",
+  },
+  "duplicate-injury": {
+    code: "character.injury.duplicate",
+    describe: (issue) =>
+      `Injury "${issue.injuryId}" is listed more than once.`,
+    resolution:
+      "Remove the repeated injury, or record the stacking as its severity.",
+  },
+  "invalid-injury-lifecycle": {
+    code: "character.injury.lifecycle_invalid",
+    describe: (issue) =>
+      `Injury "${issue.injuryId}" ${describeStagedEntryIssue(issue.issue)}.`,
+    resolution: "Fix the injury's stage, severity, or remaining duration.",
+  },
+
+  "unknown-item": {
+    code: "character.item.unknown",
+    describe: (issue) => `Unknown Item "${issue.itemId}".`,
+    resolution: "Choose an Item the engine defines, or remove it.",
+  },
+  "duplicate-item": {
+    code: "character.item.duplicate",
+    describe: (issue) =>
+      `Item "${issue.itemId}" appears in the inventory more than once.`,
+    resolution: "Merge the entries and set the quantity.",
+  },
+  "invalid-item-quantity": {
+    code: "character.item.quantity_invalid",
+    describe: (issue) =>
+      `Item "${issue.itemId}" has a quantity of ${issue.quantity}.`,
+    resolution: "Set the quantity to a whole number of zero or more.",
+  },
 };
+
+// Renders the one nested issue a Condition's or injury's lifecycle fields
+// can produce. Shared by both descriptors above rather than duplicated,
+// since a stage/severity/duration problem reads identically on either.
+function describeStagedEntryIssue(
+  issue: StagedEntryValidationIssue,
+): string {
+  switch (issue.type) {
+    case "unknown-stage":
+      return `references stage ${issue.stage}, which its definition does not declare`;
+
+    case "invalid-severity":
+      return `has an invalid severity of ${issue.severity}`;
+
+    case "invalid-duration":
+      return `has an invalid remaining duration of ${issue.remainingDuration}`;
+  }
+}
 
 function toEngineError(
   issue: CharacterReferenceIssue,
@@ -233,22 +282,34 @@ function toEngineError(
   };
 }
 
-// Collects every catalog reference problem across identity, capabilities and
-// status, in the order a sheet reads top to bottom.
+/*
+ * Collects every catalog reference problem across identity, capabilities,
+ * status and inventory, in the order a sheet reads top to bottom.
+ *
+ * Capability prerequisites are checked against the *resolved* character
+ * rather than the lists on the sheet. A Technique granted by a Sub-species
+ * satisfies a Skill that requires it just as fully as one the player trained,
+ * and a requirement on DEX has to see the Base score a Trait produced. That
+ * is only visible after resolution, which is why it is done here rather than
+ * in the capability domain.
+ */
 function findCharacterReferenceIssues(
   character: Character,
 ): readonly CharacterReferenceIssue[] {
+  const resolved = resolveCharacter(character);
+
   return [
     ...findSpeciesValidationIssues(character.species ?? []),
     ...findClanValidationIssues(character.clans ?? []),
-    ...findMutationValidationIssues(character.mutations ?? []),
     ...findTraitValidationIssues(character.traits ?? []),
     ...findCapabilityValidationIssues(
-      character.abilities ?? [],
       character.techniques ?? [],
       character.skills ?? [],
+      resolved.requirementContext,
     ),
     ...findConditionValidationIssues(character.conditions ?? []),
+    ...findInjuryValidationIssues(character.injuries ?? []),
+    ...findItemValidationIssues(character.items ?? []),
   ];
 }
 
@@ -276,13 +337,13 @@ export function validateCharacter(
     });
   }
 
-  if (character.name.trim().length === 0) {
+  if (character.details.name.trim().length === 0) {
     errors.push({
       code: "character.name.empty",
       message: "Character name cannot be empty.",
       audience: "player",
       subject,
-      actual: character.name,
+      actual: character.details.name,
       resolution: "Enter a character name.",
     });
   }
@@ -328,12 +389,12 @@ export function validateCharacter(
           .join(", "),
       },
       clans: { value: (character.clans ?? []).length },
-      mutations: { value: (character.mutations ?? []).length },
       traits: { value: (character.traits ?? []).length },
-      abilities: { value: (character.abilities ?? []).length },
       techniques: { value: (character.techniques ?? []).length },
       skills: { value: (character.skills ?? []).length },
+      items: { value: (character.items ?? []).length },
       conditions: { value: (character.conditions ?? []).length },
+      injuries: { value: (character.injuries ?? []).length },
     },
     output: referenceIssues.length === 0,
   });
@@ -345,7 +406,7 @@ export function validateCharacter(
       label: "Validate character",
       inputs: {
         id: { value: character.id },
-        name: { value: character.name },
+        name: { value: character.details.name },
       },
       output: errors.length === 0,
       children: [attributesResult.trace.root, referenceTraceNode],

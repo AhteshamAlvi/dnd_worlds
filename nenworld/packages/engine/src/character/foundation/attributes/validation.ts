@@ -1,9 +1,14 @@
 /*
- * Structural validation for a set of stored attribute scores.
+ * Structural validation for a set of *stored* attribute scores.
  *
  * This answers "is this well-formed enough to compute with", not "is this
  * character balanced". The result carries the trace either way, so a
  * rejection still shows which checks ran.
+ *
+ * The 1-30 ladder applies to authored values only. Base and Resolved scores
+ * are derived, and a Trait or a Condition may legitimately drive one of them
+ * outside the ladder — running this over a derived layer would report the
+ * penalty working correctly as an error.
  */
 
 import type { EngineError } from "../../../infrastructure/diagnostics";
@@ -13,7 +18,7 @@ import { createTraceNode, type EngineTrace } from "../../../infrastructure/trace
 import { ATTRIBUTE_KEYS, ATTRIBUTE_MAX, ATTRIBUTE_MIN } from "./base";
 import type { Attributes } from "./types";
 
-// Checks every attribute is a whole number inside the legal range.
+// Checks every stored attribute is a whole number inside the legal range.
 export function validateAttributes(
   attributes: Attributes,
 ): EngineResult<Attributes> {

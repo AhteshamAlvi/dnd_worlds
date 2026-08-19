@@ -16,18 +16,21 @@
  */
 
 
-export type NenMasteryRank =
-  | 0
-  | 1
-  | 2
-  | 3
-  | 4
-  | 5
-  | 6
-  | 7
-  | 8
-  | 9
-  | 10;
+import type { MasteryValue } from "../../capabilities/mastery";
+
+
+/**
+ * A Nen principle's Mastery, 0-X.
+ *
+ * The same rank vocabulary every other capability uses: an alias rather than
+ * a parallel set of numbers, so a Ten rank and a Swordsmanship rank compare
+ * without conversion and a requirement written against one works against the
+ * other. capabilities/mastery.ts owns the range and the Roman numerals.
+ *
+ * What differs about Nen principles is what a rank *does*, not what a rank
+ * *is* — and that lives in the principle implementations.
+ */
+export type NenMasteryRank = MasteryValue;
 
 
 export type NenPrincipleId =

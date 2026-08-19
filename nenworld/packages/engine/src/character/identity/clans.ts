@@ -3,17 +3,23 @@
  *
  * A character may belong to none, one, or several, but never to the same one
  * twice.
+ *
+ * Clans are classification first: the authored ones carry no mechanics. When
+ * one does, it uses the same universal Effects every other kind of content
+ * uses rather than a Clan-specific modifier path — an Uchiha inheriting the
+ * Sharingan is a grantTrait, not a new engine concept.
  */
 
 import {
   createRegistry,
   scanReferences,
-  type Definition,
 } from "../../infrastructure/registry";
+
+import type { EffectfulDefinition } from "../rules/content";
 
 export type ClanId = string;
 
-export type ClanDefinition = Definition;
+export type ClanDefinition = EffectfulDefinition;
 
 export interface CharacterClan {
   readonly clanId: ClanId;

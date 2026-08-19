@@ -1,10 +1,21 @@
 /*
- * Structural validation across the three capability layers.
+ * Validation for the capability layer.
  *
- * Abilities and Techniques only have to exist and not repeat. Skills have to
- * exist, not repeat, *and* rest on capabilities the character actually has —
- * which is why all three are validated here together rather than each file
- * validating itself: the Skill check needs the other two lists in hand.
+ * Two different questions live here, and keeping them apart matters:
+ *
+ *   - is this *character's* capability list well-formed and earned?
+ *   - is this *definition* a coherent Mastery track?
+ *
+ * The first is asked of every sheet. The second is asked of the catalog,
+ * including whatever the host registered at runtime, because a homebrew
+ * Technique whose ranks run past its own maximum reaches the same UI as an
+ * authored one.
+ *
+ * Requirement checking needs a resolved character, not the raw lists: a Skill
+ * granted by a Trait is as real as one the sheet lists, and a requirement on
+ * DEX has to see the Base score rather than the stored one. That context is
+ * built by character/resolution.ts and passed in, which is why this file
+ * takes a RequirementContext instead of assembling one.
  *
  * These return issues rather than EngineResults because they are domain
  * helpers, not public entry points. validateCharacter turns them into
@@ -13,36 +24,31 @@
 
 import { scanReferences } from "../../infrastructure/registry";
 
+import { meetsAllRequirements, type RequirementContext } from "../rules/resolution";
 import {
-  isKnownAbilityId,
-  type AbilityId,
-  type CharacterAbility,
-} from "./abilities";
+  isMasteryRank,
+  type MasteryRank,
+} from "./mastery";
 
 import {
+  getTechniqueDefinition,
   isKnownTechniqueId,
+  techniqueMastery,
   type CharacterTechnique,
+  type TechniqueDefinition,
   type TechniqueId,
 } from "./techniques";
 
 import {
   getSkillDefinition,
   isKnownSkillId,
+  skillMastery,
   type CharacterSkill,
   type SkillDefinition,
   type SkillId,
-  type SkillRequirementSet,
 } from "./skills";
 
-export type AbilityValidationIssue =
-  | {
-      readonly type: "unknown-ability";
-      readonly abilityId: AbilityId;
-    }
-  | {
-      readonly type: "duplicate-ability";
-      readonly abilityId: AbilityId;
-    };
+/* ── Character capability issues ────────────────────────────────────────── */
 
 export type TechniqueValidationIssue =
   | {
@@ -51,6 +57,16 @@ export type TechniqueValidationIssue =
     }
   | {
       readonly type: "duplicate-technique";
+      readonly techniqueId: TechniqueId;
+    }
+  | {
+      readonly type: "invalid-technique-mastery";
+      readonly techniqueId: TechniqueId;
+      readonly mastery: number;
+      readonly maximumMastery: MasteryRank;
+    }
+  | {
+      readonly type: "unsatisfied-technique-requirements";
       readonly techniqueId: TechniqueId;
     };
 
@@ -64,26 +80,32 @@ export type SkillValidationIssue =
       readonly skillId: SkillId;
     }
   | {
+      readonly type: "invalid-skill-mastery";
+      readonly skillId: SkillId;
+      readonly mastery: number;
+      readonly maximumMastery: MasteryRank;
+    }
+  | {
       readonly type: "unsatisfied-skill-requirements";
       readonly skillId: SkillId;
     };
 
-export function findAbilityValidationIssues(
-  abilities: readonly CharacterAbility[],
-): readonly AbilityValidationIssue[] {
-  return scanReferences(
-    abilities.map((ability) => ability.abilityId),
-    isKnownAbilityId,
-  ).map((issue) => ({
-    type: issue.kind === "unknown" ? "unknown-ability" : "duplicate-ability",
-    abilityId: issue.id,
-  }));
-}
+export type CapabilityValidationIssue =
+  | TechniqueValidationIssue
+  | SkillValidationIssue;
 
+/*
+ * Requirements are only judged when a context is supplied.
+ *
+ * A caller validating a half-built sheet in isolation has no resolved
+ * character to check against, and inventing an empty one would report every
+ * prerequisite in the list as unmet — which is worse than not answering.
+ */
 export function findTechniqueValidationIssues(
   techniques: readonly CharacterTechnique[],
+  context?: RequirementContext,
 ): readonly TechniqueValidationIssue[] {
-  return scanReferences(
+  const issues: TechniqueValidationIssue[] = scanReferences(
     techniques.map((technique) => technique.techniqueId),
     isKnownTechniqueId,
   ).map((issue) => ({
@@ -91,51 +113,56 @@ export function findTechniqueValidationIssues(
       issue.kind === "unknown" ? "unknown-technique" : "duplicate-technique",
     techniqueId: issue.id,
   }));
-}
 
-// Every requirement inside one set must hold.
-function satisfiesRequirementSet(
-  requirement: SkillRequirementSet,
-  abilityIds: ReadonlySet<string>,
-  techniqueIds: ReadonlySet<string>,
-): boolean {
-  return (
-    (requirement.abilityIds ?? []).every((abilityId) =>
-      abilityIds.has(abilityId),
-    ) &&
-    (requirement.techniqueIds ?? []).every((techniqueId) =>
-      techniqueIds.has(techniqueId),
-    )
+  const unknown = new Set(
+    issues
+      .filter((issue) => issue.type === "unknown-technique")
+      .map((issue) => issue.techniqueId),
   );
-}
 
-// Satisfying any one complete requirement set is enough.
-export function satisfiesSkillRequirements(
-  definition: SkillDefinition,
-  abilities: readonly CharacterAbility[],
-  techniques: readonly CharacterTechnique[],
-): boolean {
-  const requirements = definition.requirements;
+  const checked = new Set<TechniqueId>();
 
-  if (requirements === undefined || requirements.length === 0) {
-    return true;
+  for (const technique of techniques) {
+    const id = technique.techniqueId;
+
+    // A repeated Technique's rank and prerequisites are the same ones judged
+    // on its first appearance; reporting them twice points at one fix.
+    if (unknown.has(id) || checked.has(id)) continue;
+
+    checked.add(id);
+
+    const definition = getTechniqueDefinition(id);
+
+    if (definition === undefined) continue;
+
+    const mastery = techniqueMastery(technique);
+
+    if (!isMasteryRank(mastery) || mastery > definition.maximumMastery) {
+      issues.push({
+        type: "invalid-technique-mastery",
+        techniqueId: id,
+        mastery,
+        maximumMastery: definition.maximumMastery,
+      });
+    }
+
+    if (
+      context !== undefined &&
+      !meetsAllRequirements(definition.requirements ?? [], context)
+    ) {
+      issues.push({
+        type: "unsatisfied-technique-requirements",
+        techniqueId: id,
+      });
+    }
   }
 
-  const abilityIds = new Set(abilities.map((ability) => ability.abilityId));
-
-  const techniqueIds = new Set(
-    techniques.map((technique) => technique.techniqueId),
-  );
-
-  return requirements.some((requirement) =>
-    satisfiesRequirementSet(requirement, abilityIds, techniqueIds),
-  );
+  return issues;
 }
 
 export function findSkillValidationIssues(
   skills: readonly CharacterSkill[],
-  abilities: readonly CharacterAbility[],
-  techniques: readonly CharacterTechnique[],
+  context?: RequirementContext,
 ): readonly SkillValidationIssue[] {
   const issues: SkillValidationIssue[] = scanReferences(
     skills.map((skill) => skill.skillId),
@@ -145,8 +172,6 @@ export function findSkillValidationIssues(
     skillId: issue.id,
   }));
 
-  // Unknown ids have no requirements to check, and a repeated Skill's
-  // requirements are the same ones already judged on its first appearance.
   const unknown = new Set(
     issues
       .filter((issue) => issue.type === "unknown-skill")
@@ -156,21 +181,34 @@ export function findSkillValidationIssues(
   const checked = new Set<SkillId>();
 
   for (const skill of skills) {
-    if (unknown.has(skill.skillId) || checked.has(skill.skillId)) {
-      continue;
+    const id = skill.skillId;
+
+    if (unknown.has(id) || checked.has(id)) continue;
+
+    checked.add(id);
+
+    const definition = getSkillDefinition(id);
+
+    if (definition === undefined) continue;
+
+    const mastery = skillMastery(skill);
+
+    if (!isMasteryRank(mastery) || mastery > definition.maximumMastery) {
+      issues.push({
+        type: "invalid-skill-mastery",
+        skillId: id,
+        mastery,
+        maximumMastery: definition.maximumMastery,
+      });
     }
 
-    checked.add(skill.skillId);
-
-    const definition = getSkillDefinition(skill.skillId);
-
     if (
-      definition !== undefined &&
-      !satisfiesSkillRequirements(definition, abilities, techniques)
+      context !== undefined &&
+      !meetsAllRequirements(definition.requirements ?? [], context)
     ) {
       issues.push({
         type: "unsatisfied-skill-requirements",
-        skillId: skill.skillId,
+        skillId: id,
       });
     }
   }
@@ -178,21 +216,39 @@ export function findSkillValidationIssues(
   return issues;
 }
 
-export type CapabilityValidationIssue =
-  | AbilityValidationIssue
-  | TechniqueValidationIssue
-  | SkillValidationIssue;
+/**
+ * Whether a character described by `context` meets what a Skill asks of them.
+ *
+ * Exposed so a UI can grey out a Skill for exactly the reason the engine
+ * would reject it, rather than reimplementing the test.
+ */
+export function satisfiesSkillRequirements(
+  definition: SkillDefinition,
+  context: RequirementContext,
+): boolean {
+  return meetsAllRequirements(definition.requirements ?? [], context);
+}
+
+
+/**
+ * The same question for a Technique.
+ */
+export function satisfiesTechniqueRequirements(
+  definition: TechniqueDefinition,
+  context: RequirementContext,
+): boolean {
+  return meetsAllRequirements(definition.requirements ?? [], context);
+}
 
 // One call for the whole layer, in dependency order: a Skill's requirements
-// are only meaningful once the Abilities and Techniques behind them are.
+// commonly name the Techniques behind it.
 export function findCapabilityValidationIssues(
-  abilities: readonly CharacterAbility[],
   techniques: readonly CharacterTechnique[],
   skills: readonly CharacterSkill[],
+  context?: RequirementContext,
 ): readonly CapabilityValidationIssue[] {
   return [
-    ...findAbilityValidationIssues(abilities),
-    ...findTechniqueValidationIssues(techniques),
-    ...findSkillValidationIssues(skills, abilities, techniques),
+    ...findTechniqueValidationIssues(techniques, context),
+    ...findSkillValidationIssues(skills, context),
   ];
 }

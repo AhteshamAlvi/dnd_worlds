@@ -59,8 +59,8 @@ export { DEFINITION_ID_PATTERN } from "./infrastructure/registry";
 
 /* ── Catalogs ───────────────────────────────────────────────────────────── */
 
-// One generic surface over all eight catalogs, so a host can render a picker
-// or an authoring form without an eight-way switch of its own.
+// One generic surface over every catalog, so a host can render a picker or an
+// authoring form without a per-domain switch of its own.
 export type {
   CatalogDomain,
   CatalogDefinitions,
@@ -77,6 +77,10 @@ export {
   unregisterDefinition,
   clearCustomDefinitions,
   exportCustomDefinitions,
+
+  // Whether authored and registered content only points at things that
+  // exist. What a host should run after loading a homebrew catalog.
+  findCatalogReferenceIssues,
 } from "./character/catalogs";
 
 // Where the engine knowingly diverges from the frozen Rulebook, and why.
@@ -105,6 +109,13 @@ export {
   isKnownSpeciesId,
   findSpeciesValidationIssues,
 
+  // Sub-species are Species with a parent, so lineage is a query rather than
+  // a second catalog.
+  isSubspecies,
+  listSubspecies,
+  speciesAncestry,
+  collectSpeciesAncestry,
+
   // The 100% rule, exported so a UI can gate its own save button on exactly
   // the same test the engine will apply rather than reimplementing it.
   isCompleteSpeciesMix,
@@ -126,25 +137,9 @@ export {
 } from "./character/identity/clans";
 
 export type {
-  CharacterMutation,
-  MutationDefinition,
-  MutationId,
-  MutationValidationIssue,
-  MutationVariantDefinition,
-  MutationVariantId,
-} from "./character/identity/mutations";
-
-export {
-  MUTATION_DEFINITIONS,
-  getMutationDefinition,
-  getMutationVariantDefinition,
-  isKnownMutationId,
-  findMutationValidationIssues,
-} from "./character/identity/mutations";
-
-export type {
   CharacterTrait,
-  TraitAttributeModifier,
+  ResolvedTrait,
+  ResolvedTraits,
   TraitDefinition,
   TraitId,
   TraitValidationIssue,
@@ -154,7 +149,10 @@ export {
   TRAIT_DEFINITIONS,
   getTraitDefinition,
   isKnownTraitId,
+  listSubtraits,
   findTraitValidationIssues,
+  resolveTraits,
+  resolvedTraitIds,
 } from "./character/identity/traits";
 
 /* ── Character: foundation ──────────────────────────────────────────────── */
@@ -162,6 +160,10 @@ export {
 export type {
   Attributes,
   AttributeKey,
+  AttributeLayers,
+  StoredAttributes,
+  BaseAttributes,
+  ResolvedAttributes,
 } from "./character/foundation/attributes/types";
 
 export {
@@ -173,9 +175,22 @@ export {
 export type { AttributeModifier } from "./character/foundation/attributes/modifiers";
 export { applyAttributeModifiers } from "./character/foundation/attributes/modifiers";
 
-// Stored scores plus every permanent modifier. The workbench shows base and
-// resolved side by side; this is the resolved half.
-export { resolveAttributes } from "./character/foundation/attributes/resolution";
+// The stored → base → resolved ladder, and the explanation of one score's
+// journey down it. The workbench shows Base and Resolved side by side and has
+// to be able to say why they differ.
+export type {
+  AttributeContribution,
+  AttributeExplanation,
+} from "./character/foundation/attributes/resolution";
+
+export {
+  deriveBaseAttributes,
+  deriveResolvedAttributes,
+  resolveAttributeLayers,
+  explainAttribute,
+  createAttributeTraceNode,
+  createAttributeResolutionTrace,
+} from "./character/foundation/attributes/resolution";
 
 export { validateAttributes } from "./character/foundation/attributes/validation";
 
@@ -199,19 +214,121 @@ export {
   deriveAuraRegeneration,
 } from "./character/foundation/aura/replenishment";
 
-/* ── Character: capabilities ────────────────────────────────────────────── */
+/* ── Character: rules ───────────────────────────────────────────────────── */
+
+/*
+ * The universal vocabulary every piece of content is built from.
+ *
+ * These are what make new content data rather than code: a Workbench effect
+ * editor is a form over the Effect union, and a prerequisite editor is a form
+ * over the Requirement union.
+ */
+export type {
+  Effect,
+  EffectType,
+  ModifyBaseAttributeEffect,
+  ModifyResolvedAttributeEffect,
+  GrantTraitEffect,
+  GrantSkillEffect,
+  GrantTechniqueEffect,
+} from "./character/rules/effects";
+
+export { EFFECT_TYPES } from "./character/rules/effects";
 
 export type {
-  AbilityDefinition,
-  AbilityId,
-  CharacterAbility,
-} from "./character/capabilities/abilities";
+  Requirement,
+  RequirementType,
+  AttributeRequirementLayer,
+  AttributeMinimumRequirement,
+  LevelMinimumRequirement,
+  HasSpeciesRequirement,
+  HasSubspeciesRequirement,
+  HasClanRequirement,
+  HasTraitRequirement,
+  HasSkillRequirement,
+  SkillMasteryRequirement,
+  HasTechniqueRequirement,
+  TechniqueMasteryRequirement,
+  HasConditionRequirement,
+  HasItemRequirement,
+  ItemRequirementState,
+  AllRequirements,
+  AnyRequirement,
+  NotRequirement,
+} from "./character/rules/requirements";
+
+export { REQUIREMENT_TYPES } from "./character/rules/requirements";
+
+// The shape any content carrying rules has, so a host can write one authoring
+// form for every domain rather than one per domain.
+export type { EffectfulDefinition } from "./character/rules/content";
+export {
+  collectGrantedIds,
+  collectRequirementReferences,
+} from "./character/rules/content";
+
+export type {
+  RuleSourceRef,
+  RuleEffectSource,
+  SourcedEffect,
+  SourcedAttributeModifier,
+  TraitGrant,
+  SkillGrant,
+  TechniqueGrant,
+  ResolvedRuleEffects,
+  RequirementAttributes,
+  RequirementContext,
+  RequirementItems,
+} from "./character/rules/resolution";
 
 export {
-  ABILITY_DEFINITIONS,
-  getAbilityDefinition,
-  isKnownAbilityId,
-} from "./character/capabilities/abilities";
+  collectSourcedEffects,
+  resolveRuleEffects,
+  meetsRequirement,
+  meetsAllRequirements,
+} from "./character/rules/resolution";
+
+export type { RuleValidationIssue } from "./character/rules/validation";
+
+export {
+  MAX_REQUIREMENT_DEPTH,
+  findEffectValidationIssues,
+  findEffectsValidationIssues,
+  findRequirementValidationIssues,
+  findRequirementsValidationIssues,
+  findRuleValidationIssues,
+} from "./character/rules/validation";
+
+/* ── Character: capabilities ────────────────────────────────────────────── */
+
+// The rank language Skills and Techniques share. Numeric internally, Roman
+// numerals in front of a player.
+export type {
+  MasteryRank,
+  MasteryValue,
+  MasteryRomanNumeral,
+  MasteryRankDefinition,
+  MasteryTrack,
+} from "./character/capabilities/mastery";
+
+export {
+  MASTERY_RANKS,
+  MASTERY_ROMAN_NUMERALS,
+  NO_MASTERY,
+  STANDARD_MASTERY_MAX,
+  masteryRankToRoman,
+  romanToMasteryRank,
+  isMasteryRank,
+  isMasteryValue,
+  isMasteryWithinMaximum,
+  getNextMasteryRank,
+  canIncreaseMastery,
+  getMasteryTrackRanks,
+  getHeldMasteryRanks,
+  getMasteryRankDefinition,
+  collectMasteryRankEffects,
+  findMasteryTrackIssues,
+} from "./character/capabilities/mastery";
 
 export type {
   CharacterTechnique,
@@ -223,13 +340,17 @@ export {
   TECHNIQUE_DEFINITIONS,
   getTechniqueDefinition,
   isKnownTechniqueId,
+  techniqueMastery,
+  techniqueMaximumMastery,
+  toTechniqueMasteryRecord,
+  collectTechniqueEffects,
+  findTechniqueCatalogIssues,
 } from "./character/capabilities/techniques";
 
 export type {
   CharacterSkill,
   SkillDefinition,
   SkillId,
-  SkillRequirementSet,
   SkillTiming,
 } from "./character/capabilities/skills";
 
@@ -237,7 +358,33 @@ export {
   SKILL_DEFINITIONS,
   getSkillDefinition,
   isKnownSkillId,
+  skillMastery,
+  skillMaximumMastery,
+  toSkillMasteryRecord,
+  collectSkillEffects,
+  findSkillCatalogIssues,
 } from "./character/capabilities/skills";
+
+// Authored Mastery versus access something else is currently supplying.
+export type {
+  AuthoredCapabilityMastery,
+  CapabilityGrantSource,
+  ResolvedCapability,
+  ResolvedCapabilities,
+  ResolvedSkills,
+  ResolvedTechniques,
+  ResolveCapabilitiesInput,
+} from "./character/capabilities/resolution";
+
+export {
+  resolveCapabilities,
+  getResolvedSkillMastery,
+  getResolvedTechniqueMastery,
+  hasResolvedSkill,
+  hasResolvedTechnique,
+  getResolvedSkillMasteryRecord,
+  getResolvedTechniqueMasteryRecord,
+} from "./character/capabilities/resolution";
 
 export type {
   DefinedSkillAttempt,
@@ -246,21 +393,57 @@ export type {
 } from "./character/capabilities/attempts";
 
 export type {
-  AbilityValidationIssue,
   CapabilityValidationIssue,
   SkillValidationIssue,
   TechniqueValidationIssue,
 } from "./character/capabilities/validation";
 
 export {
-  findAbilityValidationIssues,
   findCapabilityValidationIssues,
   findSkillValidationIssues,
   findTechniqueValidationIssues,
   satisfiesSkillRequirements,
+  satisfiesTechniqueRequirements,
 } from "./character/capabilities/validation";
 
+/* ── Character: resolution ──────────────────────────────────────────────── */
+
+/*
+ * The whole picture: authored sheet in, derived character out.
+ *
+ * A host that wants to know what a character can actually do calls this
+ * rather than assembling the answer from the domains, which is the only way
+ * grants, ancestry and the attribute ladder all get applied consistently.
+ */
+export type { ResolvedCharacter } from "./character/resolution";
+
+export {
+  resolveCharacter,
+  buildRequirementContext,
+  hasSkill,
+  hasTrait,
+} from "./character/resolution";
+
 /* ── Character: status ──────────────────────────────────────────────────── */
+
+// The shared expiry/progression/stacking vocabulary behind Conditions and
+// injuries. Generic on purpose — see the file comment for why this stops
+// short of anything resembling a Condition-becomes-a-Trait mechanic.
+export type {
+  StageDefinition,
+  StagedContent,
+  StagedCharacterEntry,
+  StagedEntryValidationIssue,
+} from "./character/status/stage";
+
+export {
+  getStageDefinition,
+  collectStageEffects,
+  findStageTrackIssues,
+  isStageEntryActive,
+  resolveStage,
+  findStagedEntryValidationIssues,
+} from "./character/status/stage";
 
 export type {
   CharacterCondition,
@@ -275,6 +458,113 @@ export {
   isKnownConditionId,
   findConditionValidationIssues,
 } from "./character/status/conditions";
+
+export type {
+  CharacterInjury,
+  InjuryDefinition,
+  InjuryId,
+  InjuryValidationIssue,
+} from "./character/status/injuries";
+
+export {
+  INJURY_DEFINITIONS,
+  getInjuryDefinition,
+  isKnownInjuryId,
+  findInjuryValidationIssues,
+} from "./character/status/injuries";
+
+// Which Conditions and injuries are in force, as rule sources.
+export {
+  collectConditionEffectSources,
+  collectInjuryEffectSources,
+  collectStatusEffectSources,
+} from "./character/status/resolution";
+
+/* ── Character: equipment ───────────────────────────────────────────────── */
+
+export type {
+  CharacterItem,
+  ItemDefinition,
+} from "./character/equipment/types";
+
+export type { ItemId, ItemValidationIssue } from "./character/equipment/index";
+
+export {
+  ITEM_DEFINITIONS,
+  getItemDefinition,
+  isKnownItemId,
+  getActiveItemEffects,
+  collectItemEffectSources,
+  collectItemState,
+  findItemValidationIssues,
+} from "./character/equipment/index";
+
+/* ── Character: progression ─────────────────────────────────────────────── */
+
+/*
+ * Lifetime XP → Level → Stat Points / Growth Points.
+ *
+ * Progression only ever writes stored values (Base Attributes, Mastery); it
+ * never resolves anything about a character's current state, which is why it
+ * has stayed outside foundation/ and character/rules/. Now tested and
+ * exported for the first time since the data-driven refactor — previously
+ * present in source but neither, which meant a host had to reach past this
+ * barrel to use it.
+ */
+
+export type {
+  CharacterLevel,
+  ExperienceProgress,
+} from "./character/progression/levels";
+
+export {
+  MIN_CHARACTER_LEVEL,
+  MAX_CHARACTER_LEVEL,
+  POST_CAP_MILESTONE_LEVEL_INTERVAL,
+  LEVEL_CAP_LIFETIME_XP,
+  isCharacterLevel,
+  validateCharacterLevel,
+  validateLifetimeXp,
+  deriveRawXpToNextLevel,
+  deriveXpToNextLevel,
+  deriveLifetimeXpThreshold,
+  addExperience,
+  deriveCharacterLevelFromLifetimeXp,
+  canGainCharacterLevel,
+  deriveNextCharacterLevel,
+  derivePostCapMilestoneThreshold,
+  derivePostCapMilestonesReached,
+  deriveExperienceProgress,
+} from "./character/progression/levels";
+
+export type {
+  LimitedStatPointGrant,
+  LimitedStatPointGrantResult,
+  StatPointExpenditure,
+} from "./character/progression/stats";
+
+export {
+  STARTING_STAT_POINTS,
+  STAT_POINTS_PER_LEVEL_GAINED,
+  POST_CAP_STAT_POINTS_PER_MILESTONE,
+  STARTING_STAT_ARRAY,
+  deriveNaturalStatPointsForLevel,
+  deriveNaturalStatPointsForLifetimeXp,
+  grantStatPoints,
+  spendStatPoints,
+  applyLimitedStatPointGrant,
+} from "./character/progression/stats";
+
+export type { GrowthPointExpenditure } from "./character/progression/growth";
+
+export {
+  GROWTH_POINTS_PER_LEVEL,
+  POST_CAP_GROWTH_POINTS_PER_MILESTONE,
+  deriveNaturalGrowthPointsForLevel,
+  deriveNaturalGrowthPointsForLifetimeXp,
+  grantGrowthPoints,
+  spendGrowthPoints,
+} from "./character/progression/growth";
 
 /* ── Constants ──────────────────────────────────────────────────────────── */
 

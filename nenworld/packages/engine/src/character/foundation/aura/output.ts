@@ -34,6 +34,7 @@
 
 import type { Attributes } from "../attributes/types";
 import type { EngineResult } from "../../../infrastructure/result";
+import { roundToOneSignificantFigure } from "../../../infrastructure/rounding";
 import { createTraceNode } from "../../../infrastructure/trace";
 
 import type {
@@ -41,18 +42,6 @@ import type {
   AuraOutputLimit,
   AuraPool,
 } from "./types";
-
-
-function roundToOneSignificantFigure(value: number): number {
-  if (value === 0) {
-    return 0;
-  }
-
-  const magnitude =
-    10 ** Math.floor(Math.log10(Math.abs(value)));
-
-  return Math.round(value / magnitude) * magnitude;
-}
 
 
 /**

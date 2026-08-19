@@ -1,8 +1,8 @@
 /*
  * The index of every catalog a character can reference.
  *
- * Eight domains, one shape. Without this file a host that wants to offer "pick
- * a feature" or "add your own" has to write the same eight-way switch for
+ * Seven domains, one shape. Without this file a host that wants to offer "pick
+ * a feature" or "add your own" has to write the same seven-way switch for
  * listing, fetching and registering — and get all three of them right — before
  * it can render a single picker. With it, a UI is generic over the domain and
  * the engine stays the only place that knows what a Trait is.
@@ -13,6 +13,12 @@
  * length of the session and validates against them, but never persists them.
  * See infrastructure/registry.ts for why custom entries can never shadow an
  * authored one.
+ *
+ * This is also the only place that can answer whether one definition's
+ * references point at real things, because it is the only place that can see
+ * every domain at once. A Technique granting a Skill and a Skill requiring a
+ * Trait are both cross-catalog claims, and neither domain can check its own
+ * without importing the other.
  */
 
 import type {
@@ -21,15 +27,19 @@ import type {
   Registry,
 } from "../infrastructure/registry";
 
+import {
+  collectGrantedIds,
+  collectRequirementReferences,
+  type RequirementReferenceDomain,
+} from "./rules/content";
+import type { Effect } from "./rules/effects";
+import type { Requirement } from "./rules/requirements";
+import { findRuleValidationIssues } from "./rules/validation";
+
 import { clanRegistry, type ClanDefinition } from "./identity/clans";
-import { mutationRegistry, type MutationDefinition } from "./identity/mutations";
 import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
 import { traitRegistry, type TraitDefinition } from "./identity/traits";
 
-import {
-  abilityRegistry,
-  type AbilityDefinition,
-} from "./capabilities/abilities";
 import {
   techniqueRegistry,
   type TechniqueDefinition,
@@ -40,43 +50,48 @@ import {
   conditionRegistry,
   type ConditionDefinition,
 } from "./status/conditions";
+import { injuryRegistry, type InjuryDefinition } from "./status/injuries";
+
+import { itemRegistry } from "./equipment/index";
+import type { ItemDefinition } from "./equipment/types";
 
 // Singular on purpose: a domain names one kind of thing, and every message
 // built from it reads "unknown Species", not "unknown species-list".
 export type CatalogDomain =
   | "species"
   | "clan"
-  | "mutation"
   | "trait"
-  | "ability"
   | "technique"
   | "skill"
-  | "condition";
+  | "condition"
+  | "injury"
+  | "item";
 
 // What each domain's definitions actually are, so a caller that names a
 // domain literally gets that domain's own type back rather than the base one.
 export interface CatalogDefinitions {
   species: SpeciesDefinition;
   clan: ClanDefinition;
-  mutation: MutationDefinition;
   trait: TraitDefinition;
-  ability: AbilityDefinition;
   technique: TechniqueDefinition;
   skill: SkillDefinition;
   condition: ConditionDefinition;
+  injury: InjuryDefinition;
+  item: ItemDefinition;
 }
 
 // Display order, and the order a host should render sections in: what a
-// character *is*, then what it can *do*, then what is currently *true* of it.
+// character *is*, then what it can *do*, then what is currently *true* of it,
+// then what it is carrying.
 export const CATALOG_DOMAINS = [
   "species",
   "clan",
-  "mutation",
   "trait",
-  "ability",
   "technique",
   "skill",
   "condition",
+  "injury",
+  "item",
 ] as const satisfies readonly CatalogDomain[];
 
 type RegistryByDomain = {
@@ -86,12 +101,12 @@ type RegistryByDomain = {
 const REGISTRIES: RegistryByDomain = {
   species: speciesRegistry,
   clan: clanRegistry,
-  mutation: mutationRegistry,
   trait: traitRegistry,
-  ability: abilityRegistry,
   technique: techniqueRegistry,
   skill: skillRegistry,
   condition: conditionRegistry,
+  injury: injuryRegistry,
+  item: itemRegistry,
 };
 
 // Human-readable domain names, for anything the host puts in front of a
@@ -100,12 +115,12 @@ const REGISTRIES: RegistryByDomain = {
 export const CATALOG_DOMAIN_LABELS: Readonly<Record<CatalogDomain, string>> = {
   species: "Species",
   clan: "Clan",
-  mutation: "Mutation",
   trait: "Trait",
-  ability: "Ability",
   technique: "Technique",
   skill: "Skill",
   condition: "Condition",
+  injury: "Injury",
+  item: "Item",
 };
 
 // Every definition in a domain, authored first, then custom in the order it
@@ -178,4 +193,167 @@ export function exportCustomDefinitions(): Readonly<
   }
 
   return out;
+}
+
+/* ── Cross-catalog validation ───────────────────────────────────────────── */
+
+/*
+ * Everywhere a definition can name something in another catalog.
+ *
+ * Listed once, as data, so a domain that gains a new rule-carrying field
+ * cannot quietly escape reference checking: the field has to be added here
+ * for its contents to be walked, and forgetting is visible as a domain with
+ * no rules listed.
+ */
+interface RuleBundle {
+  readonly where: string;
+  readonly effects: readonly Effect[];
+  readonly requirements: readonly Requirement[];
+}
+
+function rulesOf(
+  domain: CatalogDomain,
+  definition: CatalogDefinitions[CatalogDomain],
+): readonly RuleBundle[] {
+  const bundles: RuleBundle[] = [];
+
+  if (domain === "item") {
+    const item = definition as ItemDefinition;
+
+    bundles.push({
+      where: "possessed",
+      effects: item.possessedEffects ?? [],
+      requirements: [],
+    });
+    bundles.push({
+      where: "equipped",
+      effects: item.equippedEffects ?? [],
+      requirements: item.equipRequirements ?? [],
+    });
+    bundles.push({
+      where: "used",
+      effects: item.useEffects ?? [],
+      requirements: item.useRequirements ?? [],
+    });
+
+    return bundles;
+  }
+
+  const effectful = definition as {
+    readonly effects?: readonly Effect[];
+    readonly requirements?: readonly Requirement[];
+    readonly ranks?: readonly {
+      readonly rank: number;
+      readonly effects?: readonly Effect[];
+      readonly requirements?: readonly Requirement[];
+    }[];
+    // Conditions and injuries progress through stages rather than Skill/
+    // Technique ranks — see status/stage.ts — but the walk is identical.
+    readonly stages?: readonly {
+      readonly stage: number;
+      readonly effects?: readonly Effect[];
+      readonly requirements?: readonly Requirement[];
+    }[];
+  };
+
+  bundles.push({
+    where: "definition",
+    effects: effectful.effects ?? [],
+    requirements: effectful.requirements ?? [],
+  });
+
+  for (const rank of effectful.ranks ?? []) {
+    bundles.push({
+      where: `rank ${rank.rank}`,
+      effects: rank.effects ?? [],
+      requirements: rank.requirements ?? [],
+    });
+  }
+
+  for (const stage of effectful.stages ?? []) {
+    bundles.push({
+      where: `stage ${stage.stage}`,
+      effects: stage.effects ?? [],
+      requirements: stage.requirements ?? [],
+    });
+  }
+
+  return bundles;
+}
+
+// Which catalog answers for a requirement's reference. Sub-species live in
+// the Species catalog, which is the whole point of modelling them as Species.
+const REQUIREMENT_DOMAINS: Readonly<
+  Record<RequirementReferenceDomain, CatalogDomain>
+> = {
+  species: "species",
+  clan: "clan",
+  trait: "trait",
+  skill: "skill",
+  technique: "technique",
+  condition: "condition",
+  item: "item",
+};
+
+/**
+ * Every reference an authored or registered definition makes that does not
+ * resolve, plus any structurally malformed rule.
+ *
+ * This is the check that keeps data-driven content honest. A Trait granting
+ * "wall-stickng" is a typo the engine can catch at load, and catching it here
+ * is the difference between a Workbench author seeing a message and a player
+ * wondering why their Trait does nothing.
+ */
+export function findCatalogReferenceIssues(): readonly string[] {
+  const issues: string[] = [];
+
+  for (const domain of CATALOG_DOMAINS) {
+    const label = CATALOG_DOMAIN_LABELS[domain];
+
+    for (const definition of REGISTRIES[domain].all()) {
+      for (const bundle of rulesOf(domain, definition)) {
+        const where =
+          bundle.where === "definition" ? "" : ` (${bundle.where})`;
+
+        for (const issue of findRuleValidationIssues(
+          bundle.effects,
+          bundle.requirements,
+        )) {
+          issues.push(
+            `${label} "${definition.id}"${where} has a malformed rule: ${issue.type} at ${issue.path}.`,
+          );
+        }
+
+        const granted = collectGrantedIds(bundle.effects);
+
+        for (const [targetDomain, ids] of [
+          ["trait", granted.traitIds],
+          ["skill", granted.skillIds],
+          ["technique", granted.techniqueIds],
+        ] as const) {
+          for (const id of ids) {
+            if (!isKnownDefinitionId(targetDomain, id)) {
+              issues.push(
+                `${label} "${definition.id}"${where} grants unknown ${CATALOG_DOMAIN_LABELS[targetDomain]} "${id}".`,
+              );
+            }
+          }
+        }
+
+        for (const reference of collectRequirementReferences(
+          bundle.requirements,
+        )) {
+          const targetDomain = REQUIREMENT_DOMAINS[reference.domain];
+
+          if (!isKnownDefinitionId(targetDomain, reference.id)) {
+            issues.push(
+              `${label} "${definition.id}"${where} requires unknown ${CATALOG_DOMAIN_LABELS[targetDomain]} "${reference.id}".`,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return issues;
 }
