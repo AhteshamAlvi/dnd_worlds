@@ -7,21 +7,23 @@
  * for — a Skill gets the ordinary Action timing — so that adding "Yuki" takes
  * two fields rather than a form that changes shape under you.
  *
- * The id is derived from the name and never shown as an input. Ids are
- * permanent (a sheet stores the id, so renaming must not orphan anything) and
- * asking someone to invent a stable slug for every Trait is a chore that
- * produces typos. It is displayed, read-only, so nothing about what gets
- * written to disk is hidden.
+ * The id is a random, opaque id — the same scheme character ids use — and
+ * never shown as an input. Ids are permanent (a sheet stores the id, so
+ * renaming must not orphan anything), and generating one avoids asking
+ * someone to invent a stable slug for every Trait. It is displayed, read-only,
+ * so nothing about what gets written to disk is hidden. It is generated once
+ * when the dialog opens rather than on every render, so it stays the same id
+ * from the moment it is first shown through to submission.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CATALOG_DOMAIN_LABELS,
+  createDefinitionId,
   type CatalogDomain,
 } from "@nenworld/engine";
 
 import type { CustomDefinition } from "../../adapters/catalogStore";
-import { deriveDefinitionId } from "../../state/catalog";
 
 interface NewDefinitionDialogProps {
   domain: CatalogDomain;
@@ -56,15 +58,12 @@ export function NewDefinitionDialog({
   }, [onClose]);
 
   const label = CATALOG_DOMAIN_LABELS[domain];
-  const id = deriveDefinitionId(domain, name);
-  const canCreate = id !== null && description.trim() !== "";
+  // Generated once per domain rather than derived from `name`, so it stays
+  // stable while the person types.
+  const id = useMemo(() => createDefinitionId(domain), [domain]);
+  const canCreate = name.trim() !== "" && description.trim() !== "";
 
   function submit() {
-    if (id === null) {
-      setError("That name has no letters or digits to build an id from.");
-      return;
-    }
-
     const definition: CustomDefinition = {
       id,
       name: name.trim(),
@@ -135,13 +134,7 @@ export function NewDefinitionDialog({
           </label>
 
           <p className="confirm__meta">
-            id{" "}
-            <span className="confirm__subject">
-              {id ?? "—"}
-            </span>
-            {id === null && name.trim() !== "" ? (
-              <span className="confirm__note"> — needs letters or digits</span>
-            ) : null}
+            id <span className="confirm__subject">{id}</span>
           </p>
 
           {error ? <p className="confirm__error">{error}</p> : null}

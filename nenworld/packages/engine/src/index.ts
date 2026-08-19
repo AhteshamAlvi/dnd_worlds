@@ -78,6 +78,11 @@ export {
   clearCustomDefinitions,
   exportCustomDefinitions,
 
+  // A fresh, random, permanent id for a new entry in one domain — the same
+  // scheme character ids use, and the pattern that recognises one.
+  createDefinitionId,
+  definitionIdPattern,
+
   // Whether authored and registered content only points at things that
   // exist. What a host should run after loading a homebrew catalog.
   findCatalogReferenceIssues,

@@ -13,6 +13,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   CATALOG_DOMAINS,
   clearCustomDefinitions,
+  createDefinitionId,
+  definitionIdPattern,
   exportCustomDefinitions,
   findCatalogReferenceIssues,
   getDefinition,
@@ -23,6 +25,7 @@ import {
   unregisterDefinition,
 } from "../character/catalogs";
 
+import { DEFINITION_ID_PATTERN } from "../infrastructure/registry";
 import { validateCharacter } from "../character/validation";
 import { createTestCharacter } from "./fixtures/character";
 
@@ -339,5 +342,56 @@ describe("character validation against custom definitions", () => {
     if (!result.success) {
       expect(result.errors[0]?.code).toBe("character.species.unknown");
     }
+  });
+});
+
+/*
+ * Tests createDefinitionId: format, uniqueness, and that a generated id is
+ * still something register() accepts — the same guarantee createCharacterId
+ * gives characters, extended to every domain a table can add its own entries
+ * to. See character/id.ts for the full rationale.
+ */
+describe("createDefinitionId", () => {
+  it("produces a domain-prefixed, fixed-length, lowercase-alphanumeric id", () => {
+    const id = createDefinitionId("species");
+
+    expect(id).toMatch(definitionIdPattern("species"));
+    expect(id).toMatch(/^species-[a-z0-9]{16}$/);
+  });
+
+  it("is accepted by DEFINITION_ID_PATTERN, the shape register() enforces", () => {
+    for (const domain of CATALOG_DOMAINS) {
+      expect(createDefinitionId(domain)).toMatch(DEFINITION_ID_PATTERN);
+    }
+  });
+
+  it("never repeats across a large batch generated back-to-back", () => {
+    const ids = new Set<string>();
+
+    for (let i = 0; i < 20_000; i++) {
+      ids.add(createDefinitionId("trait"));
+    }
+
+    expect(ids.size).toBe(20_000);
+  });
+
+  it("does not depend on a name or any argument beyond the domain", () => {
+    const a = createDefinitionId("clan");
+    const b = createDefinitionId("clan");
+
+    expect(a).not.toBe(b);
+  });
+
+  it("registers successfully under its own generated id", () => {
+    const id = createDefinitionId("trait");
+
+    const result = registerDefinition("trait", {
+      id,
+      name: "Generated Trait",
+      description: "A trait registered under a random id.",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(isKnownDefinitionId("trait", id)).toBe(true);
   });
 });

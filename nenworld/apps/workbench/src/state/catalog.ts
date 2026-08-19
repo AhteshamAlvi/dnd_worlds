@@ -21,9 +21,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   CATALOG_DOMAINS,
   clearCustomDefinitions,
-  DEFINITION_ID_PATTERN,
   exportCustomDefinitions,
-  isKnownDefinitionId,
   registerDefinition,
   unregisterDefinition,
   type CatalogDomain,
@@ -58,40 +56,6 @@ export interface CustomCatalogApi extends CustomCatalogState {
   ) => { ok: true } | { ok: false; reason: string };
 
   readonly removeDefinition: (domain: CatalogDomain, id: string) => void;
-}
-
-/*
- * Turns a name into an id that is unique within its domain.
- *
- * Ids are derived rather than typed because they are permanent — a character
- * sheet stores the id, so renaming "Yuki" to "Yuki-onna" must not orphan
- * anything — and asking someone to invent a stable slug for every Trait is a
- * chore that produces typos.
- */
-export function deriveDefinitionId(
-  domain: CatalogDomain,
-  name: string,
-): string | null {
-  const base = name
-    .toLowerCase()
-    .normalize("NFKD")
-    // Strip accents, then anything that is not a letter, digit or separator.
-    .replace(/[̀-ͯ]/g, "")
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-
-  if (base === "" || !DEFINITION_ID_PATTERN.test(base)) return null;
-
-  if (!isKnownDefinitionId(domain, base)) return base;
-
-  // "Bender" already exists → "bender-2". Counting rather than appending
-  // random noise keeps the id readable in a file someone may hand-edit.
-  for (let suffix = 2; suffix < 1000; suffix++) {
-    const candidate = `${base}-${suffix}`;
-    if (!isKnownDefinitionId(domain, candidate)) return candidate;
-  }
-
-  return null;
 }
 
 const SAVE_DEBOUNCE_MS = 400;

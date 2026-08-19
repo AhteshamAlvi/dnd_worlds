@@ -26,6 +26,7 @@ import type {
   RegistrationResult,
   Registry,
 } from "../infrastructure/registry";
+import { createId, idPattern } from "../infrastructure/id";
 
 import {
   collectGrantedIds,
@@ -170,6 +171,23 @@ export function unregisterDefinition(
   id: string,
 ): boolean {
   return REGISTRIES[domain].unregister(id);
+}
+
+/*
+ * A random, opaque, permanent id for a new entry in one domain — the same
+ * scheme character ids use (infrastructure/id.ts), and for the same reason:
+ * a definition's id must never depend on its name, since renaming "Yuki" to
+ * "Yuki-onna" must not orphan every sheet, Technique grant, and Requirement
+ * that points at it.
+ */
+export function createDefinitionId(domain: CatalogDomain): string {
+  return createId(`${domain}-`);
+}
+
+// Recognises any id createDefinitionId(domain) could have produced, so a
+// host can tell a generated id apart from an authored one (e.g. "human").
+export function definitionIdPattern(domain: CatalogDomain): RegExp {
+  return idPattern(`${domain}-`);
 }
 
 // Drops every custom definition in every domain. What a host calls before
