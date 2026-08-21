@@ -21,7 +21,7 @@ The ten attributes and the shared modifier scale. Each attribute owns **one** re
 
 **modifier = ⌊(score − 10) ÷ 2⌋** — round down (toward −∞, so odd low scores round to the worse value).
 
-| Score | Mod | Tier                 | What the raw score means (baseline human frame)                                                                                                                                                    |
+| Stats | Mod | Tier                 | What the raw score means (baseline human frame)                                                                                                                                                    |
 | ----- | --- | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1     | −5  | Vestigial            | The faculty barely exists — a grip that can't hold, a mind that can't keep a thought, a body that faints at effort. Rarely viable for long.                                                        |
 | 2     | −4  | Crippled             | Profoundly impaired; needs constant accommodation to function at all.                                                                                                                              |

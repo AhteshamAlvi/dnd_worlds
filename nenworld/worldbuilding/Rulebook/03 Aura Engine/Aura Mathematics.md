@@ -48,13 +48,13 @@ Maximum Aura Pool depends equally on **CON** and **VIT** — the strength of a c
 This is exactly `10 × M((CON+VIT)/2)` — the same magnitude curve run on the average of the two attributes, then scaled by ten so the CON 10 / VIT 10 baseline lands on 10. For characters with equal CON and VIT:
 
 | CON / VIT | Maximum Aura Pool | ≈ Standard Slimes |
-|--:|--:|--:|
-| 10 | 10 | 10 |
-| 15 | 500 | 500 |
-| 20 | 50,000 | 50,000 |
-| 25 | 10,000,000 | 10,000,000 |
-| 30 | 4,000,000,000 | 4,000,000,000 |
-| 35 | 3,200,000,000,000 | 3,200,000,000,000 |
+| --------: | ----------------: | ----------------: |
+|        10 |                10 |                10 |
+|        15 |               500 |               500 |
+|        20 |            50,000 |            50,000 |
+|        25 |        10,000,000 |        10,000,000 |
+|        30 |     4,000,000,000 |     4,000,000,000 |
+|        35 | 3,200,000,000,000 | 3,200,000,000,000 |
 
 **Unequal CON and VIT average out.** CON 20 / VIT 10 produces the same Maximum Aura Pool as CON 10 / VIT 20, because both average to 15 (Pool 500) — the two builds only diverge on [[#Aura Output|Output]] and [[#Aura Regeneration Capacity|Regeneration]], which read CON and VIT separately rather than averaged.
 

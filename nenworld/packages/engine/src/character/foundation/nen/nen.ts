@@ -1,17 +1,27 @@
 /*
  * Universal Nen structure and mastery rules.
  *
+ * Nen principles use the engine-wide Mastery vocabulary defined by
+ * capabilities/mastery.ts:
+ *
+ *   0     = locked / unlearned
+ *   I-X   = learned Mastery
+ *
+ * This file does not define what Mastery ranks are. It defines how those
+ * shared ranks interact inside the Nen system.
+ *
  * This file owns:
  *
  * - Nen awakening state validation
  * - the Nen-principle dependency graph
- * - universal mastery ceilings
+ * - structural Nen mastery ceilings
  * - structural unlock validation
  * - temporary mastery sealing
  * - propagation of temporary mastery reductions through dependent principles
  *
  * This file does NOT own:
  *
+ * - the generic Mastery rank vocabulary
  * - principle-specific mechanics
  * - principle-specific stat requirements
  * - Growth Point costs
@@ -19,7 +29,11 @@
  * - principle-specific advancement mutations
  * - Nen Ability mechanics
  *
- * Those belong in the relevant principle or Nen Ability files.
+ * Generic Mastery rules belong in capabilities/mastery.ts.
+ *
+ * Principle-specific rules belong in the relevant principle files.
+ *
+ * Nen Ability rules belong in the Nen Ability subsystem.
  *
  *
  * CONTROLLED MASTERY
@@ -45,6 +59,14 @@ import type {
   NonEmptyArray,
 } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
+
+import {
+  getNextMasteryRank,
+  isMasteryValue,
+  MASTERY_RANKS,
+  NO_MASTERY,
+  STANDARD_MASTERY_MAX,
+} from "../../capabilities/mastery";
 
 import type {
   NenAdvancementEvaluation,
@@ -336,16 +358,16 @@ const NEN_PRINCIPLE_IDS =
 
 
 /**
- * Runtime validation for mastery values.
+ * Nen-facing runtime validation for a stored Mastery value.
+ *
+ * The generic Mastery system owns the actual range. This alias remains so
+ * Nen consumers do not need to reach into the capability layer merely to
+ * validate a Nen Mastery value.
  */
 export function isNenMasteryRank(
   value: number,
 ): value is NenMasteryRank {
-  return (
-    Number.isInteger(value) &&
-    value >= 0 &&
-    value <= 10
-  );
+  return isMasteryValue(value);
 }
 
 
@@ -375,9 +397,11 @@ export function getLocalEffectiveMasteryRank(
   const seal =
     state.seals?.[principleId];
 
+
   if (seal === undefined) {
     return permanent;
   }
+
 
   return Math.min(
     permanent,
@@ -398,6 +422,7 @@ export function getNenPrerequisitesForRank(
 ): readonly NenPrincipleId[] {
   const node =
     NEN_PRINCIPLE_GRAPH[principleId];
+
 
   const prerequisites =
     node.prerequisites.map(
@@ -460,7 +485,7 @@ export function deriveMaximumNenMastery(
   principleId: NenPrincipleId,
 ): NenMasteryRank {
   if (!state.awakened) {
-    return 0;
+    return NO_MASTERY;
   }
 
 
@@ -468,6 +493,10 @@ export function deriveMaximumNenMastery(
     NEN_PRINCIPLE_GRAPH[principleId];
 
 
+  /*
+   * A principle with no structural prerequisites may advance through the
+   * entire generic Mastery range.
+   */
   if (
     node.prerequisites.length === 0 &&
     (
@@ -475,22 +504,20 @@ export function deriveMaximumNenMastery(
       node.conditionalPrerequisites.length === 0
     )
   ) {
-    return 10;
+    return STANDARD_MASTERY_MAX;
   }
 
 
-  let maximum: NenMasteryRank = 0;
+  let maximum: NenMasteryRank =
+    NO_MASTERY;
 
 
-  for (
-    let rank = 1;
-    rank <= 10;
-    rank += 1
-  ) {
-    const targetRank =
-      rank as NenMasteryRank;
-
-
+  /*
+   * The generic Mastery system owns which learned ranks exist.
+   *
+   * Nen only decides whether each of those ranks is structurally permitted.
+   */
+  for (const targetRank of MASTERY_RANKS) {
     const prerequisites =
       getNenPrerequisitesForRank(
         principleId,
@@ -541,7 +568,7 @@ export function deriveEffectiveNenMastery(
   principleId: NenPrincipleId,
 ): NenMasteryRank {
   if (!state.awakened) {
-    return 0;
+    return NO_MASTERY;
   }
 
 
@@ -574,7 +601,7 @@ export function deriveEffectiveNenMastery(
      * The authored Nen graph must remain acyclic.
      */
     if (visiting.has(currentId)) {
-      return 0;
+      return NO_MASTERY;
     }
 
 
@@ -588,28 +615,26 @@ export function deriveEffectiveNenMastery(
       );
 
 
-    if (localMaximum === 0) {
+    if (localMaximum === NO_MASTERY) {
       visiting.delete(currentId);
 
       memo.set(
         currentId,
-        0,
+        NO_MASTERY,
       );
 
-      return 0;
+      return NO_MASTERY;
     }
 
 
-    let effective: NenMasteryRank = 0;
+    let effective: NenMasteryRank =
+      NO_MASTERY;
 
 
-    for (
-      let rank = 1;
-      rank <= localMaximum;
-      rank += 1
-    ) {
-      const targetRank =
-        rank as NenMasteryRank;
+    for (const targetRank of MASTERY_RANKS) {
+      if (targetRank > localMaximum) {
+        break;
+      }
 
 
       const prerequisites =
@@ -671,7 +696,7 @@ export function isNenPrincipleUnlocked(
     deriveMaximumNenMastery(
       state,
       principleId,
-    ) >= 1
+    ) > NO_MASTERY
   );
 }
 
@@ -710,7 +735,7 @@ export function validateNenAdvancement(
     label: "Validate Nen mastery advancement",
 
     formula:
-      "targetRank <= maximumAllowedByGraph",
+      "targetRank = nextMasteryRank(currentRank) && targetRank <= maximumAllowedByGraph",
 
     inputs: {
       principleId: {
@@ -770,9 +795,10 @@ export function validateNenAdvancement(
         {
           code: "nen.mastery.rank.invalid",
           message:
-            "Nen mastery rank must be an integer from 0 through 10.",
+            `Nen mastery rank must be an integer from ${NO_MASTERY} through ${STANDARD_MASTERY_MAX}.`,
           audience: "developer",
-          required: "integer from 0 through 10",
+          required:
+            `integer from ${NO_MASTERY} through ${STANDARD_MASTERY_MAX}`,
           actual: targetRank,
         },
       ],
@@ -780,8 +806,16 @@ export function validateNenAdvancement(
   }
 
 
+  const nextRank =
+    getNextMasteryRank(
+      currentRank,
+      STANDARD_MASTERY_MAX,
+    );
+
+
   if (
-    targetRank !== currentRank + 1
+    nextRank === null ||
+    targetRank !== nextRank
   ) {
     return {
       success: false,
@@ -796,9 +830,14 @@ export function validateNenAdvancement(
         {
           code: "nen.mastery.advancement.invalid_step",
           message:
-            "Nen mastery must advance exactly one rank at a time.",
+            nextRank === null
+              ? "Nen mastery is already at its maximum rank."
+              : "Nen mastery must advance exactly one rank at a time.",
           audience: "player",
-          required: currentRank + 1,
+          required:
+            nextRank === null
+              ? `no rank beyond ${STANDARD_MASTERY_MAX}`
+              : nextRank,
           actual: targetRank,
         },
       ],
@@ -843,6 +882,7 @@ export function validateNenAdvancement(
           audience: "player",
           required: {
             targetRank,
+
             // Spread because a readonly array is not JSON-assignable, and a
             // diagnostic has to survive serialisation to reach a UI.
             prerequisites: [...prerequisites],
@@ -876,9 +916,11 @@ export function validateNenAdvancement(
   };
 
 
-  // Spelled out rather than assigning the payload directly: an interface has
-  // no index signature, so it is not assignable to JsonValue even when every
-  // field in it is JSON-safe.
+  /*
+   * Spelled out rather than assigning the payload directly: an interface has
+   * no index signature, so it is not assignable to JsonValue even when every
+   * field in it is JSON-safe.
+   */
   traceNode.output = {
     principleId: payload.principleId,
     currentRank: payload.currentRank,
@@ -936,13 +978,14 @@ export function validateNenState(
       state.mastery[principleId];
 
 
-    if (!isNenMasteryRank(mastery)) {
+    if (!isMasteryValue(mastery)) {
       errors.push({
         code: "nen.mastery.rank.invalid",
         message:
-          `${principleId} mastery must be an integer from 0 through 10.`,
+          `${principleId} mastery must be an integer from ${NO_MASTERY} through ${STANDARD_MASTERY_MAX}.`,
         audience: "developer" as const,
-        required: "integer from 0 through 10",
+        required:
+          `integer from ${NO_MASTERY} through ${STANDARD_MASTERY_MAX}`,
         actual: mastery,
       });
 
@@ -956,14 +999,15 @@ export function validateNenState(
 
     if (
       seal !== undefined &&
-      !isNenMasteryRank(seal)
+      !isMasteryValue(seal)
     ) {
       errors.push({
         code: "nen.mastery.seal.invalid",
         message:
-          `${principleId} temporary mastery cap must be an integer from 0 through 10.`,
+          `${principleId} temporary mastery cap must be an integer from ${NO_MASTERY} through ${STANDARD_MASTERY_MAX}.`,
         audience: "developer" as const,
-        required: "integer from 0 through 10",
+        required:
+          `integer from ${NO_MASTERY} through ${STANDARD_MASTERY_MAX}`,
         actual: seal,
       });
     }
@@ -974,7 +1018,8 @@ export function validateNenState(
     !state.awakened &&
     NEN_PRINCIPLE_IDS.some(
       principleId =>
-        state.mastery[principleId] > 0,
+        state.mastery[principleId] >
+        NO_MASTERY,
     )
   ) {
     errors.push({
@@ -983,7 +1028,8 @@ export function validateNenState(
         "A character cannot possess controlled Nen mastery before Nen is awakened.",
       audience: "developer" as const,
       required:
-        "all mastery ranks equal 0 while Nen is unawakened",
+        `all mastery ranks equal ${NO_MASTERY} while Nen is unawakened`,
+
       // Copied rather than passed through: a readonly record is not a
       // JsonObject, and a diagnostic has to be serialisable.
       actual: { ...state.mastery },
@@ -1000,7 +1046,7 @@ export function validateNenState(
         state.mastery[principleId];
 
 
-      if (mastery === 0) {
+      if (mastery === NO_MASTERY) {
         continue;
       }
 
@@ -1046,9 +1092,12 @@ export function validateNenState(
 
       warnings: [],
 
-      // The length check is the guarantee; the type system cannot carry it
-      // across the branch. Same cast the other validators make.
-      errors: errors as NonEmptyArray<EngineError>,
+      /*
+       * The length check is the guarantee; the type system cannot carry it
+       * across the branch. Same cast the other validators make.
+       */
+      errors:
+        errors as NonEmptyArray<EngineError>,
     };
   }
 

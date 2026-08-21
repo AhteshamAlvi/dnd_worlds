@@ -1,0 +1,369 @@
+/*
+ * Persistent Anatomy modification.
+ *
+ * This module provides the generic structural operations used to change a
+ * character's physical Anatomy.
+ *
+ * These operations are content-agnostic. Species, Traits, mutations,
+ * transformations, Injuries, prosthetics, and other systems may request
+ * Anatomy modifications, but this module does not know what caused them.
+ *
+ * Permanent changes may be committed to Body.anatomy.
+ * The same operations may later be applied transiently during Anatomy
+ * resolution without mutating the stored Anatomy.
+ *
+ * Structural validation belongs to anatomy/validation.ts.
+ */
+
+import { createBodyPart } from "./creation";
+import type {
+  BodyPartCreationAttachment,
+  BodyPartCreationSpec,
+} from "./creation";
+import type {
+  Anatomy,
+  BodyPart,
+  BodyPartId,
+  BodyPartTypeId,
+} from "./types";
+
+
+/*
+ * Adds one new physical body-part instance.
+ *
+ * The new part begins with zero stored damage.
+ */
+export interface AddBodyPartOperation {
+  readonly kind: "add-part";
+  readonly part: BodyPartCreationSpec;
+}
+
+
+/*
+ * Removes one physical body-part instance.
+ *
+ * Removal always cascades through the target's complete descendant subtree.
+ *
+ * For example:
+ *
+ * arm-1
+ * └── hand-1
+ *
+ * Removing arm-1 removes both arm-1 and hand-1.
+ *
+ * Descendants that should survive must be explicitly reattached before the
+ * parent is removed.
+ */
+export interface RemoveBodyPartOperation {
+  readonly kind: "remove-part";
+  readonly partId: BodyPartId;
+}
+
+
+/*
+ * Description of the new physical part created by a replacement.
+ *
+ * Attachment is intentionally omitted because a replacement inherits the
+ * structural position of the part being replaced.
+ *
+ * The replacement begins with zero stored damage.
+ */
+export interface BodyPartReplacementSpec {
+  readonly id: BodyPartId;
+  readonly type: BodyPartTypeId;
+
+  readonly name?: string;
+}
+
+
+/*
+ * Replaces one physical body-part instance with another.
+ *
+ * Replacement differs from removal:
+ *
+ * - the replacement inherits the old part's parent attachment;
+ * - direct children of the old part are transferred to the replacement;
+ * - descendants therefore remain structurally connected;
+ * - the replacement begins with zero stored damage.
+ *
+ * Example:
+ *
+ * upper-body
+ * └── arm-1
+ *     └── hand-1
+ *
+ * Replacing arm-1 with prosthetic-arm-1 becomes:
+ *
+ * upper-body
+ * └── prosthetic-arm-1
+ *     └── hand-1
+ */
+export interface ReplaceBodyPartOperation {
+  readonly kind: "replace-part";
+  readonly partId: BodyPartId;
+  readonly replacement: BodyPartReplacementSpec;
+}
+
+
+/*
+ * Changes the structural attachment of one existing BodyPart.
+ *
+ * Setting attachment to null makes the part an anatomical root.
+ *
+ * This operation changes structure only. It does not alter damage, type, or
+ * any other persistent state on the part.
+ */
+export interface ReattachBodyPartOperation {
+  readonly kind: "reattach-part";
+  readonly partId: BodyPartId;
+  readonly attachment: BodyPartCreationAttachment | null;
+}
+
+
+/*
+ * Generic structural Anatomy operation.
+ */
+export type AnatomyModification =
+  | AddBodyPartOperation
+  | RemoveBodyPartOperation
+  | ReplaceBodyPartOperation
+  | ReattachBodyPartOperation;
+
+
+/*
+ * Returns all descendants of the requested BodyPart.
+ *
+ * The returned set does not include the starting part itself.
+ */
+export function getDescendantBodyPartIds(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+): ReadonlySet<BodyPartId> {
+  const descendants = new Set<BodyPartId>();
+  const pending: BodyPartId[] = [partId];
+
+  while (pending.length > 0) {
+    const parentId = pending.pop()!;
+
+    for (const part of anatomy.parts) {
+      if (part.attachment?.parentId !== parentId) {
+        continue;
+      }
+
+      if (descendants.has(part.id)) {
+        continue;
+      }
+
+      descendants.add(part.id);
+      pending.push(part.id);
+    }
+  }
+
+  return descendants;
+}
+
+
+/*
+ * Adds one new BodyPart to an Anatomy.
+ *
+ * Duplicate IDs and invalid parent references are intentionally left to
+ * anatomy/validation.ts so that batches of operations can be constructed and
+ * validated as a complete result.
+ */
+export function addBodyPart(
+  anatomy: Anatomy,
+  spec: BodyPartCreationSpec,
+): Anatomy {
+  return {
+    parts: [
+      ...anatomy.parts,
+      createBodyPart(spec),
+    ],
+  };
+}
+
+
+/*
+ * Removes a BodyPart and every structural descendant beneath it.
+ *
+ * If the requested ID does not exist, the returned Anatomy is unchanged.
+ * Validation of modification targets may be performed separately before or
+ * after applying a modification set.
+ */
+export function removeBodyPart(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+): Anatomy {
+  const removedIds = new Set<BodyPartId>([
+    partId,
+    ...getDescendantBodyPartIds(anatomy, partId),
+  ]);
+
+  return {
+    parts: anatomy.parts.filter(
+      (part) => !removedIds.has(part.id),
+    ),
+  };
+}
+
+
+/*
+ * Replaces one BodyPart while preserving its structural position.
+ *
+ * Direct children of the old part are reattached to the new replacement ID.
+ * Deeper descendants remain connected through those children automatically.
+ *
+ * If the requested part does not exist, the returned Anatomy is unchanged.
+ */
+export function replaceBodyPart(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+  replacement: BodyPartReplacementSpec,
+): Anatomy {
+  const existing = anatomy.parts.find(
+    (part) => part.id === partId,
+  );
+
+  if (existing === undefined) {
+    return anatomy;
+  }
+
+  const replacementPart: BodyPart = createBodyPart({
+    id: replacement.id,
+    type: replacement.type,
+
+    ...(replacement.name !== undefined
+      ? { name: replacement.name }
+      : {}),
+
+    attachment:
+      existing.attachment === null
+        ? null
+        : {
+            parentId: existing.attachment.parentId,
+
+            ...(existing.attachment.site !== undefined
+              ? { site: existing.attachment.site }
+              : {}),
+          },
+  });
+
+  return {
+    parts: anatomy.parts.map((part) => {
+      if (part.id === partId) {
+        return replacementPart;
+      }
+
+      if (part.attachment?.parentId !== partId) {
+        return part;
+      }
+
+      return {
+        ...part,
+        attachment: {
+          ...part.attachment,
+          parentId: replacement.id,
+        },
+      };
+    }),
+  };
+}
+
+
+/*
+ * Changes the structural attachment of one BodyPart.
+ *
+ * If the requested part does not exist, the returned Anatomy is unchanged.
+ *
+ * Cycles, self-parenting, and dangling parent references are not resolved here.
+ * Those structural invariants belong to anatomy/validation.ts.
+ */
+export function reattachBodyPart(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+  attachment: BodyPartCreationAttachment | null,
+): Anatomy {
+  return {
+    parts: anatomy.parts.map((part) => {
+      if (part.id !== partId) {
+        return part;
+      }
+
+      return {
+        ...part,
+        attachment:
+          attachment === null
+            ? null
+            : {
+                parentId: attachment.parentId,
+
+                ...(attachment.site !== undefined
+                  ? { site: attachment.site }
+                  : {}),
+              },
+      };
+    }),
+  };
+}
+
+
+/*
+ * Applies one generic Anatomy modification.
+ */
+export function applyAnatomyModification(
+  anatomy: Anatomy,
+  modification: AnatomyModification,
+): Anatomy {
+  switch (modification.kind) {
+    case "add-part":
+      return addBodyPart(
+        anatomy,
+        modification.part,
+      );
+
+    case "remove-part":
+      return removeBodyPart(
+        anatomy,
+        modification.partId,
+      );
+
+    case "replace-part":
+      return replaceBodyPart(
+        anatomy,
+        modification.partId,
+        modification.replacement,
+      );
+
+    case "reattach-part":
+      return reattachBodyPart(
+        anatomy,
+        modification.partId,
+        modification.attachment,
+      );
+  }
+}
+
+
+/*
+ * Applies an ordered sequence of Anatomy modifications.
+ *
+ * Order is mechanically significant.
+ *
+ * For example, descendants that should survive removal of their current parent
+ * may first be reattached and then the parent may be removed.
+ *
+ * No mutation is performed on the input Anatomy.
+ */
+export function applyAnatomyModifications(
+  anatomy: Anatomy,
+  modifications: readonly AnatomyModification[],
+): Anatomy {
+  return modifications.reduce(
+    (current, modification) =>
+      applyAnatomyModification(
+        current,
+        modification,
+      ),
+    anatomy,
+  );
+}
