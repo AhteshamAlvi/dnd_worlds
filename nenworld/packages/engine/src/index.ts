@@ -199,7 +199,117 @@ export {
 
 export { validateAttributes } from "./character/foundation/attributes/validation";
 
-export type { Body } from "./character/foundation/body/types";
+export type { Body, BodyBuild } from "./character/foundation/body/types";
+
+export type {
+  Anatomy,
+  BodyAttachmentSiteId,
+  BodyPart,
+  BodyPartAttachment,
+  BodyPartDefinition,
+  BodyPartId,
+  BodyPartTag,
+  BodyPartTypeId,
+  MorphologySensitivity,
+} from "./character/foundation/body/anatomy/types";
+
+export type {
+  BodyPartCreationSpec,
+} from "./character/foundation/body/anatomy/creation";
+
+export type {
+  AnatomyModification,
+} from "./character/foundation/body/anatomy/modification";
+
+export {
+  createAnatomy,
+} from "./character/foundation/body/anatomy/creation";
+
+export {
+  applyAnatomyModifications,
+  applyBodyPartDamage,
+} from "./character/foundation/body/anatomy/modification";
+
+export {
+  resolveAnatomy,
+} from "./character/foundation/body/anatomy/resolution";
+
+export {
+  validateAnatomyData,
+} from "./character/foundation/body/anatomy/validation";
+
+export type {
+  BodyPartSelector,
+} from "./character/foundation/body/selectors";
+
+export {
+  selectBodyParts,
+  validateBodyPartSelector,
+} from "./character/foundation/body/selectors";
+
+export type {
+  BodyPointModifier,
+  ResolvedBodyPartBP,
+  ResolvedBodyPoints,
+  ResolvedMorphology,
+} from "./character/foundation/body/body-points/types";
+
+export {
+  REFERENCE_ADIPOSITY,
+  REFERENCE_HEIGHT_CM,
+  REFERENCE_MASS_KG,
+  REFERENCE_MUSCULARITY,
+  resolveMorphology,
+} from "./character/foundation/body/body-points/morphology";
+
+export {
+  getConstitutionBPMultiplier,
+  resolveBodyPoints,
+} from "./character/foundation/body/body-points/resolution";
+
+export {
+  validateBodyPointResolution,
+} from "./character/foundation/body/body-points/validation";
+
+export type {
+  CriticalPointCategory,
+  CriticalPointInstance,
+  ResolvedCriticalPoints,
+  SpecialPointDefinition,
+} from "./character/foundation/body/critical-points/types";
+
+export {
+  applyJointDamageMultiplier,
+  createsInjuryOpportunity,
+  resolveCriticalPoints,
+} from "./character/foundation/body/critical-points/resolution";
+
+export {
+  validateCriticalPointData,
+} from "./character/foundation/body/critical-points/validation";
+
+export type {
+  BodyDamageInput,
+  BodyDamageOutcome,
+  BodyDamageTarget,
+} from "./character/foundation/body/damage";
+
+export {
+  applyBodyDamage,
+} from "./character/foundation/body/damage";
+
+export {
+  STANDARD_BODY_PART_DEFINITIONS,
+} from "./character/foundation/body/content/body-part-definitions";
+
+export {
+  STANDARD_HUMANOID_ANATOMY,
+} from "./character/foundation/body/content/anatomy";
+
+export {
+  STANDARD_SPECIAL_POINT_DEFINITIONS,
+} from "./character/foundation/body/content/special-point-definitions";
+
 export { STANDARD_BODY } from "./character/foundation/body/defaults";
 
 export type {

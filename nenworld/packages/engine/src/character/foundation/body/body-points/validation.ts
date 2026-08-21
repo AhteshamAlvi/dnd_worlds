@@ -16,8 +16,12 @@
 
 import type {
   Anatomy,
+  BodyPartDefinition,
   BodyPartId,
 } from "../anatomy/types";
+import {
+  createBodyPartDefinitionMap,
+} from "../selectors";
 import {
   resolveBodyPointModifiers,
 } from "./modifiers";
@@ -514,6 +518,8 @@ export function validateBodyPointResolution(
   anatomy: Anatomy,
   morphology: ResolvedMorphology,
   constitution: number,
+  bodyPartDefinitions:
+    readonly BodyPartDefinition[],
   modifiers:
     readonly BodyPointModifier[] = [],
 ): BodyPointValidationResult {
@@ -566,6 +572,11 @@ export function validateBodyPointResolution(
       ),
     );
 
+  const definitionsByType =
+    createBodyPartDefinitionMap(
+      bodyPartDefinitions,
+    );
+
   for (
     const part of anatomy.parts
   ) {
@@ -580,9 +591,22 @@ export function validateBodyPointResolution(
       continue;
     }
 
+    const partDefinition =
+      definitionsByType.get(
+        part.type,
+      );
+
+    if (partDefinition === undefined) {
+      throw new Error(
+        `Cannot validate BP resolution for BodyPart "${part.id}": ` +
+        `unknown BodyPartDefinition "${part.type}".`,
+      );
+    }
+
     const resolvedModifiers =
       resolveBodyPointModifiers(
         part,
+        partDefinition,
         modifiers,
       );
 

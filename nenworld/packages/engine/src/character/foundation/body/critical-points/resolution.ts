@@ -36,10 +36,11 @@
 import type {
   Anatomy,
   BodyPart,
+  BodyPartDefinition,
   BodyPartId,
 } from "../anatomy/types";
 import {
-  matchesBodyPartSelector,
+  selectBodyParts,
 } from "../selectors";
 import type {
   ResolvedBodyPoints,
@@ -89,23 +90,6 @@ function createSharedPointId(
   return (
     `${definitionId}:shared:` +
     stableHostIds.join(",")
-  );
-}
-
-
-/*
- * Returns every BodyPart matched by a Special Point placement selector.
- */
-function getPlacementMatches(
-  anatomy: Anatomy,
-  definition: SpecialPointDefinition,
-): readonly BodyPart[] {
-  return anatomy.parts.filter(
-    (part) =>
-      matchesBodyPartSelector(
-        part,
-        definition.placement.selector,
-      ),
   );
 }
 
@@ -180,12 +164,14 @@ function createResolvedPoint(
  */
 export function resolveSpecialPointDefinition(
   anatomy: Anatomy,
+  bodyPartDefinitions: readonly BodyPartDefinition[],
   definition: SpecialPointDefinition,
 ): readonly CriticalPointInstance[] {
   const matches =
-    getPlacementMatches(
+    selectBodyParts(
       anatomy,
-      definition,
+      bodyPartDefinitions,
+      definition.placement.selector,
     );
 
   if (matches.length === 0) {
@@ -249,6 +235,7 @@ export function resolveSpecialPointDefinition(
  */
 export function resolveCriticalPoints(
   anatomy: Anatomy,
+  bodyPartDefinitions: readonly BodyPartDefinition[],
   definitions:
     readonly SpecialPointDefinition[],
 ): ResolvedCriticalPoints {
@@ -257,6 +244,7 @@ export function resolveCriticalPoints(
       (definition) =>
         resolveSpecialPointDefinition(
           anatomy,
+          bodyPartDefinitions,
           definition,
         ),
     );

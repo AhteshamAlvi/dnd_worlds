@@ -20,9 +20,11 @@
 
 import type {
   BodyPart,
+  BodyPartDefinition,
   BodyPartId,
 } from "../anatomy/types";
 import {
+  createBodyPartDefinitionMap,
   matchesBodyPartSelector,
 } from "../selectors";
 import type {
@@ -47,14 +49,19 @@ export const NEUTRAL_BODY_POINT_MODIFIERS:
 /*
  * Returns true when one BodyPointModifier applies to the supplied BodyPart.
  *
+ * `definition` supplies the tag classification a selector may depend on —
+ * see body/selectors.ts for why tags live there rather than on BodyPart.
+ *
  * Selector behavior is owned centrally by body/selectors.ts.
  */
 export function bodyPointModifierAppliesToPart(
   modifier: BodyPointModifier,
   part: BodyPart,
+  definition: BodyPartDefinition,
 ): boolean {
   return matchesBodyPartSelector(
     part,
+    definition,
     modifier.selector,
   );
 }
@@ -69,6 +76,7 @@ export function bodyPointModifierAppliesToPart(
  */
 export function getApplicableBodyPointModifiers(
   part: BodyPart,
+  definition: BodyPartDefinition,
   modifiers: readonly BodyPointModifier[],
 ): readonly BodyPointModifier[] {
   return modifiers.filter(
@@ -76,6 +84,7 @@ export function getApplicableBodyPointModifiers(
       bodyPointModifierAppliesToPart(
         modifier,
         part,
+        definition,
       ),
   );
 }
@@ -140,11 +149,13 @@ export function combineBodyPointModifiers(
  */
 export function resolveBodyPointModifiers(
   part: BodyPart,
+  definition: BodyPartDefinition,
   modifiers: readonly BodyPointModifier[],
 ): ResolvedBodyPointModifiers {
   return combineBodyPointModifiers(
     getApplicableBodyPointModifiers(
       part,
+      definition,
       modifiers,
     ),
   );
@@ -156,23 +167,48 @@ export function resolveBodyPointModifiers(
  *
  * The returned map is keyed by BodyPartId so callers can efficiently combine
  * modifier results with morphology and BP resolution.
+ *
+ * The function assumes Anatomy and BodyPartDefinitions have already passed
+ * validation. An unknown BodyPart type therefore represents an invalid engine
+ * state and causes an error rather than silently skipping the part.
  */
 export function resolveBodyPointModifiersByPart(
   parts: readonly BodyPart[],
+  definitions: readonly BodyPartDefinition[],
   modifiers: readonly BodyPointModifier[],
 ): ReadonlyMap<
   BodyPartId,
   ResolvedBodyPointModifiers
 > {
+  const definitionsByType =
+    createBodyPartDefinitionMap(
+      definitions,
+    );
+
   return new Map(
     parts.map(
-      (part) => [
-        part.id,
-        resolveBodyPointModifiers(
-          part,
-          modifiers,
-        ),
-      ],
+      (part) => {
+        const definition =
+          definitionsByType.get(
+            part.type,
+          );
+
+        if (definition === undefined) {
+          throw new Error(
+            `Cannot resolve BP modifiers for BodyPart "${part.id}": ` +
+            `unknown BodyPartDefinition "${part.type}".`,
+          );
+        }
+
+        return [
+          part.id,
+          resolveBodyPointModifiers(
+            part,
+            definition,
+            modifiers,
+          ),
+        ] as const;
+      },
     ),
   );
 }

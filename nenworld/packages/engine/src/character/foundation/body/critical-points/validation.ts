@@ -17,6 +17,7 @@
 
 import type {
   Anatomy,
+  BodyPartDefinition,
   BodyPartId,
 } from "../anatomy/types";
 import {
@@ -498,6 +499,8 @@ function haveSameHosts(
  */
 function validateResolutionConsistency(
   anatomy: Anatomy,
+  bodyPartDefinitions:
+    readonly BodyPartDefinition[],
   definitions:
     readonly SpecialPointDefinition[],
   resolved:
@@ -509,6 +512,7 @@ function validateResolutionConsistency(
   const expected =
     resolveCriticalPoints(
       anatomy,
+      bodyPartDefinitions,
       definitions,
     );
 
@@ -610,6 +614,8 @@ function validateResolutionConsistency(
  */
 export function validateResolvedCriticalPoints(
   anatomy: Anatomy,
+  bodyPartDefinitions:
+    readonly BodyPartDefinition[],
   definitions:
     readonly SpecialPointDefinition[],
   resolved:
@@ -675,6 +681,7 @@ export function validateResolvedCriticalPoints(
   issues.push(
     ...validateResolutionConsistency(
       anatomy,
+      bodyPartDefinitions,
       definitions,
       resolved,
     ),
@@ -698,6 +705,8 @@ export function validateResolvedCriticalPoints(
  */
 export function validateCriticalPointData(
   anatomy: Anatomy,
+  bodyPartDefinitions:
+    readonly BodyPartDefinition[],
   definitions:
     readonly SpecialPointDefinition[],
   resolved:
@@ -711,6 +720,7 @@ export function validateCriticalPointData(
   const resolvedResult =
     validateResolvedCriticalPoints(
       anatomy,
+      bodyPartDefinitions,
       definitions,
       resolved,
     );

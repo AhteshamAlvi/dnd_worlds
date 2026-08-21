@@ -49,6 +49,7 @@
 import type {
   Anatomy,
   BodyPart,
+  BodyPartDefinition,
   BodyPartId,
 } from "../anatomy/types";
 import {
@@ -297,6 +298,9 @@ export function resolveBodyPartBP(
  * is supplied independently because CON belongs to the character's Attributes,
  * not to Body.
  *
+ * `bodyPartDefinitions`
+ * supplies the tag classification BP modifier selectors may depend on.
+ *
  * `modifiers`
  * may originate from any data-driven source such as training, Species, Traits,
  * Conditions, Techniques, or other mechanics.
@@ -307,6 +311,7 @@ export function resolveBodyPoints(
   anatomy: Anatomy,
   morphology: ResolvedMorphology,
   constitution: number,
+  bodyPartDefinitions: readonly BodyPartDefinition[],
   modifiers: readonly BodyPointModifier[] = [],
 ): ResolvedBodyPoints {
   const constitutionMultiplier =
@@ -333,6 +338,7 @@ export function resolveBodyPoints(
   const modifiersByPart =
     resolveBodyPointModifiersByPart(
       anatomy.parts,
+      bodyPartDefinitions,
       modifiers,
     );
 

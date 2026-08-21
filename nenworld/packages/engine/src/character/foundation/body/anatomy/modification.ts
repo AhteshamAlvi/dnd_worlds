@@ -308,6 +308,46 @@ export function reattachBodyPart(
 
 
 /*
+ * Adds to (or, with a negative amount, subtracts from) one BodyPart's stored
+ * damage.
+ *
+ * Clamped at 0 — damage cannot go negative, which both upholds
+ * anatomy/validation.ts's invalid-damage rule and lets this same function
+ * serve future healing with a negative amount.
+ *
+ * If the requested part does not exist, the returned Anatomy is unchanged —
+ * matching addBodyPart/removeBodyPart/replaceBodyPart's convention, and
+ * letting a caller apply damage against a temporary-only BodyPart (present in
+ * a resolved Anatomy but not in stored Anatomy) without special-casing it:
+ * the call is simply a no-op against the tree that doesn't have that part.
+ *
+ * Deliberately NOT part of the AnatomyModification union: that union is
+ * structural-only (see ReattachBodyPartOperation's comment) and is applied by
+ * resolveAnatomy as *temporary* modifications. Persistent damage going
+ * through that path would let a transient effect masquerade as accumulated
+ * damage, so this is called directly by the damage pipeline instead.
+ */
+export function applyBodyPartDamage(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+  amount: number,
+): Anatomy {
+  return {
+    parts: anatomy.parts.map((part) => {
+      if (part.id !== partId) {
+        return part;
+      }
+
+      return {
+        ...part,
+        damage: Math.max(0, part.damage + amount),
+      };
+    }),
+  };
+}
+
+
+/*
  * Applies one generic Anatomy modification.
  */
 export function applyAnatomyModification(
