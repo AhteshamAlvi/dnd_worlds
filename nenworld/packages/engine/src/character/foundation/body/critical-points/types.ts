@@ -60,6 +60,15 @@ export type CriticalPointId = string;
 
 
 /*
+ * Alias used by domains that talk about "the Special Point a location
+ * concerns" (e.g. status/injuries.ts) rather than about the Critical Point
+ * mechanics themselves. Same id space as CriticalPointTypeId — Critical,
+ * Semicritical, and Joint definitions all share one registry.
+ */
+export type SpecialPointDefinitionId = CriticalPointTypeId;
+
+
+/*
  * The three mechanical classes of special anatomical target.
  */
 export type CriticalPointCategory =
@@ -142,12 +151,16 @@ export type CriticalPointPlacement =
 /*
  * Fields shared by every reusable Critical Point definition.
  *
- * `name` is optional display data. Mechanical behavior must depend on IDs and
- * category rather than presentation text.
+ * `name`/`description` make this a Definition (see infrastructure/registry.ts)
+ * so Special Point content is registered and looked up the same way every
+ * other catalog domain's content is — see critical-points/special-points.ts.
+ * Mechanical behavior must still depend on IDs and category rather than
+ * presentation text.
  */
 interface CriticalPointDefinitionBase {
   readonly id: CriticalPointTypeId;
-  readonly name?: string;
+  readonly name: string;
+  readonly description: string;
 
   readonly placement: CriticalPointPlacement;
 }

@@ -1,5 +1,16 @@
 /*
- * Standard humanoid starting Anatomy content.
+ * Standard humanoid starting Anatomy — a specific starting instance, not
+ * reusable content the way BodyPartDefinition/SpecialPointDefinition are.
+ *
+ * A BodyPartDefinition is a *kind* of part a catalog lists ("here is what an
+ * Arm is"); this is one specific *tree of instances* built from those kinds
+ * ("here is a starting body with two Arms named arm-1 and arm-2"). There's
+ * no existing "instance template" content mechanism in this engine to fold
+ * it into the catalog system the way body-parts.ts and special-points.ts
+ * are — catalogs are lists of interchangeable, individually-referenceable
+ * definitions, not pre-wired trees. So this stays engine-side content,
+ * distinct from both the mechanics files in this folder and from the two
+ * catalog domains.
  *
  * Topology:
  *
@@ -20,14 +31,14 @@
  * Chest/Torso. Left/Right in the display names are presentational only;
  * BodyPart.name is documented as never mechanically load-bearing, and every
  * arm/hand/leg/foot pair shares the same side-agnostic BodyPartDefinition
- * (see content/body-part-definitions.ts).
+ * (see body-parts.ts).
  *
  * Every part starts at zero stored damage via createBodyPart.
  */
 
-import { createAnatomy } from "../anatomy/creation";
-import type { BodyPartCreationSpec } from "../anatomy/creation";
-import type { Anatomy } from "../anatomy/types";
+import { createAnatomy } from "./creation";
+import type { BodyPartCreationSpec } from "./creation";
+import type { Anatomy } from "./types";
 
 export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   {

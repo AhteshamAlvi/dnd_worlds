@@ -30,14 +30,16 @@ import {
 const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", tags: [], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "head", tags: [], baseBP: 8, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "arm", tags: [], baseBP: 14, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "leg", tags: [], baseBP: 14, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: [], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "head", name: "Head", description: "Test head.", tags: [], baseBP: 8, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "arm", name: "Arm", description: "Test arm.", tags: [], baseBP: 14, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "leg", name: "Leg", description: "Test leg.", tags: [], baseBP: 14, morphologySensitivity: NEUTRAL_SENSITIVITY },
 ];
 
 const BRAIN: SpecialPointDefinition = {
   id: "brain",
+  name: "Brain",
+  description: "Test brain.",
   category: "critical",
   failureConsequence: "death",
   placement: { kind: "per-part", selector: { types: ["head"] } },
@@ -45,6 +47,8 @@ const BRAIN: SpecialPointDefinition = {
 
 const SHOULDER: JointPointDefinition = {
   id: "shoulder",
+  name: "Shoulder",
+  description: "Test shoulder.",
   category: "joint",
   damageMultiplier: 2,
   placement: { kind: "per-part", selector: { types: ["arm"] } },
@@ -52,6 +56,8 @@ const SHOULDER: JointPointDefinition = {
 
 const HIP: SpecialPointDefinition = {
   id: "hip",
+  name: "Hip",
+  description: "Test hip.",
   category: "joint",
   damageMultiplier: 2,
   placement: { kind: "per-part", selector: { types: ["leg"] } },
@@ -100,6 +106,8 @@ describe("resolution over arbitrary anatomy", () => {
     const anatomy = createAnatomy([{ id: "torso-1", type: "torso", attachment: null }]);
     const definition: SpecialPointDefinition = {
       id: "core",
+      name: "Core",
+      description: "Test core.",
       category: "critical",
       failureConsequence: "death",
       placement: { kind: "body-part-self", selector: { types: ["torso"] } },
@@ -117,6 +125,8 @@ describe("resolution over arbitrary anatomy", () => {
 
     const definition: SpecialPointDefinition = {
       id: "spine",
+      name: "Spine",
+      description: "Test spine.",
       category: "semicritical",
       placement: { kind: "shared", selector: { types: ["torso", "head"] } },
     };
@@ -129,6 +139,8 @@ describe("resolution over arbitrary anatomy", () => {
   it("shared host set id is stable regardless of Anatomy part ordering", () => {
     const definition: SpecialPointDefinition = {
       id: "spine",
+      name: "Spine",
+      description: "Test spine.",
       category: "semicritical",
       placement: { kind: "shared", selector: { types: ["torso", "head"] } },
     };
@@ -234,6 +246,8 @@ describe("category behavior", () => {
     const semicritical = resolveCriticalPoints(anatomy, DEFINITIONS, [
       {
         id: "spine",
+        name: "Spine",
+        description: "Test spine.",
         category: "semicritical",
         placement: { kind: "per-part", selector: { types: ["torso"] } },
       },
@@ -244,6 +258,8 @@ describe("category behavior", () => {
     const critical = resolveCriticalPoints(anatomy, DEFINITIONS, [
       {
         id: "core",
+        name: "Core",
+        description: "Test core.",
         category: "critical",
         failureConsequence: "death",
         placement: { kind: "body-part-self", selector: { types: ["torso"] } },
@@ -271,6 +287,8 @@ describe("category behavior", () => {
 
     const definition: SpecialPointDefinition = {
       id: "spine",
+      name: "Spine",
+      description: "Test spine.",
       category: "semicritical",
       placement: { kind: "shared", selector: { types: ["torso", "head"] } },
     };

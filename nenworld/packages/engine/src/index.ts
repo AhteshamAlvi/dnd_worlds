@@ -298,17 +298,23 @@ export {
   applyBodyDamage,
 } from "./character/foundation/body/damage";
 
+export type { KnownBodyPartTypeId } from "./character/foundation/body/anatomy/body-parts";
 export {
-  STANDARD_BODY_PART_DEFINITIONS,
-} from "./character/foundation/body/content/body-part-definitions";
+  BODY_PART_DEFINITIONS,
+  getBodyPartDefinition,
+  isKnownBodyPartTypeId,
+} from "./character/foundation/body/anatomy/body-parts";
 
 export {
   STANDARD_HUMANOID_ANATOMY,
-} from "./character/foundation/body/content/anatomy";
+} from "./character/foundation/body/anatomy/standard-humanoid";
 
+export type { KnownSpecialPointTypeId } from "./character/foundation/body/critical-points/special-points";
 export {
-  STANDARD_SPECIAL_POINT_DEFINITIONS,
-} from "./character/foundation/body/content/special-point-definitions";
+  SPECIAL_POINT_DEFINITIONS,
+  getSpecialPointDefinition,
+  isKnownSpecialPointTypeId,
+} from "./character/foundation/body/critical-points/special-points";
 
 export { STANDARD_BODY } from "./character/foundation/body/defaults";
 
@@ -576,8 +582,13 @@ export {
 
 export type {
   CharacterInjury,
+  CharacterInjuryId,
+  InjuryApplicability,
   InjuryDefinition,
   InjuryId,
+  InjuryLocation,
+  InjuryRecovery,
+  InjuryTreatmentStatus,
   InjuryValidationIssue,
 } from "./character/status/injuries";
 
@@ -594,6 +605,98 @@ export {
   collectInjuryEffectSources,
   collectStatusEffectSources,
 } from "./character/status/resolution";
+
+/* ── Character: recovery ────────────────────────────────────────────────── */
+
+/*
+ * Natural BP recovery and its Injury-treatment integration.
+ *
+ * body-points/recovery.ts is the low-level whole-BP-vs-fractional-progress
+ * primitive; mechanics/recovery/ is the orchestrator that drives it from
+ * elapsed GameDuration and VIT, reduces a BodyPart's active Injury caps to
+ * one ceiling, and reports which Injuries have fully healed. See
+ * character/mechanics/recovery/resolution.ts for the full pipeline.
+ */
+
+export type {
+  BodyPartRecoveryInput,
+  BodyPartRecoveryResult,
+} from "./character/foundation/body/body-points/recovery";
+
+export { applyBodyPartRecovery } from "./character/foundation/body/body-points/recovery";
+
+export type {
+  ActiveRecoveryCap,
+  BodyPartRecoveryCeiling,
+  BodyPartRecoveryOutcome,
+  InjuryOverlapDecision,
+  InjuryOverlapFlag,
+  RecoveredInjuryRemoval,
+  RecoveryInput,
+} from "./character/mechanics/recovery/types";
+
+export type {
+  ResolveRecoveryInput,
+  ResolveRecoveryOutcome,
+} from "./character/mechanics/recovery/resolution";
+
+export {
+  VIT_RECOVERY_REFERENCE,
+  VIT_RECOVERY_DOUBLING_INTERVAL,
+  REFERENCE_DAILY_RECOVERY_FRACTION,
+  deriveDailyRecoveryFraction,
+  resolveBodyPartRecoveryCeiling,
+  resolveRecovery,
+  detectInjuryOverlap,
+} from "./character/mechanics/recovery/resolution";
+
+export type {
+  RecoveryLocationValidationIssue,
+  RecoveryValidationIssue,
+} from "./character/mechanics/recovery/validation";
+
+export {
+  findRecoveryLocationIssues,
+  findRecoveryValidationIssues,
+} from "./character/mechanics/recovery/validation";
+
+/* ── Time ────────────────────────────────────────────────────────────────── */
+
+/*
+ * The global game clock's core vocabulary — exported for the first time
+ * here because Recovery is the first mechanic that needs a caller to
+ * construct a GameDuration. Calendar conversion and the mutable clock itself
+ * (time/calendar.ts, time/clock.ts) stay unexported until a host mechanic
+ * actually needs them.
+ */
+
+export type {
+  GameClockCreation,
+  GameClockMode,
+  GameClockState,
+  GameDateTime,
+  GameDuration,
+  GameTimestamp,
+} from "./time/types";
+
+export {
+  milliseconds,
+  seconds,
+  minutes,
+  hours,
+  days,
+  elapsedBetween,
+  addDuration,
+  subtractDuration,
+  remainingUntil,
+  hasExpired,
+  hasDurationElapsed,
+  toMilliseconds,
+  toSeconds,
+  toMinutes,
+  toHours,
+  toDays,
+} from "./time/duration";
 
 /* ── Character: equipment ───────────────────────────────────────────────── */
 

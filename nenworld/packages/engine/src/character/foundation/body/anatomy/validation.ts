@@ -36,6 +36,8 @@ import type {
 export type AnatomyValidationIssueCode =
   | "duplicate-body-part-definition-id"
   | "invalid-body-part-definition-id"
+  | "invalid-body-part-definition-name"
+  | "invalid-body-part-definition-description"
   | "invalid-base-bp"
   | "duplicate-body-part-tag"
   | "invalid-body-part-tag"
@@ -45,6 +47,8 @@ export type AnatomyValidationIssueCode =
   | "unknown-body-part-type"
   | "invalid-body-part-name"
   | "invalid-damage"
+  | "invalid-recovery-progress"
+  | "banked-recovery-progress-at-full-bp"
   | "missing-parent"
   | "self-parent"
   | "invalid-attachment-site"
@@ -134,6 +138,24 @@ export function validateBodyPartDefinition(
       code: "invalid-body-part-definition-id",
       message:
         "BodyPartDefinition id must be a non-empty identifier.",
+      definitionId: definition.id,
+    });
+  }
+
+  if (definition.name.trim().length === 0) {
+    issues.push({
+      code: "invalid-body-part-definition-name",
+      message:
+        `BodyPartDefinition "${definition.id}" needs a name.`,
+      definitionId: definition.id,
+    });
+  }
+
+  if (definition.description.trim().length === 0) {
+    issues.push({
+      code: "invalid-body-part-definition-description",
+      message:
+        `BodyPartDefinition "${definition.id}" needs a description.`,
       definitionId: definition.id,
     });
   }
@@ -309,6 +331,35 @@ function validateBodyPartState(
   }
 
   if (
+    !Number.isFinite(part.recoveryProgress) ||
+    part.recoveryProgress < 0 ||
+    part.recoveryProgress >= 1
+  ) {
+    issues.push({
+      code: "invalid-recovery-progress",
+      message:
+        `BodyPart "${part.id}" must have finite recovery progress in the range [0, 1).`,
+      partId: part.id,
+    });
+  } else if (
+    part.damage === 0 &&
+    part.recoveryProgress !== 0
+  ) {
+    /*
+     * A BodyPart at full Current BP has nowhere for banked recovery to go —
+     * body-points/recovery.ts always resets progress to 0 there. Progress
+     * surviving anyway means something upstream (hand-edited state, a bad
+     * migration) put it there, not a mechanic this engine runs.
+     */
+    issues.push({
+      code: "banked-recovery-progress-at-full-bp",
+      message:
+        `BodyPart "${part.id}" is undamaged but still carries banked recovery progress.`,
+      partId: part.id,
+    });
+  }
+
+  if (
     part.attachment !== null &&
     part.attachment.site !== undefined &&
     !isValidIdentifier(part.attachment.site)
@@ -448,6 +499,8 @@ function findAttachmentCycleIssues(
  * - BodyPart IDs must be unique;
  * - every BodyPart type must reference a known definition;
  * - damage must be finite and non-negative;
+ * - recovery progress must be finite and fall within [0, 1), and an
+ *   undamaged part must not still be carrying any;
  * - every non-root parent must exist;
  * - a BodyPart cannot parent itself;
  * - attachment relationships cannot contain cycles.

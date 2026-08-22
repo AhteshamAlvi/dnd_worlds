@@ -43,8 +43,8 @@ const NEUTRAL_SENSITIVITY = {
 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "limb", tags: ["limb"], baseBP: 5, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "limb", name: "Limb", description: "Test limb.", tags: ["limb"], baseBP: 5, morphologySensitivity: NEUTRAL_SENSITIVITY },
 ];
 
 function threeArmAnatomy(): Anatomy {
@@ -73,6 +73,7 @@ describe("createBodyPart / createAnatomy", () => {
       name: "Torso",
       attachment: null,
       damage: 0,
+      recoveryProgress: 0,
     });
   });
 
@@ -134,8 +135,8 @@ describe("addBodyPart / removeBodyPart / replaceBodyPart / reattachBodyPart", ()
   it("a replacement starts with zero damage even if the original was damaged", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, damage: 0 },
-        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1" }, damage: 7 },
+        { id: "torso-1", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1" }, damage: 7, recoveryProgress: 0 },
       ],
     };
 
@@ -312,8 +313,8 @@ describe("Anatomy validation", () => {
   it("accepts multiple anatomical roots", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, damage: 0 },
-        { id: "b", type: "torso", attachment: null, damage: 0 },
+        { id: "a", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "b", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
       ],
     };
 
@@ -323,8 +324,8 @@ describe("Anatomy validation", () => {
   it("rejects a duplicate BodyPart id", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, damage: 0 },
-        { id: "a", type: "torso", attachment: null, damage: 0 },
+        { id: "a", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
       ],
     };
 
@@ -335,7 +336,7 @@ describe("Anatomy validation", () => {
 
   it("rejects a missing parent", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost" }, damage: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost" }, damage: 0, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -345,7 +346,7 @@ describe("Anatomy validation", () => {
 
   it("rejects self-parenting", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "a" }, damage: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "a" }, damage: 0, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -356,8 +357,8 @@ describe("Anatomy validation", () => {
   it("rejects an attachment cycle", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: { parentId: "b" }, damage: 0 },
-        { id: "b", type: "torso", attachment: { parentId: "a" }, damage: 0 },
+        { id: "a", type: "torso", attachment: { parentId: "b" }, damage: 0, recoveryProgress: 0 },
+        { id: "b", type: "torso", attachment: { parentId: "a" }, damage: 0, recoveryProgress: 0 },
       ],
     };
 
@@ -368,7 +369,7 @@ describe("Anatomy validation", () => {
 
   it("rejects an unknown BodyPart type", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "wing", attachment: null, damage: 0 }],
+      parts: [{ id: "a", type: "wing", attachment: null, damage: 0, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -378,7 +379,7 @@ describe("Anatomy validation", () => {
 
   it("rejects negative stored damage", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: null, damage: -1 }],
+      parts: [{ id: "a", type: "torso", attachment: null, damage: -1, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);

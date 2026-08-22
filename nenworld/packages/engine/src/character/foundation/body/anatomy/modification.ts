@@ -326,6 +326,10 @@ export function reattachBodyPart(
  * resolveAnatomy as *temporary* modifications. Persistent damage going
  * through that path would let a transient effect masquerade as accumulated
  * damage, so this is called directly by the damage pipeline instead.
+ *
+ * Only `damage` changes here — `recoveryProgress` is untouched by the spread,
+ * so new damage never wipes banked recovery progress. Resetting it is
+ * body-points/recovery.ts's call to make, not this function's.
  */
 export function applyBodyPartDamage(
   anatomy: Anatomy,

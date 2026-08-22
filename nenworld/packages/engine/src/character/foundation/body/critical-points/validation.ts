@@ -42,6 +42,7 @@ export type CriticalPointValidationIssueCode =
   | "duplicate-definition-id"
   | "invalid-definition-id"
   | "invalid-definition-name"
+  | "invalid-definition-description"
   | "invalid-placement-selector"
   | "invalid-critical-placement"
   | "invalid-joint-placement"
@@ -138,15 +139,23 @@ export function validateSpecialPointDefinition(
     });
   }
 
-  if (
-    definition.name !== undefined &&
-    definition.name.trim().length === 0
-  ) {
+  if (definition.name.trim().length === 0) {
     issues.push({
       code:
         "invalid-definition-name",
       message:
         `Special Point definition "${definition.id}" has an empty display name.`,
+      definitionId:
+        definition.id,
+    });
+  }
+
+  if (definition.description.trim().length === 0) {
+    issues.push({
+      code:
+        "invalid-definition-description",
+      message:
+        `Special Point definition "${definition.id}" needs a description.`,
       definitionId:
         definition.id,
     });

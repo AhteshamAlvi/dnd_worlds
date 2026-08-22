@@ -38,6 +38,8 @@ const REFERENCE_INPUT: BodyMorphologyInput = {
 
 const FULLY_SENSITIVE: BodyPartDefinition = {
   id: "torso",
+  name: "Torso",
+  description: "Test torso.",
   tags: [],
   baseBP: 10,
   morphologySensitivity: { height: 1, mass: 1, muscularity: 1, adiposity: 1 },
@@ -45,6 +47,8 @@ const FULLY_SENSITIVE: BodyPartDefinition = {
 
 const ZERO_SENSITIVITY: BodyPartDefinition = {
   id: "head",
+  name: "Head",
+  description: "Test head.",
   tags: [],
   baseBP: 8,
   morphologySensitivity: { height: 0, mass: 0, muscularity: 1, adiposity: 1 },

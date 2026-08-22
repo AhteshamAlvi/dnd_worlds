@@ -8,7 +8,8 @@
  * species, mutations, traits, or any other source of anatomy. Those systems
  * provide BodyPartCreationSpec data and/or later Anatomy modifications.
  *
- * Newly created body parts always begin with zero stored damage.
+ * Newly created body parts always begin with zero stored damage and zero
+ * banked recovery progress.
  */
 
 import type {
@@ -74,6 +75,7 @@ export function createBodyPart(
               : {}),
           },
     damage: 0,
+    recoveryProgress: 0,
   };
 }
 

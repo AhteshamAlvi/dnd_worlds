@@ -98,11 +98,18 @@ export interface MorphologySensitivity {
  * persistent Anatomy. A BodyPart instance references one of these definitions
  * through its `type`.
  *
+ * `name`/`description` make this a Definition (see infrastructure/registry.ts)
+ * so BodyPartDefinition content is registered and looked up the same way
+ * every other catalog domain's content is — see anatomy/body-parts.ts.
+ *
  * baseBP is the part's reference Body Point value before morphology, training,
  * Constitution scaling, or other modifiers.
  */
 export interface BodyPartDefinition {
   readonly id: BodyPartTypeId;
+
+  readonly name: string;
+  readonly description: string;
 
   readonly tags: readonly BodyPartTag[];
 
@@ -150,6 +157,14 @@ export interface BodyPartAttachment {
  * Reaching 0 Current BP destroys the part. Damage application is responsible
  * for converting that destruction into a permanent anatomy removal; Anatomy
  * resolution itself remains a pure derivation.
+ *
+ * `recoveryProgress`
+ * → fractional whole-BP recovery banked toward this part's next point of
+ *   natural healing (see foundation/body/body-points/recovery.ts). BP itself
+ *   stays whole-numbered; this is where the remainder between ticks lives.
+ *   Invariant: 0 <= recoveryProgress < 1. Reaching full Current BP, or being
+ *   blocked at an Injury's recovery cap, resets it to 0 — recovery is never
+ *   banked while there is nowhere for it to go.
  */
 export interface BodyPart {
   readonly id: BodyPartId;
@@ -160,6 +175,7 @@ export interface BodyPart {
   readonly attachment: BodyPartAttachment | null;
 
   readonly damage: number;
+  readonly recoveryProgress: number;
 }
 
 

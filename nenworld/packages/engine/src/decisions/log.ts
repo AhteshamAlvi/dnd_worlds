@@ -39,6 +39,15 @@ export const ENGINE_DECISIONS = {
             file: "03 Aura Engine/Aura Density and Concentration.md",
         },
     },
+    "injury.overlap.recovery-progress-default": {
+        id: "injury.overlap.recovery-progress-default",
+        question:
+            "Nothing in the Rulebook says what happens to a BodyPart's banked recovery progress when a second Injury lands on anatomy that already carries one.",
+        chosen:
+            "Default to preserving the BodyPart's existing recoveryProgress, and surface the choice to the GM as a non-blocking decision (see character/mechanics/recovery/resolution.ts's detectInjuryOverlap) rather than resetting or discarding it automatically.",
+        rationale:
+            "Recovery progress represents real healing already banked toward the part's next point of BP — silently wiping it because an unrelated second wound landed nearby would punish the character for something the Rulebook never asked for. Preserving is the least destructive default, and it stays overridable per-instance (reset, or a custom value) for whenever a GM decides the new Injury genuinely undoes the old progress.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;

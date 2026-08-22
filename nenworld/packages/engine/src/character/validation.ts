@@ -45,10 +45,7 @@ import {
   type ConditionValidationIssue,
 } from "./status/conditions";
 
-import {
-  findInjuryValidationIssues,
-  type InjuryValidationIssue,
-} from "./status/injuries";
+import type { InjuryValidationIssue } from "./status/injuries";
 
 import type { StagedEntryValidationIssue } from "./status/stage";
 
@@ -59,16 +56,29 @@ import {
 
 import { resolveCharacter } from "./resolution";
 
+import { listDefinitions } from "./catalogs";
+
+import {
+  findRecoveryValidationIssues,
+  type RecoveryValidationIssue,
+} from "./mechanics/recovery/validation";
+
 import type { Character } from "./types";
 
 // Everything a character can get wrong by referencing an authored catalog.
+//
+// RecoveryValidationIssue already covers Injuries end to end — both the
+// intrinsic checks status/injuries.ts owns and the Body-aware location
+// checks mechanics/recovery/validation.ts adds — so this union does not list
+// InjuryValidationIssue separately; that would report the same intrinsic
+// problem twice.
 type CharacterReferenceIssue =
   | SpeciesValidationIssue
   | ClanValidationIssue
   | TraitValidationIssue
   | CapabilityValidationIssue
   | ConditionValidationIssue
-  | InjuryValidationIssue
+  | RecoveryValidationIssue
   | ItemValidationIssue;
 
 /*
@@ -204,23 +214,70 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
       "Fix the Condition's stage, severity, or remaining duration.",
   },
 
+  "invalid-injury-instance-id": {
+    code: "character.injury.instance_id_invalid",
+    describe: () => "An injury entry has an empty id.",
+    resolution: "Assign the injury entry a non-empty id.",
+  },
+  "duplicate-injury-instance-id": {
+    code: "character.injury.instance_id_duplicate",
+    describe: (issue) =>
+      `Injury id "${issue.id}" is used by more than one entry.`,
+    resolution: "Give each injury entry its own id.",
+  },
   "unknown-injury": {
     code: "character.injury.unknown",
     describe: (issue) => `Unknown injury "${issue.injuryId}".`,
     resolution: "Choose an injury the engine defines, or remove it.",
   },
-  "duplicate-injury": {
-    code: "character.injury.duplicate",
+  "invalid-injury-location": {
+    code: "character.injury.location_invalid",
     describe: (issue) =>
-      `Injury "${issue.injuryId}" is listed more than once.`,
-    resolution:
-      "Remove the repeated injury, or record the stacking as its severity.",
+      `Injury "${issue.id}" ${describeInjuryLocationIssue(issue)}.`,
+    resolution: "Fix the injury's BodyPart or Special Point location.",
   },
-  "invalid-injury-lifecycle": {
-    code: "character.injury.lifecycle_invalid",
+  "invalid-injury-treatment-status": {
+    code: "character.injury.treatment_status_invalid",
     describe: (issue) =>
-      `Injury "${issue.injuryId}" ${describeStagedEntryIssue(issue.issue)}.`,
-    resolution: "Fix the injury's stage, severity, or remaining duration.",
+      `Injury "${issue.id}" ${describeInjuryTreatmentStatusIssue(issue.issue)}.`,
+    resolution: "Set the injury's treatment status to match its definition.",
+  },
+
+  "injury-body-part-unknown": {
+    code: "character.injury.body_part_unknown",
+    describe: (issue) =>
+      `Injury "${issue.id}" references BodyPart "${issue.bodyPartId}", which does not exist on this character.`,
+    resolution: "Point the injury at a BodyPart the character actually has.",
+  },
+  "injury-body-part-not-applicable": {
+    code: "character.injury.body_part_not_applicable",
+    describe: (issue) =>
+      `Injury "${issue.id}" occupies BodyPart "${issue.bodyPartId}", which its definition does not allow.`,
+    resolution: "Move the injury to a BodyPart its definition applies to.",
+  },
+  "injury-special-point-missing": {
+    code: "character.injury.special_point_missing",
+    describe: (issue) =>
+      `Injury "${issue.id}" needs a Special Point location, but none is set.`,
+    resolution: "Set the injury's Special Point location.",
+  },
+  "injury-special-point-unknown": {
+    code: "character.injury.special_point_unknown",
+    describe: (issue) =>
+      `Injury "${issue.id}" references unknown Special Point "${issue.specialPointDefinitionId}".`,
+    resolution: "Choose a Special Point the engine defines.",
+  },
+  "injury-special-point-not-applicable": {
+    code: "character.injury.special_point_not_applicable",
+    describe: (issue) =>
+      `Injury "${issue.id}" references Special Point "${issue.specialPointDefinitionId}", which its definition does not allow.`,
+    resolution: "Choose a Special Point the injury's definition allows.",
+  },
+  "injury-special-point-not-hosted": {
+    code: "character.injury.special_point_not_hosted",
+    describe: (issue) =>
+      `Injury "${issue.id}" references Special Point "${issue.specialPointDefinitionId}", which is not hosted by its location's BodyParts.`,
+    resolution: "Point the injury's location at the Special Point's actual host BodyParts.",
   },
 
   "unknown-item": {
@@ -257,6 +314,44 @@ function describeStagedEntryIssue(
 
     case "invalid-duration":
       return `has an invalid remaining duration of ${issue.remainingDuration}`;
+  }
+}
+
+// Renders the one nested issue an injury's location can carry.
+function describeInjuryLocationIssue(
+  issue: Extract<InjuryValidationIssue, { type: "invalid-injury-location" }>,
+): string {
+  switch (issue.issue) {
+    case "no-body-parts":
+      return "has a location with no BodyPart ids";
+
+    case "invalid-body-part-id":
+      return "references an empty BodyPart id";
+
+    case "duplicate-body-part-id":
+      return `references BodyPart "${issue.bodyPartId}" more than once`;
+
+    case "invalid-special-point-definition-id":
+      return "has an empty Special Point definition id";
+  }
+}
+
+// Renders the one nested issue an injury's treatment status can carry.
+function describeInjuryTreatmentStatusIssue(
+  issue: Extract<
+    InjuryValidationIssue,
+    { type: "invalid-injury-treatment-status" }
+  >["issue"],
+): string {
+  switch (issue) {
+    case "unexpected-treatment-status":
+      return "does not require treatment but carries a treatment status";
+
+    case "missing-treatment-status":
+      return "requires treatment but has no treatment status recorded";
+
+    case "unknown-treatment-status":
+      return "has a treatment status its definition does not recognize";
   }
 }
 
@@ -308,7 +403,12 @@ function findCharacterReferenceIssues(
       resolved.requirementContext,
     ),
     ...findConditionValidationIssues(character.conditions ?? []),
-    ...findInjuryValidationIssues(character.injuries ?? []),
+    ...findRecoveryValidationIssues(
+      character.body.anatomy,
+      listDefinitions("body-part"),
+      listDefinitions("special-point"),
+      character.injuries ?? [],
+    ),
     ...findItemValidationIssues(character.items ?? []),
   ];
 }

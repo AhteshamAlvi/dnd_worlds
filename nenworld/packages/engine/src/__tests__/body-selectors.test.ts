@@ -35,9 +35,9 @@ const NEUTRAL_SENSITIVITY = {
 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "arm", tags: ["limb", "left"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "leg", tags: ["limb", "right"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "head", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "arm", name: "Arm", description: "Test arm.", tags: ["limb", "left"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "leg", name: "Leg", description: "Test leg.", tags: ["limb", "right"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "head", name: "Head", description: "Test head.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
 ];
 
 const ANATOMY: Anatomy = createAnatomy([
@@ -187,6 +187,8 @@ describe("tag selection regression: reads BodyPartDefinition.tags, not BodyPart"
   it("through a SpecialPointDefinition placement selector resolved by resolveCriticalPoints", () => {
     const definition: SpecialPointDefinition = {
       id: "limb-marker",
+      name: "Limb Marker",
+      description: "Test marker.",
       category: "semicritical",
       placement: { kind: "per-part", selector: tagSelector },
     };

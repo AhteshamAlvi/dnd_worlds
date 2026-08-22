@@ -34,12 +34,12 @@ const vaultsDir = path.resolve(__dirname, '../../worldbuilding/Vault');
 const charactersDir = path.resolve(vaultsDir, 'character-vault');
 
 /*
- * The eight catalog domains the engine understands (character/catalogs.ts's
+ * The catalog domains the engine understands (character/catalogs.ts's
  * CatalogDomain). Not imported from @nenworld/engine — this file is dev
- * server config, not application code, and hardcoding eight stable strings
- * here is cheaper than giving the config loader a reason to resolve the
- * whole package graph. If the engine ever adds a ninth domain, add it here
- * too; nothing here derives the list automatically.
+ * server config, not application code, and hardcoding stable strings here
+ * is cheaper than giving the config loader a reason to resolve the whole
+ * package graph. If the engine ever adds another domain, add it here too;
+ * nothing here derives the list automatically.
  */
 const CATALOG_DOMAINS = [
   'species',
@@ -50,6 +50,8 @@ const CATALOG_DOMAINS = [
   'condition',
   'injury',
   'item',
+  'body-part',
+  'special-point',
 ] as const;
 
 type CatalogDomain = (typeof CATALOG_DOMAINS)[number];

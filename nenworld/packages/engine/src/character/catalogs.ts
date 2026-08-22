@@ -1,8 +1,8 @@
 /*
  * The index of every catalog a character can reference.
  *
- * Seven domains, one shape. Without this file a host that wants to offer "pick
- * a feature" or "add your own" has to write the same seven-way switch for
+ * One shape, many domains. Without this file a host that wants to offer "pick
+ * a feature" or "add your own" has to write the same many-way switch for
  * listing, fetching and registering — and get all three of them right — before
  * it can render a single picker. With it, a UI is generic over the domain and
  * the engine stays the only place that knows what a Trait is.
@@ -56,6 +56,11 @@ import { injuryRegistry, type InjuryDefinition } from "./status/injuries";
 import { itemRegistry } from "./equipment/index";
 import type { ItemDefinition } from "./equipment/types";
 
+import { bodyPartRegistry } from "./foundation/body/anatomy/body-parts";
+import type { BodyPartDefinition } from "./foundation/body/anatomy/types";
+import { specialPointRegistry } from "./foundation/body/critical-points/special-points";
+import type { SpecialPointDefinition } from "./foundation/body/critical-points/types";
+
 // Singular on purpose: a domain names one kind of thing, and every message
 // built from it reads "unknown Species", not "unknown species-list".
 export type CatalogDomain =
@@ -66,7 +71,9 @@ export type CatalogDomain =
   | "skill"
   | "condition"
   | "injury"
-  | "item";
+  | "item"
+  | "body-part"
+  | "special-point";
 
 // What each domain's definitions actually are, so a caller that names a
 // domain literally gets that domain's own type back rather than the base one.
@@ -79,11 +86,13 @@ export interface CatalogDefinitions {
   condition: ConditionDefinition;
   injury: InjuryDefinition;
   item: ItemDefinition;
+  "body-part": BodyPartDefinition;
+  "special-point": SpecialPointDefinition;
 }
 
 // Display order, and the order a host should render sections in: what a
 // character *is*, then what it can *do*, then what is currently *true* of it,
-// then what it is carrying.
+// then what it is carrying, then the physical body those all sit on.
 export const CATALOG_DOMAINS = [
   "species",
   "clan",
@@ -93,6 +102,8 @@ export const CATALOG_DOMAINS = [
   "condition",
   "injury",
   "item",
+  "body-part",
+  "special-point",
 ] as const satisfies readonly CatalogDomain[];
 
 type RegistryByDomain = {
@@ -108,6 +119,8 @@ const REGISTRIES: RegistryByDomain = {
   condition: conditionRegistry,
   injury: injuryRegistry,
   item: itemRegistry,
+  "body-part": bodyPartRegistry,
+  "special-point": specialPointRegistry,
 };
 
 // Human-readable domain names, for anything the host puts in front of a
@@ -122,6 +135,8 @@ export const CATALOG_DOMAIN_LABELS: Readonly<Record<CatalogDomain, string>> = {
   condition: "Condition",
   injury: "Injury",
   item: "Item",
+  "body-part": "Body Part",
+  "special-point": "Special Point",
 };
 
 // Every definition in a domain, authored first, then custom in the order it
@@ -265,13 +280,19 @@ function rulesOf(
       readonly effects?: readonly Effect[];
       readonly requirements?: readonly Requirement[];
     }[];
-    // Conditions and injuries progress through stages rather than Skill/
-    // Technique ranks — see status/stage.ts — but the walk is identical.
+    // Conditions progress through stages rather than Skill/Technique ranks —
+    // see status/stage.ts — but the walk is identical.
     readonly stages?: readonly {
       readonly stage: number;
       readonly effects?: readonly Effect[];
       readonly requirements?: readonly Requirement[];
     }[];
+    // Injuries key their extra Effects off treatment state instead — see
+    // status/injuries.ts's InjuryDefinition.treatmentEffects.
+    readonly treatmentEffects?: {
+      readonly untreated?: readonly Effect[];
+      readonly treated?: readonly Effect[];
+    };
   };
 
   bundles.push({
@@ -293,6 +314,22 @@ function rulesOf(
       where: `stage ${stage.stage}`,
       effects: stage.effects ?? [],
       requirements: stage.requirements ?? [],
+    });
+  }
+
+  if (effectful.treatmentEffects?.untreated !== undefined) {
+    bundles.push({
+      where: "untreated",
+      effects: effectful.treatmentEffects.untreated,
+      requirements: [],
+    });
+  }
+
+  if (effectful.treatmentEffects?.treated !== undefined) {
+    bundles.push({
+      where: "treated",
+      effects: effectful.treatmentEffects.treated,
+      requirements: [],
     });
   }
 

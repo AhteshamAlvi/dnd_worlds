@@ -300,10 +300,17 @@ describe("injuries", () => {
   // unknown — which is the honest answer, not a gap in validation.
   it("rejects an injury the catalog does not define", () => {
     expect(
-      findInjuryValidationIssues([{ injuryId: "battered" }]),
+      findInjuryValidationIssues([
+        {
+          id: "injury-1",
+          injuryId: "battered",
+          location: { bodyPartIds: ["arm-1"] },
+        },
+      ]),
     ).toEqual([
       {
         type: "unknown-injury",
+        id: "injury-1",
         injuryId: "battered",
       },
     ]);

@@ -44,6 +44,11 @@
  * inherit its damage), and it falls out of removeBodyPart's existing cascade
  * behavior already being correct.
  *
+ * Step 5 also never touches the host's recoveryProgress — applyBodyPartDamage
+ * only overwrites `damage` (see its own comment). New damage landing on a
+ * part that already had recovery banked does not wipe that progress; only
+ * body-points/recovery.ts decides when progress resets.
+ *
  * This is the one Body function that takes caller-supplied, potentially
  * invalid input across a domain boundary (an unknown target id, an
  * ambiguous shared host, a bad damage number) rather than being fed only by

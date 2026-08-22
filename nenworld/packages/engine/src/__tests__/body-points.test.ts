@@ -27,12 +27,12 @@ import {
   validateBodyPointModifier,
   validateBodyPointResolution,
 } from "../character/foundation/body/body-points/validation";
-import { STANDARD_BODY_PART_DEFINITIONS } from "../character/foundation/body/content/body-part-definitions";
+import { getBodyPartDefinition } from "../character/foundation/body/anatomy/body-parts";
 
 const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
 ];
 
 const REFERENCE_INPUT: BodyMorphologyInput = {
@@ -43,7 +43,9 @@ const REFERENCE_INPUT: BodyMorphologyInput = {
 
 function singlePartAnatomy(damage = 0) {
   return {
-    parts: [{ id: "torso-1", type: "torso", attachment: null, damage }],
+    parts: [
+      { id: "torso-1", type: "torso", attachment: null, damage, recoveryProgress: 0 },
+    ],
   };
 }
 
@@ -138,8 +140,8 @@ describe("damage storage and destruction", () => {
   it("reports destroyedPartIds and the correct aggregate total", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, damage: 0 },
-        { id: "torso-2", type: "torso", attachment: null, damage: 999 },
+        { id: "torso-1", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "torso-2", type: "torso", attachment: null, damage: 999, recoveryProgress: 0 },
       ],
     };
 
@@ -187,7 +189,7 @@ describe("Body Point validators", () => {
     const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
 
     const extraAnatomy = {
-      parts: [...anatomy.parts, { id: "torso-2", type: "torso", attachment: null, damage: 0 }],
+      parts: [...anatomy.parts, { id: "torso-2", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 }],
     };
     const missingResult = validateBodyPointResolution(
       extraAnatomy,
@@ -263,8 +265,8 @@ describe("combining multiple BP modifiers", () => {
   });
 
   it("the worked example from the ticket: Leg Base BP 14, Training +6, Resolved Base BP 20", () => {
-    const leg = STANDARD_BODY_PART_DEFINITIONS.find((d) => d.id === "leg")!;
-    const anatomy = { parts: [{ id: "leg-1", type: "leg", attachment: null, damage: 0 }] };
+    const leg = getBodyPartDefinition("leg")!;
+    const anatomy = { parts: [{ id: "leg-1", type: "leg", attachment: null, damage: 0, recoveryProgress: 0 }] };
     const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, [leg]);
 
     expect(morphology.parts[0]!.morphologyAdjustedBaseBP).toBe(14);

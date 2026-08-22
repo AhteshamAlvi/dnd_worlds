@@ -1,6 +1,8 @@
 /*
- * Tests the shared stage/severity/expiry vocabulary Conditions and injuries
- * use — see character/status/stage.ts.
+ * Tests the shared stage/severity/expiry vocabulary Conditions use — see
+ * character/status/stage.ts. Injuries do NOT use this vocabulary (see
+ * status/injuries.ts's own header for why); their treatment-state effect
+ * resolution is covered separately in injury-recovery.test.ts.
  *
  * The property under test throughout is that these are generic hooks, not
  * authored behavior: nothing here bakes in what a "worsening" Condition
@@ -271,21 +273,78 @@ describe("status resolution respects stage and expiry", () => {
     ).toHaveLength(1);
   });
 
-  it("excludes a healed injury from active sources the same way", () => {
+  it("adds a treatment-required injury's untreated effects on top of its base effects", () => {
     registerDefinition("injury", {
       id: "sprained-wrist",
       name: "Sprained Wrist",
       description: "A test injury.",
+      applicability: { bodyParts: { types: ["hand"] } },
+      recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 0.5 },
+      effects: [
+        { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
+      ],
+      treatmentEffects: {
+        untreated: [
+          { type: "modifyResolvedAttribute", attribute: "str", amount: -1 },
+        ],
+        treated: [
+          { type: "modifyResolvedAttribute", attribute: "str", amount: 0 },
+        ],
+      },
+    });
+
+    const untreated = collectInjuryEffectSources([
+      {
+        id: "injury-1",
+        injuryId: "sprained-wrist",
+        location: { bodyPartIds: ["hand-1"] },
+        treatmentStatus: "untreated",
+      },
+    ]);
+
+    expect(untreated[0]?.effects).toEqual([
+      { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
+      { type: "modifyResolvedAttribute", attribute: "str", amount: -1 },
+    ]);
+
+    const treated = collectInjuryEffectSources([
+      {
+        id: "injury-1",
+        injuryId: "sprained-wrist",
+        location: { bodyPartIds: ["hand-1"] },
+        treatmentStatus: "treated",
+      },
+    ]);
+
+    expect(treated[0]?.effects).toEqual([
+      { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
+      { type: "modifyResolvedAttribute", attribute: "str", amount: 0 },
+    ]);
+  });
+
+  it("contributes only the base effects for an injury that does not require treatment", () => {
+    registerDefinition("injury", {
+      id: "bruise",
+      name: "Bruise",
+      description: "A test injury.",
+      applicability: { bodyParts: { types: ["hand"] } },
+      recovery: { treatmentRequired: false },
       effects: [
         { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
       ],
     });
 
-    expect(
-      collectInjuryEffectSources([
-        { injuryId: "sprained-wrist", remainingDuration: -1 },
-      ]),
-    ).toEqual([]);
+    const sources = collectInjuryEffectSources([
+      {
+        id: "injury-1",
+        injuryId: "bruise",
+        location: { bodyPartIds: ["hand-1"] },
+      },
+    ]);
+
+    expect(sources[0]?.effects).toEqual([
+      { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
+    ]);
   });
 });
 
@@ -330,28 +389,36 @@ describe("lifecycle fields reach resolveCharacter and validateCharacter", () => 
     }
   });
 
-  it("reports an invalid injury severity as a character validation error", () => {
+  it("reports a missing injury treatment status as a character validation error", () => {
     registerDefinition("injury", {
       id: "broken-rib",
       name: "Broken Rib",
       description: "A test injury.",
+      applicability: { bodyParts: { types: ["upper-body"] } },
+      recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 0.5 },
     });
 
     const result = validateCharacter(
       createTestCharacter({
-        injuries: [{ injuryId: "broken-rib", severity: -1 }],
+        injuries: [
+          {
+            id: "injury-1",
+            injuryId: "broken-rib",
+            location: { bodyPartIds: ["upper-body-1"] },
+          },
+        ],
       }),
     );
 
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.errors.map((error) => error.code)).toContain(
-        "character.injury.lifecycle_invalid",
+        "character.injury.treatment_status_invalid",
       );
     }
   });
 
-  it("accepts a well-formed staged Condition and injury together", () => {
+  it("accepts a well-formed staged Condition and a well-formed injury together", () => {
     registerDefinition("condition", {
       id: "worsening-flu",
       name: "Worsening Flu",
@@ -363,12 +430,21 @@ describe("lifecycle fields reach resolveCharacter and validateCharacter", () => 
       id: "broken-rib",
       name: "Broken Rib",
       description: "A test injury.",
+      applicability: { bodyParts: { types: ["upper-body"] } },
+      recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 0.5 },
     });
 
     const result = validateCharacter(
       createTestCharacter({
         conditions: [{ conditionId: "worsening-flu", stage: 1 }],
-        injuries: [{ injuryId: "broken-rib", severity: 2 }],
+        injuries: [
+          {
+            id: "injury-1",
+            injuryId: "broken-rib",
+            location: { bodyPartIds: ["upper-body-1"] },
+            treatmentStatus: "untreated",
+          },
+        ],
       }),
     );
 

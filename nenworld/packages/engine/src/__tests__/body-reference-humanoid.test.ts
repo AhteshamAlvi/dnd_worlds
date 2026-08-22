@@ -13,10 +13,9 @@
 
 import { describe, expect, it } from "vitest";
 
+import { listDefinitions } from "../character/catalogs";
 import { validateAnatomyData } from "../character/foundation/body/anatomy/validation";
-import { STANDARD_BODY_PART_DEFINITIONS } from "../character/foundation/body/content/body-part-definitions";
-import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/content/anatomy";
-import { STANDARD_SPECIAL_POINT_DEFINITIONS } from "../character/foundation/body/content/special-point-definitions";
+import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
 import { STANDARD_BODY } from "../character/foundation/body/defaults";
 import {
   REFERENCE_ADIPOSITY,
@@ -35,6 +34,9 @@ import {
 } from "../character/foundation/body/critical-points/validation";
 
 const REFERENCE_CONSTITUTION = 10;
+
+const BODY_PART_DEFINITIONS = listDefinitions("body-part");
+const SPECIAL_POINT_DEFINITIONS = listDefinitions("special-point");
 
 describe("STANDARD_BODY", () => {
   it("sits exactly at the reference morphology", () => {
@@ -120,7 +122,7 @@ describe("standard humanoid Anatomy", () => {
   it("passes Anatomy + definition validation", () => {
     const result = validateAnatomyData(
       STANDARD_HUMANOID_ANATOMY,
-      STANDARD_BODY_PART_DEFINITIONS,
+      BODY_PART_DEFINITIONS,
     );
 
     expect(result.valid).toBe(true);
@@ -132,14 +134,14 @@ describe("reference humanoid Body Points", () => {
   const morphology = resolveMorphology(
     STANDARD_BODY,
     STANDARD_BODY.anatomy,
-    STANDARD_BODY_PART_DEFINITIONS,
+    BODY_PART_DEFINITIONS,
   );
 
   const bodyPoints = resolveBodyPoints(
     STANDARD_BODY.anatomy,
     morphology,
     REFERENCE_CONSTITUTION,
-    STANDARD_BODY_PART_DEFINITIONS,
+    BODY_PART_DEFINITIONS,
   );
 
   const maximumBPByType = new Map<string, number[]>();
@@ -176,7 +178,7 @@ describe("reference humanoid Body Points", () => {
 describe("standard Special Point content", () => {
   it("passes definition validation", () => {
     const result = validateSpecialPointDefinitions(
-      STANDARD_SPECIAL_POINT_DEFINITIONS,
+      SPECIAL_POINT_DEFINITIONS,
     );
 
     expect(result.valid).toBe(true);
@@ -186,8 +188,8 @@ describe("standard Special Point content", () => {
   it("resolves to exactly the 20 expected instances over the standard Anatomy", () => {
     const resolved = resolveCriticalPoints(
       STANDARD_HUMANOID_ANATOMY,
-      STANDARD_BODY_PART_DEFINITIONS,
-      STANDARD_SPECIAL_POINT_DEFINITIONS,
+      BODY_PART_DEFINITIONS,
+      SPECIAL_POINT_DEFINITIONS,
     );
 
     const ids = resolved.points.map((point) => point.id).sort();
@@ -222,14 +224,14 @@ describe("standard Special Point content", () => {
   it("passes full resolved-instance and consistency validation", () => {
     const resolved = resolveCriticalPoints(
       STANDARD_HUMANOID_ANATOMY,
-      STANDARD_BODY_PART_DEFINITIONS,
-      STANDARD_SPECIAL_POINT_DEFINITIONS,
+      BODY_PART_DEFINITIONS,
+      SPECIAL_POINT_DEFINITIONS,
     );
 
     const result = validateCriticalPointData(
       STANDARD_HUMANOID_ANATOMY,
-      STANDARD_BODY_PART_DEFINITIONS,
-      STANDARD_SPECIAL_POINT_DEFINITIONS,
+      BODY_PART_DEFINITIONS,
+      SPECIAL_POINT_DEFINITIONS,
       resolved,
     );
 

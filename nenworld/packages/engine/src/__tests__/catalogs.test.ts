@@ -29,6 +29,11 @@ import { DEFINITION_ID_PATTERN } from "../infrastructure/registry";
 import { validateCharacter } from "../character/validation";
 import { createTestCharacter } from "./fixtures/character";
 
+import { createAnatomy } from "../character/foundation/body/anatomy/creation";
+import { resolveMorphology } from "../character/foundation/body/body-points/morphology";
+import { resolveBodyPoints } from "../character/foundation/body/body-points/resolution";
+import { resolveCriticalPoints } from "../character/foundation/body/critical-points/resolution";
+
 afterEach(() => {
   clearCustomDefinitions();
 });
@@ -393,5 +398,66 @@ describe("createDefinitionId", () => {
 
     expect(result.ok).toBe(true);
     expect(isKnownDefinitionId("trait", id)).toBe(true);
+  });
+});
+
+/*
+ * The concrete regression for "add a Tail with zero engine code": registers
+ * a custom "body-part" and "special-point" definition — the same
+ * registerDefinition path a GM's homebrew Species goes through — and proves
+ * the generic Body mechanics resolve against them exactly like the standard
+ * humanoid content, with nothing in anatomy/, body-points/, or
+ * critical-points/ needing to change.
+ */
+describe("registering custom Body content", () => {
+  it("a registered Tail BodyPartDefinition and Joint resolve through the ordinary Body pipeline", () => {
+    const tailDefinition = {
+      id: "tail",
+      name: "Tail",
+      description: "A homebrew prehensile tail.",
+      tags: ["limb"],
+      baseBP: 6,
+      morphologySensitivity: { height: 0, mass: 0, muscularity: 0.3, adiposity: 0.05 },
+    };
+
+    expect(registerDefinition("body-part", tailDefinition)).toEqual({ ok: true });
+
+    const tailBaseJoint = {
+      id: "tail-base",
+      name: "Tail Base",
+      description: "A homebrew Joint hosted by the Tail.",
+      category: "joint" as const,
+      damageMultiplier: 1.5,
+      placement: { kind: "per-part" as const, selector: { types: ["tail"] } },
+    };
+
+    expect(registerDefinition("special-point", tailBaseJoint)).toEqual({ ok: true });
+
+    const anatomy = createAnatomy([
+      { id: "torso-1", type: "upper-body", attachment: null },
+      { id: "tail-1", type: "tail", attachment: { parentId: "torso-1" } },
+    ]);
+
+    const bodyPartDefinitions = listDefinitions("body-part");
+    const specialPointDefinitions = listDefinitions("special-point");
+
+    const morphology = resolveMorphology(
+      { heightCm: 165, massKg: 62, build: { muscularity: 1, adiposity: 1 } },
+      anatomy,
+      bodyPartDefinitions,
+    );
+
+    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, bodyPartDefinitions);
+    const tailBP = bodyPoints.parts.find((part) => part.partId === "tail-1");
+
+    expect(tailBP?.maximumBP).toBe(6);
+
+    const criticalPoints = resolveCriticalPoints(
+      anatomy,
+      bodyPartDefinitions,
+      specialPointDefinitions,
+    );
+
+    expect(criticalPoints.points.map((point) => point.id)).toContain("tail-base:tail-1");
   });
 });

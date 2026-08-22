@@ -14,7 +14,7 @@ import {
   REFERENCE_MASS_KG,
   REFERENCE_MUSCULARITY,
 } from "./body-points/morphology";
-import { STANDARD_HUMANOID_ANATOMY } from "./content/anatomy";
+import { STANDARD_HUMANOID_ANATOMY } from "./anatomy/standard-humanoid";
 import type { Body } from "./types";
 
 export const STANDARD_BODY: Body = {

@@ -17,8 +17,7 @@ import { describe, expect, it } from "vitest";
 
 import { applyBodyDamage } from "../character/foundation/body/damage";
 import type { BodyDamageInput } from "../character/foundation/body/damage";
-import { STANDARD_BODY_PART_DEFINITIONS } from "../character/foundation/body/content/body-part-definitions";
-import { STANDARD_SPECIAL_POINT_DEFINITIONS } from "../character/foundation/body/content/special-point-definitions";
+import { listDefinitions } from "../character/catalogs";
 import { STANDARD_BODY } from "../character/foundation/body/defaults";
 import type { Body } from "../character/foundation/body/types";
 
@@ -28,8 +27,8 @@ function baseInput(overrides: Partial<BodyDamageInput> = {}): BodyDamageInput {
   return {
     body: STANDARD_BODY,
     constitution: REFERENCE_CONSTITUTION,
-    bodyPartDefinitions: STANDARD_BODY_PART_DEFINITIONS,
-    specialPointDefinitions: STANDARD_SPECIAL_POINT_DEFINITIONS,
+    bodyPartDefinitions: listDefinitions("body-part"),
+    specialPointDefinitions: listDefinitions("special-point"),
     target: { kind: "body-part", partId: "arm-1" },
     penetratingDamage: 4,
     ...overrides,
