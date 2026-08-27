@@ -14,18 +14,20 @@
  *
  * - combat:
  *     real elapsed time does not advance game time; combat advances the clock
- *     explicitly according to round duration
+ *     explicitly according to its own elapsed-time rules
  *
  * Explicit/manual game-time advancement is independent of clock mode. This
- * allows actions such as travel, rests, downtime, or GM-controlled time skips
- * while the automatic clock is paused.
+ * allows actions such as travel, rests, downtime, GM-controlled time skips,
+ * or combat-time advancement while automatic clock advancement is stopped.
+ *
+ * This module does not define combat rounds or combat-round duration.
+ * Those responsibilities belong to the combat system.
  *
  * This module does not read Date.now(), use timers, or otherwise depend upon
  * wall-clock state. The host application supplies elapsed real milliseconds.
  */
 
 import { fromGameDateTime } from "./calendar";
-import { seconds } from "./duration";
 
 import type {
   GameClockCreation,
@@ -33,15 +35,6 @@ import type {
   GameClockState,
   GameDuration,
 } from "./types";
-
-
-/**
- * Standard combat-round duration.
- *
- * D&D-style combat treats one complete round as six seconds of game time,
- * regardless of how many creatures take turns during that round.
- */
-export const COMBAT_ROUND_DURATION: GameDuration = seconds(6);
 
 
 /**
@@ -137,6 +130,7 @@ export function advanceFromRealTime(
  * - downtime
  * - waiting
  * - GM-controlled time skips
+ * - combat-controlled elapsed time
  * - other mechanics that explicitly consume game time
  */
 export function advanceGameTime(
@@ -234,7 +228,8 @@ export function resumeGameClock(
  * Enters combat time.
  *
  * Real elapsed time no longer advances the game clock while combat is active.
- * Instead, the combat system advances time explicitly as rounds complete.
+ * The combat system is responsible for explicitly advancing the authoritative
+ * clock according to its own elapsed-time rules.
  *
  * The configured timeScale is preserved so normal play can resume using the
  * same scale after combat.
@@ -272,60 +267,6 @@ export function leaveCombat(
   return {
     ...clock,
     mode: "running",
-  };
-}
-
-
-/**
- * Advances combat by one complete round.
- *
- * One round advances the global game clock by six game seconds.
- *
- * Individual creature turns do not each advance the clock by six seconds;
- * their turns occur within the same round interval.
- */
-export function advanceCombatRound(
-  clock: GameClockState,
-): GameClockState {
-  assertCombatMode(clock);
-
-  return {
-    ...clock,
-    currentTime:
-      clock.currentTime + COMBAT_ROUND_DURATION,
-  };
-}
-
-
-/**
- * Advances combat by multiple complete rounds.
- *
- * This is useful when several rounds are resolved or skipped at once.
- */
-export function advanceCombatRounds(
-  clock: GameClockState,
-  rounds: number,
-): GameClockState {
-  assertCombatMode(clock);
-
-  if (
-    !Number.isInteger(rounds) ||
-    rounds < 0
-  ) {
-    throw new RangeError(
-      `Combat rounds must be a non-negative integer. Received: ${rounds}.`,
-    );
-  }
-
-  if (rounds === 0) {
-    return clock;
-  }
-
-  return {
-    ...clock,
-    currentTime:
-      clock.currentTime +
-      COMBAT_ROUND_DURATION * rounds,
   };
 }
 
@@ -413,21 +354,6 @@ function assertValidForwardDuration(
   ) {
     throw new RangeError(
       `Game-time advancement must be a finite non-negative duration. Received: ${duration}.`,
-    );
-  }
-}
-
-
-/**
- * Ensures that an operation requiring combat time is only performed during
- * combat.
- */
-function assertCombatMode(
-  clock: GameClockState,
-): void {
-  if (clock.mode !== "combat") {
-    throw new Error(
-      "Combat time can only be advanced while the game clock is in combat mode.",
     );
   }
 }

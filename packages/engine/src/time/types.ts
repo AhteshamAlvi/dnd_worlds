@@ -12,8 +12,8 @@
  *
  * Normal play advances according to elapsed real time and the configured
  * time scale. Paused time does not automatically advance. Combat also stops
- * real-time advancement and instead advances explicitly according to combat
- * time, normally six game seconds per round.
+ * real-time advancement. Combat systems explicitly advance the authoritative
+ * clock according to their own elapsed-time rules.
  */
 
 
