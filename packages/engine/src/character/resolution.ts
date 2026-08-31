@@ -42,8 +42,21 @@
 
 import {
   resolveAttributeLayers,
+  resolveAttributeScores,
 } from "./foundation/attributes/resolution";
-import type { AttributeLayers } from "./foundation/attributes/types";
+import type {
+  AttributeKey,
+  AttributeLayers,
+  ResolvedScore,
+} from "./foundation/attributes/types";
+import {
+  resolveDerivedAttributes,
+  resolveDerivedScores,
+} from "./foundation/attributes/derived/resolution";
+import type {
+  DerivedAttributeName,
+  DerivedAttributes,
+} from "./foundation/attributes/derived/types";
 
 import {
   collectSpeciesAncestry,
@@ -102,6 +115,27 @@ export interface ResolvedCharacter {
   readonly character: Character;
 
   readonly attributes: AttributeLayers;
+
+  /**
+   * Each resolved Attribute with its standard modifier, in the shape a sheet
+   * renders — the same shape derivedScores uses, so AGI and Acrobatics
+   * display through one code path.
+   */
+  readonly attributeScores: Readonly<Record<AttributeKey, ResolvedScore>>;
+
+  /**
+   * The ten Derived Attributes, calculated from the RESOLVED Attributes.
+   *
+   * Nothing modifies these directly. A Trait raising AGI raises Acrobatics
+   * by moving the number Acrobatics is calculated from — see
+   * foundation/attributes/derived/types.ts.
+   */
+  readonly derivedAttributes: DerivedAttributes;
+
+  /** Each Derived Attribute with its standard modifier. */
+  readonly derivedScores: Readonly<
+    Record<DerivedAttributeName, ResolvedScore>
+  >;
 
   readonly traits: ResolvedTraits;
   readonly capabilities: ResolvedCapabilities;
@@ -340,6 +374,14 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
     resolved.resolvedAttributeModifiers,
   );
 
+  /*
+   * Derived Attributes come off the RESOLVED layer, which is what makes
+   * propagation free: a Trait's +2 AGI is already in attributes.resolved by
+   * this point, so Athletics, Acrobatics and Combat Ability all move with it
+   * without a second propagation path that could fall out of step.
+   */
+  const derivedAttributes = resolveDerivedAttributes(attributes.resolved);
+
   const traits = resolveTraits(character.traits ?? [], resolved.traitGrants);
 
   const capabilities = resolveCapabilities({
@@ -352,6 +394,11 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
   return {
     character,
     attributes,
+    attributeScores: resolveAttributeScores(attributes.resolved),
+
+    derivedAttributes,
+    derivedScores: resolveDerivedScores(derivedAttributes),
+
     traits,
     capabilities,
     effects: resolved,

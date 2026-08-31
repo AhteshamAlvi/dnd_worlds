@@ -21,6 +21,7 @@ import {
   type RequirementContext,
 } from "../character/rules/resolution";
 import type { Requirement } from "../character/rules/requirements";
+import { getSkillDefinition } from "../character/capabilities/skills";
 
 import { resolveCharacter } from "../character/resolution";
 import { createTestCharacter } from "./fixtures/character";
@@ -80,6 +81,161 @@ describe("attribute requirements", () => {
       meetsRequirement(
         { type: "attributeMinimum", attribute: "str", layer: "base", minimum: 10 },
         contextWith(),
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("derived attribute requirements", () => {
+  it("checks the Derived Attribute calculated from the layer it names", () => {
+    // Athletics = round((STR + AGI) / 2), so 16/16 -> 16 and 10/10 -> 10.
+    const context = contextWith({
+      attributes: {
+        stored: { ...FLAT_ATTRIBUTES, str: 16, agi: 16 },
+        base: { ...FLAT_ATTRIBUTES, str: 16, agi: 16 },
+        resolved: FLAT_ATTRIBUTES,
+      },
+    });
+
+    const athleticsAtLeast14 = (
+      layer: "stored" | "base" | "resolved",
+    ): Requirement => ({
+      type: "derivedAttributeMinimum",
+      derivedAttribute: "athletics",
+      layer,
+      minimum: 14,
+    });
+
+    expect(meetsRequirement(athleticsAtLeast14("base"), context)).toBe(true);
+    expect(meetsRequirement(athleticsAtLeast14("resolved"), context)).toBe(
+      false,
+    );
+  });
+
+  /*
+   * The reason this requirement type exists rather than being composed from
+   * attributeMinimum. Combat Ability is the AVERAGE of five Attributes, so a
+   * character can clear it while individual contributors sit well below the
+   * threshold — an `all` of five attributeMinimums is a strictly harder and
+   * genuinely different requirement.
+   */
+  it("is satisfied by the average, not by every contributing Attribute", () => {
+    // Combat Ability = round((STR + AGI + DEX + PER + WIS) / 5)
+    //                = round((18 + 18 + 18 + 6 + 6) / 5) = round(13.2) = 13
+    const lopsided = {
+      ...FLAT_ATTRIBUTES,
+      str: 18,
+      agi: 18,
+      dex: 18,
+      per: 6,
+      wis: 6,
+    };
+
+    const context = contextWith({
+      attributes: {
+        stored: lopsided,
+        base: lopsided,
+        resolved: lopsided,
+      },
+    });
+
+    expect(
+      meetsRequirement(
+        {
+          type: "derivedAttributeMinimum",
+          derivedAttribute: "combatAbility",
+          layer: "base",
+          minimum: 12,
+        },
+        context,
+      ),
+    ).toBe(true);
+
+    // The same character fails the naive composition, which is exactly why
+    // the composition is not a substitute for this requirement.
+    expect(
+      meetsRequirement(
+        {
+          type: "all",
+          requirements: (["str", "agi", "dex", "per", "wis"] as const).map(
+            (attribute) => ({
+              type: "attributeMinimum" as const,
+              attribute,
+              layer: "base" as const,
+              minimum: 12,
+            }),
+          ),
+        },
+        context,
+      ),
+    ).toBe(false);
+  });
+
+  it("treats the minimum as inclusive", () => {
+    // Every Attribute at 10 makes every Derived Attribute exactly 10.
+    expect(
+      meetsRequirement(
+        {
+          type: "derivedAttributeMinimum",
+          derivedAttribute: "willpower",
+          layer: "base",
+          minimum: 10,
+        },
+        contextWith(),
+      ),
+    ).toBe(true);
+
+    expect(
+      meetsRequirement(
+        {
+          type: "derivedAttributeMinimum",
+          derivedAttribute: "willpower",
+          layer: "base",
+          minimum: 11,
+        },
+        contextWith(),
+      ),
+    ).toBe(false);
+  });
+
+  it("gates real content through the resolved character", () => {
+    registerDefinition("skill", {
+      id: "riposte",
+      name: "Riposte",
+      description: "A test Skill gated on Combat Ability.",
+      timings: ["reaction"],
+      maximumMastery: 10,
+      requirements: [
+        {
+          type: "derivedAttributeMinimum",
+          derivedAttribute: "combatAbility",
+          layer: "base",
+          minimum: 14,
+        },
+      ],
+    });
+
+    // Combat Ability from five 10s is 10 — short of 14.
+    const untrained = resolveCharacter(createTestCharacter());
+
+    expect(
+      meetsAllRequirements(
+        getSkillDefinition("riposte")?.requirements ?? [],
+        untrained.requirementContext,
+      ),
+    ).toBe(false);
+
+    // Five 15s average to 15.
+    const veteran = resolveCharacter(
+      createTestCharacter({
+        attributes: { str: 15, agi: 15, dex: 15, per: 15, wis: 15 },
+      }),
+    );
+
+    expect(
+      meetsAllRequirements(
+        getSkillDefinition("riposte")?.requirements ?? [],
+        veteran.requirementContext,
       ),
     ).toBe(true);
   });

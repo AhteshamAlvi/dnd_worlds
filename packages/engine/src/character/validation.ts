@@ -54,7 +54,9 @@ import {
   type ItemValidationIssue,
 } from "./equipment/index";
 
-import { resolveCharacter } from "./resolution";
+import { resolveCharacter, type ResolvedCharacter } from "./resolution";
+
+import { validateDerivedAttributes } from "./foundation/attributes/derived/validation";
 
 import { listDefinitions } from "./catalogs";
 
@@ -390,9 +392,8 @@ function toEngineError(
  */
 function findCharacterReferenceIssues(
   character: Character,
+  resolved: ResolvedCharacter,
 ): readonly CharacterReferenceIssue[] {
-  const resolved = resolveCharacter(character);
-
   return [
     ...findSpeciesValidationIssues(character.species ?? []),
     ...findClanValidationIssues(character.clans ?? []),
@@ -420,6 +421,14 @@ export function validateCharacter(
 ): EngineResult<Character> {
   const errors: EngineError[] = [];
   const warnings: Warning[] = [];
+
+  /*
+   * Resolved once and threaded through everything that needs it. Both the
+   * catalog-reference checks (which judge Requirements against the resolved
+   * character) and the Derived Attribute self-check read from this, and
+   * resolution is the expensive part of validating a character.
+   */
+  const resolved = resolveCharacter(character);
 
   // Lets the UI pin any diagnostic back to the character it came from.
   const subject: DiagnosticSubject = {
@@ -472,7 +481,26 @@ export function validateCharacter(
     }
   }
 
-  const referenceIssues = findCharacterReferenceIssues(character);
+  /*
+   * Derived Attributes are computed rather than authored, so this is a
+   * self-check on the engine's own arithmetic rather than on anything the
+   * player typed — a non-finite Derived Attribute means a contributing
+   * Attribute was non-finite. It reads the resolved character for the same
+   * reason it is calculated there: Derived Attributes follow the Resolved
+   * layer, not the authored one.
+   */
+  const derivedResult = validateDerivedAttributes(resolved.derivedAttributes);
+
+  if (!derivedResult.success) {
+    for (const error of derivedResult.errors) {
+      errors.push({
+        ...error,
+        subject,
+      });
+    }
+  }
+
+  const referenceIssues = findCharacterReferenceIssues(character, resolved);
 
   for (const issue of referenceIssues) {
     errors.push(toEngineError(issue, subject));
@@ -499,7 +527,7 @@ export function validateCharacter(
     output: referenceIssues.length === 0,
   });
 
-  // Nests both sub-validations beneath the character-level checks.
+  // Nests every sub-validation beneath the character-level checks.
   const trace: EngineTrace = {
     root: createTraceNode({
       id: "character.validate",
@@ -509,7 +537,11 @@ export function validateCharacter(
         name: { value: character.details.name },
       },
       output: errors.length === 0,
-      children: [attributesResult.trace.root, referenceTraceNode],
+      children: [
+        attributesResult.trace.root,
+        derivedResult.trace.root,
+        referenceTraceNode,
+      ],
       warnings,
     }),
   };

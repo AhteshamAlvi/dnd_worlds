@@ -82,6 +82,9 @@
  */
 
 import type { AttributeKey } from "../foundation/attributes/types";
+import type {
+  DerivedAttributeName,
+} from "../foundation/attributes/derived/types";
 
 
 /**
@@ -119,6 +122,74 @@ export interface ModifyBaseAttributeEffect {
 export interface ModifyResolvedAttributeEffect {
   readonly type: "modifyResolvedAttribute";
   readonly attribute: AttributeKey;
+  readonly amount: number;
+}
+
+
+/**
+ * What kind of check a situational modifier applies to.
+ *
+ * Two variants, both closed:
+ *
+ *   attribute        → "+3 to applicable AGI checks"
+ *   derivedAttribute → "+2 to Acrobatics checks"
+ *
+ * A free-string "tag" variant was considered and deliberately rejected. The
+ * catalog layer can confirm a traitId names something real because Traits
+ * have a registry; it could never confirm a tag. A typo would validate
+ * clean, resolve clean, appear in the resolved check modifiers, and then
+ * silently match nothing — an authored bonus that quietly does not exist is
+ * the worst failure this content system can produce.
+ *
+ * Every other open vocabulary in this engine is a closed `as const satisfies`
+ * list for the same reason. The one exception, RuleSourceRef.type, is safe
+ * precisely because it only ever labels a source; it never decides whether a
+ * rule applies. A check scope does.
+ *
+ * A third variant is a one-line addition when something needs it — a
+ * sense-scoped modifier would be `{kind: "sense"; sense: DetectionSenseId}`
+ * against an already-closed list. Adding a variant later is easy; removing
+ * an escape hatch that content has started depending on is not.
+ */
+export type CheckScope =
+  | {
+      readonly kind: "attribute";
+      readonly attribute: AttributeKey;
+    }
+  | {
+      readonly kind: "derivedAttribute";
+      readonly derivedAttribute: DerivedAttributeName;
+    };
+
+
+/**
+ * Adds to the modifier of one kind of check, without touching any score.
+ *
+ * This is the third sense of the word "modifier" in this engine, and the
+ * distinction is the whole point of the effect existing:
+ *
+ *   modifyBaseAttribute / modifyResolvedAttribute
+ *   → change the SCORE. Flexible's "+2 AGI" makes the character's AGI 19,
+ *     which changes the AGI standard modifier and every Derived Attribute
+ *     calculated from AGI.
+ *
+ *   modifyCheck
+ *   → change one RESOLUTION. Contort's "+3 to applicable AGI checks" never
+ *     appears on the sheet; AGI stays 19 and its standard modifier stays +4.
+ *     The +3 exists only while an applicable check is being resolved.
+ *
+ * Traits, equipment, Conditions and injuries typically alter scores; Skills
+ * and Techniques typically contribute check modifiers. Neither is enforced —
+ * a Trait granting a check modifier (Keen Eyes, for a specific sense) is
+ * perfectly ordinary content.
+ *
+ * Whether a given check is "applicable" is not decided here. This effect
+ * declares the scope it belongs to; the mechanic resolving a check asks
+ * rules/resolution.ts for the modifiers matching the scope it is resolving.
+ */
+export interface ModifyCheckEffect {
+  readonly type: "modifyCheck";
+  readonly check: CheckScope;
   readonly amount: number;
 }
 
@@ -174,6 +245,7 @@ export interface GrantTechniqueEffect {
 export type Effect =
   | ModifyBaseAttributeEffect
   | ModifyResolvedAttributeEffect
+  | ModifyCheckEffect
   | GrantTraitEffect
   | GrantSkillEffect
   | GrantTechniqueEffect;
@@ -188,6 +260,7 @@ export type Effect =
 export const EFFECT_TYPES = [
   "modifyBaseAttribute",
   "modifyResolvedAttribute",
+  "modifyCheck",
   "grantTrait",
   "grantSkill",
   "grantTechnique",

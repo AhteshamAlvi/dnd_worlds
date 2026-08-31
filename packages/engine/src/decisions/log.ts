@@ -39,6 +39,15 @@ export const ENGINE_DECISIONS = {
             file: "03 Aura Engine/Aura Density and Concentration.md",
         },
     },
+    "attributes.derived.rounding-direction": {
+        id: "attributes.derived.rounding-direction",
+        question:
+            "Derived Attributes are the mean of two to five Attributes, so a half-point tie is common (PER 16 + WIS 13 averages 14.5). The Rulebook says to round to the nearest whole number but does not say which way a tie goes.",
+        chosen:
+            "Ties round upward, toward positive infinity — 14.5 becomes 15, and -14.5 becomes -14. This is JavaScript's Math.round, used directly rather than wrapped.",
+        rationale:
+            "Rounding half up is the ordinary tabletop reading of 'round to the nearest whole number' and favors the character, which is the right default for a value they are rolling with. It is worth recording because it is asymmetric across zero: a Derived Attribute CAN go negative once Conditions and injuries push the contributing Attributes below the stored 1-30 range, and at that point 'up' means 'smaller in magnitude' rather than 'better'. A GM comparing two heavily-penalized characters should know the tie-break is directional, not magnitude-based.",
+    },
     "injury.overlap.recovery-progress-default": {
         id: "injury.overlap.recovery-progress-default",
         question:

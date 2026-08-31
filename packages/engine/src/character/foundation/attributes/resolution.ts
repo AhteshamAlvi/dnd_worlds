@@ -17,6 +17,11 @@
  * Provenance rides along on the modifiers themselves (see
  * rules/resolution.ts's SourcedAttributeModifier, which is structurally an
  * AttributeModifier), so explaining a score costs nothing extra.
+ *
+ * This file also owns the standard modifier ladder — the ±N a score converts
+ * to when something rolls against it. See deriveStandardModifier below, and
+ * modifiers.ts's header for why that is a different thing from an
+ * AttributeModifier despite both being called "modifier".
  */
 
 import { createTraceNode, type TraceNode } from "../../../infrastructure/trace";
@@ -29,6 +34,7 @@ import type {
   Attributes,
   BaseAttributes,
   ResolvedAttributes,
+  ResolvedScore,
   StoredAttributes,
 } from "./types";
 
@@ -76,6 +82,71 @@ export function resolveAttributeLayers(
     base,
     resolved: deriveResolvedAttributes(base, resolvedModifiers),
   };
+}
+
+/* ── The standard modifier ladder ───────────────────────────────────────── */
+
+/*
+ * The score a modifier of +0 sits at, and how many points of score buy one
+ * point of modifier.
+ *
+ * Kept as named constants beside the function that uses them, matching
+ * REFERENCE_CONSTITUTION/CONSTITUTION_DOUBLING_INTERVAL in
+ * body-points/resolution.ts and VIT_RECOVERY_REFERENCE in
+ * mechanics/recovery/resolution.ts.
+ */
+export const STANDARD_MODIFIER_REFERENCE_SCORE = 10;
+export const STANDARD_MODIFIER_DIVISOR = 2;
+
+/**
+ * The ±N a score contributes when something rolls against it.
+ *
+ * Formula:
+ *
+ *   floor((score - 10) / 2)
+ *
+ *    8-9  → -1
+ *   10-11 → +0
+ *   12-13 → +1
+ *   ...
+ *   30    → +10
+ *
+ * This is the single authoritative implementation. It takes a plain number
+ * rather than an AttributeKey or a Derived Attribute name precisely so that
+ * an Attribute score and a Derived Attribute score go through the same
+ * ladder — the Rulebook does not give them separate tables, and neither
+ * should the engine.
+ *
+ * Not clamped at either end: a Resolved score may legitimately sit outside
+ * the 1-30 stored range (see base.ts), and reporting the real modifier for a
+ * heavily penalized score is more honest than flattening it.
+ */
+export function deriveStandardModifier(score: number): number {
+  return Math.floor(
+    (score - STANDARD_MODIFIER_REFERENCE_SCORE) / STANDARD_MODIFIER_DIVISOR,
+  );
+}
+
+/**
+ * Every resolved Attribute paired with its standard modifier.
+ *
+ * The form a sheet reads: `attributeScores.agi` is `{score: 19,
+ * standardModifier: 4}`, the same shape resolveDerivedScores produces for
+ * Acrobatics — see ResolvedScore in types.ts.
+ */
+export function resolveAttributeScores(
+  resolved: ResolvedAttributes,
+): Readonly<Record<AttributeKey, ResolvedScore>> {
+  const scores = {} as Record<AttributeKey, ResolvedScore>;
+
+  for (const key of ATTRIBUTE_KEYS) {
+    scores[key] = {
+      score: resolved[key],
+      standardModifier: deriveStandardModifier(resolved[key]),
+    };
+  }
+
+  return scores;
 }
 
 /* ── Explaining a score ─────────────────────────────────────────────────── */

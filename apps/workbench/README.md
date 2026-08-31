@@ -11,7 +11,7 @@ a debugger or launching Foundry.
 
 ## Running it
 
-From `nenworld/` (the workspace root, not this folder):
+From the repo root (the workspace root, not this folder):
 
 ```bash
 npm run dev -w @nenworld/workbench

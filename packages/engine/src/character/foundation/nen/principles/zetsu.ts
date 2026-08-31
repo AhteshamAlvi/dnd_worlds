@@ -49,9 +49,8 @@
  *
  * Zetsu suppresses the supernatural presence produced by Aura and Life Force.
  *
- * It therefore contributes specifically to the generic Detection subsystem's:
- *
- *   aura.concealmentModifier
+ * It therefore contributes a situational bonus to Concealment against aura
+ * detection specifically — not to the character's Concealment score itself.
  *
  * Mastery progression:
  *
@@ -68,14 +67,17 @@
  *
  * Zetsu does not create a special Detection check.
  *
- * Aura Concealment still uses the universal formula:
+ * Aura Concealment is the ordinary Concealment Derived Attribute — round((DEX
+ * + WIS) / 2), converted to a standard modifier the same way every other
+ * score is — with Zetsu's Mastery-based value layered on top as a situational
+ * modifier, the same shape a Trait's modifyCheck Effect produces. See
+ * rules/resolution.ts's resolveCheckModifier for where the two are added.
  *
- *   d20
- *   + DEX modifier
- *   + WIS modifier
- *   + Aura Concealment modifier
- *
- * Zetsu contributes only its Mastery-based Aura Concealment modifier.
+ * The value is derived from Mastery rather than authored as an Effect, so it
+ * is not currently wired through the Effect pipeline; a caller resolving an
+ * aura-concealment check supplies it alongside whatever check modifiers the
+ * character's content contributed. Formalizing that connection waits on the
+ * Detection/Concealment mechanics being rebuilt.
  *
  * Zetsu does NOT conceal ordinary physical presence through:
  *
@@ -607,13 +609,12 @@ export function resolveZetsuReplenishment(
 /**
  * Return Zetsu's sense-specific Aura Concealment modifier.
  *
- * This value is contributed to:
+ * A situational modifier, in the same sense as a modifyCheck Effect: it is
+ * added when an aura-concealment check is resolved, and never becomes part of
+ * the character's Concealment score.
  *
- *   resolvedDetectionProfile.aura.concealmentModifier
- *
- * by the character's effect-resolution layer.
- *
- * It does not include DEX or WIS.
+ * It does not include DEX or WIS — those reach the check through the
+ * Concealment Derived Attribute's own standard modifier.
  *
  * Zetsu contributes nothing to Sight, Hearing, Smell, Taste, or Touch
  * Concealment.

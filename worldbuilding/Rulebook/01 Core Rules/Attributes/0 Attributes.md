@@ -15,7 +15,7 @@ The ten attributes and the shared modifier scale. Each attribute owns **one** re
 | **WIS** | [[Wisdom]]       | **Understanding**: Nen theory, Contracts, Hatsu, advanced principles, rituals; recognizing implications; interpreting what's observed, understanding politics and interpersonal games of wit |
 | **PER** | [[Perception]]   | **Noticing**: detecting aura and [[In]], reading opponents and aura shifts, traps, hidden foes, environmental awareness, **Initiative**                                                      |
 | **CHA** | [[Charisma]]     | Social force, presence, leadership, deception, performance, **Composure** (resisting fear/provocation/pain)                                                                                  |
-| **SPI** | [[Spirit]]       | Innate Nen **talent** ([[Nen Manifestation]]); also **Luck**, **Willpower**, **death saves**, and **Spirit saves** (resisting Nen-on-the-soul)                                               |
+| **SPI** | [[Spirit]]       | Innate Nen **talent** ([[Nen Manifestation]]); also **Luck**, **death saves**, and **Spirit saves** (resisting Nen-on-the-soul)                                                              |
 
 ## The modifier ladder (scores 1–30)
 

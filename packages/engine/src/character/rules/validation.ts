@@ -53,6 +53,7 @@ export const MAX_REQUIREMENT_DEPTH = 32;
  */
 export type RuleValidationIssue =
   | InvalidEffectAmountIssue
+  | InvalidCheckScopeIssue
   | MissingEffectReferenceIssue
   | InvalidRequirementNumberIssue
   | InvalidRequirementMasteryIssue
@@ -66,8 +67,24 @@ export interface InvalidEffectAmountIssue {
   readonly path: string;
   readonly effectType:
     | "modifyBaseAttribute"
-    | "modifyResolvedAttribute";
+    | "modifyResolvedAttribute"
+    | "modifyCheck";
   readonly amount: number;
+}
+
+
+/**
+ * A modifyCheck Effect whose scope does not name anything.
+ *
+ * The scope's `kind` is a closed union so a wrong kind cannot compile, but an
+ * empty or whitespace attribute/Derived Attribute name can still arrive from
+ * hand-edited or machine-generated JSON — and a check modifier scoped to
+ * nothing would silently never apply.
+ */
+export interface InvalidCheckScopeIssue {
+  readonly type: "invalid-check-scope";
+  readonly path: string;
+  readonly kind: "attribute" | "derivedAttribute";
 }
 
 
@@ -90,6 +107,7 @@ export interface InvalidRequirementNumberIssue {
   readonly path: string;
   readonly requirementType:
     | "attributeMinimum"
+    | "derivedAttributeMinimum"
     | "levelMinimum";
   readonly field:
     | "minimum";
@@ -208,6 +226,33 @@ export function findEffectValidationIssues(
     }
 
 
+    case "modifyCheck": {
+      if (!isFiniteNumber(effect.amount)) {
+        issues.push({
+          type: "invalid-effect-amount",
+          path: `${path}.amount`,
+          effectType: effect.type,
+          amount: effect.amount,
+        });
+      }
+
+      const scopeName =
+        effect.check.kind === "attribute"
+          ? effect.check.attribute
+          : effect.check.derivedAttribute;
+
+      if (!isNonEmptyId(scopeName)) {
+        issues.push({
+          type: "invalid-check-scope",
+          path: `${path}.check`,
+          kind: effect.check.kind,
+        });
+      }
+
+      break;
+    }
+
+
     case "grantTrait": {
       if (!isNonEmptyId(effect.traitId)) {
         issues.push({
@@ -307,7 +352,8 @@ function findRequirementIssuesInternal(
 
 
   switch (requirement.type) {
-    case "attributeMinimum": {
+    case "attributeMinimum":
+    case "derivedAttributeMinimum": {
       if (!isFiniteNumber(requirement.minimum)) {
         issues.push({
           type: "invalid-requirement-number",

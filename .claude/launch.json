@@ -6,7 +6,7 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",
-        "cd nenworld && npm run dev --workspace @nenworld/workbench"
+        "npm run dev --workspace @nenworld/workbench"
       ],
       "port": 5180
     }

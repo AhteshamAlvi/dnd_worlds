@@ -59,3 +59,27 @@ export interface AttributeLayers {
   readonly base: BaseAttributes;
   readonly resolved: ResolvedAttributes;
 }
+
+
+/**
+ * One score together with the standard modifier derived from it.
+ *
+ * The shape a sheet renders, and deliberately the SAME shape for an
+ * Attribute and for a Derived Attribute: AGI and Acrobatics differ in where
+ * their number came from, not in how they are displayed or rolled, so a sheet
+ * should not need two code paths to show them side by side.
+ *
+ * `score` is the resolved score — Resolved for an Attribute, the calculated
+ * value for a Derived Attribute. `standardModifier` is
+ * deriveStandardModifier(score); see attributes/resolution.ts for the one
+ * implementation of that ladder.
+ *
+ * Situational modifiers are deliberately absent. A Skill's "+3 to applicable
+ * AGI checks" is not part of the character's AGI — it exists only for the
+ * check it applies to, and is added by rules/resolution.ts's
+ * resolveCheckModifier at that moment.
+ */
+export interface ResolvedScore {
+  readonly score: number;
+  readonly standardModifier: number;
+}

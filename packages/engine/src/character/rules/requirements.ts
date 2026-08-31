@@ -51,6 +51,9 @@
  */
 
 import type { AttributeKey } from "../foundation/attributes/types";
+import type {
+  DerivedAttributeName,
+} from "../foundation/attributes/derived/types";
 
 
 /**
@@ -81,6 +84,36 @@ export type AttributeRequirementLayer =
 export interface AttributeMinimumRequirement {
   readonly type: "attributeMinimum";
   readonly attribute: AttributeKey;
+  readonly layer: AttributeRequirementLayer;
+  readonly minimum: number;
+}
+
+
+/**
+ * Requires a Derived Attribute to meet or exceed a particular value.
+ *
+ * Example:
+ *
+ *   Combat Ability, base, 12
+ *
+ * The Derived Attribute is calculated from the requested Attribute layer at
+ * the moment the requirement is checked, rather than read from stored state —
+ * Derived Attributes are never stored (see
+ * foundation/attributes/derived/types.ts).
+ *
+ * `layer` exists here for the same reason it exists on
+ * AttributeMinimumRequirement, and matters more: a permanent acquisition
+ * requirement should normally check `base`, so that a temporary Condition
+ * lowering AGI does not revoke a capability the character trained for.
+ *
+ * This requirement is worth having rather than composing an `all` of
+ * AttributeMinimumRequirements, because they mean different things. Combat
+ * Ability 12 is an average of five Attributes; requiring each of those five
+ * to individually reach 12 is a far stricter and quite separate condition.
+ */
+export interface DerivedAttributeMinimumRequirement {
+  readonly type: "derivedAttributeMinimum";
+  readonly derivedAttribute: DerivedAttributeName;
   readonly layer: AttributeRequirementLayer;
   readonly minimum: number;
 }
@@ -288,6 +321,7 @@ export interface NotRequirement {
  */
 export type Requirement =
   | AttributeMinimumRequirement
+  | DerivedAttributeMinimumRequirement
   | LevelMinimumRequirement
   | HasSpeciesRequirement
   | HasSubspeciesRequirement
@@ -312,6 +346,7 @@ export type Requirement =
  */
 export const REQUIREMENT_TYPES = [
   "attributeMinimum",
+  "derivedAttributeMinimum",
   "levelMinimum",
   "hasSpecies",
   "hasSubspecies",

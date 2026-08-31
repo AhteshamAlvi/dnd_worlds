@@ -169,6 +169,10 @@ export type {
   StoredAttributes,
   BaseAttributes,
   ResolvedAttributes,
+
+  // One score plus its standard modifier — the shape a sheet renders, shared
+  // by ordinary Attributes and Derived Attributes alike.
+  ResolvedScore,
 } from "./character/foundation/attributes/types";
 
 export {
@@ -195,9 +199,69 @@ export {
   explainAttribute,
   createAttributeTraceNode,
   createAttributeResolutionTrace,
+
+  /*
+   * The standard modifier ladder: floor((score - 10) / 2).
+   *
+   * One implementation for every score in the system — an Attribute's
+   * Resolved value and a Derived Attribute both go through this, because the
+   * Rulebook gives them one table, not two.
+   */
+  STANDARD_MODIFIER_REFERENCE_SCORE,
+  STANDARD_MODIFIER_DIVISOR,
+  deriveStandardModifier,
+  resolveAttributeScores,
 } from "./character/foundation/attributes/resolution";
 
 export { validateAttributes } from "./character/foundation/attributes/validation";
+
+/* ── Character: derived attributes ──────────────────────────────────────── */
+
+/*
+ * The ten values calculated from a character's resolved Attributes.
+ *
+ * Nothing modifies these directly: a Trait raises AGI, and Acrobatics follows
+ * because it is recalculated from AGI. Situational bonuses to a Derived
+ * Attribute check are modifyCheck Effects, applied at check time rather than
+ * folded into the score.
+ */
+
+export type {
+  DerivedAttributes,
+  DerivedAttributeName,
+} from "./character/foundation/attributes/derived/types";
+
+export { DERIVED_ATTRIBUTE_NAMES } from "./character/foundation/attributes/derived/types";
+
+export type {
+  DerivedAttributeContribution,
+  DerivedAttributeExplanation,
+} from "./character/foundation/attributes/derived/resolution";
+
+export {
+  DERIVED_ATTRIBUTE_SOURCES,
+  resolveDerivedAttribute,
+  resolveCombatAbility,
+  resolveAthletics,
+  resolveAcrobatics,
+  resolveAccuracy,
+  resolveDetection,
+  resolveConcealment,
+  resolveInvestigation,
+  resolveStamina,
+  resolveWillpower,
+  resolveIntimidation,
+  resolveDerivedAttributes,
+  resolveDerivedScores,
+  explainDerivedAttribute,
+  createDerivedAttributeTraceNode,
+  createDerivedAttributeResolutionTrace,
+} from "./character/foundation/attributes/derived/resolution";
+
+export {
+  validateDerivedAttributeValue,
+  validateDerivedAttributes,
+} from "./character/foundation/attributes/derived/validation";
 
 export type { Body, BodyBuild } from "./character/foundation/body/types";
 
@@ -349,6 +413,11 @@ export type {
   EffectType,
   ModifyBaseAttributeEffect,
   ModifyResolvedAttributeEffect,
+
+  // A situational bonus to one kind of check, which never touches a score.
+  CheckScope,
+  ModifyCheckEffect,
+
   GrantTraitEffect,
   GrantSkillEffect,
   GrantTechniqueEffect,
@@ -361,6 +430,7 @@ export type {
   RequirementType,
   AttributeRequirementLayer,
   AttributeMinimumRequirement,
+  DerivedAttributeMinimumRequirement,
   LevelMinimumRequirement,
   HasSpeciesRequirement,
   HasSubspeciesRequirement,
@@ -393,6 +463,8 @@ export type {
   RuleEffectSource,
   SourcedEffect,
   SourcedAttributeModifier,
+  SourcedCheckModifier,
+  CheckModifierResolution,
   TraitGrant,
   SkillGrant,
   TechniqueGrant,
@@ -407,6 +479,16 @@ export {
   resolveRuleEffects,
   meetsRequirement,
   meetsAllRequirements,
+
+  /*
+   * The one place a standard modifier and the situational modifiers that
+   * apply to a check are added together. Every mechanic resolving a check
+   * comes through here rather than summing modifiers its own way.
+   */
+  isSameCheckScope,
+  collectApplicableCheckModifiers,
+  resolveCheckModifier,
+  createCheckModifierTraceNode,
 } from "./character/rules/resolution";
 
 export type { RuleValidationIssue } from "./character/rules/validation";
