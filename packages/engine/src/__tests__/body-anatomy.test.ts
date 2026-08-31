@@ -16,6 +16,7 @@ import {
   reattachBodyPart,
   removeBodyPart,
   replaceBodyPart,
+  setBodyPartState,
 } from "../character/foundation/body/anatomy/modification";
 import type { AnatomyModification } from "../character/foundation/body/anatomy/modification";
 import { createAnatomy, createBodyPart } from "../character/foundation/body/anatomy/creation";
@@ -29,7 +30,10 @@ import {
   getBodyPartParent,
   resolveAnatomy,
 } from "../character/foundation/body/anatomy/resolution";
-import { validateAnatomy } from "../character/foundation/body/anatomy/validation";
+import {
+  validateAnatomy,
+  validateBodyPartDefinition,
+} from "../character/foundation/body/anatomy/validation";
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
 import type {
   Anatomy,
@@ -73,6 +77,7 @@ describe("createBodyPart / createAnatomy", () => {
       type: "torso",
       name: "Torso",
       attachment: null,
+      state: "active",
       damage: 0,
       recoveryProgress: 0,
     });
@@ -136,8 +141,8 @@ describe("addBodyPart / removeBodyPart / replaceBodyPart / reattachBodyPart", ()
   it("a replacement starts with zero damage even if the original was damaged", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
-        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1" }, damage: 7, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, state: "active", damage: 7, recoveryProgress: 0 },
       ],
     };
 
@@ -314,8 +319,8 @@ describe("Anatomy validation", () => {
   it("accepts multiple anatomical roots", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
-        { id: "b", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "b", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
       ],
     };
 
@@ -325,8 +330,8 @@ describe("Anatomy validation", () => {
   it("rejects a duplicate BodyPart id", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
-        { id: "a", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
       ],
     };
 
@@ -337,7 +342,7 @@ describe("Anatomy validation", () => {
 
   it("rejects a missing parent", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost" }, damage: 0, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -347,7 +352,7 @@ describe("Anatomy validation", () => {
 
   it("rejects self-parenting", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "a" }, damage: 0, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -358,8 +363,8 @@ describe("Anatomy validation", () => {
   it("rejects an attachment cycle", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: { parentId: "b" }, damage: 0, recoveryProgress: 0 },
-        { id: "b", type: "torso", attachment: { parentId: "a" }, damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: { parentId: "b", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "b", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 },
       ],
     };
 
@@ -370,7 +375,7 @@ describe("Anatomy validation", () => {
 
   it("rejects an unknown BodyPart type", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "wing", attachment: null, damage: 0, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "wing", attachment: null, state: "active", damage: 0, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -380,11 +385,187 @@ describe("Anatomy validation", () => {
 
   it("rejects negative stored damage", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: null, damage: -1, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: null, state: "active", damage: -1, recoveryProgress: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
     expect(result.valid).toBe(false);
     expect(result.issues.some((i) => i.code === "invalid-damage")).toBe(true);
+  });
+});
+
+
+/*
+ * The schema the Height model needs: a presence state on every instance, and
+ * connection coordinates on both ends of every attachment. Both were skipped
+ * in earlier phases and land here, because Measurements is the first subsystem
+ * that cannot work without them.
+ */
+describe("physical presence state and connection geometry", () => {
+  it("creates anatomy active, with the ordinary distal-to-proximal geometry", () => {
+    const part = createBodyPart({
+      id: "hand-1",
+      type: "limb",
+      attachment: { parentId: "limb-1" },
+    });
+
+    expect(part.state).toBe("active");
+    expect(part.attachment).toEqual({
+      parentId: "limb-1",
+      parentPosition: 1,
+      childPosition: 0,
+    });
+  });
+
+  it("keeps authored coordinates rather than defaulting over them", () => {
+    const part = createBodyPart({
+      id: "leg-1",
+      type: "limb",
+      attachment: {
+        parentId: "torso-1",
+        site: "hip",
+        parentPosition: 0,
+        childPosition: 0,
+      },
+    });
+
+    expect(part.attachment).toEqual({
+      parentId: "torso-1",
+      site: "hip",
+      parentPosition: 0,
+      childPosition: 0,
+    });
+  });
+
+  /*
+   * Presence state is instance state, and setting it must never touch anything
+   * else — least of all the Reference Form, which is what keeps amputation from
+   * cancelling itself out of the Strength normalization.
+   */
+  it("changes only the targeted part's state", () => {
+    const anatomy = createAnatomy([
+      { id: "torso-1", type: "torso", attachment: null },
+      { id: "limb-1", type: "limb", attachment: { parentId: "torso-1" } },
+    ]);
+
+    const severed = setBodyPartState(anatomy, "limb-1", "archived-removed");
+
+    expect(severed.parts.map((p) => p.state)).toEqual([
+      "active",
+      "archived-removed",
+    ]);
+
+    expect(severed.parts[1]).toEqual({
+      ...anatomy.parts[1],
+      state: "archived-removed",
+    });
+  });
+
+  it("leaves an unknown part id alone", () => {
+    const anatomy = createAnatomy([
+      { id: "torso-1", type: "torso", attachment: null },
+    ]);
+
+    expect(setBodyPartState(anatomy, "ghost", "suppressed")).toEqual(anatomy);
+  });
+
+  /*
+   * Pre-refactor Body JSON has no coordinates at all. It must fail loudly here
+   * rather than silently acquire a body plan nobody authored — there is no
+   * migration layer, deliberately.
+   */
+  it("rejects an attachment missing its coordinates", () => {
+    const anatomy = {
+      parts: [
+        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        {
+          id: "limb-1",
+          type: "limb",
+          attachment: { parentId: "torso-1" },
+          state: "active",
+          damage: 0,
+          recoveryProgress: 0,
+        },
+      ],
+    } as unknown as Anatomy;
+
+    const result = validateAnatomy(anatomy, DEFINITIONS);
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.filter((i) => i.code === "invalid-attachment-position"),
+    ).toHaveLength(2);
+  });
+
+  it("rejects a coordinate off the end of the part it sits on", () => {
+    const anatomy = {
+      parts: [
+        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        {
+          id: "limb-1",
+          type: "limb",
+          attachment: { parentId: "torso-1", parentPosition: 1.5, childPosition: 0 },
+          state: "active",
+          damage: 0,
+          recoveryProgress: 0,
+        },
+      ],
+    } as unknown as Anatomy;
+
+    const result = validateAnatomy(anatomy, DEFINITIONS);
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some((i) => i.code === "invalid-attachment-position"),
+    ).toBe(true);
+  });
+
+  it("rejects an unknown presence state", () => {
+    const anatomy = {
+      parts: [
+        { id: "torso-1", type: "torso", attachment: null, state: "gone", damage: 0, recoveryProgress: 0 },
+      ],
+    } as unknown as Anatomy;
+
+    const result = validateAnatomy(anatomy, DEFINITIONS);
+
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === "invalid-body-part-state")).toBe(
+      true,
+    );
+  });
+
+  /*
+   * heightContribution is a fraction of the part's own Length, so it cannot
+   * exceed 1 — a part cannot be taller than it is long. Inversion is
+   * heightAxisSign's job; letting either field express it makes the pair
+   * ambiguous.
+   */
+  it("rejects a height contribution outside [0, 1]", () => {
+    const definition = {
+      ...DEFINITIONS[0]!,
+      reference: { ...DEFINITIONS[0]!.reference, heightContribution: 1.4 },
+    };
+
+    const result = validateBodyPartDefinition(definition);
+
+    expect(result.valid).toBe(false);
+    expect(
+      result.issues.some((i) => i.code === "invalid-height-contribution"),
+    ).toBe(true);
+  });
+
+  it("rejects a height axis sign that is not exactly 1 or -1", () => {
+    const definition = {
+      ...DEFINITIONS[0]!,
+      reference: { ...DEFINITIONS[0]!.reference, heightAxisSign: 0 },
+    } as unknown as BodyPartDefinition;
+
+    const result = validateBodyPartDefinition(definition);
+
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === "invalid-height-axis-sign")).toBe(
+      true,
+    );
   });
 });

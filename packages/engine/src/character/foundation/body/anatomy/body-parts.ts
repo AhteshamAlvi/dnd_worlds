@@ -24,8 +24,17 @@
  *   Size                                60.00 L
  *   Mass                                62.00 kg
  *   Structural Capacity                    100
- *   Height (weighted vertical path)     165 cm
+ *   Height (signed vertical span)       165 cm
  *   Sum(refSC x muscularityStructural)   76.30
+ *
+ * The Height figure is a signed vertical span, not a sum of contributions.
+ * Each part's `heightAxisSign` says which way its own 0..1 axis travels, and
+ * the connection coordinates authored in standard-humanoid.ts place the parts
+ * relative to one another; Height is then the total vertical extent of the
+ * result. That distinction is load-bearing. Under an unsigned longest-path
+ * rule the two Legs chain through the pelvis into each other and a Human
+ * measures 176 cm; with signs, crossing the pelvis into the opposite Leg
+ * returns to the same lower coordinate rather than adding another 88 cm.
  *
  * body-reference-standard.test.ts asserts all five directly against this
  * table, so a typo here fails immediately rather than surfacing later as a
@@ -59,6 +68,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 8,
       intrinsicPhysicalForce: 1,
       heightContribution: 1.0,
+      /* 0 = inferior, 1 = superior. */
+      heightAxisSign: 1,
     },
     sensitivity: {
       bulkSize: 0.15,
@@ -88,6 +99,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 2,
       intrinsicPhysicalForce: 1,
       heightContribution: 1.0,
+      /* 0 = inferior, 1 = superior. */
+      heightAxisSign: 1,
     },
     sensitivity: {
       bulkSize: 0.6,
@@ -117,6 +130,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 10,
       intrinsicPhysicalForce: 1,
       heightContribution: 1.0,
+      /* 0 = inferior, 1 = superior. */
+      heightAxisSign: 1,
     },
     sensitivity: {
       bulkSize: 0.85,
@@ -146,6 +161,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 4,
       intrinsicPhysicalForce: 1,
       heightContribution: 1.0,
+      /* 0 = pelvis/inferior, 1 = superior. */
+      heightAxisSign: 1,
     },
     sensitivity: {
       bulkSize: 0.9,
@@ -175,6 +192,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 14,
       intrinsicPhysicalForce: 1,
       heightContribution: 0,
+      /* 0 = shoulder, 1 = wrist. Inert: contributes no Height. */
+      heightAxisSign: 1,
     },
     sensitivity: {
       bulkSize: 1.0,
@@ -204,6 +223,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 4,
       intrinsicPhysicalForce: 1,
       heightContribution: 0,
+      /* 0 = wrist, 1 = fingertips. Inert: contributes no Height. */
+      heightAxisSign: 1,
     },
     sensitivity: {
       bulkSize: 0.5,
@@ -233,6 +254,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 16,
       intrinsicPhysicalForce: 1,
       heightContribution: 1.0,
+      /* 0 = hip, 1 = ankle, so its axis runs downward. */
+      heightAxisSign: -1,
     },
     sensitivity: {
       bulkSize: 1.0,
@@ -262,6 +285,8 @@ export const BODY_PART_DEFINITIONS = {
       structuralCapacity: 4,
       intrinsicPhysicalForce: 1,
       heightContribution: 0.28,
+      /* 0 = ankle, 1 = toe, so its axis runs downward. */
+      heightAxisSign: -1,
     },
     sensitivity: {
       bulkSize: 0.45,

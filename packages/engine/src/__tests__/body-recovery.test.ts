@@ -60,7 +60,7 @@ function bodyWithParts(anatomy: Anatomy): Body {
 
 function singleTorso(damage: number, recoveryProgress = 0): Body {
   return bodyWithParts({
-    parts: [{ id: "torso-1", type: "torso", attachment: null, damage, recoveryProgress }],
+    parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage, recoveryProgress }],
   });
 }
 
@@ -189,7 +189,7 @@ describe("applyBodyPartRecovery — the primitive", () => {
 describe("new damage preserves recoveryProgress", () => {
   it("applyBodyPartDamage only changes damage, never recoveryProgress", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, damage: 2, recoveryProgress: 0.4 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 2, recoveryProgress: 0.4 }],
     };
 
     const damaged = applyBodyPartDamage(anatomy, "torso-1", 3);
@@ -227,8 +227,8 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
   it("only processes damaged BodyParts, leaving healthy ones untouched", () => {
     const body = bodyWithParts({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, damage: 10, recoveryProgress: 0 },
-        { id: "torso-2", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 10, recoveryProgress: 0 },
+        { id: "torso-2", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
       ],
     });
 

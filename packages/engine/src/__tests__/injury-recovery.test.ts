@@ -77,7 +77,7 @@ function bodyWithParts(anatomy: Anatomy): Body {
 function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecoveryInput {
   return {
     body: bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, damage: 15, recoveryProgress: 0 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 15, recoveryProgress: 0 }],
     }),
     constitution: REFERENCE_CONSTITUTION,
     bodyPartDefinitions: DEFINITIONS,
@@ -284,7 +284,7 @@ describe("caps restrict restoration only", () => {
 
     // Current BP already 15 (damage 5), well above the cap's ceiling of 6.
     const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, damage: 5, recoveryProgress: 0 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 5, recoveryProgress: 0 }],
     });
 
     const outcome = resolveRecovery(baseInput({ body, injuries }));
@@ -308,7 +308,7 @@ describe("Injury removal", () => {
     ];
 
     const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, damage: 1, recoveryProgress: 0 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 1, recoveryProgress: 0 }],
     });
 
     const outcome = resolveRecovery(baseInput({ body, injuries }));
@@ -338,8 +338,8 @@ describe("Injury removal", () => {
     // torso-1 will fully heal this pass (damage 1); limb-1 will not (damage 15).
     const body = bodyWithParts({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, damage: 1, recoveryProgress: 0 },
-        { id: "limb-1", type: "limb", attachment: null, damage: 15, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 1, recoveryProgress: 0 },
+        { id: "limb-1", type: "limb", attachment: null, state: "active", damage: 15, recoveryProgress: 0 },
       ],
     });
 
@@ -367,7 +367,7 @@ describe("Injury removal", () => {
 describe("overlapping Injuries", () => {
   it("flags a new Injury landing on a BodyPart that already carries one, preserving progress by default", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, damage: 3, recoveryProgress: 0.42 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 3, recoveryProgress: 0.42 }],
     };
 
     const existing: readonly CharacterInjury[] = [
@@ -397,8 +397,8 @@ describe("overlapping Injuries", () => {
   it("does not flag Injuries on different BodyParts", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, damage: 0, recoveryProgress: 0 },
-        { id: "limb-1", type: "limb", attachment: null, damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "limb-1", type: "limb", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
       ],
     };
 

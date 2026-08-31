@@ -21,6 +21,7 @@
  * Body Point damage-resolution pipeline.
  */
 
+import { BODY_PART_STATES } from "./types";
 import type {
   Anatomy,
   BodyPart,
@@ -42,6 +43,8 @@ export type AnatomyValidationIssueCode =
   | "duplicate-body-part-tag"
   | "invalid-body-part-tag"
   | "invalid-morphology-sensitivity"
+  | "invalid-height-contribution"
+  | "invalid-height-axis-sign"
   | "duplicate-body-part-id"
   | "invalid-body-part-id"
   | "unknown-body-part-type"
@@ -52,6 +55,8 @@ export type AnatomyValidationIssueCode =
   | "missing-parent"
   | "self-parent"
   | "invalid-attachment-site"
+  | "invalid-attachment-position"
+  | "invalid-body-part-state"
   | "attachment-cycle";
 
 
@@ -121,6 +126,24 @@ function isValidSensitivity(
   return (
     Number.isFinite(value) &&
     value >= 0
+  );
+}
+
+
+/*
+ * Returns true when a longitudinal connection coordinate is usable.
+ *
+ * Coordinates are normalized positions along a BodyPart's own axis, so they
+ * are bounded at both ends. A value outside [0, 1] would place a joint off the
+ * end of the part it is supposed to sit on.
+ */
+function isValidAttachmentPosition(
+  value: number,
+): boolean {
+  return (
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1
   );
 }
 
@@ -234,6 +257,40 @@ export function validateBodyPartDefinition(
       code: "invalid-morphology-sensitivity",
       message:
         `BodyPartDefinition "${definition.id}" has invalid adiposity sensitivity.`,
+      definitionId: definition.id,
+    });
+  }
+
+  const reference = definition.reference;
+
+  /*
+   * heightContribution is a fraction of the part's own Length, so it cannot
+   * exceed 1: a part cannot be taller than it is long. Negative values are
+   * rejected here rather than reinterpreted as an inverted axis — inversion is
+   * heightAxisSign's job, and letting either field express it would make the
+   * pair ambiguous.
+   */
+  if (
+    !Number.isFinite(reference.heightContribution) ||
+    reference.heightContribution < 0 ||
+    reference.heightContribution > 1
+  ) {
+    issues.push({
+      code: "invalid-height-contribution",
+      message:
+        `BodyPartDefinition "${definition.id}" must have a height contribution within [0, 1].`,
+      definitionId: definition.id,
+    });
+  }
+
+  if (
+    reference.heightAxisSign !== 1 &&
+    reference.heightAxisSign !== -1
+  ) {
+    issues.push({
+      code: "invalid-height-axis-sign",
+      message:
+        `BodyPartDefinition "${definition.id}" must have a height axis sign of exactly 1 or -1.`,
       definitionId: definition.id,
     });
   }
@@ -359,17 +416,53 @@ function validateBodyPartState(
     });
   }
 
-  if (
-    part.attachment !== null &&
-    part.attachment.site !== undefined &&
-    !isValidIdentifier(part.attachment.site)
-  ) {
+  if (!BODY_PART_STATES.includes(part.state)) {
     issues.push({
-      code: "invalid-attachment-site",
+      code: "invalid-body-part-state",
       message:
-        `BodyPart "${part.id}" has an empty attachment-site identifier.`,
+        `BodyPart "${part.id}" has unknown physical state "${String(part.state)}".`,
       partId: part.id,
     });
+  }
+
+  if (part.attachment !== null) {
+    if (
+      part.attachment.site !== undefined &&
+      !isValidIdentifier(part.attachment.site)
+    ) {
+      issues.push({
+        code: "invalid-attachment-site",
+        message:
+          `BodyPart "${part.id}" has an empty attachment-site identifier.`,
+        partId: part.id,
+      });
+    }
+
+    /*
+     * Both connection coordinates are required and must land on the 0..1
+     * longitudinal axis they index into. This is deliberately strict rather
+     * than defaulted: pre-refactor Body JSON has no coordinates at all, and it
+     * should fail loudly here instead of silently acquiring a body plan nobody
+     * authored. The creation helpers supply defaults for anatomy being built
+     * from a spec; stored anatomy is always explicit.
+     */
+    if (!isValidAttachmentPosition(part.attachment.parentPosition)) {
+      issues.push({
+        code: "invalid-attachment-position",
+        message:
+          `BodyPart "${part.id}" must have a parent attachment position within [0, 1].`,
+        partId: part.id,
+      });
+    }
+
+    if (!isValidAttachmentPosition(part.attachment.childPosition)) {
+      issues.push({
+        code: "invalid-attachment-position",
+        message:
+          `BodyPart "${part.id}" must have a child attachment position within [0, 1].`,
+        partId: part.id,
+      });
+    }
   }
 
   return issues;
@@ -498,6 +591,8 @@ function findAttachmentCycleIssues(
  *
  * - BodyPart IDs must be unique;
  * - every BodyPart type must reference a known definition;
+ * - physical presence state must be one of the three known states;
+ * - an attachment's two longitudinal coordinates must both fall in [0, 1];
  * - damage must be finite and non-negative;
  * - recovery progress must be finite and fall within [0, 1), and an
  *   undamaged part must not still be carrying any;

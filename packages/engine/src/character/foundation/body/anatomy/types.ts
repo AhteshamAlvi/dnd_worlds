@@ -175,6 +175,10 @@ export interface BodyPartDefinition {
  * counts as vertical extent. 0 means the part never contributes to Height —
  * an Arm is 55 cm long and contributes none of it. A Human Foot is 25 cm long
  * from ankle to toe but only 7 cm of that is height, hence 0.28.
+ *
+ * `heightAxisSign` says which way along that vertical extent the part's own
+ * local coordinate runs. See the type below for why this is deliberately not
+ * folded into `heightContribution` as a signed number.
  */
 export interface BodyPartReference {
   readonly lengthCm: number;
@@ -188,7 +192,37 @@ export interface BodyPartReference {
 
   /** 0 to 1. Zero means this part does not contribute to Height. */
   readonly heightContribution: number;
+
+  /** Which way local coordinate 0 -> 1 travels vertically. */
+  readonly heightAxisSign: HeightAxisSign;
 }
+
+
+/*
+ * Which vertical direction a BodyPart's own longitudinal axis points.
+ *
+ *   +1  local coordinate 0 -> 1 moves UP
+ *   -1  local coordinate 0 -> 1 moves DOWN
+ *
+ * Every Height-relevant BodyPart carries a normalized longitudinal coordinate
+ * running 0 to 1 between its two anatomical ends, and which end is which is
+ * authored per part type: a Leg runs hip (0) to ankle (1), an Upper Body runs
+ * inferior (0) to superior (1). Those two run in opposite vertical directions,
+ * so the axis alone cannot say how far up a traversal has travelled.
+ *
+ * This is kept separate from `heightContribution` rather than collapsed into
+ * one signed number, despite the "one mechanism" principle applied to
+ * heightContribution itself. They answer different questions: contribution is
+ * "how much of this part's Length is vertical at all", orientation is "which
+ * way does its axis point". A Foot contributing 0.28 downward and a Foot
+ * contributing 0.28 upward are different anatomy, and a single -0.28 would
+ * make an authoring typo indistinguishable from a deliberate inversion.
+ *
+ * Parts with heightContribution 0 still carry a sign. It is inert there, but a
+ * total field costs nothing and means anatomy that later gains vertical extent
+ * does not also have to gain a new field.
+ */
+export type HeightAxisSign = 1 | -1;
 
 
 /*
@@ -240,11 +274,33 @@ export interface BodyPartMorphologySensitivity {
  * from these parent references rather than stored redundantly.
  *
  * `site` is optional descriptive data and is not interpreted by the generic
- * Anatomy engine.
+ * Anatomy engine. It names the joint — "shoulder", "hip", "wrist" — and stays
+ * exactly that: semantic metadata. The numeric geometry lives in the
+ * coordinate pair below and is deliberately separate, because two different
+ * body plans can both attach at something called a "shoulder" while meeting at
+ * quite different points along the torso.
+ *
+ * `parentPosition` and `childPosition` record where the connection sits on
+ * each of the two parts, in their own normalized 0..1 longitudinal
+ * coordinates. Both are recorded because the geometry is a constraint, not a
+ * direction:
+ *
+ *   vertical position at parentPosition == vertical position at childPosition
+ *
+ * A connection adds no distance of its own; it only asserts that the two parts
+ * meet. Recording both ends is what lets Height traverse a connection either
+ * way round, so the answer does not depend on which of the two parts happened
+ * to be authored as the parent.
  */
 export interface BodyPartAttachment {
   readonly parentId: BodyPartId;
   readonly site?: BodyAttachmentSiteId;
+
+  /** Where on the PARENT's 0..1 longitudinal axis this connection sits. */
+  readonly parentPosition: number;
+
+  /** Where on the CHILD's own 0..1 longitudinal axis it sits. */
+  readonly childPosition: number;
 }
 
 
@@ -263,6 +319,17 @@ export interface BodyPartAttachment {
  *
  * `attachment`
  * → null for an anatomical root, otherwise identifies the structural parent.
+ *
+ * `state`
+ * → whether this part is currently physically present (see BodyPartState).
+ *   Newly created anatomy is always "active".
+ *
+ *   This is instance state, not form definition. It answers "is this here
+ *   right now", never "is this supposed to be here" — that second question
+ *   belongs to the Reference Form, and damage must never answer it. A severed
+ *   Arm becomes "archived-removed" while the Reference Form goes on expecting
+ *   two Arms, which is exactly what makes amputation lower Strength instead of
+ *   cancelling itself out.
  *
  * `damage`
  * → persistent accumulated BP damage. Maximum and Current BP are derived
@@ -287,6 +354,8 @@ export interface BodyPart {
   readonly name?: string;
 
   readonly attachment: BodyPartAttachment | null;
+
+  readonly state: BodyPartState;
 
   readonly damage: number;
   readonly recoveryProgress: number;
@@ -332,6 +401,16 @@ export interface Anatomy {
  * Note that none of these states change the Reference Form. What a body is
  * SUPPOSED to contain and what it CURRENTLY contains are separate questions;
  * damage answers only the second.
+ *
+ * What this state does and does not gate:
+ *
+ *   active            Length geometry, Size, Mass, Height, SC, SP
+ *   suppressed        nothing
+ *   archived-removed  nothing
+ *
+ * Damage is a separate axis. A part that is badly hurt, paralysed, or cut off
+ * behind a destroyed Joint is still "active" and still weighs what it weighs —
+ * it has not left the body. Only leaving the body zeroes these contributions.
  */
 export type BodyPartState =
   | "active"

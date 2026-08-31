@@ -16,7 +16,8 @@
  * - every BodyPart;
  * - exact BodyPart instance IDs;
  * - BodyPart definition/type IDs;
- * - BodyPart definition tags.
+ * - BodyPart definition tags;
+ * - BodyPart physical presence state.
  *
  * BodyPart instance identity comes from BodyPart.
  * Type and tag classification come from BodyPartDefinition.
@@ -27,6 +28,7 @@ import type {
   BodyPart,
   BodyPartDefinition,
   BodyPartId,
+  BodyPartState,
   BodyPartTag,
   BodyPartTypeId,
 } from "./anatomy/types";
@@ -44,6 +46,7 @@ export interface AllBodyPartsSelector {
   readonly types?: never;
   readonly tags?: never;
   readonly tagMode?: never;
+  readonly states?: never;
 }
 
 
@@ -93,6 +96,18 @@ export interface FilteredBodyPartSelector {
   readonly tagMode?:
     | "all"
     | "any";
+
+  /*
+   * Match any of the listed physical presence states.
+   *
+   * Absent means "do not filter on presence at all", not "active only".
+   * Silently defaulting to active would be the wrong default for the systems
+   * that most need this dimension: regeneration looks for archived-removed
+   * parts, and a dispel looks for suppressed ones. The physical resolvers that
+   * genuinely want only what is present say so explicitly.
+   */
+  readonly states?:
+    readonly BodyPartState[];
 }
 
 
@@ -121,6 +136,8 @@ export type BodyPartSelectorValidationIssueCode =
   | "duplicate-id"
   | "duplicate-type"
   | "duplicate-tag"
+  | "empty-state-filter"
+  | "duplicate-state"
   | "tag-mode-without-tags";
 
 
@@ -251,7 +268,7 @@ function validateIdentifierFilter(
  * → valid by itself and cannot contain filter fields by type.
  *
  * Filtered selector
- * → must contain at least one of ids, types, or tags.
+ * → must contain at least one of ids, types, tags, or states.
  *
  * Present filter arrays
  * → must be non-empty.
@@ -280,15 +297,19 @@ export function validateBodyPartSelector(
   const hasTags =
     selector.tags !== undefined;
 
+  const hasStates =
+    selector.states !== undefined;
+
   if (
     !hasIds &&
     !hasTypes &&
-    !hasTags
+    !hasTags &&
+    !hasStates
   ) {
     issues.push({
       code: "empty-selector",
       message:
-        "Filtered BodyPart selector must contain at least one of ids, types, or tags.",
+        "Filtered BodyPart selector must contain at least one of ids, types, tags, or states.",
     });
   }
 
@@ -317,6 +338,32 @@ export function validateBodyPartSelector(
         "tag",
       ),
     );
+  }
+
+  if (selector.states !== undefined) {
+    if (selector.states.length === 0) {
+      issues.push({
+        code: "empty-state-filter",
+        message:
+          "BodyPart selector state filter must not be empty.",
+      });
+    }
+
+    const seenStates = new Set<string>();
+
+    for (const state of selector.states) {
+      if (seenStates.has(state)) {
+        issues.push({
+          code: "duplicate-state",
+          message:
+            `BodyPart selector contains duplicate state "${state}".`,
+        });
+
+        continue;
+      }
+
+      seenStates.add(state);
+    }
   }
 
   if (
@@ -379,6 +426,13 @@ export function matchesBodyPartSelector(
   if (
     selector.types !== undefined &&
     !selector.types.includes(part.type)
+  ) {
+    return false;
+  }
+
+  if (
+    selector.states !== undefined &&
+    !selector.states.includes(part.state)
   ) {
     return false;
   }

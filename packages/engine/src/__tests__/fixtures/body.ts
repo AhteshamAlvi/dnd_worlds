@@ -26,6 +26,7 @@ export const TEST_PART_PHYSICALS = {
     structuralCapacity: 10,
     intrinsicPhysicalForce: 1,
     heightContribution: 0,
+      heightAxisSign: 1,
   },
   sensitivity: {
     bulkSize: 0,

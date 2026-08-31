@@ -15,7 +15,7 @@
  * Structural validation belongs to anatomy/validation.ts.
  */
 
-import { createBodyPart } from "./creation";
+import { createBodyPart, createBodyPartAttachment } from "./creation";
 import type {
   BodyPartCreationAttachment,
   BodyPartCreationSpec,
@@ -24,6 +24,7 @@ import type {
   Anatomy,
   BodyPart,
   BodyPartId,
+  BodyPartState,
   BodyPartTypeId,
 } from "./types";
 
@@ -236,6 +237,13 @@ export function replaceBodyPart(
       ? { name: replacement.name }
       : {}),
 
+    /*
+     * The replacement inherits the old part's structural position wholesale,
+     * connection geometry included. A prosthetic arm bolts onto the same
+     * shoulder at the same point along the torso the original grew from;
+     * re-deriving those coordinates from the replacement's own type would
+     * quietly move the joint.
+     */
     attachment:
       existing.attachment === null
         ? null
@@ -245,6 +253,9 @@ export function replaceBodyPart(
             ...(existing.attachment.site !== undefined
               ? { site: existing.attachment.site }
               : {}),
+
+            parentPosition: existing.attachment.parentPosition,
+            childPosition: existing.attachment.childPosition,
           },
   });
 
@@ -294,13 +305,7 @@ export function reattachBodyPart(
         attachment:
           attachment === null
             ? null
-            : {
-                parentId: attachment.parentId,
-
-                ...(attachment.site !== undefined
-                  ? { site: attachment.site }
-                  : {}),
-              },
+            : createBodyPartAttachment(attachment),
       };
     }),
   };
@@ -345,6 +350,46 @@ export function applyBodyPartDamage(
       return {
         ...part,
         damage: Math.max(0, part.damage + amount),
+      };
+    }),
+  };
+}
+
+
+/*
+ * Sets one BodyPart's physical presence state.
+ *
+ * If the requested part does not exist, the returned Anatomy is unchanged,
+ * matching the convention of every other operation in this file.
+ *
+ * Deliberately NOT part of the AnatomyModification union, and for the same
+ * reason applyBodyPartDamage is not: that union is structural, and is applied
+ * by resolveAnatomy as *temporary* modification. Presence state is persistent
+ * instance state. A destroyed Arm becoming "archived-removed" is a fact about
+ * the character that outlives whatever effect was being resolved at the time,
+ * and it must not be reachable through a path that a transient effect can also
+ * take.
+ *
+ * Note what this does not touch: the Reference Form. Setting a part to
+ * archived-removed says the body no longer has it, never that the body was
+ * never supposed to. Rewriting the form here would shrink the Strength
+ * normalization denominator alongside the numerator and make amputation cancel
+ * itself out.
+ */
+export function setBodyPartState(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+  state: BodyPartState,
+): Anatomy {
+  return {
+    parts: anatomy.parts.map((part) => {
+      if (part.id !== partId) {
+        return part;
+      }
+
+      return {
+        ...part,
+        state,
       };
     }),
   };

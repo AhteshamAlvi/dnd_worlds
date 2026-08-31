@@ -6,11 +6,16 @@
  *
  * Mechanical systems may consume these values later:
  *
- * - Height and weight may eventually interact with Body.
  * - Age may eventually interact with species-specific aging or maturity.
  * - Nen Type may eventually integrate directly with the Nen system.
  *
  * For now, these values are stored without applying those mechanics here.
+ *
+ * Height and weight are deliberately NOT here. They are resolved from Body —
+ * from anatomy, Effective Scale and morphology — and an authored copy
+ * alongside a derived one is two sources that can disagree, with nothing to
+ * say which is right. A character who is described as 180 cm and whose body
+ * resolves to 165 cm is a bug, not a character.
  *
  * Name is required because every Character has a basic personal identity.
  * Everything else is optional so the workbench can construct characters
@@ -62,20 +67,6 @@ export interface CharacterDetails {
   readonly age?: number;
 
   readonly gender?: Gender;
-
-  /**
-   * Standing height in centimeters.
-   *
-   * This is descriptive for now. Body integration can be added later.
-   */
-  readonly heightCm?: number;
-
-  /**
-   * Body weight in kilograms.
-   *
-   * This is descriptive for now. Body integration can be added later.
-   */
-  readonly weightKg?: number;
 
   /**
    * Natural Nen affinity.

@@ -202,3 +202,64 @@ describe("tag selection regression: reads BodyPartDefinition.tags, not BodyPart"
     ]);
   });
 });
+
+
+/*
+ * Physical presence as a selector dimension.
+ *
+ * Deliberately not defaulted to "active": regeneration looks for
+ * archived-removed parts and a dispel looks for suppressed ones, so silently
+ * filtering to what is present would be the wrong default for exactly the
+ * systems that most need this filter. The physical resolvers that do want only
+ * present anatomy say so.
+ */
+describe("BodyPart presence-state selection", () => {
+  const mixed: Anatomy = {
+    parts: [
+      ...ANATOMY.parts.filter((part) => part.id !== "arm-1"),
+      {
+        ...ANATOMY.parts.find((part) => part.id === "arm-1")!,
+        state: "archived-removed",
+      },
+    ],
+  };
+
+  it("matches only the listed states", () => {
+    expect(
+      selectBodyParts(mixed, DEFINITIONS, { states: ["archived-removed"] }).map(
+        (part) => part.id,
+      ),
+    ).toEqual(["arm-1"]);
+  });
+
+  it("treats an absent state filter as no filter at all", () => {
+    expect(
+      selectBodyParts(mixed, DEFINITIONS, { types: ["arm"] }).map(
+        (part) => part.id,
+      ),
+    ).toEqual(["arm-1"]);
+  });
+
+  it("intersects with the other dimensions", () => {
+    expect(
+      selectBodyParts(mixed, DEFINITIONS, {
+        types: ["arm"],
+        states: ["active"],
+      }),
+    ).toEqual([]);
+  });
+
+  it("is enough on its own to make a filtered selector valid", () => {
+    expect(validateBodyPartSelector({ states: ["active"] }).valid).toBe(true);
+  });
+
+  it("rejects an empty or duplicated state filter", () => {
+    expect(validateBodyPartSelector({ states: [] }).issues[0]?.code).toBe(
+      "empty-state-filter",
+    );
+
+    expect(
+      validateBodyPartSelector({ states: ["active", "active"] }).issues[0]?.code,
+    ).toBe("duplicate-state");
+  });
+});
