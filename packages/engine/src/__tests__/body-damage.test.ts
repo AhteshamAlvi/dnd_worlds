@@ -65,73 +65,165 @@ function requireSuccess<T>(result: { success: boolean; payload?: T }): T {
 }
 
 describe("Joint targeting", () => {
-  it("applies the multiplier to the host and leaves the attached part undamaged", () => {
-    const result = applyBodyDamage(
-      baseInput({
-        target: { kind: "special-point", pointId: "shoulder:arm-1" },
-        penetratingDamage: 4,
-      }),
+  /*
+   * Joints no longer multiply damage. A Shoulder used to double every point
+   * aimed at it; it now breaks at a threshold and multiplies nothing. Where a
+   * joint region really is soft the definition says so by ALSO being Weak,
+   * which is why the Armpit beside the Shoulder is x1.5 and the Shoulder is
+   * not.
+   */
+  it("does not multiply damage, and does not spill into the attached part", () => {
+    const outcome = requireSuccess(
+      applyBodyDamage(
+        baseInput({
+          target: { kind: "special-point", pointId: "shoulder:arm-1" },
+          penetratingDamage: 4,
+        }),
+      ),
     );
 
-    const outcome = requireSuccess(result);
-
     expect(outcome.hostPartId).toBe("arm-1");
-    expect(outcome.damageMultiplier).toBe(2);
-    expect(outcome.appliedDamage).toBe(8);
+    expect(outcome.weakMultiplier).toBe(1);
+    expect(outcome.appliedDamage).toBe(4);
 
     const arm = outcome.anatomy.parts.find((p) => p.id === "arm-1");
     const hand = outcome.anatomy.parts.find((p) => p.id === "hand-1");
 
-    // Arm Maximum BP is 14, so 8 damage leaves 6/14 integrity.
-    expect(arm?.integrity).toBeCloseTo(6 / 14, 10);
-    expect(hand?.integrity).toBe(1); // no spill into the attached Hand
+    // Arm Maximum BP is 14, so 4 damage leaves 10/14 integrity.
+    expect(arm?.integrity).toBeCloseTo(10 / 14, 10);
+    expect(hand?.integrity).toBe(1);
   });
 
-  it("a non-Joint target has multiplier 1", () => {
-    const result = applyBodyDamage(
-      baseInput({ target: { kind: "body-part", partId: "arm-1" }, penetratingDamage: 5 }),
+  it("fails the Joint at 30% of the designated part's Maximum BP", () => {
+    const below = requireSuccess(
+      applyBodyDamage(
+        baseInput({
+          target: { kind: "special-point", pointId: "shoulder:arm-1" },
+          penetratingDamage: 4,
+        }),
+      ),
     );
 
-    const outcome = requireSuccess(result);
-    expect(outcome.damageMultiplier).toBe(1);
-    expect(outcome.appliedDamage).toBe(5);
+    const at = requireSuccess(
+      applyBodyDamage(
+        baseInput({
+          target: { kind: "special-point", pointId: "shoulder:arm-1" },
+          penetratingDamage: 5,
+        }),
+      ),
+    );
+
+    expect(below.jointThreshold).toBe(5); // ceil(14 x 0.30)
+    expect(below.jointFailed).toBe(false);
+    expect(at.jointFailed).toBe(true);
+    expect(at.jointDesignatedPartId).toBe("arm-1");
+  });
+
+  /*
+   * A Wrist sits on the Arm and governs the Hand, so its threshold is 30% of
+   * the Hand's 4 Maximum BP rather than 30% of the Arm's 14. Damage still
+   * lands on the host Arm; only the threshold reads the designated part.
+   */
+  it("reads a Wrist's threshold off the Hand, not the Arm hosting it", () => {
+    const outcome = requireSuccess(
+      applyBodyDamage(
+        baseInput({
+          target: { kind: "special-point", pointId: "wrist:arm-1" },
+          penetratingDamage: 2,
+        }),
+      ),
+    );
+
+    expect(outcome.hostPartId).toBe("arm-1");
+    expect(outcome.jointDesignatedPartId).toBe("hand-1");
+    expect(outcome.jointThreshold).toBe(2); // ceil(4 x 0.30)
+    expect(outcome.jointFailed).toBe(true);
   });
 });
 
-describe("Injury-opportunity metadata", () => {
-  it("is true for a Semicritical target", () => {
+describe("Weak", () => {
+  /*
+   * Multiply, THEN round. Rounding first would let two hits differing only by
+   * a fraction land on opposite sides of a threshold.
+   */
+  it("multiplies before rounding", () => {
     const outcome = requireSuccess(
       applyBodyDamage(
-        baseInput({ target: { kind: "special-point", pointId: "face:head-1" } }),
+        baseInput({
+          target: { kind: "special-point", pointId: "jaw:head-1" },
+          penetratingDamage: 3,
+        }),
       ),
     );
-    expect(outcome.injuryOpportunity).toBe(true);
+
+    expect(outcome.weakMultiplier).toBe(1.5);
+    expect(outcome.appliedDamage).toBe(5); // round(4.5), not round(3) x 1.5
   });
 
-  it("is true for a Joint target", () => {
-    const outcome = requireSuccess(
-      applyBodyDamage(
-        baseInput({ target: { kind: "special-point", pointId: "shoulder:arm-1" } }),
-      ),
-    );
-    expect(outcome.injuryOpportunity).toBe(true);
-  });
-
-  it("is false for a Critical target", () => {
+  it("leaves a non-Weak point at multiplier 1", () => {
     const outcome = requireSuccess(
       applyBodyDamage(
         baseInput({
           target: { kind: "special-point", pointId: "brain:head-1" },
-          penetratingDamage: 1,
+          penetratingDamage: 3,
         }),
       ),
     );
-    expect(outcome.injuryOpportunity).toBe(false);
+
+    expect(outcome.weakMultiplier).toBe(1);
+    expect(outcome.appliedDamage).toBe(3);
   });
 
-  it("is false for a plain body-part target", () => {
+  /*
+   * An Armpit is Joint AND Weak, so one hit both multiplies and is measured
+   * against the Joint threshold — using the multiplied number.
+   */
+  it("feeds the multiplied damage into the Joint threshold", () => {
+    const outcome = requireSuccess(
+      applyBodyDamage(
+        baseInput({
+          target: { kind: "special-point", pointId: "armpit:arm-1" },
+          penetratingDamage: 4,
+        }),
+      ),
+    );
+
+    expect(outcome.appliedDamage).toBe(6); // 4 x 1.5
+    expect(outcome.jointThreshold).toBe(5);
+    expect(outcome.jointFailed).toBe(true);
+  });
+});
+
+describe("Critical tiers", () => {
+  /*
+   * Head Maximum BP 8, so the Brain's tiers sit at 1, 3 and 4. The engine
+   * returns the tier and the injury CHANCE, and never rolls: randomness
+   * belongs to the Foundry module, the same way every other subsystem here
+   * answers questions and leaves resolution to its caller.
+   */
+  it.each([
+    [1, "minor", "one-third"],
+    [3, "major", "one-half"],
+    [4, "destruction", "guaranteed"],
+  ])("%i damage to the Brain reaches the %s tier", (damage, tier, chance) => {
+    const outcome = requireSuccess(
+      applyBodyDamage(
+        baseInput({
+          target: { kind: "special-point", pointId: "brain:head-1" },
+          penetratingDamage: damage,
+        }),
+      ),
+    );
+
+    expect(outcome.critical.tier).toBe(tier);
+    expect(outcome.critical.injuryChance).toBe(chance);
+  });
+
+  it("reaches no tier for a plain BodyPart target", () => {
     const outcome = requireSuccess(applyBodyDamage(baseInput()));
-    expect(outcome.injuryOpportunity).toBe(false);
+
+    expect(outcome.critical.tier).toBe("none");
+    expect(outcome.critical.injuryChance).toBe("none");
   });
 });
 
@@ -163,8 +255,17 @@ describe("fatal-ordering regression", () => {
     // AFTER removal: the Brain point's host (Head) is already gone from
     // outcome.anatomy, so re-deriving Critical Points from outcome.anatomy
     // would never find "brain:head-1" to report as fatal.
-    const fatalIds = outcome.fatalCriticalFailures.map((p) => p.id);
-    expect(fatalIds).toContain("brain:head-1");
+    /*
+     * Destroying the Head takes the Brain with it, even though the attacker
+     * targeted the BodyPart rather than the point. Without that, decapitation
+     * would archive a Head and leave the character alive.
+     *
+     * This is also the ordering regression: the Brain is found against the
+     * pre-archive point set. Re-deriving points from outcome.anatomy would
+     * never find "brain:head-1", because an archived Head hosts nothing.
+     */
+    expect(outcome.fatal).toBe(true);
+    expect(outcome.fatalPointIds).toContain("brain:head-1");
   });
 
   it("a Head above 0 BP produces no fatal Brain failure", () => {
@@ -177,7 +278,7 @@ describe("fatal-ordering regression", () => {
       ),
     );
 
-    expect(outcome.fatalCriticalFailures).toEqual([]);
+    expect(outcome.fatal).toBe(false);
     expect(outcome.anatomy.parts.some((p) => p.id === "head-1")).toBe(true);
   });
 
@@ -192,7 +293,7 @@ describe("fatal-ordering regression", () => {
     );
 
     expect(outcome.destroyedPartIds).toContain("arm-1");
-    expect(outcome.fatalCriticalFailures).toEqual([]);
+    expect(outcome.fatal).toBe(false);
   });
 });
 
@@ -208,9 +309,7 @@ describe("fatal Critical failures across all three Critical Points", () => {
       ),
     );
 
-    expect(outcome.fatalCriticalFailures.map((p) => p.id)).toContain(
-      "heart:upper-body-1",
-    );
+    expect(outcome.fatalPointIds).toContain("heart:upper-body-1");
   });
 
   it("Neck Current BP = 0 -> Neck fatal failure", () => {
@@ -224,7 +323,7 @@ describe("fatal Critical failures across all three Critical Points", () => {
       ),
     );
 
-    expect(outcome.fatalCriticalFailures.map((p) => p.id)).toContain("neck:neck-1");
+    expect(outcome.fatalPointIds).toContain("neck:neck-1");
   });
 
   it("Leg Current BP = 0 is not inherently fatal", () => {
@@ -238,7 +337,7 @@ describe("fatal Critical failures across all three Critical Points", () => {
     );
 
     expect(outcome.destroyedPartIds).toContain("leg-1");
-    expect(outcome.fatalCriticalFailures).toEqual([]);
+    expect(outcome.fatal).toBe(false);
   });
 });
 
@@ -304,47 +403,29 @@ describe("error paths", () => {
     }
   });
 
-  it("rejects Spine targeted without a hostPartId as ambiguous", () => {
-    const result = applyBodyDamage(
-      baseInput({ target: { kind: "special-point", pointId: "spine:shared:lower-body-1,upper-body-1" } }),
-    );
+  /*
+   * The three tests that used to live here are gone with the thing they
+   * tested. A Spine spanning the Upper and Lower Body was one point with two
+   * hosts, so every caller had to answer "which host did this hit land on" —
+   * and could be rejected for ambiguity, or for naming a host the point did
+   * not have.
+   *
+   * The Spine is now Upper Spine and Lower Spine, one host each, so the
+   * question no longer exists to be answered wrongly. What is left is the
+   * property that replaced it.
+   */
+  it("gives every Anatomical Point exactly one unambiguous host", () => {
+    for (const pointId of [
+      "upper-spine:upper-body-1",
+      "lower-spine:lower-body-1",
+    ]) {
+      const outcome = requireSuccess(
+        applyBodyDamage(
+          baseInput({ target: { kind: "special-point", pointId } }),
+        ),
+      );
 
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.errors[0]?.code).toBe("body.damage.target.ambiguous_host");
-    }
-  });
-
-  it("accepts Spine targeted with an explicit hostPartId", () => {
-    const outcome = requireSuccess(
-      applyBodyDamage(
-        baseInput({
-          target: {
-            kind: "special-point",
-            pointId: "spine:shared:lower-body-1,upper-body-1",
-            hostPartId: "upper-body-1",
-          },
-        }),
-      ),
-    );
-
-    expect(outcome.hostPartId).toBe("upper-body-1");
-  });
-
-  it("rejects a hostPartId that isn't among the point's hosts", () => {
-    const result = applyBodyDamage(
-      baseInput({
-        target: {
-          kind: "special-point",
-          pointId: "spine:shared:lower-body-1,upper-body-1",
-          hostPartId: "head-1",
-        },
-      }),
-    );
-
-    expect(result.success).toBe(false);
-    if (!result.success) {
-      expect(result.errors[0]?.code).toBe("body.damage.target.invalid_host");
+      expect(outcome.hostPartId).toBe(pointId.split(":")[1]);
     }
   });
 

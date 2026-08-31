@@ -65,7 +65,7 @@ const ELBOW_SPECIAL_POINT: SpecialPointDefinition = {
   id: "elbow",
   name: "Elbow",
   description: "A test Special Point hosted by the limb.",
-  category: "semicritical",
+  categories: ["critical"],
   placement: { kind: "per-part", selector: { types: ["limb"] } },
 };
 
@@ -73,7 +73,7 @@ const WRIST_SPECIAL_POINT: SpecialPointDefinition = {
   id: "wrist",
   name: "Wrist",
   description: "A second test Special Point hosted by the limb.",
-  category: "semicritical",
+  categories: ["critical"],
   placement: { kind: "per-part", selector: { types: ["limb"] } },
 };
 

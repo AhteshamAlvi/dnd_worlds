@@ -183,7 +183,7 @@ describe("tag selection regression: reads BodyPartDefinition.tags, not BodyPart"
       id: "limb-marker",
       name: "Limb Marker",
       description: "Test marker.",
-      category: "semicritical",
+      categories: ["critical"],
       placement: { kind: "per-part", selector: tagSelector },
     };
 

@@ -428,8 +428,8 @@ describe("registering custom Body content", () => {
       id: "tail-base",
       name: "Tail Base",
       description: "A homebrew Joint hosted by the Tail.",
-      category: "joint" as const,
-      damageMultiplier: 1.5,
+      categories: ["joint"] as const,
+      jointDesignation: { kind: "host" as const },
       placement: { kind: "per-part" as const, selector: { types: ["tail"] } },
     };
 

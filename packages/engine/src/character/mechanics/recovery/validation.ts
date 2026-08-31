@@ -255,9 +255,7 @@ export function findRecoveryLocationIssues(
     // allowed, but genuinely present at this location.
     const hostedSpecialPointDefinitionIds = new Set(
       criticalPoints.points
-        .filter((point) =>
-          point.hostPartIds.some((hostId) => bodyPartIds.includes(hostId)),
-        )
+        .filter((point) => bodyPartIds.includes(point.hostPartId))
         .map((point) => point.definitionId),
     );
 

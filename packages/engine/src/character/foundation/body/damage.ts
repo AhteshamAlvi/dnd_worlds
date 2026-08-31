@@ -82,17 +82,18 @@ import type {
   ResolvedBodyPoints,
 } from "./body-points/types";
 import {
-  applyJointDamageMultiplier,
-  createsInjuryOpportunity,
+  applyWeakMultiplier,
+  evaluateCritical,
+  evaluateFatal,
+  evaluateJoint,
   getCriticalPoint,
-  getFatalCriticalFailures,
-  isJointPoint,
+  hasCategory,
   resolveCriticalPoints,
 } from "./critical-points/resolution";
 import type {
   CriticalPointId,
   CriticalPointInstance,
-  ResolvedCriticalPoint,
+  CriticalOutcome,
   ResolvedCriticalPoints,
   SpecialPointDefinition,
 } from "./critical-points/types";
@@ -102,13 +103,16 @@ import type { Body, BodyMorphology } from "./types";
 // spans more than one host (e.g. Spine → Upper Body + Lower Body) requires
 // the caller to say which host was actually struck via `hostPartId`, rather
 // than this module inventing a rule for which host "wins" by default.
+/*
+ * What Combat says was hit.
+ *
+ * There is no host disambiguation any more. Shared placement is gone, so every
+ * Anatomical Point has exactly one host, and "which of this point's hosts did
+ * you actually strike" has stopped being a question a caller can get wrong.
+ */
 export type BodyDamageTarget =
   | { readonly kind: "body-part"; readonly partId: BodyPartId }
-  | {
-      readonly kind: "special-point";
-      readonly pointId: CriticalPointId;
-      readonly hostPartId?: BodyPartId;
-    };
+  | { readonly kind: "special-point"; readonly pointId: CriticalPointId };
 
 export interface BodyDamageInput {
   readonly body: Body;
@@ -143,12 +147,33 @@ export interface BodyDamageOutcome {
   readonly anatomy: Anatomy;
 
   readonly hostPartId: BodyPartId;
-  readonly damageMultiplier: number;
+
+  /** The Weak multiplier applied, or 1. */
+  readonly weakMultiplier: number;
+
+  /** Post-Weak, post-rounding. Every threshold below is read against this. */
   readonly appliedDamage: number;
 
-  readonly injuryOpportunity: boolean;
+  /*
+   * The four categories, evaluated independently against that same number.
+   * None is an else-branch of another: a Human Neck hit for 1 BP is Critical
+   * destruction, Joint failure and Fatal simultaneously.
+   */
+  readonly critical: CriticalOutcome;
 
-  readonly fatalCriticalFailures: readonly ResolvedCriticalPoint[];
+  readonly fatal: boolean;
+  readonly fatalThreshold: number;
+
+  /*
+   * Which Fatal points actually fired. Usually the targeted one, but a
+   * destroyed BodyPart takes every Fatal point it hosts with it — see the
+   * note in applyBodyDamage.
+   */
+  readonly fatalPointIds: readonly CriticalPointId[];
+
+  readonly jointFailed: boolean;
+  readonly jointThreshold: number;
+  readonly jointDesignatedPartId: BodyPartId | undefined;
 
   // Directly reached 0 Current BP.
   readonly destroyedPartIds: readonly BodyPartId[];
@@ -194,61 +219,11 @@ function resolveDamageHost(
     return {
       ok: false,
       code: "body.damage.target.unknown",
-      message: `No Special Point "${target.pointId}" exists in the current resolved Critical Points.`,
+      message: `No Anatomical Point "${target.pointId}" exists in the current resolved points.`,
     };
   }
 
-  if (point.hostPartIds.length === 0) {
-    return {
-      ok: false,
-      code: "body.damage.host.missing",
-      message: `Special Point "${point.id}" has no host BodyPart to damage.`,
-    };
-  }
-
-  if (point.hostPartIds.length === 1) {
-    const [onlyHost] = point.hostPartIds;
-
-    if (onlyHost === undefined) {
-      return {
-        ok: false,
-        code: "body.damage.host.missing",
-        message: `Special Point "${point.id}" has no host BodyPart to damage.`,
-      };
-    }
-
-    if (
-      target.hostPartId !== undefined &&
-      target.hostPartId !== onlyHost
-    ) {
-      return {
-        ok: false,
-        code: "body.damage.target.invalid_host",
-        message: `Special Point "${point.id}" is not hosted by "${target.hostPartId}".`,
-      };
-    }
-
-    return { ok: true, hostPartId: onlyHost, point };
-  }
-
-  // More than one host (e.g. Spine) — the caller must disambiguate.
-  if (target.hostPartId === undefined) {
-    return {
-      ok: false,
-      code: "body.damage.target.ambiguous_host",
-      message: `Special Point "${point.id}" spans multiple hosts (${point.hostPartIds.join(", ")}); a hostPartId is required.`,
-    };
-  }
-
-  if (!point.hostPartIds.includes(target.hostPartId)) {
-    return {
-      ok: false,
-      code: "body.damage.target.invalid_host",
-      message: `Special Point "${point.id}" is not hosted by "${target.hostPartId}".`,
-    };
-  }
-
-  return { ok: true, hostPartId: target.hostPartId, point };
+  return { ok: true, hostPartId: point.hostPartId, point };
 }
 
 export function applyBodyDamage(
@@ -262,7 +237,7 @@ export function applyBodyDamage(
     id: "body.damage",
     label: "Body damage application",
 
-    formula: "appliedDamage = penetratingDamage × jointMultiplier",
+    formula: "appliedDamage = round(penetratingDamage x weakMultiplier)",
 
     inputs: {
       target: { value: input.target },
@@ -328,18 +303,12 @@ export function applyBodyDamage(
 
   const { hostPartId, point } = hostResolution;
 
-  const damageMultiplier =
-    point !== undefined && isJointPoint(point) ? point.damageMultiplier : 1;
-
-  const appliedDamage =
-    point !== undefined && isJointPoint(point)
-      ? applyJointDamageMultiplier(point, input.penetratingDamage)
-      : input.penetratingDamage;
-
   /*
    * Body Points BEFORE the hit. The transition needs the host's Maximum BP and
    * its current exact BP, and both are derived — there is no way to subtract
-   * damage from a fraction without first knowing what the fraction is of.
+   * damage from a fraction without first knowing what the fraction is of. Every
+   * Anatomical Point threshold is read against these same pre-hit maxima, so a
+   * hit cannot move the bar it is being measured against.
    */
   const bodyPointsBeforeDamage = resolveBodyPoints({
     anatomy: resolvedAnatomy,
@@ -369,12 +338,32 @@ export function applyBodyDamage(
     };
   }
 
+  /*
+   * Step 1 of the locked order: Weak multiplies, THEN the result is rounded.
+   *
+   * Rounding first would let two hits that differ only in a fraction land on
+   * opposite sides of a threshold — 3 x 1.5 and 3.4 x 1.5 both round to 5 only
+   * if the multiply happens first.
+   */
+  const weakMultiplier =
+    point !== undefined && hasCategory(point, "weak")
+      ? point.weakMultiplier
+      : 1;
+
+  const appliedDamage = Math.round(
+    point !== undefined
+      ? applyWeakMultiplier(point, input.penetratingDamage)
+      : input.penetratingDamage,
+  );
+
   const newExactBP = hostBP.exactCurrentBP - appliedDamage;
 
   /*
-   * The one and only destruction test in the engine. Note that it is `<= 0`
-   * against the EXACT value: a part left with 0.3 BP survives and displays 1,
-   * and only a hit that genuinely consumes everything destroys it.
+   * The one and only destruction test in the engine, and note that it is
+   * against the EXACT value: a part left with 0.3 BP survives and displays 1.
+   * BodyPart destruction is deliberately a separate event from Critical Point
+   * destruction and from Joint failure — a Heart can be destroyed while the
+   * Upper Body still has BP, and a Shoulder can fail while the Arm hangs on.
    */
   const destroyed = newExactBP <= 0;
 
@@ -405,17 +394,72 @@ export function applyBodyDamage(
     modifiers: bodyPointModifiers,
   });
 
-  const injuryOpportunity =
-    point !== undefined && createsInjuryOpportunity(point);
+  /*
+   * The three threshold evaluations. Independent by construction: each reads
+   * the same appliedDamage and none consults the others' results.
+   */
+  const critical =
+    point !== undefined
+      ? evaluateCritical(point, hostBP.maximumBP, appliedDamage)
+      : {
+          tier: "none" as const,
+          injuryChance: "none" as const,
+          destroyed: false,
+          thresholds: { minor: 0, major: 0, destruction: 0 },
+        };
+
+  const fatalOutcome =
+    point !== undefined
+      ? evaluateFatal(point, hostBP.maximumBP, appliedDamage)
+      : { fatal: false, threshold: 0 };
+
+  /*
+   * A Joint reads its threshold against the DESIGNATED part, which is often
+   * not the host: a Wrist sits on the Arm and governs the Hand, so 30% of 4
+   * rather than 30% of 14.
+   */
+  const jointDesignatedPartId = point?.designatedPartId;
+
+  const designatedBP =
+    jointDesignatedPartId !== undefined
+      ? bodyPointsBeforeDamage.byPartId[jointDesignatedPartId]
+      : undefined;
+
+  const jointOutcome =
+    point !== undefined && designatedBP !== undefined
+      ? evaluateJoint(point, designatedBP.maximumBP, appliedDamage)
+      : { failed: false, threshold: 0 };
+
+  /*
+   * Fatal has two routes, and the spec only names one.
+   *
+   * The named route is the threshold: half the containing part's Maximum BP of
+   * targeted damage against a Fatal point kills. That is what makes a Brain hit
+   * for 4 lethal while the Head still holds 4 of its 8 BP.
+   *
+   * The second is an inference this engine makes deliberately. Destroying a
+   * BodyPart outright destroys everything inside it, so a Head reduced to
+   * nothing takes the Brain with it whether or not the attacker was aiming at
+   * the Brain. Without this, decapitating a character with a plain body-part
+   * hit would archive their Head and leave them alive, because no Fatal point
+   * was ever targeted. The categories stay independent — this is destruction
+   * propagating into its contents, not Fatal borrowing from Critical.
+   */
+  const fatalFromHostDestruction = destroyed
+    ? criticalPoints.points.filter(
+        (candidate) =>
+          candidate.hostPartId === hostPartId && hasCategory(candidate, "fatal"),
+      )
+    : [];
+
+  const fatalPointIds = [
+    ...(fatalOutcome.fatal && point !== undefined ? [point.id] : []),
+    ...fatalFromHostDestruction
+      .filter((candidate) => candidate.id !== point?.id)
+      .map((candidate) => candidate.id),
+  ];
 
   const destroyedPartIds = destroyed ? [hostPartId] : [];
-
-  // Evaluated against the step-2 (pre-archive) point set — see the file header
-  // on why this ordering is load-bearing.
-  const fatalCriticalFailures = getFatalCriticalFailures(
-    criticalPoints,
-    destroyedPartIds,
-  );
 
   const anatomy = storedOutcome.anatomy;
 
@@ -425,12 +469,19 @@ export function applyBodyDamage(
     anatomy,
 
     hostPartId,
-    damageMultiplier,
+
+    weakMultiplier,
     appliedDamage,
 
-    injuryOpportunity,
+    critical,
 
-    fatalCriticalFailures,
+    fatal: fatalPointIds.length > 0,
+    fatalThreshold: fatalOutcome.threshold,
+    fatalPointIds,
+
+    jointFailed: jointOutcome.failed,
+    jointThreshold: jointOutcome.threshold,
+    jointDesignatedPartId,
 
     destroyedPartIds,
     removedPartIds,
@@ -441,11 +492,14 @@ export function applyBodyDamage(
 
   traceNode.output = {
     hostPartId: outcome.hostPartId,
-    damageMultiplier: outcome.damageMultiplier,
+    weakMultiplier: outcome.weakMultiplier,
     appliedDamage: outcome.appliedDamage,
+    criticalTier: outcome.critical.tier,
+    jointFailed: outcome.jointFailed,
     destroyedPartIds: [...outcome.destroyedPartIds],
     removedPartIds: [...outcome.removedPartIds],
-    fatal: outcome.fatalCriticalFailures.length > 0,
+    fatal: outcome.fatal,
+    fatalPointIds: [...outcome.fatalPointIds],
   };
 
   return {

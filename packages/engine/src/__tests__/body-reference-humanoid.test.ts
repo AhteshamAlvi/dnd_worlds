@@ -213,40 +213,55 @@ describe("standard Special Point content", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("resolves to exactly the 20 expected instances over the standard Anatomy", () => {
+  it("resolves to exactly the 27 expected instances over the standard Anatomy", () => {
     const resolved = resolveCriticalPoints(
       STANDARD_HUMANOID_ANATOMY,
       BODY_PART_DEFINITIONS,
       SPECIAL_POINT_DEFINITIONS,
     );
 
-    const ids = resolved.points.map((point) => point.id).sort();
-
-    expect(ids).toEqual(
+    /*
+     * 20 instances became 27. The roster gained Eyes, a Jaw, Respiratory
+     * Organs, an Abdominal Core, a Solar Plexus, a Gut and Armpits, and lost
+     * Face, Upper Organs and Lower Organs.
+     *
+     * Note where the limb joints are hosted. A Wrist sits on the ARM and
+     * designates the Hand, so damage lands on the Arm while the threshold is
+     * read off the Hand — which is what "Connection: Arm -> Hand, Designated
+     * BP: affected Hand" says. Hosting it on the Hand instead would make every
+     * designation self-referential and the field pointless.
+     */
+    expect(resolved.points.map((point) => point.id).sort()).toEqual(
       [
+        "abdominal-core:lower-body-1",
+        "ankle:leg-1",
+        "ankle:leg-2",
+        "armpit:arm-1",
+        "armpit:arm-2",
         "brain:head-1",
-        "heart:upper-body-1",
-        "neck:neck-1",
-        "face:head-1",
-        "upper-organs:upper-body-1",
-        "lower-organs:lower-body-1",
-        "groin:lower-body-1",
-        "spine:shared:lower-body-1,upper-body-1",
-        "shoulder:arm-1",
-        "shoulder:arm-2",
         "elbow:arm-1",
         "elbow:arm-2",
-        "wrist:hand-1",
-        "wrist:hand-2",
+        "groin:lower-body-1",
+        "gut:lower-body-1",
+        "heart:upper-body-1",
         "hip:leg-1",
         "hip:leg-2",
+        "jaw:head-1",
         "knee:leg-1",
         "knee:leg-2",
-        "ankle:foot-1",
-        "ankle:foot-2",
+        "left-eye:head-1",
+        "lower-spine:lower-body-1",
+        "neck:neck-1",
+        "respiratory-organs:upper-body-1",
+        "right-eye:head-1",
+        "shoulder:arm-1",
+        "shoulder:arm-2",
+        "solar-plexus:lower-body-1",
+        "upper-spine:upper-body-1",
+        "wrist:arm-1",
+        "wrist:arm-2",
       ].sort(),
     );
-    expect(ids).toHaveLength(20);
   });
 
   it("passes full resolved-instance and consistency validation", () => {
@@ -257,10 +272,10 @@ describe("standard Special Point content", () => {
     );
 
     const result = validateCriticalPointData(
+      resolved,
       STANDARD_HUMANOID_ANATOMY,
       BODY_PART_DEFINITIONS,
       SPECIAL_POINT_DEFINITIONS,
-      resolved,
     );
 
     expect(result.valid).toBe(true);

@@ -1,443 +1,312 @@
 /*
- * Critical Point resolution.
+ * Resolving Anatomical Points and evaluating what a hit did to one.
  *
- * Critical Points are derived from the character's current resolved Anatomy.
- * They are not normally stored as persistent character state.
- *
- * Resolution uses reusable SpecialPointDefinitions:
- *
- * per-part
- * → create one point for every matching BodyPart.
- *
- * shared
- * → create one point spanning all matching BodyParts.
- *
- * body-part-self
- * → create one point for every matching BodyPart, with the BodyPart itself
- *   serving as the special target.
- *
- * This module also exposes the Body-level consequences already defined for
- * special targets:
- *
- * Critical
- * → failure of the associated BP-bearing host is fatal.
- *
- * Semicritical
- * → successful targeting creates an Injury opportunity.
- *
- * Joint
- * → penetrating BP damage is multiplied and successful targeting creates an
- *   Injury opportunity.
- *
- * Combat targeting difficulty and Injury selection are deliberately outside
- * this module.
+ * Two halves. The first derives point instances from current Anatomy, which is
+ * bookkeeping. The second is the part that decides outcomes, and it has one
+ * rule worth stating plainly: the four categories are evaluated INDEPENDENTLY
+ * against the same final damage number. Nothing here is an else-branch of
+ * anything else. A Human Neck hit for one point of damage destroys its
+ * Critical structure, fails its Joint, and reaches Fatal, all at once, because
+ * all three thresholds are 1 on a 2-BP part.
  */
 
+import { getBodyPartChildren } from "../anatomy/resolution";
+import {
+  createBodyPartDefinitionMap,
+  matchesBodyPartSelector,
+  selectBodyParts,
+} from "../selectors";
+import {
+  CRITICAL_TIER_FRACTIONS,
+  FATAL_FRACTION,
+  JOINT_FAILURE_FRACTION,
+  WEAK_DAMAGE_MULTIPLIER,
+} from "./types";
 import type {
   Anatomy,
-  BodyPart,
   BodyPartDefinition,
   BodyPartId,
 } from "../anatomy/types";
-import {
-  selectBodyParts,
-} from "../selectors";
 import type {
-} from "../body-points/types";
-import type {
+  AnatomicalPointCategory,
+  CriticalOutcome,
   CriticalPointId,
   CriticalPointInstance,
-  CriticalPointTypeId,
-  ResolvedCriticalPoint,
   ResolvedCriticalPoints,
-  ResolvedJointPoint,
   SpecialPointDefinition,
 } from "./types";
 
 
-/*
- * Creates a deterministic instance ID for a point attached to one BodyPart.
- *
- * Examples:
- *
- * brain:head-1
- * shoulder:arm-1
- * elbow:arm-3
- */
-function createPerPartPointId(
-  definitionId: CriticalPointTypeId,
-  partId: BodyPartId,
+/* -------------------------------------------------------------------------- */
+/* Deriving instances from anatomy                                            */
+/* -------------------------------------------------------------------------- */
+
+export function createPointId(
+  definitionId: string,
+  hostPartId: BodyPartId,
 ): CriticalPointId {
-  return `${definitionId}:${partId}`;
+  return `${definitionId}:${hostPartId}`;
 }
 
 
 /*
- * Creates a deterministic ID for one shared point spanning several hosts.
+ * Which BodyPart a Joint governs.
  *
- * Host IDs are sorted for ID stability. The resolved hostPartIds themselves
- * retain Anatomy order.
+ * Returns undefined when the designation matches nothing — a Wrist on an Arm
+ * whose Hand has been severed designates nothing, and a Joint with no
+ * designated part has no threshold to fail against.
  */
-function createSharedPointId(
-  definitionId: CriticalPointTypeId,
-  hostPartIds: readonly BodyPartId[],
-): CriticalPointId {
-  const stableHostIds = [
-    ...hostPartIds,
-  ].sort();
-
-  return (
-    `${definitionId}:shared:` +
-    stableHostIds.join(",")
-  );
-}
-
-
-/*
- * Creates one resolved point instance from one definition and one or more
- * concrete host BodyParts.
- */
-function createResolvedPoint(
+function resolveJointDesignation(
+  anatomy: Anatomy,
+  bodyPartDefinitions: readonly BodyPartDefinition[],
   definition: SpecialPointDefinition,
-  id: CriticalPointId,
-  hostPartIds: readonly BodyPartId[],
-): CriticalPointInstance {
-  switch (definition.category) {
-    case "critical":
-      return {
-        id,
-        definitionId:
-          definition.id,
+  hostPartId: BodyPartId,
+): BodyPartId | undefined {
+  const designation = definition.jointDesignation;
 
-        category: "critical",
+  if (designation === undefined) return undefined;
 
-        hostPartIds,
-
-        failureConsequence:
-          "death",
-      };
-
-    case "semicritical":
-      return {
-        id,
-        definitionId:
-          definition.id,
-
-        category:
-          "semicritical",
-
-        hostPartIds,
-
-        injuryOpportunity:
-          true,
-      };
-
-    case "joint":
-      return {
-        id,
-        definitionId:
-          definition.id,
-
-        category:
-          "joint",
-
-        hostPartIds,
-
-        damageMultiplier:
-          definition.damageMultiplier,
-
-        injuryOpportunity:
-          true,
-      };
+  if (designation.kind === "self" || designation.kind === "host") {
+    return hostPartId;
   }
+
+  const definitionsById = createBodyPartDefinitionMap(bodyPartDefinitions);
+
+  for (const child of getBodyPartChildren(anatomy, hostPartId)) {
+    const childDefinition = definitionsById.get(child.type);
+
+    if (childDefinition === undefined) continue;
+
+    if (
+      matchesBodyPartSelector(child, childDefinition, designation.selector)
+    ) {
+      return child.id;
+    }
+  }
+
+  return undefined;
 }
 
 
 /*
- * Resolves one reusable SpecialPointDefinition against the current Anatomy.
+ * Resolves one definition against the current Anatomy.
  *
- * A definition that matches no BodyParts produces no instances.
- *
- * This is intentional. A creature that does not possess anatomy matching a
- * particular definition simply does not possess that special target.
+ * A definition matching no BodyParts produces no instances, which is the right
+ * answer rather than an error: a creature without Arms does not have Shoulders.
  */
 export function resolveSpecialPointDefinition(
   anatomy: Anatomy,
   bodyPartDefinitions: readonly BodyPartDefinition[],
   definition: SpecialPointDefinition,
 ): readonly CriticalPointInstance[] {
-  const matches =
-    selectBodyParts(
+  const matches = selectBodyParts(
+    anatomy,
+    bodyPartDefinitions,
+    definition.placement.selector,
+  );
+
+  return matches.map((part) => {
+    const designatedPartId = resolveJointDesignation(
       anatomy,
       bodyPartDefinitions,
-      definition.placement.selector,
+      definition,
+      part.id,
     );
 
-  if (matches.length === 0) {
-    return [];
-  }
-
-  switch (definition.placement.kind) {
-    case "per-part":
-    case "body-part-self":
-      return matches.map(
-        (part) =>
-          createResolvedPoint(
-            definition,
-            createPerPartPointId(
-              definition.id,
-              part.id,
-            ),
-            [part.id],
-          ),
-      );
-
-    case "shared": {
-      const hostPartIds =
-        matches.map(
-          (part) => part.id,
-        );
-
-      return [
-        createResolvedPoint(
-          definition,
-          createSharedPointId(
-            definition.id,
-            hostPartIds,
-          ),
-          hostPartIds,
-        ),
-      ];
-    }
-  }
+    return {
+      id: createPointId(definition.id, part.id),
+      definitionId: definition.id,
+      categories: definition.categories,
+      hostPartId: part.id,
+      ...(designatedPartId !== undefined ? { designatedPartId } : {}),
+      weakMultiplier: definition.weakMultiplier ?? WEAK_DAMAGE_MULTIPLIER,
+    };
+  });
 }
 
 
 /*
- * Resolves every Special Point currently present in the supplied Anatomy.
+ * Resolves every Anatomical Point present in the supplied Anatomy.
  *
- * The supplied Anatomy should be the current Resolved Anatomy so temporary
- * anatomical changes automatically create or remove corresponding points.
- *
- * Example:
- *
- * temporary mutation adds:
- *
- * arm-3
- * hand-3
- *
- * Resolution automatically creates:
- *
- * shoulder:arm-3
- * elbow:arm-3
- * wrist:hand-3
+ * Pass the current RESOLVED Anatomy so temporary anatomy participates: a
+ * transformation adding arm-3 gains a Shoulder, an Elbow and a Wrist for it,
+ * and loses them again when it ends.
  */
 export function resolveCriticalPoints(
   anatomy: Anatomy,
   bodyPartDefinitions: readonly BodyPartDefinition[],
-  definitions:
-    readonly SpecialPointDefinition[],
+  definitions: readonly SpecialPointDefinition[],
 ): ResolvedCriticalPoints {
-  const points =
-    definitions.flatMap(
-      (definition) =>
-        resolveSpecialPointDefinition(
-          anatomy,
-          bodyPartDefinitions,
-          definition,
-        ),
-    );
+  const points = definitions.flatMap((definition) =>
+    resolveSpecialPointDefinition(anatomy, bodyPartDefinitions, definition),
+  );
+
+  const byId: Record<CriticalPointId, CriticalPointInstance> = {};
+
+  for (const point of points) {
+    byId[point.id] = point;
+  }
+
+  return { points, byId };
+}
+
+
+export function getCriticalPoint(
+  points: ResolvedCriticalPoints,
+  pointId: CriticalPointId,
+): CriticalPointInstance | undefined {
+  return points.byId[pointId];
+}
+
+
+export function hasCategory(
+  point: CriticalPointInstance,
+  category: AnatomicalPointCategory,
+): boolean {
+  return point.categories.includes(category);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Evaluating a hit                                                           */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Thresholds always round UP.
+ *
+ * A threshold is a MINIMUM REQUIRED amount of damage, so rounding it down
+ * would silently make every point easier to break than its percentage says.
+ * ceil is not a rounding preference here; it is what "at least" means.
+ */
+export function resolveThreshold(
+  maximumBP: number,
+  fraction: number,
+): number {
+  return Math.ceil(maximumBP * fraction);
+}
+
+
+/*
+ * The Weak multiplier, applied to post-mitigation damage BEFORE rounding.
+ *
+ * Order matters and is fixed: multiply, then round, then apply, then compare
+ * against thresholds. Rounding first would let 3 x 1.5 and 3.4 x 1.5 land on
+ * different sides of a threshold for no reason a player could follow.
+ */
+export function applyWeakMultiplier(
+  point: CriticalPointInstance,
+  postMitigationDamage: number,
+): number {
+  return hasCategory(point, "weak")
+    ? postMitigationDamage * point.weakMultiplier
+    : postMitigationDamage;
+}
+
+
+/*
+ * Evaluates the Critical tiers against one hit.
+ *
+ * Only the highest tier reached applies. On small anatomy several tiers
+ * collapse onto the same integer — a 4-BP Lower Body needs 2 for both the 30%
+ * and 50% tiers — and that is intended rather than a rounding artefact: a part
+ * with little structure has little room between "hurt" and "ruined".
+ */
+export function evaluateCritical(
+  point: CriticalPointInstance,
+  containingMaximumBP: number,
+  finalDamage: number,
+): CriticalOutcome {
+  const thresholds = {
+    minor: resolveThreshold(containingMaximumBP, CRITICAL_TIER_FRACTIONS.minor),
+    major: resolveThreshold(containingMaximumBP, CRITICAL_TIER_FRACTIONS.major),
+    destruction: resolveThreshold(
+      containingMaximumBP,
+      CRITICAL_TIER_FRACTIONS.destruction,
+    ),
+  };
+
+  if (!hasCategory(point, "critical")) {
+    return {
+      tier: "none",
+      injuryChance: "none",
+      destroyed: false,
+      thresholds,
+    };
+  }
+
+  if (finalDamage >= thresholds.destruction) {
+    return {
+      tier: "destruction",
+      injuryChance: "guaranteed",
+      destroyed: true,
+      thresholds,
+    };
+  }
+
+  if (finalDamage >= thresholds.major) {
+    return {
+      tier: "major",
+      injuryChance: "one-half",
+      destroyed: false,
+      thresholds,
+    };
+  }
+
+  if (finalDamage >= thresholds.minor) {
+    return {
+      tier: "minor",
+      injuryChance: "one-third",
+      destroyed: false,
+      thresholds,
+    };
+  }
+
+  return { tier: "none", injuryChance: "none", destroyed: false, thresholds };
+}
+
+
+/*
+ * Whether a hit reached the Fatal threshold.
+ *
+ * Half the containing BodyPart's Maximum BP, which makes targeted attacks far
+ * deadlier than attrition and is meant to: a Brain hit for 4 kills a character
+ * whose Head still has 4 of its 8 BP left. Destroying a brain is death, and it
+ * should not require destroying the skull around it first.
+ */
+export function evaluateFatal(
+  point: CriticalPointInstance,
+  containingMaximumBP: number,
+  finalDamage: number,
+): { readonly fatal: boolean; readonly threshold: number } {
+  const threshold = resolveThreshold(containingMaximumBP, FATAL_FRACTION);
 
   return {
-    points,
+    fatal: hasCategory(point, "fatal") && finalDamage >= threshold,
+    threshold,
   };
 }
 
 
 /*
- * Finds one resolved special target by its instance ID.
- */
-export function getCriticalPoint(
-  resolved: ResolvedCriticalPoints,
-  pointId: CriticalPointId,
-): CriticalPointInstance | undefined {
-  return resolved.points.find(
-    (point) =>
-      point.id === pointId,
-  );
-}
-
-
-/*
- * Returns the concrete BodyParts hosting one resolved point.
+ * Whether a hit failed a Joint, measured against the DESIGNATED part.
  *
- * Missing host references indicate invalid resolved data and are simply omitted
- * here. critical-points/validation.ts detects them explicitly.
+ * Not the host. A Wrist is hosted by the Arm and designates the Hand, so its
+ * threshold is 30% of the Hand's 4 Maximum BP — 2 — rather than 30% of the
+ * Arm's 14. Reading the threshold off the host would make small extremities
+ * absurdly durable when reached through a large limb.
  */
-export function getCriticalPointHosts(
-  anatomy: Anatomy,
+export function evaluateJoint(
   point: CriticalPointInstance,
-): readonly BodyPart[] {
-  const partsById =
-    new Map(
-      anatomy.parts.map(
-        (part) => [
-          part.id,
-          part,
-        ],
-      ),
-    );
-
-  return point.hostPartIds.flatMap(
-    (partId) => {
-      const part =
-        partsById.get(partId);
-
-      return part === undefined
-        ? []
-        : [part];
-    },
+  designatedMaximumBP: number,
+  finalDamage: number,
+): { readonly failed: boolean; readonly threshold: number } {
+  const threshold = resolveThreshold(
+    designatedMaximumBP,
+    JOINT_FAILURE_FRACTION,
   );
-}
 
-
-/*
- * Type guard for lethal Critical Points.
- */
-export function isCriticalPoint(
-  point: CriticalPointInstance,
-): point is ResolvedCriticalPoint {
-  return point.category === "critical";
-}
-
-
-/*
- * Type guard for Joint points.
- */
-export function isJointPoint(
-  point: CriticalPointInstance,
-): point is ResolvedJointPoint {
-  return point.category === "joint";
-}
-
-
-/*
- * Returns whether a successfully targeted special point creates an Injury
- * opportunity for the GM.
- *
- * Semicritical → yes
- * Joint        → yes
- * Critical     → no inherent Injury opportunity from this system
- *
- * Critical hits may still lead to Injuries through future Injury rules; they
- * simply do not receive the automatic special-target opportunity defined for
- * Semicritical and Joint points.
- */
-export function createsInjuryOpportunity(
-  point: CriticalPointInstance,
-): boolean {
-  return (
-    point.category ===
-      "semicritical" ||
-    point.category === "joint"
-  );
-}
-
-
-/*
- * Applies a Joint's BP damage multiplier to already-penetrating damage.
- *
- * This function does not calculate defense, soak, armor, Aura, accuracy, or
- * targeting difficulty.
- *
- * Combat first determines penetrating damage.
- * Body then applies the Joint multiplier.
- *
- * Example:
- *
- * penetrating damage = 4
- * Shoulder multiplier = 2
- *
- * BP damage = 8
- */
-export function applyJointDamageMultiplier(
-  point: ResolvedJointPoint,
-  penetratingDamage: number,
-): number {
-  return (
-    penetratingDamage *
-    point.damageMultiplier
-  );
-}
-
-
-/*
- * Returns the one BP-bearing host of a Critical or Joint point.
- *
- * Current Critical and Joint mechanics require exactly one host:
- *
- * Brain    → Head
- * Heart    → Upper Body
- * Neck     → Neck
- *
- * Shoulder → Arm
- * Elbow    → Arm
- * Wrist    → Hand
- *
- * Hip      → Leg
- * Knee     → Leg
- * Ankle    → Foot
- *
- * Semicritical points may span several hosts, such as Spine.
- *
- * Invalid host counts are rejected by critical-points/validation.ts.
- */
-export function getSinglePointHostId(
-  point:
-    | ResolvedCriticalPoint
-    | ResolvedJointPoint,
-): BodyPartId {
-  const [hostId] =
-    point.hostPartIds;
-
-  if (
-    hostId === undefined ||
-    point.hostPartIds.length !== 1
-  ) {
-    throw new Error(
-      `Special Point "${point.id}" requires exactly one host BodyPart.`,
-    );
-  }
-
-  return hostId;
-}
-
-
-/*
- * Finds Critical Points whose BP-bearing host has been destroyed.
- *
- * A Critical Point does not cause death from merely taking damage. The Brain
- * kills when the Head is destroyed, the Heart when the Upper Body is, the Neck
- * point when the Neck is.
- *
- * Takes the destroyed part ids directly rather than reading them back out of
- * resolved Body Points, because destruction is no longer something Body Points
- * know about. It used to be "Current BP reached 0", which made death a
- * rounding outcome; it is now an explicit anatomy state transition performed
- * by damage application, and damage application is what passes the ids here.
- *
- * IMPORTANT: this must be evaluated against the Critical Point set that
- * existed when the damage was applied, BEFORE destroyed BodyParts are removed
- * from Anatomy. Otherwise removing a destroyed Head takes the derived Brain
- * point with it before its fatal failure can be observed.
- */
-export function getFatalCriticalFailures(
-  criticalPoints: ResolvedCriticalPoints,
-  destroyedPartIds: Iterable<BodyPartId>,
-): readonly ResolvedCriticalPoint[] {
-  const destroyed = new Set(destroyedPartIds);
-
-  return criticalPoints.points
-    .filter(isCriticalPoint)
-    .filter((point) => destroyed.has(getSinglePointHostId(point)));
+  return {
+    failed: hasCategory(point, "joint") && finalDamage >= threshold,
+    threshold,
+  };
 }

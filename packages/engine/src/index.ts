@@ -349,15 +349,21 @@ export {
 } from "./character/foundation/body/body-points/validation";
 
 export type {
-  CriticalPointCategory,
+  AnatomicalPointCategory,
+  AnatomicalPointDefinition,
+  CriticalOutcome,
   CriticalPointInstance,
   ResolvedCriticalPoints,
   SpecialPointDefinition,
 } from "./character/foundation/body/critical-points/types";
 
 export {
-  applyJointDamageMultiplier,
-  createsInjuryOpportunity,
+  applyWeakMultiplier,
+  evaluateCritical,
+  evaluateFatal,
+  evaluateJoint,
+  hasCategory,
+  resolveThreshold,
   resolveCriticalPoints,
 } from "./character/foundation/body/critical-points/resolution";
 
