@@ -15,6 +15,7 @@
 
 import type { BodyMorphology } from "./types";
 import type { BodyPartId, ReferenceForm } from "./anatomy/types";
+import type { SpeciesStatureBands } from "./stature/types";
 
 
 /*
@@ -68,4 +69,16 @@ export interface SpeciesBodyProfile {
   readonly localMorphology: Readonly<
     Record<BodyPartId, Partial<BodyMorphology>>
   >;
+
+  /*
+   * How far an individual of this Species may differ from that norm before
+   * something has to explain it.
+   *
+   * Authored as ratios to the ordinary same-age member rather than as
+   * centimetres and kilograms, so one pair of numbers covers every age and
+   * every Scale — see stature/types.ts. A Species that has not thought about
+   * it can widen the band; it cannot sensibly omit it, because "no limit" is
+   * itself a claim about the Species and should be written down as one.
+   */
+  readonly stature: SpeciesStatureBands;
 }
