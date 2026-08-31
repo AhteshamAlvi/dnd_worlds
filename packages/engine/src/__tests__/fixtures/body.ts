@@ -43,4 +43,5 @@ export const TEST_BODY_STATE = {
   globalMorphology: NEUTRAL_MORPHOLOGY,
   localMorphology: {},
   strengthDevelopmentMuscularity: 1,
+  anatomicalPoints: {},
 } as const;

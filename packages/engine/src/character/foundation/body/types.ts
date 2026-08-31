@@ -16,6 +16,7 @@
  */
 
 import type { Anatomy, BodyPartId } from "./anatomy/types";
+import type { AnatomicalPointStates } from "./critical-points/state";
 
 
 /*
@@ -73,6 +74,16 @@ export interface Body {
   readonly strengthDevelopmentMuscularity: number;
 
   readonly anatomy: Anatomy;
+
+  /*
+   * What has become of this body's Anatomical Points.
+   *
+   * Point instances are derived from anatomy; what has already happened to
+   * them is not derivable from anything, so it is stored. Sparse — an entry
+   * exists only for a point something has happened to, and absent means
+   * active. See critical-points/state.ts.
+   */
+  readonly anatomicalPoints: AnatomicalPointStates;
 }
 
 

@@ -93,6 +93,15 @@ function resolveJointDesignation(
  *
  * A definition matching no BodyParts produces no instances, which is the right
  * answer rather than an error: a creature without Arms does not have Shoulders.
+ *
+ * Only ACTIVE anatomy hosts points, matching every other resolver since the
+ * measurement subsystem. A severed Arm is not a place a Shoulder can be
+ * targeted, and a suppressed one is not either — the part has left the body,
+ * and the targets layered over it leave with it.
+ *
+ * Note the consequence for damage application: it resolves points BEFORE
+ * applying a hit, precisely so that destroying a Head can still be measured
+ * against the Brain that was inside it a moment ago.
  */
 export function resolveSpecialPointDefinition(
   anatomy: Anatomy,
@@ -103,7 +112,7 @@ export function resolveSpecialPointDefinition(
     anatomy,
     bodyPartDefinitions,
     definition.placement.selector,
-  );
+  ).filter((part) => part.state === "active");
 
   return matches.map((part) => {
     const designatedPartId = resolveJointDesignation(

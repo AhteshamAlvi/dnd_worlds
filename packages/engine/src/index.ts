@@ -322,6 +322,19 @@ export {
 } from "./character/foundation/body/selectors";
 
 export {
+  getAnatomicalPointState,
+  isAnatomicalPointActive,
+  selectDestroyedJointPointIds,
+  selectDestroyedPointIds,
+  setAnatomicalPointState,
+} from "./character/foundation/body/critical-points/state";
+
+export type {
+  AnatomicalPointState,
+  AnatomicalPointStates,
+} from "./character/foundation/body/critical-points/state";
+
+export {
   JOINT_DOWNSTREAM_EFFECTIVENESS_MULTIPLIER,
   resolveBodyCapability,
 } from "./character/foundation/body/capability";

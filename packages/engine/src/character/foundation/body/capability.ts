@@ -36,12 +36,11 @@ import {
   getBodyPartDescendants,
 } from "./anatomy/resolution";
 import { hasCategory } from "./critical-points/resolution";
+import { selectDestroyedJointPointIds } from "./critical-points/state";
 import type { Anatomy, BodyPartId } from "./anatomy/types";
 import type { ResolvedBodyPoints } from "./body-points/types";
-import type {
-  CriticalPointId,
-  ResolvedCriticalPoints,
-} from "./critical-points/types";
+import type { AnatomicalPointStates } from "./critical-points/state";
+import type { ResolvedCriticalPoints } from "./critical-points/types";
 
 
 /*
@@ -108,13 +107,14 @@ export interface CapabilityResolutionInput {
   readonly points: ResolvedCriticalPoints;
 
   /*
-   * Which Joint points are currently destroyed.
+   * This body's persistent Anatomical Point state.
    *
-   * Supplied rather than stored, for now. Persisting Anatomical Point state is
-   * its own piece of work; until it exists, whoever holds that state passes it
-   * here, exactly as morphology and effective scale are passed to Body Points.
+   * Taken as the whole map rather than a precomputed list of destroyed Joint
+   * ids, so callers cannot get the filtering subtly wrong — in particular,
+   * cannot let an archived record for anatomy the body no longer has reach
+   * back and disable a limb it no longer contains.
    */
-  readonly destroyedJointPointIds: readonly CriticalPointId[];
+  readonly pointStates: AnatomicalPointStates;
 
   readonly bodyPoints: ResolvedBodyPoints;
 
@@ -142,7 +142,9 @@ export interface CapabilityResolutionInput {
 export function resolveBodyCapability(
   input: CapabilityResolutionInput,
 ): ResolvedBodyCapability {
-  const destroyed = new Set(input.destroyedJointPointIds);
+  const destroyed = new Set(
+    selectDestroyedJointPointIds(input.points, input.pointStates),
+  );
 
   const inaccessibleReasons = new Map<BodyPartId, string[]>();
   const upstreamJointCount = new Map<BodyPartId, number>();

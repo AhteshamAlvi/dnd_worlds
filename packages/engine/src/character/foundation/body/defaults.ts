@@ -21,4 +21,7 @@ export const STANDARD_BODY: Body = {
   strengthDevelopmentMuscularity: 1,
 
   anatomy: STANDARD_HUMANOID_ANATOMY,
+
+  /* Nothing has happened to this body, so it records nothing. */
+  anatomicalPoints: {},
 };

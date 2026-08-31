@@ -90,6 +90,8 @@ import {
   hasCategory,
   resolveCriticalPoints,
 } from "./critical-points/resolution";
+import { setAnatomicalPointState } from "./critical-points/state";
+import type { AnatomicalPointStates } from "./critical-points/state";
 import type {
   CriticalPointId,
   CriticalPointInstance,
@@ -145,6 +147,18 @@ export interface BodyDamageInput {
 export interface BodyDamageOutcome {
   // New persistent state — the caller stores this back onto Body.anatomy.
   readonly anatomy: Anatomy;
+
+  /*
+   * New persistent Anatomical Point state, for Body.anatomicalPoints.
+   *
+   * Returned alongside anatomy rather than folded into it because they are two
+   * different records: one says what the body is made of, the other says what
+   * has happened to the targets layered over it.
+   */
+  readonly anatomicalPoints: AnatomicalPointStates;
+
+  /** Points archived by this hit, whether targeted or taken with their host. */
+  readonly destroyedPointIds: readonly CriticalPointId[];
 
   readonly hostPartId: BodyPartId;
 
@@ -459,6 +473,35 @@ export function applyBodyDamage(
       .map((candidate) => candidate.id),
   ];
 
+  /*
+   * Which Anatomical Points this hit ended.
+   *
+   * Three routes, deliberately separate events rather than tiers of one:
+   *
+   *   - a targeted Critical Point reaching its 50% tier is destroyed
+   *   - a targeted Joint reaching its 30% threshold is destroyed
+   *   - destroying the HOST BodyPart destroys every point inside it, whether
+   *     or not anything was aimed at them
+   *
+   * The third is the same inference that makes decapitation fatal: a Head
+   * reduced to nothing takes the Brain, the Eyes and the Jaw with it.
+   */
+  const destroyedPointIds = [
+    ...(point !== undefined && critical.destroyed ? [point.id] : []),
+    ...(point !== undefined && jointOutcome.failed ? [point.id] : []),
+    ...(destroyed
+      ? criticalPoints.points
+          .filter((candidate) => candidate.hostPartId === hostPartId)
+          .map((candidate) => candidate.id)
+      : []),
+  ].filter((id, index, all) => all.indexOf(id) === index);
+
+  const anatomicalPoints = destroyedPointIds.reduce(
+    (states, pointId) =>
+      setAnatomicalPointState(states, pointId, "archived-removed"),
+    input.body.anatomicalPoints,
+  );
+
   const destroyedPartIds = destroyed ? [hostPartId] : [];
 
   const anatomy = storedOutcome.anatomy;
@@ -467,6 +510,8 @@ export function applyBodyDamage(
 
   const outcome: BodyDamageOutcome = {
     anatomy,
+    anatomicalPoints,
+    destroyedPointIds,
 
     hostPartId,
 
@@ -496,6 +541,7 @@ export function applyBodyDamage(
     appliedDamage: outcome.appliedDamage,
     criticalTier: outcome.critical.tier,
     jointFailed: outcome.jointFailed,
+    destroyedPointIds: [...outcome.destroyedPointIds],
     destroyedPartIds: [...outcome.destroyedPartIds],
     removedPartIds: [...outcome.removedPartIds],
     fatal: outcome.fatal,

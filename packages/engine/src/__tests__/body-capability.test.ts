@@ -77,6 +77,7 @@ function withIntegrity(
 function capability(
   anatomy: Anatomy,
   destroyedJointPointIds: readonly string[] = [],
+
   inaccessibility: readonly { sourceId: string; partId: string }[] = [],
 ) {
   const morphology = resolveMorphology(
@@ -90,10 +91,14 @@ function capability(
     anatomy.parts.map((part) => part.id),
   );
 
+  const pointStates = Object.fromEntries(
+    destroyedJointPointIds.map((id) => [id, "archived-removed" as const]),
+  );
+
   return resolveBodyCapability({
     anatomy,
     points: resolveCriticalPoints(anatomy, DEFINITIONS, [SHOULDER, WRIST]),
-    destroyedJointPointIds,
+    pointStates,
     bodyPoints: resolveBodyPoints({
       anatomy,
       definitions: DEFINITIONS,
