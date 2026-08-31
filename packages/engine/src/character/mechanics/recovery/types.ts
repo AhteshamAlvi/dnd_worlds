@@ -86,13 +86,11 @@ export interface BodyPartRecoveryCeiling {
 export interface BodyPartRecoveryOutcome {
   readonly partId: BodyPartId;
 
-  readonly damageBefore: number;
-  readonly damageAfter: number;
+  readonly integrityBefore: number;
+  readonly integrityAfter: number;
 
-  readonly recoveryProgressBefore: number;
-  readonly recoveryProgressAfter: number;
-
-  readonly wholeBPRestored: number;
+  /** Exact BP actually restored — below the tick's full amount at the ceiling. */
+  readonly bpRestored: number;
 
   /** The ceiling this part's recovery was actually resolved against. */
   readonly ceiling: number;
@@ -132,8 +130,8 @@ export type InjuryOverlapDecision =
 
 /**
  * Surfaced when a new Injury is recorded on a BodyPart that already carries
- * one, so a GM can decide what should happen to that BodyPart's
- * recoveryProgress instead of the engine silently picking for them.
+ * one, so a GM can decide what should happen to that BodyPart's partly-healed
+ * structure instead of the engine silently picking for them.
  *
  * `recommendedDecision` is what applies if nobody looks at this flag — the
  * default documented at `decisionId`.
@@ -144,7 +142,7 @@ export interface InjuryOverlapFlag {
   readonly existingCharacterInjuryId: CharacterInjuryId;
   readonly newCharacterInjuryId: CharacterInjuryId;
 
-  readonly recoveryProgressAtOverlap: number;
+  readonly integrityAtOverlap: number;
 
   readonly recommendedDecision: "preserve";
   readonly decisionId: "injury.overlap.recovery-progress-default";

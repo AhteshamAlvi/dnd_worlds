@@ -1,25 +1,34 @@
 /*
- * Tests Body Point resolution: the Constitution ladder, the single rounding
- * step with its minimum-1 floor, the locked additive-before-CON /
- * multiplier-after-CON stage ordering, damage storage and destruction, and
- * the Body Point validators.
+ * Body Point resolution.
+ *
+ * BP now consumes Structural Capacity rather than an authored Base BP column,
+ * which changes what is worth testing. The old suite spent most of its length
+ * on a two-stage modifier pipeline (additive before Constitution, multiplicative
+ * after) that no longer exists: adding BP directly is gone, because a body that
+ * is genuinely tougher should say so through Scale, Bulk or Muscularity and let
+ * Structural Capacity carry the consequence into BP, Strength, Mass and Size at
+ * once.
+ *
+ * What replaces it is the arithmetic that actually decides a number now — the
+ * Constitution ladder at its new interval, the build factor, and the two floors
+ * that keep small anatomy on frail characters from rounding out of existence.
  */
 
 import { describe, expect, it } from "vitest";
 
-import { createAnatomy } from "../character/foundation/body/anatomy/creation";
-import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
+import type {
+  Anatomy,
+  BodyPartDefinition,
+} from "../character/foundation/body/anatomy/types";
 import {
-  REFERENCE_ADIPOSITY,
-  REFERENCE_HEIGHT_CM,
-  REFERENCE_MASS_KG,
-  REFERENCE_MUSCULARITY,
-  resolveMorphology,
-} from "../character/foundation/body/body-points/morphology";
-import type { BodyMorphologyInput } from "../character/foundation/body/body-points/morphology";
-import {
+  ADIPOSITY_BP_CONTRIBUTION,
+  BULK_BP_CONTRIBUTION,
+  CONSTITUTION_DOUBLING_INTERVAL,
+  displayCurrentBP,
   getConstitutionBPMultiplier,
   resolveBodyPoints,
+  resolveBuildFactor,
+  roundMaximumBP,
 } from "../character/foundation/body/body-points/resolution";
 import { combineBodyPointModifiers } from "../character/foundation/body/body-points/modifiers";
 import type { BodyPointModifier } from "../character/foundation/body/body-points/types";
@@ -27,279 +36,438 @@ import {
   validateBodyPointModifier,
   validateBodyPointResolution,
 } from "../character/foundation/body/body-points/validation";
-import { getBodyPartDefinition } from "../character/foundation/body/anatomy/body-parts";
+import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
+import type { BodyMorphology } from "../character/foundation/body/types";
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
-const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
+const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };
 
+/*
+ * Reference Structural Capacity 20 with every sensitivity at zero, so that
+ * Maximum BP is 20 at CON 10 and morphology cannot perturb it. Tests that want
+ * morphology to matter author their own sensitivities.
+ */
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  {
+    id: "torso",
+    name: "Torso",
+    description: "Test torso.",
+    tags: ["core"],
+    ...TEST_PART_PHYSICALS,
+    reference: { ...TEST_PART_PHYSICALS.reference, structuralCapacity: 20 },
+  },
 ];
 
-const REFERENCE_INPUT: BodyMorphologyInput = {
-  heightCm: REFERENCE_HEIGHT_CM,
-  massKg: REFERENCE_MASS_KG,
-  build: { muscularity: REFERENCE_MUSCULARITY, adiposity: REFERENCE_ADIPOSITY },
-};
-
-function singlePartAnatomy(damage = 0): Anatomy {
+function anatomy(integrity = 1): Anatomy {
   return {
     parts: [
-      { id: "torso-1", type: "torso", attachment: null, state: "active", damage, recoveryProgress: 0 },
+      { id: "torso-1", type: "torso", attachment: null, state: "active", integrity },
     ],
   };
 }
 
-describe("getConstitutionBPMultiplier", () => {
-  it.each([
-    [5, 0.5],
-    [10, 1],
-    [15, 2],
-    [20, 4],
-    [25, 8],
-    [30, 16],
-    [35, 32],
-  ])("CON %i -> ×%s", (con, expected) => {
-    expect(getConstitutionBPMultiplier(con)).toBeCloseTo(expected, 10);
+function morphologyFor(
+  target: Anatomy,
+  character: Partial<BodyMorphology> = {},
+) {
+  return resolveMorphology(
+    {
+      species: NEUTRAL_SOURCE,
+      age: NEUTRAL_SOURCE,
+      character: {
+        global: { ...NEUTRAL_MORPHOLOGY, ...character },
+        local: {},
+      },
+      strengthDevelopmentMuscularity: 1,
+      effectLayers: [],
+    },
+    target.parts.map((part) => part.id),
+  );
+}
+
+function resolve(
+  options: {
+    readonly integrity?: number;
+    readonly constitution?: number;
+    readonly effectiveScale?: number;
+    readonly character?: Partial<BodyMorphology>;
+    readonly definitions?: readonly BodyPartDefinition[];
+    readonly modifiers?: readonly BodyPointModifier[];
+  } = {},
+) {
+  const target = anatomy(options.integrity ?? 1);
+
+  return resolveBodyPoints({
+    anatomy: target,
+    definitions: options.definitions ?? DEFINITIONS,
+    morphologyByPartId: morphologyFor(target, options.character),
+    effectiveScale: options.effectiveScale ?? 1,
+    constitution: options.constitution ?? 10,
+    ...(options.modifiers !== undefined ? { modifiers: options.modifiers } : {}),
+  });
+}
+
+const torso = (result: ReturnType<typeof resolve>) => {
+  const part = result.byPartId["torso-1"];
+
+  if (part === undefined) throw new Error("torso-1 did not resolve.");
+
+  return part;
+};
+
+
+describe("the Constitution ladder", () => {
+  /*
+   * The interval moved from 5 to 2 in this phase, and the reason is a
+   * comparison rather than a preference: buying +1 STR solves for a
+   * Muscularity that raises whole-body Structural Capacity from 100 to 143.85,
+   * a x1.438 durability gain that comes free with a Strength purchase. At an
+   * interval of 2, +1 CON is x1.414, so the two points buy about the same
+   * toughness. At the old interval of 5 it was x1.149, and one Strength point
+   * was worth roughly two and a half Constitution points of durability.
+   */
+  it("doubles every two points of Constitution", () => {
+    expect(CONSTITUTION_DOUBLING_INTERVAL).toBe(2);
+
+    expect(getConstitutionBPMultiplier(10)).toBeCloseTo(1, 10);
+    expect(getConstitutionBPMultiplier(12)).toBeCloseTo(2, 10);
+    expect(getConstitutionBPMultiplier(8)).toBeCloseTo(0.5, 10);
+    expect(getConstitutionBPMultiplier(20)).toBeCloseTo(32, 10);
+    expect(getConstitutionBPMultiplier(30)).toBeCloseTo(1024, 10);
+  });
+
+  it("buys a point of Constitution at roughly the rate a point of Strength does", () => {
+    const perConstitutionPoint = getConstitutionBPMultiplier(11);
+    const perStrengthPoint = 143.85 / 100;
+
+    expect(perConstitutionPoint).toBeCloseTo(1.414, 3);
+    expect(Math.abs(perConstitutionPoint - perStrengthPoint)).toBeLessThan(0.03);
+  });
+
+  it("scales Maximum BP by exactly that multiplier", () => {
+    expect(torso(resolve({ constitution: 10 })).maximumBP).toBe(20);
+    expect(torso(resolve({ constitution: 12 })).maximumBP).toBe(40);
+    expect(torso(resolve({ constitution: 8 })).maximumBP).toBe(10);
   });
 });
 
-describe("rounding and the minimum-1 floor", () => {
-  it("rounds exactly once, at the very end", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
 
-    // CON 11 -> ×2^(1/5), an irrational multiplier that only becomes a whole
-    // number after the single final rounding step.
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 11, DEFINITIONS);
-    const part = bodyPoints.parts[0]!;
+describe("Maximum BP comes from Structural Capacity", () => {
+  it("equals reference SC at neutral morphology, Scale 1 and CON 10", () => {
+    const resolved = torso(resolve());
 
-    expect(Number.isInteger(part.rawMaximumBP)).toBe(false);
-    expect(Number.isInteger(part.maximumBP)).toBe(true);
+    expect(resolved.structuralCapacity).toBe(20);
+    expect(resolved.buildFactor).toBe(1);
+    expect(resolved.constitutionMultiplier).toBe(1);
+    expect(resolved.maximumBP).toBe(20);
   });
 
-  it("floors Maximum BP at 1 even for a very low CON", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
+  /*
+   * Scale reaches BP squared rather than cubed, because it reaches BP through
+   * Structural Capacity and cross-section is what resists destruction. A Giant
+   * ten times a Human's size has a hundred times the Body Points, not a
+   * thousand.
+   */
+  it("follows Scale squared, through Structural Capacity", () => {
+    expect(torso(resolve({ effectiveScale: 10 })).maximumBP).toBe(2000);
+  });
 
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, -100, DEFINITIONS);
-    expect(bodyPoints.parts[0]!.maximumBP).toBe(1);
+  it("carries no Strength term at all", () => {
+    /*
+     * Muscularity still reaches BP — but only by raising Structural Capacity
+     * first, which is the honest route. With muscularityStructural at 0 on
+     * this fixture, it cannot reach BP any other way.
+     */
+    expect(torso(resolve({ character: { muscularity: 4 } })).maximumBP).toBe(20);
   });
 });
 
-describe("stage ordering: additive before CON, multiplier after CON", () => {
-  it("does not commute — (base + additive) × con × multiplier, not the reverse", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
 
-    const modifiers: readonly BodyPointModifier[] = [
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: 6 } },
-      { selector: { all: true }, operation: { kind: "multiply-bp", multiplier: 2 } },
+describe("the build factor", () => {
+  const SENSITIVE: readonly BodyPartDefinition[] = [
+    {
+      ...DEFINITIONS[0]!,
+      sensitivity: {
+        ...TEST_PART_PHYSICALS.sensitivity,
+        bulkSize: 1,
+        adipositySize: 1,
+      },
+    },
+  ];
+
+  /*
+   * Bulk and Adiposity are halved and quartered relative to their effect on
+   * Size and Mass: a thicker body is harder to destroy, but not in proportion
+   * to how much larger it is.
+   */
+  it("halves Bulk and quarters Adiposity", () => {
+    expect(BULK_BP_CONTRIBUTION).toBe(0.5);
+    expect(ADIPOSITY_BP_CONTRIBUTION).toBe(0.25);
+
+    const sensitivity = SENSITIVE[0]!.sensitivity;
+
+    expect(
+      resolveBuildFactor({ ...NEUTRAL_MORPHOLOGY, bulk: 2 }, sensitivity),
+    ).toBeCloseTo(1.5, 10);
+
+    expect(
+      resolveBuildFactor({ ...NEUTRAL_MORPHOLOGY, adiposity: 2 }, sensitivity),
+    ).toBeCloseTo(1.25, 10);
+  });
+
+  /*
+   * They ADD inside the factor rather than multiplying, so a body that is both
+   * broad and heavy is not compounded twice for one physique.
+   */
+  it("adds Bulk and Adiposity rather than multiplying them", () => {
+    const both = resolveBuildFactor(
+      { ...NEUTRAL_MORPHOLOGY, bulk: 2, adiposity: 2 },
+      SENSITIVE[0]!.sensitivity,
+    );
+
+    expect(both).toBeCloseTo(1.75, 10);
+    expect(both).not.toBeCloseTo(1.5 * 1.25, 10);
+  });
+
+  it("reaches Maximum BP", () => {
+    expect(
+      torso(resolve({ definitions: SENSITIVE, character: { bulk: 2 } }))
+        .maximumBP,
+    ).toBe(30);
+  });
+});
+
+
+describe("the two floors", () => {
+  it("rounds Maximum BP exactly once, at the very end", () => {
+    /*
+     * SC 20 x CON 9's 0.7071 is 14.142, which rounds to 14. Rounding any
+     * earlier — the multiplier to 0.7, say — would give 14 by luck here and
+     * the wrong answer elsewhere.
+     */
+    expect(torso(resolve({ constitution: 9 })).rawMaximumBP).toBeCloseTo(14.142, 3);
+    expect(torso(resolve({ constitution: 9 })).maximumBP).toBe(14);
+  });
+
+  /*
+   * The Maximum BP floor gets more load-bearing the higher the Constitution
+   * interval goes, and at 2 it is genuinely holding weight. A Human Neck has
+   * reference SC 2; at CON 4 the multiplier is 0.125 and raw Maximum BP is
+   * 0.25, which rounds to zero. A part with zero Maximum BP is destroyed the
+   * instant it is created and can never heal, because every fraction of
+   * nothing is nothing.
+   */
+  it("floors Maximum BP at 1 for small anatomy on a frail character", () => {
+    const neck: readonly BodyPartDefinition[] = [
+      {
+        ...DEFINITIONS[0]!,
+        reference: { ...TEST_PART_PHYSICALS.reference, structuralCapacity: 2 },
+      },
     ];
 
-    const con = 15; // ×2 multiplier
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, con, DEFINITIONS, modifiers);
-    const part = bodyPoints.parts[0]!;
+    const resolved = torso(resolve({ definitions: neck, constitution: 4 }));
 
-    // baseBP 10, morphology-adjusted stays 10 (neutral sensitivity), +6 -> 16,
-    // ×2 (CON) -> 32, ×2 (true multiplier) -> 64.
-    const wrongOrder = (10 * 2 + 6) * 2; // if additive were applied after CON instead
-    const correctOrder = (10 + 6) * 2 * 2;
+    expect(resolved.rawMaximumBP).toBeCloseTo(0.25, 10);
+    expect(resolved.maximumBP).toBe(1);
+    expect(roundMaximumBP(0.25)).toBe(1);
+  });
 
-    expect(part.rawMaximumBP).toBe(correctOrder);
-    expect(part.rawMaximumBP).not.toBe(wrongOrder);
-    expect(part.resolvedBaseBP).toBe(16);
-    expect(part.constitutionScaledBP).toBe(32);
-    expect(part.rawMaximumBP).toBe(64);
+  /*
+   * The Current BP floor exists for the same reason and protects the same
+   * thing: 0 is reserved for destruction, which is an anatomy state
+   * transition. The tiny-pool guard — Maximum BP 2 at 20% integrity — is 0.4
+   * exact BP, and it displays 1 rather than rounding a still-attached part
+   * out of existence.
+   */
+  it("floors displayed Current BP at 1 for an active part", () => {
+    const neck: readonly BodyPartDefinition[] = [
+      {
+        ...DEFINITIONS[0]!,
+        reference: { ...TEST_PART_PHYSICALS.reference, structuralCapacity: 2 },
+      },
+    ];
+
+    const resolved = torso(resolve({ definitions: neck, integrity: 0.2 }));
+
+    expect(resolved.maximumBP).toBe(2);
+    expect(resolved.exactCurrentBP).toBeCloseTo(0.4, 10);
+    expect(resolved.currentBP).toBe(1);
+    expect(displayCurrentBP(0.4)).toBe(1);
   });
 });
 
-describe("damage storage and destruction", () => {
-  it("Current BP = max(0, Maximum BP - damage), and damage is not clamped", () => {
-    const anatomy = singlePartAnatomy(3);
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, DEFINITIONS);
-    const part = bodyPoints.parts[0]!;
 
-    expect(part.maximumBP).toBe(10);
-    expect(part.damage).toBe(3);
-    expect(part.currentBP).toBe(7);
-    expect(part.destroyed).toBe(false);
+describe("integrity", () => {
+  /*
+   * The reason integrity is stored as a fraction rather than as absolute
+   * damage. Maximum BP is derived, so it moves whenever Scale, Muscularity,
+   * Build or CON moves — and a wound has to survive that without becoming
+   * healing or harm. 7/14 growing into 14/28 is the same wound on a bigger
+   * body; "7 damage" would have become 21/28, a free 7 points of health.
+   */
+  it("preserves a wound proportionally when Maximum BP changes", () => {
+    const before = torso(resolve({ integrity: 0.5, constitution: 10 }));
+
+    expect(before.maximumBP).toBe(20);
+    expect(before.exactCurrentBP).toBe(10);
+
+    const after = torso(resolve({ integrity: 0.5, constitution: 12 }));
+
+    expect(after.maximumBP).toBe(40);
+    expect(after.exactCurrentBP).toBe(20);
+    expect(after.integrity).toBe(before.integrity);
   });
 
-  it("damage exceeding Maximum BP is not clamped, but Current BP floors at 0", () => {
-    const anatomy = singlePartAnatomy(999);
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, DEFINITIONS);
-    const part = bodyPoints.parts[0]!;
+  it("leaves an undamaged part at full Current BP", () => {
+    const resolved = torso(resolve());
 
-    expect(part.damage).toBe(999);
-    expect(part.currentBP).toBe(0);
-    expect(part.destroyed).toBe(true);
+    expect(resolved.exactCurrentBP).toBe(resolved.maximumBP);
+    expect(resolved.currentBP).toBe(resolved.maximumBP);
   });
 
-  it("reports destroyedPartIds and the correct aggregate total", () => {
-    const anatomy: Anatomy = {
-      parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
-        { id: "torso-2", type: "torso", attachment: null, state: "active", damage: 999, recoveryProgress: 0 },
-      ],
-    };
+  /*
+   * Departed anatomy has no Body Points at all rather than Body Points of
+   * zero. Absent and destroyed are different from damaged, and the resolver
+   * says so by omission — the same way measurements and Structural Capacity
+   * do.
+   */
+  it.each(["suppressed", "archived-removed"] as const)(
+    "gives %s anatomy no Body Points at all",
+    (state) => {
+      const resolved = resolveBodyPoints({
+        anatomy: {
+          parts: [
+            { id: "torso-1", type: "torso", attachment: null, state, integrity: 0 },
+          ],
+        },
+        definitions: DEFINITIONS,
+        morphologyByPartId: {},
+        effectiveScale: 1,
+        constitution: 10,
+      });
 
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, DEFINITIONS);
-
-    expect(bodyPoints.destroyedPartIds).toEqual(["torso-2"]);
-    expect(bodyPoints.aggregateMaximumBP).toBe(20);
-  });
+      expect(resolved.parts).toEqual([]);
+      expect(resolved.byPartId["torso-1"]).toBeUndefined();
+      expect(resolved.aggregateMaximumBP).toBe(0);
+    },
+  );
 });
 
-describe("Body Point validators", () => {
+
+describe("destruction resistance modifiers", () => {
+  it("multiplies Maximum BP", () => {
+    const resolved = torso(
+      resolve({
+        modifiers: [
+          {
+            selector: { all: true },
+            operation: { kind: "modify-destruction-resistance", multiplier: 1.5 },
+          },
+        ],
+      }),
+    );
+
+    expect(resolved.destructionResistance).toBe(1.5);
+    expect(resolved.maximumBP).toBe(30);
+  });
+
+  it("multiplies several together", () => {
+    expect(
+      combineBodyPointModifiers([
+        {
+          selector: { all: true },
+          operation: { kind: "modify-destruction-resistance", multiplier: 1.5 },
+        },
+        {
+          selector: { all: true },
+          operation: { kind: "modify-destruction-resistance", multiplier: 2 },
+        },
+      ]).destructionResistance,
+    ).toBe(3);
+  });
+
+  it("resolves to 1 with no modifiers at all", () => {
+    expect(combineBodyPointModifiers([]).destructionResistance).toBe(1);
+    expect(torso(resolve()).destructionResistance).toBe(1);
+  });
+
+  /*
+   * Zero is rejected rather than treated as a legal extreme. It would drive
+   * Maximum BP to zero, and the floor would then quietly rescue it to 1 —
+   * turning an authoring error into a part that silently ignores the effect
+   * placed on it.
+   */
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "rejects a multiplier of %p",
+    (multiplier) => {
+      const modifier: BodyPointModifier = {
+        selector: { all: true },
+        operation: { kind: "modify-destruction-resistance", multiplier },
+      };
+
+      const result = validateBodyPointModifier(modifier);
+
+      expect(result.valid).toBe(false);
+      expect(result.issues[0]?.code).toBe("invalid-destruction-resistance");
+    },
+  );
+});
+
+
+describe("Body Point validation", () => {
   it("accepts valid resolution inputs", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
-
-    const result = validateBodyPointResolution(anatomy, morphology, 10, DEFINITIONS);
-    expect(result.valid).toBe(true);
+    expect(validateBodyPointResolution(anatomy(), 10, DEFINITIONS).valid).toBe(true);
   });
 
   it("rejects a non-finite Constitution", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
+    const result = validateBodyPointResolution(anatomy(), Number.NaN, DEFINITIONS);
 
-    const result = validateBodyPointResolution(anatomy, morphology, NaN, DEFINITIONS);
     expect(result.valid).toBe(false);
-    expect(result.issues.some((i) => i.code === "invalid-constitution")).toBe(true);
+    expect(result.issues[0]?.code).toBe("invalid-constitution");
   });
 
-  it("rejects an invalid multiply-bp operation", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
+  it("rejects an unknown BodyPartDefinition", () => {
+    const result = validateBodyPointResolution(anatomy(), 10, []);
 
-    const modifiers: readonly BodyPointModifier[] = [
-      { selector: { all: true }, operation: { kind: "multiply-bp", multiplier: 0 } },
-    ];
-
-    const result = validateBodyPointResolution(anatomy, morphology, 10, DEFINITIONS, modifiers);
     expect(result.valid).toBe(false);
-    expect(result.issues.some((i) => i.code === "invalid-bp-multiplier")).toBe(true);
+    expect(result.issues[0]?.code).toBe("unknown-body-part-definition");
   });
 
-  it("detects morphology/Anatomy coverage mismatches in both directions", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
+  it.each([0, -0.5, 1.5, Number.NaN])(
+    "rejects an active part carrying integrity %p",
+    (integrity) => {
+      const result = validateBodyPointResolution(
+        anatomy(integrity),
+        10,
+        DEFINITIONS,
+      );
 
-    const extraAnatomy: Anatomy = {
-      parts: [...anatomy.parts, { id: "torso-2", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 }],
-    };
-    const missingResult = validateBodyPointResolution(
-      extraAnatomy,
-      morphology,
+      expect(result.valid).toBe(false);
+      expect(result.issues.some((i) => i.code === "invalid-integrity")).toBe(true);
+    },
+  );
+
+  it("rejects a departed part still carrying integrity", () => {
+    const result = validateBodyPointResolution(
+      {
+        parts: [
+          {
+            id: "torso-1",
+            type: "torso",
+            attachment: null,
+            state: "archived-removed",
+            integrity: 0.5,
+          },
+        ],
+      },
       10,
       DEFINITIONS,
     );
-    expect(missingResult.issues.some((i) => i.code === "missing-morphology-part")).toBe(true);
 
-    const extraMorphology = {
-      ...morphology,
-      parts: [
-        ...morphology.parts,
-        { ...morphology.parts[0]!, partId: "torso-ghost" },
-      ],
-    };
-    const unexpectedResult = validateBodyPointResolution(
-      anatomy,
-      extraMorphology,
-      10,
-      DEFINITIONS,
-    );
+    expect(result.valid).toBe(false);
     expect(
-      unexpectedResult.issues.some((i) => i.code === "unexpected-morphology-part"),
+      result.issues.some((i) => i.code === "destroyed-part-carries-integrity"),
     ).toBe(true);
-  });
-
-  it("rejects additive modifiers that drive resolved Base BP to zero or below", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
-
-    const modifiers: readonly BodyPointModifier[] = [
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: -20 } },
-    ];
-
-    const result = validateBodyPointResolution(anatomy, morphology, 10, DEFINITIONS, modifiers);
-    expect(result.valid).toBe(false);
-    expect(result.issues.some((i) => i.code === "invalid-resolved-base-bp")).toBe(true);
-  });
-});
-
-describe("combining multiple BP modifiers", () => {
-  it("sums multiple additive modifiers", () => {
-    const result = combineBodyPointModifiers([
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: 4 } },
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: 2 } },
-    ]);
-
-    expect(result.additiveBaseBP).toBe(6);
-    expect(result.multiplier).toBe(1);
-  });
-
-  it("multiplies multiple true multipliers together", () => {
-    const result = combineBodyPointModifiers([
-      { selector: { all: true }, operation: { kind: "multiply-bp", multiplier: 1.5 } },
-      { selector: { all: true }, operation: { kind: "multiply-bp", multiplier: 2 } },
-    ]);
-
-    expect(result.multiplier).toBe(3);
-    expect(result.additiveBaseBP).toBe(0);
-  });
-
-  it("combines additive and multiplicative stages independently", () => {
-    const result = combineBodyPointModifiers([
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: 4 } },
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: 2 } },
-      { selector: { all: true }, operation: { kind: "multiply-bp", multiplier: 1.5 } },
-      { selector: { all: true }, operation: { kind: "multiply-bp", multiplier: 2 } },
-    ]);
-
-    expect(result.additiveBaseBP).toBe(6);
-    expect(result.multiplier).toBe(3);
-  });
-
-  it("the worked example from the ticket: Leg Base BP 14, Training +6, Resolved Base BP 20", () => {
-    const leg = getBodyPartDefinition("leg")!;
-    const anatomy: Anatomy = { parts: [{ id: "leg-1", type: "leg", attachment: null, state: "active", damage: 0, recoveryProgress: 0 }] };
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, [leg]);
-
-    expect(morphology.parts[0]!.morphologyAdjustedBaseBP).toBe(14);
-
-    const modifiers: readonly BodyPointModifier[] = [
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: 6 } },
-    ];
-
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, [leg], modifiers);
-    expect(bodyPoints.parts[0]!.resolvedBaseBP).toBe(20);
-  });
-});
-
-describe("negative additive modifiers", () => {
-  it("a single negative additive modifier is individually valid", () => {
-    const modifier: BodyPointModifier = {
-      selector: { all: true },
-      operation: { kind: "adjust-base-bp", amount: -3 },
-    };
-
-    expect(validateBodyPointModifier(modifier).valid).toBe(true);
-  });
-
-  it("reduces resolved Base BP when the result stays positive", () => {
-    const anatomy = singlePartAnatomy();
-    const morphology = resolveMorphology(REFERENCE_INPUT, anatomy, DEFINITIONS);
-
-    const modifiers: readonly BodyPointModifier[] = [
-      { selector: { all: true }, operation: { kind: "adjust-base-bp", amount: -3 } },
-    ];
-
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, DEFINITIONS, modifiers);
-    expect(bodyPoints.parts[0]!.resolvedBaseBP).toBe(7);
   });
 });

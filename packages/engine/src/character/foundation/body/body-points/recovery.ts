@@ -1,137 +1,98 @@
 /*
- * Body Point recovery — the low-level primitive that turns "this much raw
- * recovery landed on this BodyPart" into updated whole-numbered damage plus
- * whatever fraction of a point is left over.
+ * Body Point recovery — the primitive that turns "this much recovery landed on
+ * this BodyPart" into a new integrity fraction.
  *
- * This mirrors resolveBodyPartBP's relationship to the rest of body-points/:
- * it is pure arithmetic over already-resolved numbers, and it does not know
- * where those numbers came from.
+ * Pure arithmetic over already-resolved numbers, in the same way
+ * resolveBodyPartBP is. It knows nothing about Injuries and their caps (it
+ * only ever sees the single ceiling those caps were reduced to), treatment,
+ * Constitution, Vitality, Conditions, or the clock. All of that belongs to
+ * mechanics/recovery/.
  *
- * Specifically, this module does NOT know about:
  *
- * - Injuries or their recovery caps (it only ever sees the single effective
- *   ceiling those caps have already been reduced to);
- * - treatment state;
- * - Constitution or Vitality;
- * - Conditions;
- * - the game clock or elapsed time.
+ * WHY THIS FILE GOT SMALLER
  *
- * All of that belongs to mechanics/recovery/, which calls this once per
- * damaged BodyPart per Recovery pass.
+ * The previous version carried a `recoveryProgress` companion field: BP was a
+ * whole number, a recovery tick could contribute less than a whole point, and
+ * the leftover fraction had to be banked somewhere until it added up. That
+ * brought its own rule — progress must never be retained when there is nowhere
+ * for it to go — and its own failure mode, a part sitting at full health with
+ * banked healing it could never spend.
  *
- * BP stays whole-numbered mechanically; `recoveryProgress` is where the
- * fractional remainder between ticks lives (see anatomy/types.ts). The rule
- * this file enforces is simple and absolute: progress is never retained when
- * there is nowhere for it to go — at full Current BP, or blocked at the
- * supplied ceiling, it resets to 0 rather than sitting banked forever.
+ * Integrity is continuous, so all of that disappears. Recovery happens in
+ * exact BP, the result is divided back into a fraction, and the remainder is
+ * simply part of the fraction. There is nothing left to bank.
  */
-
-import { getCurrentBP } from "./resolution";
 
 
 /*
  * Input to one BodyPart's recovery step.
  *
- * `maximumPermittedCurrentBP` is the effective recovery ceiling for this
- * part on this pass — ordinarily equal to `maximumBP`, but lower while an
- * untreated Injury cap restricts it (see mechanics/recovery/resolution.ts).
- * A ceiling above `maximumBP` is meaningless and is treated as `maximumBP`:
- * recovery caps restrict restoration, they never raise it past full health.
+ * `maximumPermittedCurrentBP` is this part's effective ceiling for this pass —
+ * ordinarily equal to `maximumBP`, but lower while an untreated Injury cap
+ * restricts it. A ceiling above `maximumBP` is meaningless and is treated as
+ * `maximumBP`: recovery caps restrict restoration, they never raise it past
+ * full health.
  *
- * `rawRecoveryAmount` is the fractional BP this tick contributes, before
- * whole-BP rounding — e.g. 0.35 for just over a third of a point. It is
- * assumed non-negative; this primitive does not itself derive it from VIT or
- * elapsed time.
+ * `recoveryAmountBP` is this tick's contribution in exact BP, which may well
+ * be fractional. It is assumed non-negative; deriving it from VIT and elapsed
+ * time is the caller's job.
  */
 export interface BodyPartRecoveryInput {
-  readonly damage: number;
-  readonly recoveryProgress: number;
-
+  readonly integrity: number;
   readonly maximumBP: number;
-  readonly maximumPermittedCurrentBP: number;
 
-  readonly rawRecoveryAmount: number;
+  readonly maximumPermittedCurrentBP: number;
+  readonly recoveryAmountBP: number;
 }
 
 
 /*
- * Result of applying one recovery step to a single BodyPart.
+ * Result of one recovery step.
  *
- * `damage`/`recoveryProgress` are the new persistent values to store back
- * onto the BodyPart. `wholeBPRestored` is exposed for tracing/diagnostics —
- * it is always `damageBefore - damage`.
+ * `integrity` is the new persistent value to store back onto the BodyPart.
+ * `bpRestored` is the exact BP actually restored, exposed for tracing — it is
+ * less than `recoveryAmountBP` when the ceiling was reached partway.
  */
 export interface BodyPartRecoveryResult {
-  readonly damage: number;
-  readonly recoveryProgress: number;
-
-  readonly wholeBPRestored: number;
+  readonly integrity: number;
+  readonly bpRestored: number;
 }
 
 
 /*
- * Applies one Recovery pass's raw fractional recovery to a single BodyPart.
+ * Applies one Recovery pass's healing to a single BodyPart.
  *
- * Current BP is derived rather than passed in, matching getCurrentBP's own
- * convention (Maximum BP minus stored damage, floored at 0).
+ * Recovery operates in exact-integrity space throughout:
  *
- * Order of operations:
+ *   newExact = min(ceiling, maximumBP x integrity + recovered)
+ *   newIntegrity = newExact / maximumBP
  *
- * 1. If Current BP has already reached the effective ceiling, there is
- *    nothing to restore and no progress to keep — return unchanged with
- *    recoveryProgress at 0.
- * 2. Otherwise, add this tick's raw recovery to the progress already banked.
- * 3. Take the whole-BP part of that total, capped at however much room
- *    remains before the ceiling.
- * 4. If applying that whole-BP gain reaches the ceiling exactly, the
- *    leftover fraction has nowhere to go and is dropped; otherwise it is
- *    preserved as the new recoveryProgress.
+ * with rounding reserved for display. Healing 0.4 BP onto a part at 0.3 exact
+ * BP genuinely leaves it at 0.7, not at "still 1 after rounding twice", and a
+ * part recovering in small increments over many ticks accumulates them exactly
+ * rather than losing a fraction each time.
+ *
+ * This function cannot destroy a BodyPart and cannot restore a destroyed one.
+ * Destroyed anatomy is "archived-removed" and never reaches here, which is the
+ * mechanical form of the rule that ordinary healing does not regrow limbs.
  */
 export function applyBodyPartRecovery(
   input: BodyPartRecoveryInput,
 ): BodyPartRecoveryResult {
-  const {
-    damage,
-    recoveryProgress,
-    maximumBP,
-    rawRecoveryAmount,
-  } = input;
+  const { integrity, maximumBP, recoveryAmountBP } = input;
 
-  const ceiling = Math.min(
-    maximumBP,
-    input.maximumPermittedCurrentBP,
-  );
+  const ceiling = Math.min(maximumBP, input.maximumPermittedCurrentBP);
 
-  const currentBP = getCurrentBP(maximumBP, damage);
+  const exactCurrentBP = maximumBP * integrity;
 
-  if (currentBP >= ceiling) {
-    return {
-      damage,
-      recoveryProgress: 0,
-      wholeBPRestored: 0,
-    };
+  if (exactCurrentBP >= ceiling) {
+    return { integrity, bpRestored: 0 };
   }
 
-  const availableBPRoom = ceiling - currentBP;
-
-  const totalProgress = recoveryProgress + rawRecoveryAmount;
-
-  const wholeBPRestored = Math.min(
-    Math.floor(totalProgress),
-    availableBPRoom,
-  );
-
-  const newDamage = damage - wholeBPRestored;
-  const newCurrentBP = maximumBP - newDamage;
-
-  const newRecoveryProgress =
-    newCurrentBP >= ceiling
-      ? 0
-      : totalProgress - wholeBPRestored;
+  const newExactBP = Math.min(ceiling, exactCurrentBP + recoveryAmountBP);
 
   return {
-    damage: newDamage,
-    recoveryProgress: newRecoveryProgress,
-    wholeBPRestored,
+    integrity: newExactBP / maximumBP,
+    bpRestored: newExactBP - exactCurrentBP,
   };
 }

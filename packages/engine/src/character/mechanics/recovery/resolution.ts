@@ -45,9 +45,6 @@ import {
   applyBodyPartRecovery,
 } from "../../foundation/body/body-points/recovery";
 import {
-  resolveMorphology,
-} from "../../foundation/body/body-points/morphology";
-import {
   resolveBodyPoints,
 } from "../../foundation/body/body-points/resolution";
 import type {
@@ -63,6 +60,7 @@ import type {
 import type {
   Body,
 } from "../../foundation/body/types";
+import type { BodyMorphology } from "../../foundation/body/types";
 
 import {
   getInjuryDefinition,
@@ -192,6 +190,15 @@ export interface ResolveRecoveryInput {
   readonly bodyPartDefinitions: readonly BodyPartDefinition[];
   readonly bodyPointModifiers?: readonly BodyPointModifier[];
 
+  /*
+   * The resolved physical context Body Points need, supplied rather than
+   * derived — same reason and same shape as body/damage.ts. Body owns Character
+   * Scale and the character's own morphology; Species and Age own the rest, and
+   * Body must never ask what Species a character is.
+   */
+  readonly morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>;
+  readonly effectiveScale: number;
+
   readonly injuries: readonly CharacterInjury[];
 
   readonly elapsed: GameDuration;
@@ -224,19 +231,17 @@ export function resolveRecovery(
   const anatomy = input.body.anatomy;
   const bodyPointModifiers = input.bodyPointModifiers ?? [];
 
-  const morphology = resolveMorphology(
-    input.body,
-    anatomy,
-    input.bodyPartDefinitions,
-  );
+  const resolveBP = (target: Anatomy) =>
+    resolveBodyPoints({
+      anatomy: target,
+      definitions: input.bodyPartDefinitions,
+      morphologyByPartId: input.morphologyByPartId,
+      effectiveScale: input.effectiveScale,
+      constitution: input.constitution,
+      modifiers: bodyPointModifiers,
+    });
 
-  const bodyPoints = resolveBodyPoints(
-    anatomy,
-    morphology,
-    input.constitution,
-    input.bodyPartDefinitions,
-    bodyPointModifiers,
-  );
+  const bodyPoints = resolveBP(anatomy);
 
   const maximumBPByPart = new Map(
     bodyPoints.parts.map((part) => [part.partId, part.maximumBP]),
@@ -250,7 +255,12 @@ export function resolveRecovery(
   const partOutcomes: BodyPartRecoveryOutcome[] = [];
 
   const updatedParts: readonly BodyPart[] = anatomy.parts.map((part) => {
-    if (part.damage <= 0) return part;
+    /*
+     * Undamaged parts and departed ones are both skipped, and for different
+     * reasons: the first has nothing to restore, the second is not there to
+     * restore anything to. Ordinary recovery never regrows anatomy.
+     */
+    if (part.state !== "active" || part.integrity >= 1) return part;
 
     const maximumBP = maximumBPByPart.get(part.id);
 
@@ -262,45 +272,38 @@ export function resolveRecovery(
       injuriesByPart.get(part.id) ?? [],
     );
 
-    const rawRecoveryAmount = dailyFraction * maximumBP * elapsedDays;
+    const recoveryAmountBP = dailyFraction * maximumBP * elapsedDays;
 
     const result = applyBodyPartRecovery({
-      damage: part.damage,
-      recoveryProgress: part.recoveryProgress,
+      integrity: part.integrity,
       maximumBP,
       maximumPermittedCurrentBP: ceiling,
-      rawRecoveryAmount,
+      recoveryAmountBP,
     });
 
     partOutcomes.push({
       partId: part.id,
-      damageBefore: part.damage,
-      damageAfter: result.damage,
-      recoveryProgressBefore: part.recoveryProgress,
-      recoveryProgressAfter: result.recoveryProgress,
-      wholeBPRestored: result.wholeBPRestored,
+      integrityBefore: part.integrity,
+      integrityAfter: result.integrity,
+      bpRestored: result.bpRestored,
       ceiling,
     });
 
-    return {
-      ...part,
-      damage: result.damage,
-      recoveryProgress: result.recoveryProgress,
-    };
+    return { ...part, integrity: result.integrity };
   });
 
   const newAnatomy: Anatomy = { parts: updatedParts };
 
-  const damageByPartAfter = new Map(
-    updatedParts.map((part) => [part.id, part.damage]),
+  const integrityByPartAfter = new Map(
+    updatedParts.map((part) => [part.id, part.integrity]),
   );
 
   const removedInjuries: RecoveredInjuryRemoval[] = [];
 
   for (const injury of input.injuries) {
     const fullyHealed = injury.location.bodyPartIds.every((partId) => {
-      const damage = damageByPartAfter.get(partId);
-      return damage !== undefined && damage <= 0;
+      const integrity = integrityByPartAfter.get(partId);
+      return integrity !== undefined && integrity >= 1;
     });
 
     if (fullyHealed) {
@@ -311,13 +314,7 @@ export function resolveRecovery(
     }
   }
 
-  const bodyPointsAfterRecovery = resolveBodyPoints(
-    newAnatomy,
-    morphology,
-    input.constitution,
-    input.bodyPartDefinitions,
-    bodyPointModifiers,
-  );
+  const bodyPointsAfterRecovery = resolveBP(newAnatomy);
 
   return {
     anatomy: newAnatomy,
@@ -363,8 +360,8 @@ export function detectInjuryOverlap(
         bodyPartId,
         existingCharacterInjuryId: existing.id,
         newCharacterInjuryId: newInjury.id,
-        recoveryProgressAtOverlap:
-          partsById.get(bodyPartId)?.recoveryProgress ?? 0,
+        integrityAtOverlap:
+          partsById.get(bodyPartId)?.integrity ?? 1,
         recommendedDecision: "preserve",
         decisionId: "injury.overlap.recovery-progress-default",
       });

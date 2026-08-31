@@ -28,13 +28,11 @@ import {
   validateSpecialPointDefinitions,
 } from "../character/foundation/body/critical-points/validation";
 
-const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
-
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", name: "Torso", description: "Test torso.", tags: [], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
-  { id: "head", name: "Head", description: "Test head.", tags: [], baseBP: 8, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
-  { id: "arm", name: "Arm", description: "Test arm.", tags: [], baseBP: 14, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
-  { id: "leg", name: "Leg", description: "Test leg.", tags: [], baseBP: 14, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: [], ...TEST_PART_PHYSICALS },
+  { id: "head", name: "Head", description: "Test head.", tags: [], ...TEST_PART_PHYSICALS },
+  { id: "arm", name: "Arm", description: "Test arm.", tags: [], ...TEST_PART_PHYSICALS },
+  { id: "leg", name: "Leg", description: "Test leg.", tags: [], ...TEST_PART_PHYSICALS },
 ];
 
 const BRAIN: SpecialPointDefinition = {

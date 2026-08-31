@@ -43,7 +43,6 @@ import {
   selectBodyParts,
 } from "../selectors";
 import type {
-  ResolvedBodyPoints,
 } from "../body-points/types";
 import type {
   CriticalPointId,
@@ -415,67 +414,30 @@ export function getSinglePointHostId(
 
 
 /*
- * Finds Critical Points whose associated BP-bearing host has reached physical
- * destruction.
+ * Finds Critical Points whose BP-bearing host has been destroyed.
  *
- * A Critical Point does NOT cause death from merely taking some damage.
+ * A Critical Point does not cause death from merely taking damage. The Brain
+ * kills when the Head is destroyed, the Heart when the Upper Body is, the Neck
+ * point when the Neck is.
  *
- * Instead:
+ * Takes the destroyed part ids directly rather than reading them back out of
+ * resolved Body Points, because destruction is no longer something Body Points
+ * know about. It used to be "Current BP reached 0", which made death a
+ * rounding outcome; it is now an explicit anatomy state transition performed
+ * by damage application, and damage application is what passes the ids here.
  *
- * Brain
- * → Head Current BP reaches 0
- * → fatal Critical failure
- *
- * Heart
- * → Upper Body Current BP reaches 0
- * → fatal Critical failure
- *
- * Neck
- * → Neck Current BP reaches 0
- * → fatal Critical failure
- *
- * IMPORTANT:
- *
- * This must be evaluated against the Critical Point set that existed when the
- * damage was applied, BEFORE destroyed BodyParts are permanently removed from
- * Anatomy.
- *
- * Otherwise removing a destroyed Head would also remove the derived Brain
- * point before its fatal failure could be observed.
+ * IMPORTANT: this must be evaluated against the Critical Point set that
+ * existed when the damage was applied, BEFORE destroyed BodyParts are removed
+ * from Anatomy. Otherwise removing a destroyed Head takes the derived Brain
+ * point with it before its fatal failure can be observed.
  */
 export function getFatalCriticalFailures(
-  criticalPoints:
-    ResolvedCriticalPoints,
-  bodyPoints:
-    ResolvedBodyPoints,
+  criticalPoints: ResolvedCriticalPoints,
+  destroyedPartIds: Iterable<BodyPartId>,
 ): readonly ResolvedCriticalPoint[] {
-  const bpByPartId =
-    new Map(
-      bodyPoints.parts.map(
-        (part) => [
-          part.partId,
-          part,
-        ],
-      ),
-    );
+  const destroyed = new Set(destroyedPartIds);
 
   return criticalPoints.points
     .filter(isCriticalPoint)
-    .filter(
-      (point) => {
-        const hostId =
-          getSinglePointHostId(
-            point,
-          );
-
-        const hostBP =
-          bpByPartId.get(hostId);
-
-        if (hostBP === undefined) {
-          return false;
-        }
-
-        return hostBP.destroyed;
-      },
-    );
+    .filter((point) => destroyed.has(getSinglePointHostId(point)));
 }

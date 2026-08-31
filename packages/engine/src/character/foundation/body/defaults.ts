@@ -2,30 +2,19 @@
  * The standard humanoid Body — a character at exactly the reference
  * morphology, using the standard humanoid Anatomy content.
  *
- * Built from body-points/morphology.ts's reference constants rather than
- * literal numbers, so "STANDARD_BODY sits exactly at reference morphology"
- * is true by construction and the 100-aggregate-BP regression can't silently
- * drift if those constants ever change.
+ * Every physical number this body has is derived. There is nothing to author
+ * here but neutrality: Scale 1, neutral morphology, no Strength development,
+ * and the standard humanoid anatomy. That it resolves to 165 cm, 62.00 kg,
+ * 60.00 L and 100 Structural Capacity is a fact about the Basic Human
+ * Standard in anatomy/body-parts.ts, not about this file, which is exactly
+ * the property the measurement subsystem was built to get.
  */
 
-import {
-  REFERENCE_ADIPOSITY,
-  REFERENCE_HEIGHT_CM,
-  REFERENCE_MASS_KG,
-  REFERENCE_MUSCULARITY,
-} from "./body-points/morphology";
 import { STANDARD_HUMANOID_ANATOMY } from "./anatomy/standard-humanoid";
 import { NEUTRAL_MORPHOLOGY } from "./types";
 import type { Body } from "./types";
 
 export const STANDARD_BODY: Body = {
-  heightCm: REFERENCE_HEIGHT_CM,
-  massKg: REFERENCE_MASS_KG,
-  build: {
-    muscularity: REFERENCE_MUSCULARITY,
-    adiposity: REFERENCE_ADIPOSITY,
-  },
-
   characterScale: 1,
   globalMorphology: NEUTRAL_MORPHOLOGY,
   localMorphology: {},

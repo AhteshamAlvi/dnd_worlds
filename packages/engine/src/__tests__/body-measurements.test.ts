@@ -497,16 +497,14 @@ describe("measurement preconditions", () => {
           type: "leg",
           attachment: { parentId: "b", parentPosition: 1, childPosition: 0 },
           state: "active",
-          damage: 0,
-          recoveryProgress: 0,
+          integrity: 1,
         },
         {
           id: "b",
           type: "leg",
           attachment: { parentId: "a", parentPosition: 1, childPosition: 0 },
           state: "active",
-          damage: 0,
-          recoveryProgress: 0,
+          integrity: 1,
         },
       ],
     };

@@ -1,406 +1,319 @@
 /*
  * Body Point resolution.
  *
- * This module combines:
+ * Maximum BP is Structural Capacity seen through two lenses the Structural
+ * Capacity subsystem deliberately refuses to look through: how the body is
+ * built, and how hardy the character is.
  *
- * - resolved morphology;
- * - additive Base-BP modifiers;
- * - Constitution scaling;
- * - true BP multipliers;
- * - stored BodyPart damage;
+ *   MaxBP = SC x BuildFactor x CONFactor x DestructionResistance
  *
- * into the final resolved Body Point state of each BodyPart.
- *
- * Resolution order:
- *
- * template Base BP
- *      ×
- * morphology
- *      ↓
- * morphology-adjusted Base BP
- *      +
- * additive Base-BP modifiers
- *      ↓
- * resolved Base BP
- *      ×
- * Constitution multiplier
- *      ↓
- * Constitution-scaled BP
- *      ×
- * true BP multipliers
- *      ↓
- * raw Maximum BP
- *      ↓
- * round once
- *      ↓
- * Maximum BP
- *      -
- * stored damage
- *      ↓
- * Current BP
- *
- * A BodyPart whose Current BP reaches 0 is physically destroyed.
- *
- * This resolver reports destruction but does not mutate Anatomy. The caller
- * responsible for applying persistent damage must remove destroyed BodyParts
- * through the Anatomy modification system.
+ * Note what is NOT in that formula. There is no Strength term: the old
+ * STR -> BP direction is deleted outright, and Muscularity now reaches BP only
+ * the honest way, through Structural Capacity. There is no morphology
+ * calculation either — the factors below are applied here but derived
+ * upstream, because BP computing its own morphology is exactly how the engine
+ * ended up with two morphology systems that disagreed.
  */
 
+import {
+  resolveAdipositySizeFactor,
+  resolveEffectiveBulk,
+} from "../measurements/resolution";
+import { resolveBodyStructuralCapacity } from "../structure/resolution";
+import { createBodyPartDefinitionMap } from "../selectors";
+import { NEUTRAL_MORPHOLOGY } from "../types";
+import { resolveBodyPointModifiersByPart } from "./modifiers";
+import type { BodyMorphology } from "../types";
 import type {
   Anatomy,
-  BodyPart,
   BodyPartDefinition,
   BodyPartId,
+  BodyPartMorphologySensitivity,
 } from "../anatomy/types";
-import {
-  resolveBodyPointModifiersByPart,
-} from "./modifiers";
 import type {
   BodyPointModifier,
   ResolvedBodyPartBP,
-  ResolvedBodyPartMorphology,
-  ResolvedBodyPointModifiers,
   ResolvedBodyPoints,
-  ResolvedMorphology,
 } from "./types";
 
 
 /*
  * Constitution reference used by Body Point scaling.
  *
- * CON 10:
- * ×1 BP
+ * CON 10 is x1. Every +2 CON doubles BP; every -2 halves it.
  *
- * Every +5 CON doubles BP.
- * Every -5 CON halves BP.
+ * WHY 2 AND NOT 5
+ *
+ * The interval is calibrated against what a point of Strength buys. Buying
+ * +1 STR solves for the Muscularity that doubles normalized Strength Points,
+ * and that Muscularity raises whole-body Structural Capacity from 100 to
+ * 143.85 — a x1.438 durability gain thrown in free with a Strength purchase.
+ * At an interval of 2, +1 CON is x1.414. So a point spent on Strength and a
+ * point spent on Constitution buy about the same durability, which is the
+ * intended relationship between them.
+ *
+ * At the old interval of 5, +1 CON was x1.149, and one Strength point was
+ * worth roughly two and a half Constitution points of toughness.
+ *
+ * WHAT IT COSTS, AND WHY IT IS A NAMED CONSTANT
+ *
+ *   interval    per +1 CON    CON 30       CON 1-30 range
+ *   5           x1.149        x16              56x
+ *   3           x1.260        x102            813x
+ *   2           x1.414        x1024        23,170x
+ *
+ * A 23,000x spread across the legal CON range is enormous, and this number is
+ * a reasoned guess rather than a measured one: the parity argument above is
+ * made at the Structural Capacity layer, and nothing yet defines how Strength
+ * Points become damage against Body Points, so there is no way to check
+ * whether parity in SC survives into parity in actual combat. It stays a named
+ * constant precisely so it is a one-line retune once a damage model exists.
+ * 3 is the obvious alternative.
  */
 export const REFERENCE_CONSTITUTION = 10;
-export const CONSTITUTION_DOUBLING_INTERVAL = 5;
+export const CONSTITUTION_DOUBLING_INTERVAL = 2;
+
+
+/*
+ * How much Bulk and Adiposity each contribute to durability.
+ *
+ * Both are halved or quartered relative to their effect on Size and Mass: a
+ * thick body is harder to destroy, but not in proportion to how much larger it
+ * is, and fat contributes half again less than frame does. They add rather
+ * than multiply inside the factor, so a broad AND heavy character is not
+ * compounded twice for one body.
+ */
+export const BULK_BP_CONTRIBUTION = 0.5;
+export const ADIPOSITY_BP_CONTRIBUTION = 0.25;
 
 
 /*
  * Resolves the Constitution BP multiplier.
  *
- * Formula:
+ *   2 ^ ((CON - 10) / 2)
  *
- * 2 ^ ((CON - 10) / 5)
- *
- * Examples:
- *
- * CON 5  → ×0.5
- * CON 10 → ×1
- * CON 15 → ×2
- * CON 20 → ×4
- * CON 25 → ×8
- * CON 30 → ×16
- * CON 35 → ×32
+ *   CON  4 -> x0.125     CON 14 -> x4
+ *   CON  6 -> x0.25      CON 16 -> x8
+ *   CON  8 -> x0.5       CON 20 -> x32
+ *   CON 10 -> x1         CON 30 -> x1024
  */
 export function getConstitutionBPMultiplier(
   constitution: number,
 ): number {
   return Math.pow(
     2,
-    (
-      constitution -
-      REFERENCE_CONSTITUTION
-    ) /
-      CONSTITUTION_DOUBLING_INTERVAL,
+    (constitution - REFERENCE_CONSTITUTION) / CONSTITUTION_DOUBLING_INTERVAL,
   );
 }
 
 
 /*
- * Performs the one and only rounding step in BP derivation.
+ * How this body's build changes its durability.
  *
- * Intermediate morphology, modifier, and Constitution values remain at full
- * precision.
+ *   BuildFactor = 1 + ((EffectiveBulk - 1) x 0.50)
+ *                   + ((EffectiveAdiposity - 1) x 0.25)
  *
- * Every existing BP-bearing BodyPart has a minimum resolved Maximum BP of 1.
+ * EffectiveBulk and EffectiveAdiposity are the same per-part morphology
+ * responses the measurement subsystem uses, imported rather than recomputed.
+ * Two implementations of one factor is how the previous BP system drifted away
+ * from the physical model, and importing costs nothing: both are pure
+ * functions of a morphology and a sensitivity.
  */
-export function roundMaximumBP(
-  rawMaximumBP: number,
+export function resolveBuildFactor(
+  morphology: BodyMorphology,
+  sensitivity: BodyPartMorphologySensitivity,
 ): number {
-  return Math.max(
-    1,
-    Math.round(rawMaximumBP),
+  const effectiveBulk = resolveEffectiveBulk(morphology, sensitivity);
+  const effectiveAdiposity = resolveAdipositySizeFactor(morphology, sensitivity);
+
+  return (
+    1 +
+    ((effectiveBulk - 1) * BULK_BP_CONTRIBUTION) +
+    ((effectiveAdiposity - 1) * ADIPOSITY_BP_CONTRIBUTION)
   );
 }
 
 
 /*
- * Returns Current BP from Maximum BP and persistent stored damage.
+ * The one and only rounding step in Maximum BP.
  *
- * Damage itself is never clamped. It may exceed Maximum BP.
- *
- * Example:
- *
- * Maximum BP = 14
- * Damage     = 20
- *
- * Current BP = 0
- *
- * The stored Damage remains 20.
+ * The floor of 1 is load-bearing and gets more load-bearing the higher the
+ * Constitution interval goes. A Human Neck has reference SC 2; at CON 4 the
+ * multiplier is 0.125 and raw Maximum BP resolves to 0.25, which rounds to
+ * zero. A part with zero Maximum BP is a part that is destroyed the instant it
+ * is created and can never be healed, because every fraction of nothing is
+ * nothing. Small anatomy on a frail character has to stay destroyable-only-by-
+ * damage, so it is floored at one point rather than allowed to round out of
+ * existence.
  */
-export function getCurrentBP(
-  maximumBP: number,
-  damage: number,
-): number {
-  return Math.max(
-    0,
-    maximumBP - damage,
-  );
+export function roundMaximumBP(rawMaximumBP: number): number {
+  return Math.max(1, Math.round(rawMaximumBP));
 }
 
 
 /*
- * Creates a morphology lookup keyed by actual BodyPart instance ID.
+ * The displayed Current BP of an active BodyPart.
  *
- * Duplicate morphology results should have been rejected during validation.
+ * Floored at 1 for exactly the reason Maximum BP is: 0 is reserved for
+ * destruction, which is an anatomy state transition and never a rounding
+ * result. A Neck at Maximum BP 2 and integrity 0.20 has 0.4 exact BP and shows
+ * 1 — catastrophically damaged and still attached. Rounding it to 0 would
+ * silently kill a part that damage application never destroyed, and would then
+ * un-kill it the moment the character's Maximum BP went up.
  */
-function createMorphologyMap(
-  morphology: ResolvedMorphology,
-): ReadonlyMap<
-  BodyPartId,
-  ResolvedBodyPartMorphology
-> {
-  return new Map(
-    morphology.parts.map(
-      (part) => [
-        part.partId,
-        part,
-      ],
-    ),
-  );
+export function displayCurrentBP(exactCurrentBP: number): number {
+  return Math.max(1, Math.round(exactCurrentBP));
 }
 
 
 /*
- * Resolves complete BP state for one BodyPart.
+ * Resolves one BodyPart's Body Points.
  *
- * This function assumes its inputs have already passed Body Point validation.
+ * Takes already-resolved Structural Capacity rather than deriving it, so this
+ * function cannot accidentally become a second implementation of SC.
  */
 export function resolveBodyPartBP(
-  part: BodyPart,
-  morphology:
-    ResolvedBodyPartMorphology,
-  modifiers:
-    ResolvedBodyPointModifiers,
+  partId: BodyPartId,
+  type: string,
+  structuralCapacity: number,
+  sensitivity: BodyPartMorphologySensitivity,
+  morphology: BodyMorphology,
   constitutionMultiplier: number,
+  destructionResistance: number,
+  integrity: number,
 ): ResolvedBodyPartBP {
-  /*
-   * Additive Base-BP effects occur after morphology.
-   */
-  const resolvedBaseBP =
-    morphology.morphologyAdjustedBaseBP +
-    modifiers.additiveBaseBP;
+  const buildFactor = resolveBuildFactor(morphology, sensitivity);
 
-  if (
-    !Number.isFinite(resolvedBaseBP) ||
-    resolvedBaseBP <= 0
-  ) {
-    throw new Error(
-      `Cannot resolve BP for BodyPart "${part.id}": ` +
-      `resolved Base BP must be finite and greater than 0.`,
-    );
-  }
-
-  /*
-   * Constitution scales the resolved physical base.
-   */
-  const constitutionScaledBP =
-    resolvedBaseBP *
-    constitutionMultiplier;
-
-  /*
-   * True BP multipliers occur after Constitution.
-   */
   const rawMaximumBP =
-    constitutionScaledBP *
-    modifiers.multiplier;
+    structuralCapacity *
+    buildFactor *
+    constitutionMultiplier *
+    destructionResistance;
 
-  if (
-    !Number.isFinite(rawMaximumBP) ||
-    rawMaximumBP <= 0
-  ) {
+  if (!Number.isFinite(rawMaximumBP) || rawMaximumBP <= 0) {
     throw new Error(
-      `Cannot resolve BP for BodyPart "${part.id}": ` +
-      `raw Maximum BP must be finite and greater than 0.`,
+      `Cannot resolve BP for BodyPart "${partId}": raw Maximum BP must be ` +
+      `finite and greater than 0, got ${rawMaximumBP}.`,
     );
   }
 
-  /*
-   * BP is rounded only after the complete derivation.
-   */
-  const maximumBP =
-    roundMaximumBP(
-      rawMaximumBP,
-    );
-
-  const currentBP =
-    getCurrentBP(
-      maximumBP,
-      part.damage,
-    );
-
-  /*
-   * 0 BP is the hard physical-destruction threshold.
-   */
-  const destroyed =
-    currentBP === 0;
+  const maximumBP = roundMaximumBP(rawMaximumBP);
+  const exactCurrentBP = maximumBP * integrity;
 
   return {
-    partId: part.id,
-    type: part.type,
+    partId,
+    type,
 
-    templateBaseBP:
-      morphology.templateBaseBP,
+    structuralCapacity,
 
-    morphology:
-      morphology.factors,
-
-    morphologyAdjustedBaseBP:
-      morphology.morphologyAdjustedBaseBP,
-
-    additiveBaseBPAdjustment:
-      modifiers.additiveBaseBP,
-
-    resolvedBaseBP,
-
+    buildFactor,
     constitutionMultiplier,
-    constitutionScaledBP,
-
-    trueMultiplier:
-      modifiers.multiplier,
+    destructionResistance,
 
     rawMaximumBP,
     maximumBP,
 
-    damage:
-      part.damage,
+    integrity,
 
-    currentBP,
-
-    destroyed,
+    exactCurrentBP,
+    currentBP: displayCurrentBP(exactCurrentBP),
   };
 }
 
 
+export interface BodyPointsResolutionInput {
+  readonly anatomy: Anatomy;
+  readonly definitions: readonly BodyPartDefinition[];
+
+  readonly morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>;
+  readonly effectiveScale: number;
+
+  readonly constitution: number;
+
+  readonly modifiers?: readonly BodyPointModifier[];
+}
+
+
 /*
- * Resolves complete per-part Body Point state for the current Anatomy.
+ * Resolves Body Points for a whole body.
  *
- * `anatomy`
- * should normally be the current Resolved Anatomy.
- *
- * `morphology`
- * should have been resolved from that exact same Anatomy.
- *
- * `constitution`
- * is supplied independently because CON belongs to the character's Attributes,
- * not to Body.
- *
- * `bodyPartDefinitions`
- * supplies the tag classification BP modifier selectors may depend on.
- *
- * `modifiers`
- * may originate from any data-driven source such as training, Species, Traits,
- * Conditions, Techniques, or other mechanics.
- *
- * The function assumes all supplied data has already passed validation.
+ * Only active anatomy participates, matching Structural Capacity and
+ * measurements. A suppressed or archived-removed part has left the body: it
+ * has no volume, no mass, and nothing left to destroy.
  */
 export function resolveBodyPoints(
-  anatomy: Anatomy,
-  morphology: ResolvedMorphology,
-  constitution: number,
-  bodyPartDefinitions: readonly BodyPartDefinition[],
-  modifiers: readonly BodyPointModifier[] = [],
+  input: BodyPointsResolutionInput,
 ): ResolvedBodyPoints {
-  const constitutionMultiplier =
-    getConstitutionBPMultiplier(
-      constitution,
-    );
+  const definitionsById = createBodyPartDefinitionMap(input.definitions);
 
-  if (
-    !Number.isFinite(
-      constitutionMultiplier,
-    ) ||
-    constitutionMultiplier <= 0
-  ) {
-    throw new Error(
-      "Cannot resolve Body Points: Constitution produced an invalid BP multiplier.",
-    );
-  }
+  const structure = resolveBodyStructuralCapacity(
+    input.anatomy,
+    input.definitions,
+    input.morphologyByPartId,
+    input.effectiveScale,
+  );
 
-  const morphologyByPart =
-    createMorphologyMap(
-      morphology,
-    );
+  const modifiersByPartId = resolveBodyPointModifiersByPart(
+    input.anatomy.parts,
+    input.definitions,
+    input.modifiers ?? [],
+  );
 
-  const modifiersByPart =
-    resolveBodyPointModifiersByPart(
-      anatomy.parts,
-      bodyPartDefinitions,
-      modifiers,
-    );
+  const constitutionMultiplier = getConstitutionBPMultiplier(
+    input.constitution,
+  );
 
-  const parts =
-    anatomy.parts.map(
-      (part): ResolvedBodyPartBP => {
-        const partMorphology =
-          morphologyByPart.get(
-            part.id,
-          );
+  const parts: ResolvedBodyPartBP[] = [];
+  const byPartId: Record<BodyPartId, ResolvedBodyPartBP> = {};
 
-        if (
-          partMorphology === undefined
-        ) {
-          throw new Error(
-            `Cannot resolve BP for BodyPart "${part.id}": ` +
-            "missing resolved morphology.",
-          );
-        }
+  for (const part of input.anatomy.parts) {
+    if (part.state !== "active") continue;
 
-        const partModifiers =
-          modifiersByPart.get(
-            part.id,
-          );
+    const definition = definitionsById.get(part.type);
 
-        if (
-          partModifiers === undefined
-        ) {
-          throw new Error(
-            `Cannot resolve BP for BodyPart "${part.id}": ` +
-            "missing resolved BP modifiers.",
-          );
-        }
-
-        return resolveBodyPartBP(
-          part,
-          partMorphology,
-          partModifiers,
-          constitutionMultiplier,
-        );
-      },
-    );
-
-  const aggregateMaximumBP =
-    parts.reduce(
-      (total, part) =>
-        total + part.maximumBP,
-      0,
-    );
-
-  const destroyedPartIds =
-    parts
-      .filter(
-        (part) => part.destroyed,
-      )
-      .map(
-        (part) => part.partId,
+    /*
+     * Anatomy is assumed validated, so an unknown type is an invalid engine
+     * state rather than an input to tolerate. Same convention as the
+     * measurement and Structural Capacity resolvers.
+     */
+    if (definition === undefined) {
+      throw new Error(
+        `Cannot resolve BP for BodyPart "${part.id}": ` +
+        `unknown BodyPartDefinition "${part.type}".`,
       );
+    }
+
+    const partStructure = structure.byPartId[part.id];
+
+    if (partStructure === undefined) {
+      throw new Error(
+        `Cannot resolve BP for BodyPart "${part.id}": ` +
+        `no Structural Capacity was resolved for it.`,
+      );
+    }
+
+    const resolved = resolveBodyPartBP(
+      part.id,
+      part.type,
+      partStructure.structuralCapacity,
+      definition.sensitivity,
+      input.morphologyByPartId[part.id] ?? NEUTRAL_MORPHOLOGY,
+      constitutionMultiplier,
+      modifiersByPartId.get(part.id)?.destructionResistance ?? 1,
+      part.integrity,
+    );
+
+    parts.push(resolved);
+    byPartId[part.id] = resolved;
+  }
 
   return {
     parts,
-    aggregateMaximumBP,
-    destroyedPartIds,
+    byPartId,
+
+    aggregateMaximumBP: parts.reduce(
+      (total, part) => total + part.maximumBP,
+      0,
+    ),
   };
 }

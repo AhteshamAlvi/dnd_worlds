@@ -1,11 +1,15 @@
 /*
- * Tests the standard humanoid content end to end: a character at exactly the
- * reference morphology (165cm, 62kg, muscularity 1, adiposity 1, CON 10, no
- * modifiers) must resolve to exactly 100 aggregate Maximum BP, with every
- * per-part maximum matching the calibrated table. This is the headline
- * regression for the whole Body foundation — every other test exercises
- * mechanics in isolation, but this one pins the one number every other
- * number was calibrated against.
+ * Tests the standard humanoid content end to end: a character at exactly
+ * neutral morphology, Scale 1 and CON 10 must resolve to exactly 100 aggregate
+ * Maximum BP. This is the headline regression for the whole Body foundation —
+ * every other test exercises mechanics in isolation, but this one pins the
+ * number every other number was calibrated against.
+ *
+ * That 100 surviving the move of BP onto Structural Capacity is worth more
+ * than it looks. The per-part distribution genuinely changed, because the old
+ * authored BP column and the reference SC column disagreed on five of eight
+ * parts. Both summed to the same body, so the total is unmoved while the parts
+ * beneath it are not.
  *
  * Also pins the standard Anatomy topology and the standard Critical Point
  * set, since both are content that could silently drift.
@@ -17,13 +21,8 @@ import { listDefinitions } from "../character/catalogs";
 import { validateAnatomyData } from "../character/foundation/body/anatomy/validation";
 import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
 import { STANDARD_BODY } from "../character/foundation/body/defaults";
-import {
-  REFERENCE_ADIPOSITY,
-  REFERENCE_HEIGHT_CM,
-  REFERENCE_MASS_KG,
-  REFERENCE_MUSCULARITY,
-  resolveMorphology,
-} from "../character/foundation/body/body-points/morphology";
+import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import { resolveBodyPoints } from "../character/foundation/body/body-points/resolution";
 import {
   resolveCriticalPoints,
@@ -39,11 +38,17 @@ const BODY_PART_DEFINITIONS = listDefinitions("body-part");
 const SPECIAL_POINT_DEFINITIONS = listDefinitions("special-point");
 
 describe("STANDARD_BODY", () => {
-  it("sits exactly at the reference morphology", () => {
-    expect(STANDARD_BODY.heightCm).toBe(REFERENCE_HEIGHT_CM);
-    expect(STANDARD_BODY.massKg).toBe(REFERENCE_MASS_KG);
-    expect(STANDARD_BODY.build.muscularity).toBe(REFERENCE_MUSCULARITY);
-    expect(STANDARD_BODY.build.adiposity).toBe(REFERENCE_ADIPOSITY);
+  /*
+   * There is nothing physical left to assert here, which is the point. Height,
+   * Mass and build were stored fields and are now derived, so the standard body
+   * is neutrality and an anatomy — and 165 cm / 62 kg fall out of the Basic
+   * Human Standard rather than being restated.
+   */
+  it("sits exactly at neutral", () => {
+    expect(STANDARD_BODY.characterScale).toBe(1);
+    expect(STANDARD_BODY.globalMorphology).toEqual(NEUTRAL_MORPHOLOGY);
+    expect(STANDARD_BODY.localMorphology).toEqual({});
+    expect(STANDARD_BODY.strengthDevelopmentMuscularity).toBe(1);
     expect(STANDARD_BODY.anatomy).toBe(STANDARD_HUMANOID_ANATOMY);
   });
 });
@@ -70,9 +75,10 @@ describe("standard humanoid Anatomy", () => {
     );
   });
 
-  it("starts every part at zero damage", () => {
+  it("starts every part active and at full integrity", () => {
     for (const part of STANDARD_HUMANOID_ANATOMY.parts) {
-      expect(part.damage).toBe(0);
+      expect(part.state).toBe("active");
+      expect(part.integrity).toBe(1);
     }
   });
 
@@ -131,18 +137,30 @@ describe("standard humanoid Anatomy", () => {
 });
 
 describe("reference humanoid Body Points", () => {
+  const neutralSource = { global: NEUTRAL_MORPHOLOGY, local: {} };
+
   const morphology = resolveMorphology(
-    STANDARD_BODY,
-    STANDARD_BODY.anatomy,
-    BODY_PART_DEFINITIONS,
+    {
+      species: neutralSource,
+      age: neutralSource,
+      character: {
+        global: STANDARD_BODY.globalMorphology,
+        local: STANDARD_BODY.localMorphology,
+      },
+      strengthDevelopmentMuscularity:
+        STANDARD_BODY.strengthDevelopmentMuscularity,
+      effectLayers: [],
+    },
+    STANDARD_BODY.anatomy.parts.map((part) => part.id),
   );
 
-  const bodyPoints = resolveBodyPoints(
-    STANDARD_BODY.anatomy,
-    morphology,
-    REFERENCE_CONSTITUTION,
-    BODY_PART_DEFINITIONS,
-  );
+  const bodyPoints = resolveBodyPoints({
+    anatomy: STANDARD_BODY.anatomy,
+    definitions: BODY_PART_DEFINITIONS,
+    morphologyByPartId: morphology,
+    effectiveScale: STANDARD_BODY.characterScale,
+    constitution: REFERENCE_CONSTITUTION,
+  });
 
   const maximumBPByType = new Map<string, number[]>();
   for (const part of bodyPoints.parts) {
@@ -151,25 +169,35 @@ describe("reference humanoid Body Points", () => {
     maximumBPByType.set(part.type, existing);
   }
 
-  it("resolves every part to the calibrated table", () => {
+  /*
+   * The per-part table CHANGED in this phase and the whole-body total did not.
+   *
+   * BP used to resolve from an authored `baseBP` column; it now resolves from
+   * reference Structural Capacity, and the two disagreed on five of eight
+   * parts — Neck was 4 and is 2, Upper Body was 8 and is 10, Hand was 5 and is
+   * 4, Leg was 14 and is 16, Foot was 5 and is 4. Both columns summed to 100,
+   * which is exactly why the drift was invisible and exactly why the aggregate
+   * below is unchanged: same Human, redistributed.
+   */
+  it("resolves every part to the reference Structural Capacity table", () => {
     expect(maximumBPByType.get("head")).toEqual([8]);
-    expect(maximumBPByType.get("neck")).toEqual([4]);
-    expect(maximumBPByType.get("upper-body")).toEqual([8]);
+    expect(maximumBPByType.get("neck")).toEqual([2]);
+    expect(maximumBPByType.get("upper-body")).toEqual([10]);
     expect(maximumBPByType.get("lower-body")).toEqual([4]);
     expect(maximumBPByType.get("arm")).toEqual([14, 14]);
-    expect(maximumBPByType.get("hand")).toEqual([5, 5]);
-    expect(maximumBPByType.get("leg")).toEqual([14, 14]);
-    expect(maximumBPByType.get("foot")).toEqual([5, 5]);
+    expect(maximumBPByType.get("hand")).toEqual([4, 4]);
+    expect(maximumBPByType.get("leg")).toEqual([16, 16]);
+    expect(maximumBPByType.get("foot")).toEqual([4, 4]);
   });
 
   it("resolves to exactly 100 aggregate Maximum BP — the headline regression", () => {
     expect(bodyPoints.aggregateMaximumBP).toBe(100);
   });
 
-  it("destroys nothing at zero damage", () => {
-    expect(bodyPoints.destroyedPartIds).toEqual([]);
+  it("leaves an undamaged body at full Current BP on every part", () => {
     for (const part of bodyPoints.parts) {
-      expect(part.destroyed).toBe(false);
+      expect(part.integrity).toBe(1);
+      expect(part.exactCurrentBP).toBe(part.maximumBP);
       expect(part.currentBP).toBe(part.maximumBP);
     }
   });

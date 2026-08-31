@@ -109,10 +109,11 @@ export function createBodyPartAttachment(
 /*
  * Creates one persistent BodyPart instance from its starting specification.
  *
- * New anatomy is always "active". A body plan describes what a creature has,
- * so a part that is created is by definition present; suppression and removal
- * are things that happen to a body afterwards, and belong to the effect and
- * damage pipelines rather than to construction.
+ * New anatomy is always "active" and always at full integrity. A body plan
+ * describes what a creature has, so a part that is created is by definition
+ * present and whole; suppression, removal and damage are things that happen to
+ * a body afterwards, and belong to the effect and damage pipelines rather than
+ * to construction.
  */
 export function createBodyPart(
   spec: BodyPartCreationSpec,
@@ -128,8 +129,7 @@ export function createBodyPart(
         ? null
         : createBodyPartAttachment(spec.attachment),
     state: "active",
-    damage: 0,
-    recoveryProgress: 0,
+    integrity: 1,
   };
 }
 

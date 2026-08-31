@@ -40,9 +40,11 @@
  * table, so a typo here fails immediately rather than surfacing later as a
  * character who weighs the wrong amount.
  *
- * `baseBP` and `morphologySensitivity` are the superseded pre-refactor
- * calibration and are still what Body Points resolve from. They are removed
- * when BP moves onto Structural Capacity.
+ * There is one durability/force number per part and it is
+ * `reference.structuralCapacity`. The pre-refactor `baseBP` column is gone:
+ * two independently authored numbers for "how tough" and "how strong" could
+ * disagree, and they did — the old table read Neck 4 against reference SC 2
+ * and Leg 14 against 16, while both columns summed to 100 and hid it.
  */
 
 import { createRegistry } from "../../../../infrastructure/registry";
@@ -54,13 +56,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Head",
     description: "The skull and its contents.",
     tags: ["core"],
-    baseBP: 8,
-    morphologySensitivity: {
-      height: 0,
-      mass: 0,
-      muscularity: 0,
-      adiposity: 0,
-    },
     reference: {
       lengthCm: 22,
       sizeL: 3.35,
@@ -85,13 +80,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Neck",
     description: "Connects Head to Upper Body.",
     tags: ["core"],
-    baseBP: 4,
-    morphologySensitivity: {
-      height: 0,
-      mass: 1,
-      muscularity: 0.20,
-      adiposity: 0.05,
-    },
     reference: {
       lengthCm: 6,
       sizeL: 0.55,
@@ -116,13 +104,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Upper Body",
     description: "Chest and upper torso, housing the Heart.",
     tags: ["core", "torso"],
-    baseBP: 8,
-    morphologySensitivity: {
-      height: 1,
-      mass: 1,
-      muscularity: 0.40,
-      adiposity: 0.15,
-    },
     reference: {
       lengthCm: 31,
       sizeL: 20.15,
@@ -147,13 +128,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Lower Body",
     description: "Abdomen and pelvis.",
     tags: ["core", "torso"],
-    baseBP: 4,
-    morphologySensitivity: {
-      height: 1,
-      mass: 1,
-      muscularity: 0.30,
-      adiposity: 0.20,
-    },
     reference: {
       lengthCm: 18,
       sizeL: 6.95,
@@ -178,13 +152,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Arm",
     description: "An upper limb, from shoulder to wrist.",
     tags: ["limb", "upper-limb"],
-    baseBP: 14,
-    morphologySensitivity: {
-      height: 1,
-      mass: 1,
-      muscularity: 0.60,
-      adiposity: 0.05,
-    },
     reference: {
       lengthCm: 55,
       sizeL: 2.37,
@@ -209,13 +176,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Hand",
     description: "The manipulator extremity of an Arm.",
     tags: ["limb", "upper-limb", "extremity", "manipulator"],
-    baseBP: 5,
-    morphologySensitivity: {
-      height: 0,
-      mass: 0,
-      muscularity: 0.10,
-      adiposity: 0.02,
-    },
     reference: {
       lengthCm: 18,
       sizeL: 0.32,
@@ -240,13 +200,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Leg",
     description: "A lower limb, from hip to ankle.",
     tags: ["limb", "lower-limb", "locomotor"],
-    baseBP: 14,
-    morphologySensitivity: {
-      height: 1,
-      mass: 1,
-      muscularity: 0.60,
-      adiposity: 0.08,
-    },
     reference: {
       lengthCm: 81,
       sizeL: 11.05,
@@ -271,13 +224,6 @@ export const BODY_PART_DEFINITIONS = {
     name: "Foot",
     description: "The locomotor extremity of a Leg.",
     tags: ["limb", "lower-limb", "extremity", "locomotor"],
-    baseBP: 5,
-    morphologySensitivity: {
-      height: 0,
-      mass: 0,
-      muscularity: 0.10,
-      adiposity: 0.02,
-    },
     reference: {
       lengthCm: 25,
       sizeL: 0.76,

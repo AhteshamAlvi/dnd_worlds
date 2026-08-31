@@ -15,39 +15,44 @@
  * 2. resolve current Critical/Semicritical/Joint instances
  * 3. receive target + penetrating damage
  * 4. apply the Joint multiplier, if the target is a Joint
- * 5. apply BP damage to the target's host BodyPart
- * 6. resolve Body Points
- * 7. expose an Injury opportunity if the target was Semicritical or Joint
- * 8. check fatal Critical failure using the step-2 point set — BEFORE removal
- * 9. determine which BodyParts reached 0 Current BP
- * 10. permanently remove destroyed BodyParts from stored Anatomy (cascades
- *     through structural descendants automatically via removeBodyPart)
- * 11. (cascade is automatic, see 10)
- * 12. return the new persistent Anatomy for the caller to store
+ * 5. resolve Body Points BEFORE the hit, for the host's Maximum and exact
+ *    Current BP
+ * 6. newExactBP = exactCurrentBP - appliedDamage
+ * 7. if newExactBP <= 0 the host is DESTROYED; otherwise store the new
+ *    integrity fraction
+ * 8. check fatal Critical failure using the step-2 point set — BEFORE the
+ *    destroyed part stops hosting its points
+ * 9. archive the destroyed host and its structural descendants
+ * 10. return the new persistent Anatomy for the caller to store
  *
- * Step 8 evaluating against the pre-removal point set is not incidental: a
- * Head that reaches 0 BP and is then removed before the Brain's fatal
- * failure is checked would silently lose that failure, because the removed
- * Head can no longer host a Brain point. See body-damage.test.ts's
- * fatal-ordering regression.
+ * Step 5 happening before the hit rather than after is the whole shape of the
+ * new model. Damage is subtracted in exact BP and the result is divided back
+ * into a fraction, so a hit is a transition between two known states rather
+ * than a number accumulating against a moving Maximum.
+ *
+ * Step 7 is the only place a BodyPart can be destroyed. Destruction is a state
+ * transition performed deliberately here, never a Current BP that rounded to
+ * zero somewhere else — which is what makes a part at 0.3 exact BP survive
+ * displaying 1, and what makes a later Maximum BP increase unable to
+ * resurrect anything.
+ *
+ * Step 8 evaluating against the pre-archive point set is not incidental: a
+ * Head that is destroyed and then archived before the Brain's fatal failure is
+ * checked would silently lose that failure, because an archived Head no longer
+ * hosts a Brain point. See body-damage.test.ts's fatal-ordering regression.
  *
  * Damage is applied to two separate Anatomy trees on purpose: the resolved
  * tree (which may include temporary-only parts) feeds Body Point resolution,
- * while the stored tree feeds persistence. applyBodyPartDamage is a no-op
- * against a tree that doesn't contain the target id, so a temporary-only
- * target takes damage for this resolution but persists nothing — matching
- * the rule that temporary Anatomy modifications never mutate stored Anatomy.
+ * while the stored tree feeds persistence. Writing integrity is a no-op
+ * against a tree that does not contain the target id, so a temporary-only
+ * target takes damage for this resolution and persists nothing — matching the
+ * rule that temporary Anatomy modifications never mutate stored Anatomy.
  *
- * Nothing here touches any BodyPart other than the resolved host: that is
- * the entire "no damage spill" guarantee (a Joint hit doesn't also damage
- * its attached limb's other parts, a destroyed part's descendants don't
- * inherit its damage), and it falls out of removeBodyPart's existing cascade
- * behavior already being correct.
- *
- * Step 5 also never touches the host's recoveryProgress — applyBodyPartDamage
- * only overwrites `damage` (see its own comment). New damage landing on a
- * part that already had recovery banked does not wipe that progress; only
- * body-points/recovery.ts decides when progress resets.
+ * Nothing here touches any BodyPart other than the resolved host and, on
+ * destruction, its descendants. That is the entire "no damage spill"
+ * guarantee: a Joint hit does not also damage its limb's other parts, and a
+ * destroyed part's descendants are archived with it rather than inheriting
+ * its damage.
  *
  * This is the one Body function that takes caller-supplied, potentially
  * invalid input across a domain boundary (an unknown target id, an
@@ -61,8 +66,8 @@ import type { EngineResult } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 
 import {
-  applyBodyPartDamage,
-  removeBodyPart,
+  destroyBodyPart,
+  setBodyPartIntegrity,
 } from "./anatomy/modification";
 import type { AnatomyModification } from "./anatomy/modification";
 import { resolveAnatomy } from "./anatomy/resolution";
@@ -71,7 +76,6 @@ import type {
   BodyPartDefinition,
   BodyPartId,
 } from "./anatomy/types";
-import { resolveMorphology } from "./body-points/morphology";
 import { resolveBodyPoints } from "./body-points/resolution";
 import type {
   BodyPointModifier,
@@ -92,7 +96,7 @@ import type {
   ResolvedCriticalPoints,
   SpecialPointDefinition,
 } from "./critical-points/types";
-import type { Body } from "./types";
+import type { Body, BodyMorphology } from "./types";
 
 // What Combat says was hit. A "special-point" target whose resolved point
 // spans more than one host (e.g. Spine → Upper Body + Lower Body) requires
@@ -109,6 +113,20 @@ export type BodyDamageTarget =
 export interface BodyDamageInput {
   readonly body: Body;
   readonly constitution: number;
+
+  /*
+   * The resolved physical context Body Points need, supplied rather than
+   * derived, exactly as Strength resolution takes it.
+   *
+   * Body stores Character Scale and the character's own morphology, but
+   * Effective Scale also needs Species Standard Scale and Age Scale, and
+   * resolved morphology needs the Species and Age layers. Neither belongs to
+   * Body, and Body must never grow a branch that asks what Species a character
+   * is. Whoever assembles those layers passes the result down; Phase 8 makes
+   * that assembly a production path instead of a caller's job.
+   */
+  readonly morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>;
+  readonly effectiveScale: number;
 
   readonly bodyPartDefinitions: readonly BodyPartDefinition[];
   readonly specialPointDefinitions: readonly SpecialPointDefinition[];
@@ -318,58 +336,90 @@ export function applyBodyDamage(
       ? applyJointDamageMultiplier(point, input.penetratingDamage)
       : input.penetratingDamage;
 
-  const damagedResolvedAnatomy = applyBodyPartDamage(
-    resolvedAnatomy,
-    hostPartId,
-    appliedDamage,
-  );
+  /*
+   * Body Points BEFORE the hit. The transition needs the host's Maximum BP and
+   * its current exact BP, and both are derived — there is no way to subtract
+   * damage from a fraction without first knowing what the fraction is of.
+   */
+  const bodyPointsBeforeDamage = resolveBodyPoints({
+    anatomy: resolvedAnatomy,
+    definitions: input.bodyPartDefinitions,
+    morphologyByPartId: input.morphologyByPartId,
+    effectiveScale: input.effectiveScale,
+    constitution: input.constitution,
+    modifiers: bodyPointModifiers,
+  });
 
-  const damagedStoredAnatomy = applyBodyPartDamage(
-    input.body.anatomy,
-    hostPartId,
-    appliedDamage,
-  );
+  const hostBP = bodyPointsBeforeDamage.byPartId[hostPartId];
 
-  const morphology = resolveMorphology(
-    input.body,
-    damagedResolvedAnatomy,
-    input.bodyPartDefinitions,
-  );
+  if (hostBP === undefined) {
+    return {
+      success: false,
+      trace: { root: traceNode },
+      warnings: [],
+      errors: [
+        {
+          code: "body.damage.host.not_active",
+          message:
+            `BodyPart "${hostPartId}" has no Body Points because it is not ` +
+            `active. A suppressed or already-destroyed part cannot be damaged.`,
+          audience: "developer",
+        },
+      ],
+    };
+  }
 
-  const bodyPoints = resolveBodyPoints(
-    damagedResolvedAnatomy,
-    morphology,
-    input.constitution,
-    input.bodyPartDefinitions,
-    bodyPointModifiers,
-  );
+  const newExactBP = hostBP.exactCurrentBP - appliedDamage;
+
+  /*
+   * The one and only destruction test in the engine. Note that it is `<= 0`
+   * against the EXACT value: a part left with 0.3 BP survives and displays 1,
+   * and only a hit that genuinely consumes everything destroys it.
+   */
+  const destroyed = newExactBP <= 0;
+
+  const writeOutcome = (anatomy: Anatomy): {
+    readonly anatomy: Anatomy;
+    readonly archivedPartIds: readonly BodyPartId[];
+  } =>
+    destroyed
+      ? destroyBodyPart(anatomy, hostPartId)
+      : {
+          anatomy: setBodyPartIntegrity(
+            anatomy,
+            hostPartId,
+            newExactBP / hostBP.maximumBP,
+          ),
+          archivedPartIds: [],
+        };
+
+  const damagedResolvedAnatomy = writeOutcome(resolvedAnatomy).anatomy;
+  const storedOutcome = writeOutcome(input.body.anatomy);
+
+  const bodyPoints = resolveBodyPoints({
+    anatomy: damagedResolvedAnatomy,
+    definitions: input.bodyPartDefinitions,
+    morphologyByPartId: input.morphologyByPartId,
+    effectiveScale: input.effectiveScale,
+    constitution: input.constitution,
+    modifiers: bodyPointModifiers,
+  });
 
   const injuryOpportunity =
     point !== undefined && createsInjuryOpportunity(point);
 
-  // Evaluated against the step-2 (pre-damage, pre-removal) point set — see
-  // the file header on why this ordering is load-bearing.
+  const destroyedPartIds = destroyed ? [hostPartId] : [];
+
+  // Evaluated against the step-2 (pre-archive) point set — see the file header
+  // on why this ordering is load-bearing.
   const fatalCriticalFailures = getFatalCriticalFailures(
     criticalPoints,
-    bodyPoints,
+    destroyedPartIds,
   );
 
-  const destroyedPartIds = bodyPoints.destroyedPartIds;
+  const anatomy = storedOutcome.anatomy;
 
-  const idsBeforeRemoval = new Set(
-    damagedStoredAnatomy.parts.map((part) => part.id),
-  );
-
-  const anatomy = destroyedPartIds.reduce(
-    (current, partId) => removeBodyPart(current, partId),
-    damagedStoredAnatomy,
-  );
-
-  const idsAfterRemoval = new Set(anatomy.parts.map((part) => part.id));
-
-  const removedPartIds = [...idsBeforeRemoval].filter(
-    (id) => !idsAfterRemoval.has(id),
-  );
+  const removedPartIds = storedOutcome.archivedPartIds;
 
   const outcome: BodyDamageOutcome = {
     anatomy,

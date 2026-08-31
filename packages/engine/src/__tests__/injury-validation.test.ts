@@ -29,31 +29,35 @@ afterEach(() => {
   clearCustomDefinitions();
 });
 
-const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
-
 const BODY_PART_DEFINITIONS: readonly BodyPartDefinition[] = [
   {
     id: "torso",
     name: "Torso",
     description: "Test torso.",
     tags: ["core"],
-    baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
+    ...TEST_PART_PHYSICALS,
+    reference: {
+      ...TEST_PART_PHYSICALS.reference,
+      structuralCapacity: 20,
+    },
   },
   {
     id: "limb",
     name: "Limb",
     description: "Test limb.",
     tags: ["limb"],
-    baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
+    ...TEST_PART_PHYSICALS,
+    reference: {
+      ...TEST_PART_PHYSICALS.reference,
+      structuralCapacity: 20,
+    },
   },
 ];
 
 const ANATOMY: Anatomy = {
   parts: [
-    { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
-    { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 },
+    { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1 },
+    { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 1 },
   ],
 };
 

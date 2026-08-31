@@ -1,25 +1,33 @@
 /*
- * Tests natural BP recovery: the low-level whole-BP-vs-fractional-progress
- * primitive (body-points/recovery.ts) and the VIT-driven per-BodyPart pass
- * that drives it (mechanics/recovery/resolution.ts).
+ * Natural BP recovery: the primitive (body-points/recovery.ts) and the
+ * VIT-driven pass that drives it (mechanics/recovery/resolution.ts).
  *
- * Injury treatment caps, overlap detection, and Injury removal are covered
- * separately in injury-recovery.test.ts — this file only exercises plain
- * natural recovery with no Injuries in play.
+ * Injury treatment caps, overlap detection and Injury removal are covered in
+ * injury-recovery.test.ts; this file is plain natural recovery with nothing
+ * else in play.
+ *
+ *
+ * WHAT THIS PHASE REMOVED FROM THIS SUITE
+ *
+ * Half the old tests were about `recoveryProgress` — the banked fraction of a
+ * whole Body Point that recovery had earned but could not yet spend, because
+ * BP was a whole number. Storing integrity as a fraction deletes the concept
+ * outright: recovery happens in exact BP, the result is divided back into a
+ * fraction, and the remainder simply IS the fraction. There is nothing left to
+ * bank, and so nothing left to test about banking, resetting it, or losing it
+ * at a ceiling.
+ *
+ * What survives is the arithmetic that was always the point: how much heals,
+ * and where it stops.
  */
 
 import { describe, expect, it } from "vitest";
 
 import { applyBodyPartRecovery } from "../character/foundation/body/body-points/recovery";
-import { applyBodyPartDamage } from "../character/foundation/body/anatomy/modification";
 import type { Anatomy } from "../character/foundation/body/anatomy/types";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
-import {
-  REFERENCE_ADIPOSITY,
-  REFERENCE_HEIGHT_CM,
-  REFERENCE_MASS_KG,
-  REFERENCE_MUSCULARITY,
-} from "../character/foundation/body/body-points/morphology";
+import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
 import {
@@ -31,44 +39,59 @@ import type { ResolveRecoveryInput } from "../character/mechanics/recovery/resol
 import { days, hours } from "../time/duration";
 import { TEST_BODY_STATE, TEST_PART_PHYSICALS } from "./fixtures/body";
 
-const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
-
-// baseBP 20 at reference morphology and CON 10 resolves to exactly 20
-// Maximum BP — keeps every expected number in these tests a round one.
+// Structural Capacity 20 at neutral morphology and CON 10 resolves to exactly
+// 20 Maximum BP — keeps every expected number in these tests a round one.
 const DEFINITIONS: readonly BodyPartDefinition[] = [
   {
     id: "torso",
     name: "Torso",
     description: "Test torso.",
     tags: ["core"],
-    baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
+    ...TEST_PART_PHYSICALS,
+    reference: { ...TEST_PART_PHYSICALS.reference, structuralCapacity: 20 },
   },
 ];
 
 const REFERENCE_CONSTITUTION = 10;
+const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };
 
 function bodyWithParts(anatomy: Anatomy): Body {
-  return {
-    heightCm: REFERENCE_HEIGHT_CM,
-    massKg: REFERENCE_MASS_KG,
-    build: { muscularity: REFERENCE_MUSCULARITY, adiposity: REFERENCE_ADIPOSITY },
-    ...TEST_BODY_STATE,
-    anatomy,
-  };
+  return { ...TEST_BODY_STATE, anatomy };
 }
 
-function singleTorso(damage: number, recoveryProgress = 0): Body {
+/** A single torso at the given integrity. Maximum BP is 20 throughout. */
+function singleTorso(integrity: number): Body {
   return bodyWithParts({
-    parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage, recoveryProgress }],
+    parts: [
+      { id: "torso-1", type: "torso", attachment: null, state: "active", integrity },
+    ],
   });
 }
 
-function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecoveryInput {
+function morphologyFor(body: Body) {
+  return resolveMorphology(
+    {
+      species: NEUTRAL_SOURCE,
+      age: NEUTRAL_SOURCE,
+      character: { global: body.globalMorphology, local: body.localMorphology },
+      strengthDevelopmentMuscularity: body.strengthDevelopmentMuscularity,
+      effectLayers: [],
+    },
+    body.anatomy.parts.map((part) => part.id),
+  );
+}
+
+function baseInput(
+  overrides: Partial<ResolveRecoveryInput> = {},
+): ResolveRecoveryInput {
+  const body = overrides.body ?? singleTorso(0.5);
+
   return {
-    body: singleTorso(10),
+    body,
     constitution: REFERENCE_CONSTITUTION,
     bodyPartDefinitions: DEFINITIONS,
+    morphologyByPartId: morphologyFor(body),
+    effectiveScale: 1,
     injuries: [],
     elapsed: days(1),
     vit: 10,
@@ -76,129 +99,90 @@ function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecove
   };
 }
 
+
 describe("applyBodyPartRecovery — the primitive", () => {
-  it("restores whole BP and preserves the fractional remainder", () => {
+  /*
+   * Recovery is exact throughout, and this is the case the old whole-BP model
+   * could not express: half a point of healing onto a part missing ten points
+   * genuinely leaves it half a point better off, rather than restoring nothing
+   * and banking a remainder.
+   */
+  it("restores fractional BP exactly", () => {
     const result = applyBodyPartRecovery({
-      damage: 10,
-      recoveryProgress: 0,
+      integrity: 0.5,
       maximumBP: 20,
       maximumPermittedCurrentBP: 20,
-      rawRecoveryAmount: 2.35,
+      recoveryAmountBP: 0.5,
     });
 
-    expect(result.wholeBPRestored).toBe(2);
-    expect(result.damage).toBe(8);
-    expect(result.recoveryProgress).toBeCloseTo(0.35, 10);
+    expect(result.bpRestored).toBeCloseTo(0.5, 10);
+    expect(result.integrity).toBeCloseTo(10.5 / 20, 10);
   });
 
-  it("accumulates fractional progress across calls until it crosses a whole point", () => {
-    const first = applyBodyPartRecovery({
-      damage: 10,
-      recoveryProgress: 0,
-      maximumBP: 20,
-      maximumPermittedCurrentBP: 20,
-      rawRecoveryAmount: 0.4,
-    });
-    expect(first.wholeBPRestored).toBe(0);
-    expect(first.damage).toBe(10);
-    expect(first.recoveryProgress).toBeCloseTo(0.4, 10);
+  it("accumulates small amounts across calls without losing a fraction", () => {
+    let integrity = 0.5;
 
-    const second = applyBodyPartRecovery({
-      damage: first.damage,
-      recoveryProgress: first.recoveryProgress,
-      maximumBP: 20,
-      maximumPermittedCurrentBP: 20,
-      rawRecoveryAmount: 0.4,
-    });
-    expect(second.wholeBPRestored).toBe(0);
-    expect(second.recoveryProgress).toBeCloseTo(0.8, 10);
+    for (let tick = 0; tick < 4; tick += 1) {
+      integrity = applyBodyPartRecovery({
+        integrity,
+        maximumBP: 20,
+        maximumPermittedCurrentBP: 20,
+        recoveryAmountBP: 0.5,
+      }).integrity;
+    }
 
-    const third = applyBodyPartRecovery({
-      damage: second.damage,
-      recoveryProgress: second.recoveryProgress,
-      maximumBP: 20,
-      maximumPermittedCurrentBP: 20,
-      rawRecoveryAmount: 0.4,
-    });
-    expect(third.wholeBPRestored).toBe(1);
-    expect(third.damage).toBe(9);
-    expect(third.recoveryProgress).toBeCloseTo(0.2, 10);
+    // Four half-points is exactly two points: 10 -> 12 of 20.
+    expect(integrity).toBeCloseTo(12 / 20, 10);
   });
 
-  it("never restores past Maximum BP even when raw recovery is huge", () => {
+  it("never restores past Maximum BP however large the tick", () => {
     const result = applyBodyPartRecovery({
-      damage: 1,
-      recoveryProgress: 0,
+      integrity: 0.5,
       maximumBP: 20,
       maximumPermittedCurrentBP: 20,
-      rawRecoveryAmount: 50,
+      recoveryAmountBP: 1000,
     });
 
-    expect(result.wholeBPRestored).toBe(1);
-    expect(result.damage).toBe(0);
-    // Reaching full BP resets progress, discarding the enormous leftover.
-    expect(result.recoveryProgress).toBe(0);
+    expect(result.integrity).toBe(1);
+    expect(result.bpRestored).toBe(10);
   });
 
-  it("resets progress to zero once already at full Current BP", () => {
+  it("stops at a lower ceiling and reports only what it restored", () => {
     const result = applyBodyPartRecovery({
-      damage: 0,
-      recoveryProgress: 0.9,
+      integrity: 0.5,
       maximumBP: 20,
-      maximumPermittedCurrentBP: 20,
-      rawRecoveryAmount: 0.5,
+      maximumPermittedCurrentBP: 14,
+      recoveryAmountBP: 1000,
     });
 
-    expect(result.wholeBPRestored).toBe(0);
-    expect(result.damage).toBe(0);
-    expect(result.recoveryProgress).toBe(0);
+    expect(result.integrity).toBeCloseTo(14 / 20, 10);
+    expect(result.bpRestored).toBe(4);
   });
 
-  it("resets progress to zero when a lower ceiling is reached exactly", () => {
-    // Maximum 20, ceiling 15 (an Injury cap), currently at 14 (damage 6).
+  it("does nothing when already at the ceiling", () => {
     const result = applyBodyPartRecovery({
-      damage: 6,
-      recoveryProgress: 0.9,
+      integrity: 0.7,
       maximumBP: 20,
-      maximumPermittedCurrentBP: 15,
-      rawRecoveryAmount: 0.5,
+      maximumPermittedCurrentBP: 14,
+      recoveryAmountBP: 5,
     });
 
-    // 0.9 + 0.5 = 1.4 raw, but only 1 point of room remains before the
-    // ceiling (14 -> 15), so the extra 0.4 is blocked, not banked.
-    expect(result.wholeBPRestored).toBe(1);
-    expect(result.damage).toBe(5);
-    expect(result.recoveryProgress).toBe(0);
+    expect(result.integrity).toBe(0.7);
+    expect(result.bpRestored).toBe(0);
   });
 
-  it("bans no recovery at all — and no banking — once already at the ceiling", () => {
+  it("treats a ceiling above Maximum BP as Maximum BP", () => {
     const result = applyBodyPartRecovery({
-      damage: 5, // Current BP 15, already at the ceiling below
-      recoveryProgress: 0.7, // stray banked progress from before the cap applied
+      integrity: 0.5,
       maximumBP: 20,
-      maximumPermittedCurrentBP: 15,
-      rawRecoveryAmount: 1,
+      maximumPermittedCurrentBP: 999,
+      recoveryAmountBP: 1000,
     });
 
-    expect(result.wholeBPRestored).toBe(0);
-    expect(result.damage).toBe(5);
-    expect(result.recoveryProgress).toBe(0);
+    expect(result.integrity).toBe(1);
   });
 });
 
-describe("new damage preserves recoveryProgress", () => {
-  it("applyBodyPartDamage only changes damage, never recoveryProgress", () => {
-    const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 2, recoveryProgress: 0.4 }],
-    };
-
-    const damaged = applyBodyPartDamage(anatomy, "torso-1", 3);
-    const part = damaged.parts.find((p) => p.id === "torso-1");
-
-    expect(part?.damage).toBe(5);
-    expect(part?.recoveryProgress).toBe(0.4);
-  });
-});
 
 describe("deriveDailyRecoveryFraction", () => {
   it.each([
@@ -213,57 +197,103 @@ describe("deriveDailyRecoveryFraction", () => {
   });
 });
 
+
 describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
   it("recovers more BP over the same elapsed time at higher VIT", () => {
     const low = resolveRecovery(baseInput({ vit: 5 }));
     const reference = resolveRecovery(baseInput({ vit: 10 }));
     const high = resolveRecovery(baseInput({ vit: 15 }));
 
-    expect(low.parts[0]?.wholeBPRestored).toBe(1); // 5% of 20
-    expect(reference.parts[0]?.wholeBPRestored).toBe(2); // 10% of 20
-    expect(high.parts[0]?.wholeBPRestored).toBe(4); // 20% of 20
+    expect(low.parts[0]?.bpRestored).toBeCloseTo(1, 10); // 5% of 20
+    expect(reference.parts[0]?.bpRestored).toBeCloseTo(2, 10); // 10% of 20
+    expect(high.parts[0]?.bpRestored).toBeCloseTo(4, 10); // 20% of 20
   });
 
-  it("only processes damaged BodyParts, leaving healthy ones untouched", () => {
+  it("leaves undamaged BodyParts untouched", () => {
     const body = bodyWithParts({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 10, recoveryProgress: 0 },
-        { id: "torso-2", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.5 },
+        { id: "torso-2", type: "torso", attachment: null, state: "active", integrity: 1 },
       ],
     });
 
     const outcome = resolveRecovery(baseInput({ body }));
 
     expect(outcome.parts.map((p) => p.partId)).toEqual(["torso-1"]);
-
-    const untouched = outcome.anatomy.parts.find((p) => p.id === "torso-2");
-    expect(untouched?.damage).toBe(0);
-    expect(untouched?.recoveryProgress).toBe(0);
+    expect(
+      outcome.anatomy.parts.find((p) => p.id === "torso-2")?.integrity,
+    ).toBe(1);
   });
 
-  it("accumulates fractional progress across repeated passes", () => {
-    // Quarter-day passes at reference VIT: 0.025 x 20 = 0.5 raw BP per pass.
-    const initialBody = singleTorso(10);
+  /*
+   * Ordinary healing does not regrow anatomy. A destroyed part is
+   * archived-removed and never reaches the recovery primitive at all, which is
+   * the mechanical form of that rule rather than a special case inside it.
+   */
+  it.each(["suppressed", "archived-removed"] as const)(
+    "does not restore %s anatomy",
+    (state) => {
+      const body = bodyWithParts({
+        parts: [
+          { id: "torso-1", type: "torso", attachment: null, state, integrity: 0 },
+        ],
+      });
 
-    const first = resolveRecovery(baseInput({ body: initialBody, elapsed: hours(6) }));
-    expect(first.parts[0]?.wholeBPRestored).toBe(0);
-    expect(first.parts[0]?.recoveryProgressAfter).toBeCloseTo(0.5, 10);
+      const outcome = resolveRecovery(baseInput({ body }));
 
-    const secondBody: Body = { ...initialBody, anatomy: first.anatomy };
-    const second = resolveRecovery(baseInput({ body: secondBody, elapsed: hours(6) }));
+      expect(outcome.parts).toEqual([]);
+      expect(outcome.anatomy.parts[0]?.state).toBe(state);
+      expect(outcome.anatomy.parts[0]?.integrity).toBe(0);
+    },
+  );
 
-    expect(second.parts[0]?.wholeBPRestored).toBe(1);
-    expect(second.parts[0]?.damageAfter).toBe(9);
-    expect(second.parts[0]?.recoveryProgressAfter).toBe(0);
+  /*
+   * Four quarter-day passes at reference VIT restore 0.5 BP each. Under the
+   * old whole-BP model the first three restored nothing and banked a
+   * remainder; now each one lands, and the total after four is the same 2 BP
+   * either way. Exactness is what makes those two facts agree.
+   */
+  it("accumulates partial passes exactly", () => {
+    let body = singleTorso(0.5);
+
+    for (let pass = 0; pass < 4; pass += 1) {
+      const outcome = resolveRecovery(
+        baseInput({ body, elapsed: hours(6) }),
+      );
+
+      expect(outcome.parts[0]?.bpRestored).toBeCloseTo(0.5, 10);
+
+      body = { ...body, anatomy: outcome.anatomy };
+    }
+
+    expect(body.anatomy.parts[0]?.integrity).toBeCloseTo(12 / 20, 10);
   });
 
-  it("resets progress once Maximum BP is reached, discarding the leftover", () => {
-    // damage 1 (room for exactly 1 BP), VIT 25 raw recovery is 16 BP.
-    const outcome = resolveRecovery(baseInput({ body: singleTorso(1), vit: 25 }));
+  it("stops exactly at full health rather than overshooting", () => {
+    // integrity 0.95 leaves room for 1 BP; VIT 25 offers 16.
+    const outcome = resolveRecovery(baseInput({ body: singleTorso(0.95), vit: 25 }));
 
-    const part = outcome.parts[0]!;
-    expect(part.wholeBPRestored).toBe(1);
-    expect(part.damageAfter).toBe(0);
-    expect(part.recoveryProgressAfter).toBe(0);
+    expect(outcome.parts[0]?.bpRestored).toBeCloseTo(1, 10);
+    expect(outcome.parts[0]?.integrityAfter).toBe(1);
+    expect(outcome.anatomy.parts[0]?.integrity).toBe(1);
+  });
+
+  /*
+   * The property that makes integrity worth storing. Maximum BP doubles
+   * between these two passes, and the same proportional wound heals the same
+   * proportion — twice the raw BP, because there is twice as much body.
+   */
+  it("scales recovery with Maximum BP rather than with stored damage", () => {
+    const atCon10 = resolveRecovery(baseInput({ body: singleTorso(0.5) }));
+
+    const atCon12 = resolveRecovery(
+      baseInput({ body: singleTorso(0.5), constitution: 12 }),
+    );
+
+    expect(atCon10.parts[0]?.bpRestored).toBeCloseTo(2, 10);
+    expect(atCon12.parts[0]?.bpRestored).toBeCloseTo(4, 10);
+
+    expect(atCon10.parts[0]?.integrityAfter).toBeCloseTo(0.6, 10);
+    expect(atCon12.parts[0]?.integrityAfter).toBeCloseTo(0.6, 10);
   });
 });

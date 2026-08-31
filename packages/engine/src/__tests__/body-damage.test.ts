@@ -6,7 +6,7 @@
  *
  * - Fatal ordering: a fatal Critical failure must be detected using the
  *   Critical Point set that existed at the moment of the hit, BEFORE the
- *   destroyed host is removed from Anatomy — otherwise the removal makes the
+ *   destroyed host is archived — otherwise the archiving makes the
  *   Critical Point (and its fatal failure) disappear along with it.
  * - No damage spill: a Joint multiplier applies only to its host BodyPart,
  *   and destroying a BodyPart removes its structural descendants without
@@ -19,14 +19,36 @@ import { applyBodyDamage } from "../character/foundation/body/damage";
 import type { BodyDamageInput } from "../character/foundation/body/damage";
 import { listDefinitions } from "../character/catalogs";
 import { STANDARD_BODY } from "../character/foundation/body/defaults";
+import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
 const REFERENCE_CONSTITUTION = 10;
+
+const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };
+
+/*
+ * Neutral morphology for the standard humanoid, so every part resolves to its
+ * reference Structural Capacity and Maximum BP is the table in
+ * anatomy/body-parts.ts: Arm 14, Hand 4, Head 8, Neck 2, Upper Body 10.
+ */
+const NEUTRAL_MORPHOLOGY_BY_PART = resolveMorphology(
+  {
+    species: NEUTRAL_SOURCE,
+    age: NEUTRAL_SOURCE,
+    character: NEUTRAL_SOURCE,
+    strengthDevelopmentMuscularity: 1,
+    effectLayers: [],
+  },
+  STANDARD_BODY.anatomy.parts.map((part) => part.id),
+);
 
 function baseInput(overrides: Partial<BodyDamageInput> = {}): BodyDamageInput {
   return {
     body: STANDARD_BODY,
     constitution: REFERENCE_CONSTITUTION,
+    morphologyByPartId: NEUTRAL_MORPHOLOGY_BY_PART,
+    effectiveScale: 1,
     bodyPartDefinitions: listDefinitions("body-part"),
     specialPointDefinitions: listDefinitions("special-point"),
     target: { kind: "body-part", partId: "arm-1" },
@@ -60,8 +82,9 @@ describe("Joint targeting", () => {
     const arm = outcome.anatomy.parts.find((p) => p.id === "arm-1");
     const hand = outcome.anatomy.parts.find((p) => p.id === "hand-1");
 
-    expect(arm?.damage).toBe(8);
-    expect(hand?.damage).toBe(0); // no spill into the attached Hand
+    // Arm Maximum BP is 14, so 8 damage leaves 6/14 integrity.
+    expect(arm?.integrity).toBeCloseTo(6 / 14, 10);
+    expect(hand?.integrity).toBe(1); // no spill into the attached Hand
   });
 
   it("a non-Joint target has multiplier 1", () => {
@@ -126,7 +149,15 @@ describe("fatal-ordering regression", () => {
 
     expect(outcome.destroyedPartIds).toContain("head-1");
     expect(outcome.removedPartIds).toContain("head-1");
-    expect(outcome.anatomy.parts.some((p) => p.id === "head-1")).toBe(false);
+    /*
+     * Archived, not deleted. A destroyed part stays in the tree as
+     * "archived-removed" so extraordinary regeneration has a specific
+     * structure to regrow, and so the Reference Form's expectation and the
+     * body's actual contents stay separately inspectable.
+     */
+    expect(
+      outcome.anatomy.parts.find((p) => p.id === "head-1")?.state,
+    ).toBe("archived-removed");
 
     // This is the assertion that would fail if fatal-failure detection ran
     // AFTER removal: the Brain point's host (Head) is already gone from
@@ -167,12 +198,12 @@ describe("fatal-ordering regression", () => {
 
 describe("fatal Critical failures across all three Critical Points", () => {
   it("Upper Body Current BP = 0 -> Heart fatal failure", () => {
-    // Upper Body Maximum BP is 8 at reference morphology/CON.
+    // Upper Body Maximum BP is 10 — its reference Structural Capacity.
     const outcome = requireSuccess(
       applyBodyDamage(
         baseInput({
           target: { kind: "body-part", partId: "upper-body-1" },
-          penetratingDamage: 8,
+          penetratingDamage: 10,
         }),
       ),
     );
@@ -183,12 +214,12 @@ describe("fatal Critical failures across all three Critical Points", () => {
   });
 
   it("Neck Current BP = 0 -> Neck fatal failure", () => {
-    // Neck Maximum BP is 4 at reference morphology/CON.
+    // Neck Maximum BP is 2 — its reference Structural Capacity.
     const outcome = requireSuccess(
       applyBodyDamage(
         baseInput({
           target: { kind: "body-part", partId: "neck-1" },
-          penetratingDamage: 4,
+          penetratingDamage: 2,
         }),
       ),
     );
@@ -201,7 +232,7 @@ describe("fatal Critical failures across all three Critical Points", () => {
       applyBodyDamage(
         baseInput({
           target: { kind: "body-part", partId: "leg-1" },
-          penetratingDamage: 14,
+          penetratingDamage: 16,
         }),
       ),
     );
@@ -223,8 +254,11 @@ describe("structural destruction cascade", () => {
     );
 
     expect(outcome.removedPartIds.slice().sort()).toEqual(["arm-1", "hand-1"]);
-    expect(outcome.anatomy.parts.some((p) => p.id === "arm-1")).toBe(false);
-    expect(outcome.anatomy.parts.some((p) => p.id === "hand-1")).toBe(false);
+    const stateOf = (id: string) =>
+      outcome.anatomy.parts.find((p) => p.id === id)?.state;
+
+    expect(stateOf("arm-1")).toBe("archived-removed");
+    expect(stateOf("hand-1")).toBe("archived-removed");
 
     // The Hand was never itself reduced to 0 BP — it disappears purely
     // because its structural attachment to the organism was destroyed.

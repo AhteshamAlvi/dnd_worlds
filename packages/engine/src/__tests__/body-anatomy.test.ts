@@ -1,7 +1,7 @@
 /*
  * Tests the generic Anatomy layer: creation, the four structural
  * modification operations (add/remove/replace/reattach) plus the new
- * damage-storage operation, resolution helpers, and structural validation.
+ * integrity-storage operation, resolution helpers, and structural validation.
  *
  * Anatomy is data-driven — these tests deliberately use small ad hoc part
  * collections rather than the standard humanoid, to prove nothing here
@@ -11,7 +11,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  applyBodyPartDamage,
+  setBodyPartIntegrity,
   applyAnatomyModifications,
   reattachBodyPart,
   removeBodyPart,
@@ -40,16 +40,9 @@ import type {
   BodyPartDefinition,
 } from "../character/foundation/body/anatomy/types";
 
-const NEUTRAL_SENSITIVITY = {
-  height: 1,
-  mass: 1,
-  muscularity: 1,
-  adiposity: 1,
-};
-
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
-  { id: "limb", name: "Limb", description: "Test limb.", tags: ["limb"], baseBP: 5, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], ...TEST_PART_PHYSICALS },
+  { id: "limb", name: "Limb", description: "Test limb.", tags: ["limb"], ...TEST_PART_PHYSICALS },
 ];
 
 function threeArmAnatomy(): Anatomy {
@@ -62,7 +55,7 @@ function threeArmAnatomy(): Anatomy {
 }
 
 describe("createBodyPart / createAnatomy", () => {
-  it("creates parts deterministically from a spec, starting at zero damage", () => {
+  it("creates parts deterministically from a spec, starting at full integrity", () => {
     const spec: BodyPartCreationSpec = {
       id: "torso-1",
       type: "torso",
@@ -78,8 +71,7 @@ describe("createBodyPart / createAnatomy", () => {
       name: "Torso",
       attachment: null,
       state: "active",
-      damage: 0,
-      recoveryProgress: 0,
+      integrity: 1,
     });
   });
 
@@ -138,11 +130,11 @@ describe("addBodyPart / removeBodyPart / replaceBodyPart / reattachBodyPart", ()
     expect(getBodyPartParent(replaced, "hand-1")?.id).toBe("prosthetic-1");
   });
 
-  it("a replacement starts with zero damage even if the original was damaged", () => {
+  it("a replacement starts at full integrity even if the original was damaged", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
-        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, state: "active", damage: 7, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1 },
+        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 0.5 },
       ],
     };
 
@@ -151,7 +143,7 @@ describe("addBodyPart / removeBodyPart / replaceBodyPart / reattachBodyPart", ()
       type: "limb",
     });
 
-    expect(getBodyPart(replaced, "prosthetic-1")?.damage).toBe(0);
+    expect(getBodyPart(replaced, "prosthetic-1")?.integrity).toBe(1);
   });
 
   it("reattaching changes only structural parent/site, nothing else", () => {
@@ -171,32 +163,40 @@ describe("addBodyPart / removeBodyPart / replaceBodyPart / reattachBodyPart", ()
   });
 });
 
-describe("applyBodyPartDamage", () => {
-  it("adds to a part's stored damage", () => {
+describe("setBodyPartIntegrity", () => {
+  it("stores a part's new integrity", () => {
     const anatomy = threeArmAnatomy();
-    const damaged = applyBodyPartDamage(anatomy, "limb-1", 6);
 
-    expect(getBodyPart(damaged, "limb-1")?.damage).toBe(6);
+    const damaged = setBodyPartIntegrity(anatomy, "limb-1", 0.25);
+
+    expect(getBodyPart(damaged, "limb-1")?.integrity).toBe(0.25);
   });
 
-  it("clamps at zero rather than going negative", () => {
+  it("clamps stored integrity into [0, 1]", () => {
     const anatomy = threeArmAnatomy();
-    const healed = applyBodyPartDamage(anatomy, "limb-1", -100);
 
-    expect(getBodyPart(healed, "limb-1")?.damage).toBe(0);
+    expect(
+      getBodyPart(setBodyPartIntegrity(anatomy, "limb-1", 1.4), "limb-1")
+        ?.integrity,
+    ).toBe(1);
+
+    expect(
+      getBodyPart(setBodyPartIntegrity(anatomy, "limb-1", -3), "limb-1")
+        ?.integrity,
+    ).toBe(0);
   });
 
-  it("accumulates across repeated calls", () => {
-    let anatomy = threeArmAnatomy();
-    anatomy = applyBodyPartDamage(anatomy, "limb-1", 3);
-    anatomy = applyBodyPartDamage(anatomy, "limb-1", 4);
+  it("leaves the original anatomy untouched", () => {
+    const anatomy = threeArmAnatomy();
 
-    expect(getBodyPart(anatomy, "limb-1")?.damage).toBe(7);
+    setBodyPartIntegrity(anatomy, "limb-1", 0.1);
+
+    expect(getBodyPart(anatomy, "limb-1")?.integrity).toBe(1);
   });
 
   it("is a no-op against an unknown id", () => {
     const anatomy = threeArmAnatomy();
-    const result = applyBodyPartDamage(anatomy, "does-not-exist", 5);
+    const result = setBodyPartIntegrity(anatomy, "does-not-exist", 0.5);
 
     expect(result).toEqual(anatomy);
   });
@@ -205,7 +205,7 @@ describe("applyBodyPartDamage", () => {
     const anatomy = threeArmAnatomy();
     const before = JSON.parse(JSON.stringify(anatomy));
 
-    applyBodyPartDamage(anatomy, "limb-1", 5);
+    setBodyPartIntegrity(anatomy, "limb-1", 0.5);
 
     expect(anatomy).toEqual(before);
   });
@@ -319,8 +319,8 @@ describe("Anatomy validation", () => {
   it("accepts multiple anatomical roots", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
-        { id: "b", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: null, state: "active", integrity: 1 },
+        { id: "b", type: "torso", attachment: null, state: "active", integrity: 1 },
       ],
     };
 
@@ -330,8 +330,8 @@ describe("Anatomy validation", () => {
   it("rejects a duplicate BodyPart id", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
-        { id: "a", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: null, state: "active", integrity: 1 },
+        { id: "a", type: "torso", attachment: null, state: "active", integrity: 1 },
       ],
     };
 
@@ -342,7 +342,7 @@ describe("Anatomy validation", () => {
 
   it("rejects a missing parent", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 1 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -352,7 +352,7 @@ describe("Anatomy validation", () => {
 
   it("rejects self-parenting", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 1 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -363,8 +363,8 @@ describe("Anatomy validation", () => {
   it("rejects an attachment cycle", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: { parentId: "b", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 },
-        { id: "b", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "a", type: "torso", attachment: { parentId: "b", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 1 },
+        { id: "b", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 1 },
       ],
     };
 
@@ -375,7 +375,7 @@ describe("Anatomy validation", () => {
 
   it("rejects an unknown BodyPart type", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "wing", attachment: null, state: "active", damage: 0, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "wing", attachment: null, state: "active", integrity: 1 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -383,14 +383,46 @@ describe("Anatomy validation", () => {
     expect(result.issues.some((i) => i.code === "unknown-body-part-type")).toBe(true);
   });
 
-  it("rejects negative stored damage", () => {
+  it("rejects integrity outside [0, 1]", () => {
+    for (const integrity of [-1, 1.5, Number.NaN]) {
+      const anatomy: Anatomy = {
+        parts: [{ id: "a", type: "torso", attachment: null, state: "active", integrity }],
+      };
+
+      const result = validateAnatomy(anatomy, DEFINITIONS);
+      expect(result.valid).toBe(false);
+      expect(result.issues.some((i) => i.code === "invalid-integrity")).toBe(true);
+    }
+  });
+
+  /*
+   * Zero integrity on an ACTIVE part is the combination the integrity model
+   * exists to make unrepresentable: a part with nothing left is destroyed, and
+   * destruction is a state transition rather than a number reaching a
+   * threshold. Rejecting it here is what stops stored state from describing a
+   * limb that is dead by arithmetic and that a Maximum BP increase would
+   * silently revive.
+   */
+  it("rejects an active part carrying zero integrity", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: null, state: "active", damage: -1, recoveryProgress: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: null, state: "active", integrity: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
     expect(result.valid).toBe(false);
-    expect(result.issues.some((i) => i.code === "invalid-damage")).toBe(true);
+    expect(result.issues.some((i) => i.code === "invalid-integrity")).toBe(true);
+  });
+
+  it("rejects a departed part still carrying integrity", () => {
+    const anatomy: Anatomy = {
+      parts: [
+        { id: "a", type: "torso", attachment: null, state: "archived-removed", integrity: 0.5 },
+      ],
+    };
+
+    const result = validateAnatomy(anatomy, DEFINITIONS);
+    expect(result.valid).toBe(false);
+    expect(result.issues.some((i) => i.code === "invalid-integrity")).toBe(true);
   });
 });
 
@@ -455,9 +487,15 @@ describe("physical presence state and connection geometry", () => {
       "archived-removed",
     ]);
 
+    /*
+     * Leaving the body clears integrity too. A departed part is absent, not
+     * damaged, and a stored fraction would invite a restoration mechanic to
+     * read it as "how hurt was this when we lost it".
+     */
     expect(severed.parts[1]).toEqual({
       ...anatomy.parts[1],
       state: "archived-removed",
+      integrity: 0,
     });
   });
 
@@ -477,13 +515,13 @@ describe("physical presence state and connection geometry", () => {
   it("rejects an attachment missing its coordinates", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1 },
         {
           id: "limb-1",
           type: "limb",
           attachment: { parentId: "torso-1" },
           state: "active",
-          damage: 0,
+          integrity: 1,
           recoveryProgress: 0,
         },
       ],
@@ -500,13 +538,13 @@ describe("physical presence state and connection geometry", () => {
   it("rejects a coordinate off the end of the part it sits on", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1 },
         {
           id: "limb-1",
           type: "limb",
           attachment: { parentId: "torso-1", parentPosition: 1.5, childPosition: 0 },
           state: "active",
-          damage: 0,
+          integrity: 1,
           recoveryProgress: 0,
         },
       ],
@@ -523,7 +561,7 @@ describe("physical presence state and connection geometry", () => {
   it("rejects an unknown presence state", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "gone", damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "gone", integrity: 1 },
       ],
     } as unknown as Anatomy;
 

@@ -1,18 +1,24 @@
 /*
  * Core Body-Point-domain value shapes.
  *
- * Body Points represent the underlying physical value of individual BodyParts.
+ * Body Points measure one thing: how much destruction a BodyPart can absorb
+ * before it stops existing. BP is not armor, not soak, not Aura, not a global
+ * health pool, and not a statement about whether the character is alive.
  *
- * BP serves two related purposes:
+ * BP no longer has a base value of its own. It resolves from Structural
+ * Capacity — the same number Strength Points resolve from — so a body that is
+ * physically tougher is physically stronger by construction rather than by two
+ * authored columns agreeing to be. The old `baseBP` column is gone; the two
+ * columns had already drifted apart on five of eight parts while both summed
+ * to 100 and hid it.
  *
- * - structural durability against penetrating physical damage;
- * - the underlying physical value consumed by later strengthening mechanics.
+ * The dependency direction is one-way and load-bearing:
  *
- * BP is not armor, soak, Aura, a global health pool, or a direct measure of
- * whether the character is alive.
+ *   Morphology -> Measurements -> Structure -> BP
  *
- * Maximum BP is derived rather than stored.
- * Persistent BodyPart state stores accumulated damage.
+ * BP consumes resolved Structural Capacity and resolved morphology factors. It
+ * must never compute morphology itself, and it must never feed anything back
+ * into Structural Capacity.
  */
 
 import type {
@@ -25,60 +31,36 @@ import type {
 
 
 /*
- * Adds directly to a BodyPart's Base BP.
+ * Multiplies how hard existing structure is to destroy.
  *
- * Additive Base-BP adjustments occur after morphology and before Constitution.
+ * The single BP modifier operation, and deliberately the only one. The old
+ * vocabulary also had an additive `adjust-base-bp` for training and Traits
+ * that "permanently strengthen particular anatomy" — that has no home any
+ * more, and its absence is the point. A body that is genuinely tougher is
+ * tougher because it is bigger, thicker, or better muscled, so it should say
+ * so through Scale, Bulk or Muscularity and let SC carry the consequence into
+ * BP, Strength, Mass and Size together. Adding BP directly would have made a
+ * character durable without making them heavy, large, or strong.
  *
- * Typical uses include:
- *
- * - physical training;
- * - species/body modifications;
- * - Traits that permanently strengthen particular anatomy.
- *
- * Example:
- *
- * Human leg template Base BP: 14
- * Training adjustment:        +6
- *
- * Resolved Base BP before CON: 20
+ * What survives here is the genuinely exceptional case: an effect that changes
+ * how difficult existing structure is to break WITHOUT changing the structure.
+ * Stone skin, a hardening technique, a supernatural ward.
  */
-export interface AdjustBaseBPOperation {
-  readonly kind: "adjust-base-bp";
-  readonly amount: number;
-}
-
-
-/*
- * Multiplies BP after Base BP has been resolved and Constitution has applied.
- *
- * This is intentionally distinct from adjust-base-bp.
- *
- * True multipliers represent mechanics that multiply the already-developed
- * physical value of the BodyPart rather than changing its underlying Base BP.
- */
-export interface MultiplyBPOperation {
-  readonly kind: "multiply-bp";
+export interface ModifyDestructionResistanceOperation {
+  readonly kind: "modify-destruction-resistance";
   readonly multiplier: number;
 }
 
 
-/*
- * Generic BP operation contributed by data-driven content.
- */
-export type BodyPointOperation =
-  | AdjustBaseBPOperation
-  | MultiplyBPOperation;
+export type BodyPointOperation = ModifyDestructionResistanceOperation;
 
 
 /*
  * One generic Body Point modifier.
  *
  * The selector determines which resolved BodyPart instances receive the
- * operation.
- *
- * The Body Point system does not need to know whether the modifier originated
- * from a Species, Trait, Skill, Technique, training system, Condition, or
- * another source.
+ * operation. The Body Point system does not need to know whether a modifier
+ * came from a Species, Trait, Skill, Technique, Condition, or anywhere else.
  */
 export interface BodyPointModifier {
   readonly selector: BodyPartSelector;
@@ -89,200 +71,83 @@ export interface BodyPointModifier {
 /*
  * Combined BP-modifier values resolved for one BodyPart.
  *
- * Additive Base-BP modifiers are summed.
- * True BP multipliers are multiplied together.
- *
- * With no applicable modifiers:
- *
- * additiveBaseBP = 0
- * multiplier     = 1
+ * With no applicable modifiers, destructionResistance is 1.
  */
 export interface ResolvedBodyPointModifiers {
-  readonly additiveBaseBP: number;
-  readonly multiplier: number;
+  readonly destructionResistance: number;
 }
 
 
 /*
- * Character-wide values used while resolving morphology.
- *
- * These values are useful for diagnostics and tracing and prevent each
- * BodyPart from independently recalculating the same character-wide values.
- *
- * heightRatio:
- *
- *   actual height / reference height
- *
- * buildMassFactor:
- *
- *   expected relative mass contribution from structural mass, muscularity,
- *   and adiposity.
- *
- * expectedMassKg:
- *
- *   predicted mass for the character's height and stated build.
- *
- * residualMassRatio:
- *
- *   actual mass / expected mass
- *
- * residualMassFactor:
- *
- *   the softened residual-mass factor used by individual BodyParts before
- *   their own mass sensitivities are applied.
- */
-export interface MorphologyContext {
-  readonly heightRatio: number;
-
-  readonly buildMassFactor: number;
-
-  readonly expectedMassKg: number;
-
-  readonly residualMassRatio: number;
-  readonly residualMassFactor: number;
-}
-
-
-/*
- * Morphology factors resolved for one BodyPart.
- *
- * Each factor is centered on 1:
- *
- * 1
- * → no change from reference morphology.
- *
- * > 1
- * → increases the part's morphology-adjusted Base BP.
- *
- * < 1
- * → decreases the part's morphology-adjusted Base BP.
- *
- * combinedMultiplier is the product of all four factors.
- */
-export interface BodyPartMorphologyFactors {
-  readonly height: number;
-  readonly mass: number;
-  readonly muscularity: number;
-  readonly adiposity: number;
-
-  readonly combinedMultiplier: number;
-}
-
-
-/*
- * Complete morphology result for one BodyPart.
- *
- * `templateBaseBP` is taken from its BodyPartDefinition.
- *
- * `morphologyAdjustedBaseBP` is:
- *
- * templateBaseBP × factors.combinedMultiplier
- *
- * No rounding occurs at this stage.
- */
-export interface ResolvedBodyPartMorphology {
-  readonly partId: BodyPartId;
-  readonly type: BodyPartTypeId;
-
-  readonly templateBaseBP: number;
-
-  readonly factors: BodyPartMorphologyFactors;
-
-  readonly morphologyAdjustedBaseBP: number;
-}
-
-
-/*
- * Complete morphology resolution for a character.
- *
- * The character-wide context is calculated once and reused across all parts.
- */
-export interface ResolvedMorphology {
-  readonly context: MorphologyContext;
-
-  readonly parts: readonly ResolvedBodyPartMorphology[];
-}
-
-
-/*
- * Full Body Point resolution trace for one BodyPart.
+ * Full Body Point resolution for one BodyPart.
  *
  * Resolution order:
  *
- * templateBaseBP
- *      ×
- * morphologyMultiplier
- *      ↓
- * morphologyAdjustedBaseBP
- *      +
- * additiveBaseBPAdjustment
- *      ↓
- * resolvedBaseBP
- *      ×
- * constitutionMultiplier
- *      ↓
- * constitutionScaledBP
- *      ×
- * trueMultiplier
- *      ↓
- * rawMaximumBP
- *      ↓
- * final rounding
- *      ↓
- * maximumBP
- *      -
- * stored damage
- *      ↓
- * currentBP
+ *   structuralCapacity          from body/structure/
+ *        x
+ *   buildFactor                 Bulk and Adiposity, additive within the factor
+ *        x
+ *   constitutionMultiplier      2^((CON - 10) / 2)
+ *        x
+ *   destructionResistance       exceptional effects only
+ *        v
+ *   rawMaximumBP
+ *        v
+ *   round, floored at 1
+ *        v
+ *   maximumBP
+ *        x
+ *   integrity                   persistent state on the BodyPart
+ *        v
+ *   exactCurrentBP
+ *        v
+ *   round half up, floored at 1
+ *        v
+ *   currentBP                   what a character sheet shows
  *
- * `damage` is persistent character state copied into the resolved result for
- * convenience. It is not clamped to maximumBP.
- *
- * `destroyed` becomes true when currentBP reaches 0. Reaching that threshold
- * means the BodyPart has been physically destroyed and must be permanently
- * removed from Anatomy through the Anatomy modification pipeline.
+ * There is no `destroyed` field, and its absence is deliberate. Destruction
+ * used to be "Current BP reached 0", which made it a rounding outcome — a part
+ * could be destroyed by arithmetic nobody applied. It is now an explicit
+ * anatomy state transition owned by damage application, so resolution only
+ * ever describes parts that are still here. A destroyed part is not resolved
+ * with zeroes; it is absent, the same way it is absent from Size, Mass, Height
+ * and Strength Points.
  */
 export interface ResolvedBodyPartBP {
   readonly partId: BodyPartId;
   readonly type: BodyPartTypeId;
 
-  readonly templateBaseBP: number;
+  readonly structuralCapacity: number;
 
-  readonly morphology: BodyPartMorphologyFactors;
-  readonly morphologyAdjustedBaseBP: number;
-
-  readonly additiveBaseBPAdjustment: number;
-  readonly resolvedBaseBP: number;
-
+  readonly buildFactor: number;
   readonly constitutionMultiplier: number;
-  readonly constitutionScaledBP: number;
-
-  readonly trueMultiplier: number;
+  readonly destructionResistance: number;
 
   readonly rawMaximumBP: number;
   readonly maximumBP: number;
 
-  readonly damage: number;
-  readonly currentBP: number;
+  readonly integrity: number;
 
-  readonly destroyed: boolean;
+  readonly exactCurrentBP: number;
+  readonly currentBP: number;
 }
 
 
 /*
  * Complete resolved Body Point state for the current Anatomy.
  *
- * BP remains fundamentally per-body-part. `aggregateMaximumBP` is exposed as a
- * useful descriptive/diagnostic value and must not be treated as a global
- * combat health pool.
+ * `parts` covers active anatomy only. Suppressed and archived-removed parts
+ * have left the body and have no Body Points, in the same way they have no
+ * mass.
  *
- * `destroyedPartIds` identifies parts whose resolved Current BP has reached 0.
- * Damage application can use this result to trigger permanent Anatomy removal.
+ * `aggregateMaximumBP` is descriptive and diagnostic. It must not be treated
+ * as a global combat health pool — BP is per-part, and a character does not
+ * die because a sum reached zero.
  */
 export interface ResolvedBodyPoints {
   readonly parts: readonly ResolvedBodyPartBP[];
 
-  readonly aggregateMaximumBP: number;
+  readonly byPartId: Readonly<Record<BodyPartId, ResolvedBodyPartBP>>;
 
-  readonly destroyedPartIds: readonly BodyPartId[];
+  readonly aggregateMaximumBP: number;
 }

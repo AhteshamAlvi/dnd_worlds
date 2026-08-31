@@ -3,9 +3,13 @@
  *
  * Body represents the character's persistent physical organism.
  *
- * Height, mass, and build are stored physical morphology values.
- * Anatomy is also persistent character state and represents the body parts
- * the character currently physically possesses.
+ * Height, Mass and Size are NOT stored here. They resolve from anatomy, Scale
+ * and morphology in body/measurements/, because a stored height and a resolved
+ * height are two sources that can disagree and one of them is always the wrong
+ * one to trust.
+ *
+ * Anatomy is persistent character state and represents the body parts the
+ * character currently physically possesses.
  *
  * Derived values such as resolved Body Points, Current BP, morphology
  * multipliers, and Critical Point instances are not stored here.
@@ -15,60 +19,15 @@ import type { Anatomy, BodyPartId } from "./anatomy/types";
 
 
 /*
- * Physical build composition relative to the standard reference body.
- *
- * A value of 1 represents the reference amount of that component.
- *
- * Examples:
- *
- * muscularity = 1
- * adiposity   = 1
- * → reference build
- *
- * muscularity = 1.5
- * → greater muscular development than the reference build
- *
- * adiposity = 2
- * → greater adipose mass than the reference build
- *
- * Muscularity and adiposity are independent dimensions. They are not combined
- * into a single generic "build" score because different body compositions
- * affect anatomy differently.
- */
-export interface BodyBuild {
-  readonly muscularity: number;
-  readonly adiposity: number;
-}
-
-
-/*
  * Persistent physical state of a character.
  *
- * Reference humanoid morphology:
- *
- * heightCm: 165
- * massKg:   62
- *
- * build:
- *   muscularity: 1
- *   adiposity:   1
+ * A neutral adult Human built from this shape resolves to the Basic Human
+ * Standard: 165 cm, 62.00 kg, 60.00 L, 100 Structural Capacity.
  *
  * CON is not part of Body. It is an Attribute consumed later during
  * Body-Point resolution.
  */
 export interface Body {
-  /**
-   * TRANSITIONAL. Height and Mass are becoming derived values, resolved from
-   * anatomy and morphology rather than authored. They remain stored until the
-   * measurement subsystem can produce them, because Body Points still read
-   * them today.
-   */
-  readonly heightCm: number;
-  readonly massKg: number;
-
-  /** TRANSITIONAL. Superseded by `globalMorphology`. */
-  readonly build: BodyBuild;
-
   /**
    * How large this individual is relative to an ordinary member of the same
    * Species at the same age. Neutral is 1.

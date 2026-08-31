@@ -263,7 +263,12 @@ export {
   validateDerivedAttributes,
 } from "./character/foundation/attributes/derived/validation";
 
-export type { Body, BodyBuild } from "./character/foundation/body/types";
+export type {
+  Body,
+  BodyMorphology,
+} from "./character/foundation/body/types";
+
+export { NEUTRAL_MORPHOLOGY } from "./character/foundation/body/types";
 
 export type {
   Anatomy,
@@ -273,8 +278,11 @@ export type {
   BodyPartDefinition,
   BodyPartId,
   BodyPartTag,
+  BodyPartMorphologySensitivity,
+  BodyPartReference,
+  BodyPartState,
   BodyPartTypeId,
-  MorphologySensitivity,
+  ReferenceForm,
 } from "./character/foundation/body/anatomy/types";
 
 export type {
@@ -291,7 +299,9 @@ export {
 
 export {
   applyAnatomyModifications,
-  applyBodyPartDamage,
+  destroyBodyPart,
+  setBodyPartIntegrity,
+  setBodyPartState,
 } from "./character/foundation/body/anatomy/modification";
 
 export {
@@ -315,21 +325,24 @@ export type {
   BodyPointModifier,
   ResolvedBodyPartBP,
   ResolvedBodyPoints,
-  ResolvedMorphology,
 } from "./character/foundation/body/body-points/types";
 
-export {
-  REFERENCE_ADIPOSITY,
-  REFERENCE_HEIGHT_CM,
-  REFERENCE_MASS_KG,
-  REFERENCE_MUSCULARITY,
-  resolveMorphology,
-} from "./character/foundation/body/body-points/morphology";
+export { resolveMorphology } from "./character/foundation/body/morphology/resolution";
+
+export type {
+  MorphologyResolutionInput,
+  MorphologySource,
+} from "./character/foundation/body/morphology/types";
+
+export { resolveEffectiveScale } from "./character/foundation/body/scale";
 
 export {
+  CONSTITUTION_DOUBLING_INTERVAL,
   getConstitutionBPMultiplier,
   resolveBodyPoints,
+  resolveBuildFactor,
 } from "./character/foundation/body/body-points/resolution";
+
 
 export {
   validateBodyPointResolution,

@@ -30,7 +30,8 @@ import { validateCharacter } from "../character/validation";
 import { createTestCharacter } from "./fixtures/character";
 
 import { createAnatomy } from "../character/foundation/body/anatomy/creation";
-import { resolveMorphology } from "../character/foundation/body/body-points/morphology";
+import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import { resolveBodyPoints } from "../character/foundation/body/body-points/resolution";
 import { resolveCriticalPoints } from "../character/foundation/body/critical-points/resolution";
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
@@ -417,8 +418,8 @@ describe("registering custom Body content", () => {
       name: "Tail",
       description: "A homebrew prehensile tail.",
       tags: ["limb"],
-      baseBP: 6,
-      morphologySensitivity: { height: 0, mass: 0, muscularity: 0.3, adiposity: 0.05 }, ...TEST_PART_PHYSICALS,
+      ...TEST_PART_PHYSICALS,
+      reference: { ...TEST_PART_PHYSICALS.reference, structuralCapacity: 6 },
     };
 
     expect(registerDefinition("body-part", tailDefinition)).toEqual({ ok: true });
@@ -442,13 +443,26 @@ describe("registering custom Body content", () => {
     const bodyPartDefinitions = listDefinitions("body-part");
     const specialPointDefinitions = listDefinitions("special-point");
 
+    const neutral = { global: NEUTRAL_MORPHOLOGY, local: {} };
+
     const morphology = resolveMorphology(
-      { heightCm: 165, massKg: 62, build: { muscularity: 1, adiposity: 1 } },
-      anatomy,
-      bodyPartDefinitions,
+      {
+        species: neutral,
+        age: neutral,
+        character: neutral,
+        strengthDevelopmentMuscularity: 1,
+        effectLayers: [],
+      },
+      anatomy.parts.map((part) => part.id),
     );
 
-    const bodyPoints = resolveBodyPoints(anatomy, morphology, 10, bodyPartDefinitions);
+    const bodyPoints = resolveBodyPoints({
+      anatomy,
+      definitions: bodyPartDefinitions,
+      morphologyByPartId: morphology,
+      effectiveScale: 1,
+      constitution: 10,
+    });
     const tailBP = bodyPoints.parts.find((part) => part.partId === "tail-1");
 
     expect(tailBP?.maximumBP).toBe(6);

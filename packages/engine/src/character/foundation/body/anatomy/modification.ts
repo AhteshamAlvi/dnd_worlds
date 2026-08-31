@@ -332,14 +332,21 @@ export function reattachBodyPart(
  * through that path would let a transient effect masquerade as accumulated
  * damage, so this is called directly by the damage pipeline instead.
  *
- * Only `damage` changes here — `recoveryProgress` is untouched by the spread,
- * so new damage never wipes banked recovery progress. Resetting it is
- * body-points/recovery.ts's call to make, not this function's.
+ * Takes the new integrity rather than an amount of damage, because deciding
+ * how much integrity a hit costs needs Maximum BP, and Maximum BP is derived
+ * from Structural Capacity, morphology and Constitution — none of which
+ * Anatomy knows about. body/damage.ts owns that arithmetic; this function only
+ * stores the answer.
+ *
+ * It cannot destroy a part. An integrity of 0 is not a legal stored value, so
+ * a hit that would reach it is a destruction transition instead — see
+ * setBodyPartState. Keeping the two operations separate is what stops a
+ * rounding result from ever severing a limb.
  */
-export function applyBodyPartDamage(
+export function setBodyPartIntegrity(
   anatomy: Anatomy,
   partId: BodyPartId,
-  amount: number,
+  integrity: number,
 ): Anatomy {
   return {
     parts: anatomy.parts.map((part) => {
@@ -349,7 +356,7 @@ export function applyBodyPartDamage(
 
       return {
         ...part,
-        damage: Math.max(0, part.damage + amount),
+        integrity: Math.min(1, Math.max(0, integrity)),
       };
     }),
   };
@@ -363,7 +370,7 @@ export function applyBodyPartDamage(
  * matching the convention of every other operation in this file.
  *
  * Deliberately NOT part of the AnatomyModification union, and for the same
- * reason applyBodyPartDamage is not: that union is structural, and is applied
+ * reason setBodyPartIntegrity is not: that union is structural, and is applied
  * by resolveAnatomy as *temporary* modification. Presence state is persistent
  * instance state. A destroyed Arm becoming "archived-removed" is a fact about
  * the character that outlives whatever effect was being resolved at the time,
@@ -390,8 +397,62 @@ export function setBodyPartState(
       return {
         ...part,
         state,
+
+        /*
+         * A part that leaves the body keeps no integrity. It is not damaged,
+         * it is absent, and a stored fraction would invite a restoration
+         * mechanic to read it as "how hurt was this when we lost it" — a
+         * question the archive record does not answer. Returning to active is
+         * a restoration, and restoration decides its own integrity.
+         */
+        integrity: state === "active" ? part.integrity : 0,
       };
     }),
+  };
+}
+
+
+/*
+ * Destroys a BodyPart and every structural descendant beneath it.
+ *
+ * This is what damage does when a part runs out of Body Points, and it is
+ * deliberately NOT removeBodyPart. Destroyed anatomy stays in the tree as
+ * "archived-removed" rather than disappearing from it, for two reasons that
+ * both matter:
+ *
+ *   - the record is what extraordinary regeneration regrows FROM. A severed
+ *     arm that was deleted is an arm nobody can put back specifically;
+ *   - the Reference Form goes on expecting the part regardless, and keeping
+ *     the instance beside it is what makes "supposed to have" and "actually
+ *     has" two separately inspectable facts.
+ *
+ * The cascade is physical, not bookkeeping: severing an Arm takes the Hand
+ * with it because the Hand was attached to the Arm. Descendants are archived
+ * rather than deleted for the same reason the target is.
+ */
+export function destroyBodyPart(
+  anatomy: Anatomy,
+  partId: BodyPartId,
+): { readonly anatomy: Anatomy; readonly archivedPartIds: readonly BodyPartId[] } {
+  if (!anatomy.parts.some((part) => part.id === partId)) {
+    return { anatomy, archivedPartIds: [] };
+  }
+
+  const affected = new Set<BodyPartId>([
+    partId,
+    ...getDescendantBodyPartIds(anatomy, partId),
+  ]);
+
+  return {
+    anatomy: {
+      parts: anatomy.parts.map((part) =>
+        affected.has(part.id)
+          ? { ...part, state: "archived-removed" as const, integrity: 0 }
+          : part,
+      ),
+    },
+
+    archivedPartIds: [...affected],
   };
 }
 

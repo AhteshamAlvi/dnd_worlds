@@ -15,12 +15,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
-import {
-  REFERENCE_ADIPOSITY,
-  REFERENCE_HEIGHT_CM,
-  REFERENCE_MASS_KG,
-  REFERENCE_MUSCULARITY,
-} from "../character/foundation/body/body-points/morphology";
+import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
 import type { CharacterInjury } from "../character/status/injuries";
@@ -39,48 +35,70 @@ afterEach(() => {
   clearCustomDefinitions();
 });
 
-const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
-
-// baseBP 20 at reference morphology and CON 10 resolves to exactly 20
-// Maximum BP for both parts — keeps every expected number round.
+// Structural Capacity 20 at neutral morphology and CON 10 resolves to
+// exactly 20 Maximum BP for both parts — keeps every expected number round.
 const DEFINITIONS: readonly BodyPartDefinition[] = [
   {
     id: "torso",
     name: "Torso",
     description: "Test torso.",
     tags: ["core"],
-    baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
+    ...TEST_PART_PHYSICALS,
+    reference: {
+      ...TEST_PART_PHYSICALS.reference,
+      structuralCapacity: 20,
+    },
   },
   {
     id: "limb",
     name: "Limb",
     description: "Test limb.",
     tags: ["limb"],
-    baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
+    ...TEST_PART_PHYSICALS,
+    reference: {
+      ...TEST_PART_PHYSICALS.reference,
+      structuralCapacity: 20,
+    },
   },
 ];
 
 const REFERENCE_CONSTITUTION = 10;
 
+const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };
+
 function bodyWithParts(anatomy: Anatomy): Body {
-  return {
-    heightCm: REFERENCE_HEIGHT_CM,
-    massKg: REFERENCE_MASS_KG,
-    build: { muscularity: REFERENCE_MUSCULARITY, adiposity: REFERENCE_ADIPOSITY },
-    ...TEST_BODY_STATE,
-    anatomy,
-  };
+  return { ...TEST_BODY_STATE, anatomy };
 }
 
+function morphologyFor(body: Body) {
+  return resolveMorphology(
+    {
+      species: NEUTRAL_SOURCE,
+      age: NEUTRAL_SOURCE,
+      character: { global: body.globalMorphology, local: body.localMorphology },
+      strengthDevelopmentMuscularity: body.strengthDevelopmentMuscularity,
+      effectLayers: [],
+    },
+    body.anatomy.parts.map((part) => part.id),
+  );
+}
+
+// Maximum BP is 20, so integrity 0.25 is Current BP 5 — 15 points of damage.
+const DAMAGED_BODY: Body = bodyWithParts({
+  parts: [
+    { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.25 },
+  ],
+});
+
 function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecoveryInput {
+  const body = overrides.body ?? DAMAGED_BODY;
+
   return {
-    body: bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 15, recoveryProgress: 0 }],
-    }),
+    body,
     constitution: REFERENCE_CONSTITUTION,
     bodyPartDefinitions: DEFINITIONS,
+    morphologyByPartId: morphologyFor(body),
+    effectiveScale: 1,
     injuries: [],
     elapsed: days(1),
     vit: 25, // 80% of Maximum BP/day — enough to slam into any cap in one pass
@@ -120,8 +138,8 @@ describe("untreated caps", () => {
 
     // Maximum 20, cap floor(0.5*20)=10, damage starts at 15 (Current BP 5).
     expect(part.ceiling).toBe(10);
-    expect(part.damageAfter).toBe(10); // stopped exactly at the cap
-    expect(part.recoveryProgressAfter).toBe(0); // blocked at cap: nothing banked
+    // Stopped exactly at the cap: Current BP 10 of 20.
+    expect(part.integrityAfter).toBeCloseTo(0.5, 10);
     expect(outcome.removedInjuries).toEqual([]);
   });
 
@@ -154,7 +172,7 @@ describe("treatment clears the cap", () => {
     const part = outcome.parts[0]!;
 
     expect(part.ceiling).toBe(20);
-    expect(part.damageAfter).toBe(0); // free to heal all the way
+    expect(part.integrityAfter).toBe(1); // free to heal all the way
   });
 
   it("a treated Injury still remains active until its BodyPart reaches Maximum BP", () => {
@@ -172,7 +190,7 @@ describe("treatment clears the cap", () => {
     // A slow pass that does not fully heal the part this time.
     const outcome = resolveRecovery(baseInput({ injuries, vit: 5 }));
 
-    expect(outcome.parts[0]?.damageAfter).toBeGreaterThan(0);
+    expect(outcome.parts[0]?.integrityAfter).toBeLessThan(1);
     expect(outcome.removedInjuries).toEqual([]);
   });
 });
@@ -194,7 +212,7 @@ describe("no-treatment Injuries", () => {
     const outcome = resolveRecovery(baseInput({ injuries }));
 
     expect(outcome.parts[0]?.ceiling).toBe(20);
-    expect(outcome.parts[0]?.damageAfter).toBe(0);
+    expect(outcome.parts[0]?.integrityAfter).toBe(1);
     expect(outcome.removedInjuries).toEqual([
       { characterInjuryId: "injury-1", injuryId: "bruise" },
     ]);
@@ -282,14 +300,14 @@ describe("caps restrict restoration only", () => {
       },
     ];
 
-    // Current BP already 15 (damage 5), well above the cap's ceiling of 6.
+    // Current BP already 15 of 20, well above the cap's ceiling of 6.
     const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 5, recoveryProgress: 0 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.75 }],
     });
 
     const outcome = resolveRecovery(baseInput({ body, injuries }));
 
-    expect(outcome.parts[0]?.damageAfter).toBe(5); // untouched, not pulled down to the cap
+    expect(outcome.parts[0]?.integrityAfter).toBe(0.75); // untouched, not pulled down to the cap
   });
 });
 
@@ -308,7 +326,7 @@ describe("Injury removal", () => {
     ];
 
     const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 1, recoveryProgress: 0 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.95 }],
     });
 
     const outcome = resolveRecovery(baseInput({ body, injuries }));
@@ -338,8 +356,8 @@ describe("Injury removal", () => {
     // torso-1 will fully heal this pass (damage 1); limb-1 will not (damage 15).
     const body = bodyWithParts({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 1, recoveryProgress: 0 },
-        { id: "limb-1", type: "limb", attachment: null, state: "active", damage: 15, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.95 },
+        { id: "limb-1", type: "limb", attachment: null, state: "active", integrity: 0.25 },
       ],
     });
 
@@ -367,7 +385,7 @@ describe("Injury removal", () => {
 describe("overlapping Injuries", () => {
   it("flags a new Injury landing on a BodyPart that already carries one, preserving progress by default", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", damage: 3, recoveryProgress: 0.42 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.85 }],
     };
 
     const existing: readonly CharacterInjury[] = [
@@ -387,7 +405,7 @@ describe("overlapping Injuries", () => {
         bodyPartId: "torso-1",
         existingCharacterInjuryId: "injury-1",
         newCharacterInjuryId: "injury-2",
-        recoveryProgressAtOverlap: 0.42,
+        integrityAtOverlap: 0.85,
         recommendedDecision: "preserve",
         decisionId: "injury.overlap.recovery-progress-default",
       },
@@ -397,8 +415,8 @@ describe("overlapping Injuries", () => {
   it("does not flag Injuries on different BodyParts", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
-        { id: "limb-1", type: "limb", attachment: null, state: "active", damage: 0, recoveryProgress: 0 },
+        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1.0 },
+        { id: "limb-1", type: "limb", attachment: null, state: "active", integrity: 1.0 },
       ],
     };
 

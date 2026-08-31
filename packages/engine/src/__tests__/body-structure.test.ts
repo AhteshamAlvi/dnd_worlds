@@ -6,13 +6,10 @@
  * it untouched, and that exclusion is what lets a body be enormous and still
  * feeble — a distinction a model where size implies capacity cannot make.
  *
- * Nothing here touches Body Points. BP still resolves from the transitional
- * `baseBP`, which deliberately disagrees with `reference.structuralCapacity`
- * on five of the eight parts (Neck 4 vs 2, Upper Body 8 vs 10, Hand 5 vs 4,
- * Leg 14 vs 16, Foot 5 vs 4) while both tables still sum to the same
- * whole-body 100. That disagreement is asserted below rather than fixed, so a
- * later phase cannot quietly "correct" one table while the other is in use —
- * and the matching totals are exactly why it would otherwise go unnoticed.
+ * Nothing here touches Body Points, which consume SC from the other side. The
+ * split is the point of the subsystem: SC answers "how much structure is
+ * there", and durability and force are two different questions asked of that
+ * one answer.
  */
 
 import { describe, expect, it } from "vitest";
@@ -271,51 +268,26 @@ describe("physical presence", () => {
 });
 
 
-describe("the transitional Body Point shim", () => {
+describe("Body Points now consume Structural Capacity", () => {
   /*
-   * baseBP and reference.structuralCapacity deliberately DISAGREE per part.
-   * BP has not moved onto SC yet, so both tables are live and each is right
-   * for its own consumer. Asserting the disagreement keeps a later phase from
-   * quietly "correcting" one of them while the other is still in use.
+   * The transitional `baseBP` column is gone. It existed so BP could keep
+   * resolving while the physical model was built underneath it, and it
+   * deliberately disagreed with reference SC on five of eight parts — Neck 4
+   * against 2, Upper Body 8 against 10, Hand 5 against 4, Leg 14 against 16,
+   * Foot 5 against 4 — while both columns summed to 100 and hid the drift.
+   *
+   * What replaces that assertion is the reason the column could go: there is
+   * one number now, and BP reads it.
    */
-  it("keeps the old BP baseline disagreeing with the new reference SC", () => {
-    expect(BODY_PART_DEFINITIONS.neck.baseBP).toBe(4);
-    expect(BODY_PART_DEFINITIONS.neck.reference.structuralCapacity).toBe(2);
+  it("leaves exactly one durability number per definition", () => {
+    for (const definition of DEFINITIONS) {
+      expect(definition).not.toHaveProperty("baseBP");
+      expect(definition).not.toHaveProperty("morphologySensitivity");
 
-    expect(BODY_PART_DEFINITIONS.leg.baseBP).toBe(14);
-    expect(BODY_PART_DEFINITIONS.leg.reference.structuralCapacity).toBe(16);
-  });
-
-  /*
-   * The two tables disagree per part while summing to the same whole-body 100.
-   * That is not a coincidence — both were calibrated against the same
-   * reference body — and it is why the disagreement is survivable: the shim
-   * and the new data describe the same Human, just distributed differently
-   * across it. It is also why the mismatch is easy to miss, which is the
-   * reason to pin it here.
-   */
-  it("sums both tables to the same body while distributing them differently", () => {
-    const bpTotal = STANDARD_HUMANOID_ANATOMY.parts.reduce(
-      (total, part) =>
-        total +
-        (DEFINITIONS.find((d) => d.id === part.type)?.baseBP ?? 0),
-      0,
-    );
-
-    expect(bpTotal).toBe(100);
-    expect(totalSC(STANDARD_HUMANOID_ANATOMY)).toBeCloseTo(100, 10);
-
-    const disagreeing = DEFINITIONS.filter(
-      (d) => d.baseBP !== d.reference.structuralCapacity,
-    ).map((d) => d.id);
-
-    expect(disagreeing.sort()).toEqual([
-      "foot",
-      "hand",
-      "leg",
-      "neck",
-      "upper-body",
-    ]);
+      expect(
+        definition.reference.structuralCapacity,
+      ).toBeGreaterThanOrEqual(0);
+    }
   });
 });
 

@@ -3,19 +3,12 @@
  *
  * BP modifiers are data-driven effects applied to selected BodyPart instances.
  *
- * There are currently two modifier stages:
+ * There is exactly one modifier operation — a destruction-resistance
+ * multiplier — and this module only decides which modifiers reach which
+ * BodyPart and multiplies them together.
  *
- * adjust-base-bp
- * → additive adjustment applied after morphology and before Constitution.
- *
- * multiply-bp
- * → true multiplier applied after Constitution.
- *
- * This module determines which modifiers apply to a BodyPart and collapses
- * them into their resolved additive and multiplicative values.
- *
- * Morphology, Constitution scaling, final BP calculation, rounding, damage,
- * and destruction are handled elsewhere.
+ * Structural Capacity, build, Constitution scaling, rounding, damage, and
+ * destruction are all handled elsewhere.
  */
 
 import type {
@@ -34,15 +27,11 @@ import type {
 
 
 /*
- * Neutral resolved BP modifiers.
- *
- * Adding 0 changes nothing.
- * Multiplying by 1 changes nothing.
+ * Neutral resolved BP modifiers. Multiplying by 1 changes nothing.
  */
 export const NEUTRAL_BODY_POINT_MODIFIERS:
   ResolvedBodyPointModifiers = {
-    additiveBaseBP: 0,
-    multiplier: 1,
+    destructionResistance: 1,
   };
 
 
@@ -93,59 +82,27 @@ export function getApplicableBodyPointModifiers(
 /*
  * Resolves a collection of already-applicable BP modifiers.
  *
- * adjust-base-bp operations are summed.
- *
- * multiply-bp operations are multiplied.
- *
- * Example:
- *
- * +4 Base BP
- * +2 Base BP
- * ×1.5 BP
- * ×2 BP
- *
- * resolves to:
- *
- * additiveBaseBP = 6
- * multiplier     = 3
- *
- * The stages themselves remain separate because additive Base BP must be
- * applied before Constitution while true multipliers apply afterward.
+ * Destruction resistances multiply, so x1.5 stone skin and x2 hardening make
+ * a part three times as hard to destroy. There is only one stage now, which
+ * is why there is nothing to say about ordering.
  */
 export function combineBodyPointModifiers(
   modifiers: readonly BodyPointModifier[],
 ): ResolvedBodyPointModifiers {
-  let additiveBaseBP = 0;
-  let multiplier = 1;
+  let destructionResistance = 1;
 
   for (const modifier of modifiers) {
-    switch (modifier.operation.kind) {
-      case "adjust-base-bp":
-        additiveBaseBP +=
-          modifier.operation.amount;
-        break;
-
-      case "multiply-bp":
-        multiplier *=
-          modifier.operation.multiplier;
-        break;
-    }
+    destructionResistance *= modifier.operation.multiplier;
   }
 
-  return {
-    additiveBaseBP,
-    multiplier,
-  };
+  return { destructionResistance };
 }
 
 
 /*
  * Resolves all BP modifiers applicable to one BodyPart.
  *
- * With no matching modifiers, the neutral result is:
- *
- * additiveBaseBP = 0
- * multiplier     = 1
+ * With no matching modifiers the neutral result is a resistance of 1.
  */
 export function resolveBodyPointModifiers(
   part: BodyPart,

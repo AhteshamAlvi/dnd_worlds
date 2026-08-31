@@ -68,30 +68,6 @@ export type BodyAttachmentSiteId = string;
 
 
 /*
- * Describes how strongly a body-part type responds to each universal
- * morphology dimension.
- *
- * A sensitivity of:
- *
- * 0
- * → the morphology dimension does not affect the part.
- *
- * 1
- * → the part receives the full standard effect.
- *
- * Values between or beyond those numbers may be used by unusual anatomy.
- *
- * The actual morphology equations belong to body-points/morphology.ts.
- */
-export interface MorphologySensitivity {
-  readonly height: number;
-  readonly mass: number;
-  readonly muscularity: number;
-  readonly adiposity: number;
-}
-
-
-/*
  * Reusable mechanical definition of a kind of body part.
  *
  * Definitions are content data and are not copied into every character's
@@ -102,8 +78,10 @@ export interface MorphologySensitivity {
  * so BodyPartDefinition content is registered and looked up the same way
  * every other catalog domain's content is — see anatomy/body-parts.ts.
  *
- * baseBP is the part's reference Body Point value before morphology, training,
- * Constitution scaling, or other modifiers.
+ * A definition carries no Body Point value of its own. Body Points resolve
+ * from `reference.structuralCapacity` through the Structural Capacity
+ * subsystem, so durability and force now come from one physical number
+ * instead of two independently authored ones that could drift apart.
  */
 export interface BodyPartDefinition {
   readonly id: BodyPartTypeId;
@@ -112,26 +90,6 @@ export interface BodyPartDefinition {
   readonly description: string;
 
   readonly tags: readonly BodyPartTag[];
-
-  /**
-   * TRANSITIONAL. The pre-refactor Body Point baseline.
-   *
-   * BP is being moved onto Structural Capacity (`reference.structuralCapacity`)
-   * but that formula does not land until the Body Point rewrite. Until then BP
-   * still resolves from this field, so it is kept alongside the new physical
-   * reference data rather than replaced by it, and the two deliberately
-   * disagree per part (Neck 4 vs 2, Leg 14 vs 16, ...).
-   *
-   * Delete together with `morphologySensitivity` once BP consumes SC.
-   */
-  readonly baseBP: number;
-
-  /**
-   * TRANSITIONAL. The pre-refactor generic morphology response.
-   *
-   * Superseded by `sensitivity`. Kept for the same reason as `baseBP`.
-   */
-  readonly morphologySensitivity: MorphologySensitivity;
 
   /** Physical reference values at Scale 1 with all morphology neutral. */
   readonly reference: BodyPartReference;
@@ -331,21 +289,29 @@ export interface BodyPartAttachment {
  *   two Arms, which is exactly what makes amputation lower Strength instead of
  *   cancelling itself out.
  *
- * `damage`
- * → persistent accumulated BP damage. Maximum and Current BP are derived
- *   later by the Body Point system and are not stored here.
+ * `integrity`
+ * → how much of this part's structure remains, as a fraction of its Maximum
+ *   BP. 1 is undamaged.
  *
- * Reaching 0 Current BP destroys the part. Damage application is responsible
- * for converting that destruction into a permanent anatomy removal; Anatomy
- * resolution itself remains a pure derivation.
+ *   Stored as a FRACTION rather than as absolute damage, for one decisive
+ *   reason: Maximum BP is derived, so it changes whenever Scale, Muscularity,
+ *   Build or CON changes. A character storing "7 damage" who grows, trains or
+ *   ages silently gains or loses health. A character storing "0.5 integrity"
+ *   does not — growing from Max BP 14 to 28 turns 7/14 into 14/28, which is
+ *   the same wound on a bigger body. Max BP changing is neither healing nor
+ *   harm, and integrity is what makes the engine able to say so.
  *
- * `recoveryProgress`
- * → fractional whole-BP recovery banked toward this part's next point of
- *   natural healing (see foundation/body/body-points/recovery.ts). BP itself
- *   stays whole-numbered; this is where the remainder between ticks lives.
- *   Invariant: 0 <= recoveryProgress < 1. Reaching full Current BP, or being
- *   blocked at an Injury's recovery cap, resets it to 0 — recovery is never
- *   banked while there is nowhere for it to go.
+ *   Invariant: 0 < integrity <= 1. Zero is not a legal stored value. A part
+ *   with nothing left is not a damaged part, it is a destroyed one, and
+ *   destruction is a `state` transition to "archived-removed" rather than a
+ *   number reaching a threshold. That distinction is what stops a rounding
+ *   result from ever destroying a limb, and what stops a later Maximum BP
+ *   increase from resurrecting one.
+ *
+ *   There is deliberately no `recoveryProgress` companion any more. Absolute
+ *   damage needed one because BP was whole-numbered and a recovery tick could
+ *   restore less than a whole point, which had to be banked somewhere.
+ *   Integrity is continuous, so the remainder already has somewhere to live.
  */
 export interface BodyPart {
   readonly id: BodyPartId;
@@ -357,8 +323,7 @@ export interface BodyPart {
 
   readonly state: BodyPartState;
 
-  readonly damage: number;
-  readonly recoveryProgress: number;
+  readonly integrity: number;
 }
 
 

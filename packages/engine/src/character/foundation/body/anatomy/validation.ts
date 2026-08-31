@@ -39,19 +39,15 @@ export type AnatomyValidationIssueCode =
   | "invalid-body-part-definition-id"
   | "invalid-body-part-definition-name"
   | "invalid-body-part-definition-description"
-  | "invalid-base-bp"
   | "duplicate-body-part-tag"
   | "invalid-body-part-tag"
-  | "invalid-morphology-sensitivity"
   | "invalid-height-contribution"
   | "invalid-height-axis-sign"
   | "duplicate-body-part-id"
   | "invalid-body-part-id"
   | "unknown-body-part-type"
   | "invalid-body-part-name"
-  | "invalid-damage"
-  | "invalid-recovery-progress"
-  | "banked-recovery-progress-at-full-bp"
+  | "invalid-integrity"
   | "missing-parent"
   | "self-parent"
   | "invalid-attachment-site"
@@ -111,26 +107,6 @@ function isValidIdentifier(
 
 
 /*
- * Returns true when a morphology sensitivity is a valid generic sensitivity.
- *
- * Zero means the morphology dimension does not affect the part.
- * Values greater than one are intentionally permitted for unusually sensitive
- * anatomy.
- *
- * Negative sensitivities are rejected because sensitivity represents the
- * magnitude with which a morphology dimension affects the part.
- */
-function isValidSensitivity(
-  value: number,
-): boolean {
-  return (
-    Number.isFinite(value) &&
-    value >= 0
-  );
-}
-
-
-/*
  * Returns true when a longitudinal connection coordinate is usable.
  *
  * Coordinates are normalized positions along a BodyPart's own axis, so they
@@ -183,18 +159,6 @@ export function validateBodyPartDefinition(
     });
   }
 
-  if (
-    !Number.isFinite(definition.baseBP) ||
-    definition.baseBP <= 0
-  ) {
-    issues.push({
-      code: "invalid-base-bp",
-      message:
-        `BodyPartDefinition "${definition.id}" must have finite Base BP greater than 0.`,
-      definitionId: definition.id,
-    });
-  }
-
   const seenTags = new Set<string>();
 
   for (const tag of definition.tags) {
@@ -221,44 +185,6 @@ export function validateBodyPartDefinition(
     }
 
     seenTags.add(tag);
-  }
-
-  const sensitivities = definition.morphologySensitivity;
-
-  if (!isValidSensitivity(sensitivities.height)) {
-    issues.push({
-      code: "invalid-morphology-sensitivity",
-      message:
-        `BodyPartDefinition "${definition.id}" has invalid height sensitivity.`,
-      definitionId: definition.id,
-    });
-  }
-
-  if (!isValidSensitivity(sensitivities.mass)) {
-    issues.push({
-      code: "invalid-morphology-sensitivity",
-      message:
-        `BodyPartDefinition "${definition.id}" has invalid mass sensitivity.`,
-      definitionId: definition.id,
-    });
-  }
-
-  if (!isValidSensitivity(sensitivities.muscularity)) {
-    issues.push({
-      code: "invalid-morphology-sensitivity",
-      message:
-        `BodyPartDefinition "${definition.id}" has invalid muscularity sensitivity.`,
-      definitionId: definition.id,
-    });
-  }
-
-  if (!isValidSensitivity(sensitivities.adiposity)) {
-    issues.push({
-      code: "invalid-morphology-sensitivity",
-      message:
-        `BodyPartDefinition "${definition.id}" has invalid adiposity sensitivity.`,
-      definitionId: definition.id,
-    });
   }
 
   const reference = definition.reference;
@@ -331,142 +257,6 @@ export function validateBodyPartDefinitions(
   return createValidationResult(issues);
 }
 
-
-/*
- * Validates the persistent state stored on one BodyPart instance.
- *
- * Structural relationships such as whether the parent exists or whether an
- * attachment participates in a cycle are validated at the Anatomy level.
- */
-function validateBodyPartState(
-  part: BodyPart,
-  knownDefinitionIds: ReadonlySet<BodyPartTypeId>,
-): readonly AnatomyValidationIssue[] {
-  const issues: AnatomyValidationIssue[] = [];
-
-  if (!isValidIdentifier(part.id)) {
-    issues.push({
-      code: "invalid-body-part-id",
-      message:
-        "BodyPart id must be a non-empty identifier.",
-      partId: part.id,
-    });
-  }
-
-  if (!knownDefinitionIds.has(part.type)) {
-    issues.push({
-      code: "unknown-body-part-type",
-      message:
-        `BodyPart "${part.id}" references unknown type "${part.type}".`,
-      partId: part.id,
-      definitionId: part.type,
-    });
-  }
-
-  if (
-    part.name !== undefined &&
-    part.name.trim().length === 0
-  ) {
-    issues.push({
-      code: "invalid-body-part-name",
-      message:
-        `BodyPart "${part.id}" has an empty display name.`,
-      partId: part.id,
-    });
-  }
-
-  if (
-    !Number.isFinite(part.damage) ||
-    part.damage < 0
-  ) {
-    issues.push({
-      code: "invalid-damage",
-      message:
-        `BodyPart "${part.id}" must have finite stored damage greater than or equal to 0.`,
-      partId: part.id,
-    });
-  }
-
-  if (
-    !Number.isFinite(part.recoveryProgress) ||
-    part.recoveryProgress < 0 ||
-    part.recoveryProgress >= 1
-  ) {
-    issues.push({
-      code: "invalid-recovery-progress",
-      message:
-        `BodyPart "${part.id}" must have finite recovery progress in the range [0, 1).`,
-      partId: part.id,
-    });
-  } else if (
-    part.damage === 0 &&
-    part.recoveryProgress !== 0
-  ) {
-    /*
-     * A BodyPart at full Current BP has nowhere for banked recovery to go —
-     * body-points/recovery.ts always resets progress to 0 there. Progress
-     * surviving anyway means something upstream (hand-edited state, a bad
-     * migration) put it there, not a mechanic this engine runs.
-     */
-    issues.push({
-      code: "banked-recovery-progress-at-full-bp",
-      message:
-        `BodyPart "${part.id}" is undamaged but still carries banked recovery progress.`,
-      partId: part.id,
-    });
-  }
-
-  if (!BODY_PART_STATES.includes(part.state)) {
-    issues.push({
-      code: "invalid-body-part-state",
-      message:
-        `BodyPart "${part.id}" has unknown physical state "${String(part.state)}".`,
-      partId: part.id,
-    });
-  }
-
-  if (part.attachment !== null) {
-    if (
-      part.attachment.site !== undefined &&
-      !isValidIdentifier(part.attachment.site)
-    ) {
-      issues.push({
-        code: "invalid-attachment-site",
-        message:
-          `BodyPart "${part.id}" has an empty attachment-site identifier.`,
-        partId: part.id,
-      });
-    }
-
-    /*
-     * Both connection coordinates are required and must land on the 0..1
-     * longitudinal axis they index into. This is deliberately strict rather
-     * than defaulted: pre-refactor Body JSON has no coordinates at all, and it
-     * should fail loudly here instead of silently acquiring a body plan nobody
-     * authored. The creation helpers supply defaults for anatomy being built
-     * from a spec; stored anatomy is always explicit.
-     */
-    if (!isValidAttachmentPosition(part.attachment.parentPosition)) {
-      issues.push({
-        code: "invalid-attachment-position",
-        message:
-          `BodyPart "${part.id}" must have a parent attachment position within [0, 1].`,
-        partId: part.id,
-      });
-    }
-
-    if (!isValidAttachmentPosition(part.attachment.childPosition)) {
-      issues.push({
-        code: "invalid-attachment-position",
-        message:
-          `BodyPart "${part.id}" must have a child attachment position within [0, 1].`,
-        partId: part.id,
-      });
-    }
-  }
-
-  return issues;
-}
 
 
 /*
@@ -583,28 +373,140 @@ function findAttachmentCycleIssues(
   return issues;
 }
 
-
 /*
- * Validates one complete Anatomy against the available BodyPartDefinitions.
+ * Validates the persistent state stored on one BodyPart instance.
  *
- * Universal structural rules:
- *
- * - BodyPart IDs must be unique;
- * - every BodyPart type must reference a known definition;
- * - physical presence state must be one of the three known states;
- * - an attachment's two longitudinal coordinates must both fall in [0, 1];
- * - damage must be finite and non-negative;
- * - recovery progress must be finite and fall within [0, 1), and an
- *   undamaged part must not still be carrying any;
- * - every non-root parent must exist;
- * - a BodyPart cannot parent itself;
- * - attachment relationships cannot contain cycles.
- *
- * Multiple anatomical roots are valid.
- *
- * Empty Anatomy is also structurally valid. A character whose entire physical
- * body has been destroyed may therefore resolve to zero remaining BodyParts.
+ * Structural relationships such as whether the parent exists or whether an
+ * attachment participates in a cycle are validated at the Anatomy level.
  */
+function validateBodyPartState(
+  part: BodyPart,
+  knownDefinitionIds: ReadonlySet<BodyPartTypeId>,
+): readonly AnatomyValidationIssue[] {
+  const issues: AnatomyValidationIssue[] = [];
+
+  if (!isValidIdentifier(part.id)) {
+    issues.push({
+      code: "invalid-body-part-id",
+      message:
+        "BodyPart id must be a non-empty identifier.",
+      partId: part.id,
+    });
+  }
+
+  if (!knownDefinitionIds.has(part.type)) {
+    issues.push({
+      code: "unknown-body-part-type",
+      message:
+        `BodyPart "${part.id}" references unknown type "${part.type}".`,
+      partId: part.id,
+      definitionId: part.type,
+    });
+  }
+
+  if (
+    part.name !== undefined &&
+    part.name.trim().length === 0
+  ) {
+    issues.push({
+      code: "invalid-body-part-name",
+      message:
+        `BodyPart "${part.id}" has an empty display name.`,
+      partId: part.id,
+    });
+  }
+
+  if (!BODY_PART_STATES.includes(part.state)) {
+    issues.push({
+      code: "invalid-body-part-state",
+      message:
+        `BodyPart "${part.id}" has unknown physical presence state ` +
+        `"${part.state}".`,
+      partId: part.id,
+    });
+  }
+
+  if (
+    !Number.isFinite(part.integrity) ||
+    part.integrity < 0 ||
+    part.integrity > 1
+  ) {
+    issues.push({
+      code: "invalid-integrity",
+      message:
+        `BodyPart "${part.id}" must have finite integrity within [0, 1]; ` +
+        `got ${part.integrity}.`,
+      partId: part.id,
+    });
+  } else if (part.state === "active" && part.integrity === 0) {
+    /*
+     * Zero integrity on an active part is the one combination the integrity
+     * model exists to make unrepresentable. A part with nothing left is
+     * destroyed, and destruction is a transition to "archived-removed" that
+     * damage application performs deliberately — never a number arriving at a
+     * threshold. Stored 0 would be a part that is dead by arithmetic, and that
+     * a later Maximum BP increase would silently bring back to life.
+     */
+    issues.push({
+      code: "invalid-integrity",
+      message:
+        `BodyPart "${part.id}" is active with integrity 0. Zero is reserved ` +
+        `for destruction, which is a state transition to "archived-removed".`,
+      partId: part.id,
+    });
+  } else if (part.state !== "active" && part.integrity !== 0) {
+    issues.push({
+      code: "invalid-integrity",
+      message:
+        `BodyPart "${part.id}" is ${part.state} and must carry integrity 0; ` +
+        `got ${part.integrity}. A departed part is absent, not damaged.`,
+      partId: part.id,
+    });
+  }
+
+  if (part.attachment !== null) {
+    if (
+      part.attachment.site !== undefined &&
+      !isValidIdentifier(part.attachment.site)
+    ) {
+      issues.push({
+        code: "invalid-attachment-site",
+        message:
+          `BodyPart "${part.id}" has an empty attachment-site identifier.`,
+        partId: part.id,
+      });
+    }
+
+    /*
+     * Both connection coordinates are required and must land on the 0..1
+     * longitudinal axis they index into. This is deliberately strict rather
+     * than defaulted: pre-refactor Body JSON has no coordinates at all, and it
+     * should fail loudly here instead of silently acquiring a body plan nobody
+     * authored. The creation helpers supply defaults for anatomy being built
+     * from a spec; stored anatomy is always explicit.
+     */
+    if (!isValidAttachmentPosition(part.attachment.parentPosition)) {
+      issues.push({
+        code: "invalid-attachment-position",
+        message:
+          `BodyPart "${part.id}" must have a parent attachment position within [0, 1].`,
+        partId: part.id,
+      });
+    }
+
+    if (!isValidAttachmentPosition(part.attachment.childPosition)) {
+      issues.push({
+        code: "invalid-attachment-position",
+        message:
+          `BodyPart "${part.id}" must have a child attachment position within [0, 1].`,
+        partId: part.id,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function validateAnatomy(
   anatomy: Anatomy,
   definitions: readonly BodyPartDefinition[],

@@ -28,17 +28,10 @@ import { resolveCriticalPoints } from "../character/foundation/body/critical-poi
 import type { SpecialPointDefinition } from "../character/foundation/body/critical-points/types";
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
-const NEUTRAL_SENSITIVITY = {
-  height: 0,
-  mass: 0,
-  muscularity: 0,
-  adiposity: 0,
-};
-
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "arm", name: "Arm", description: "Test arm.", tags: ["limb", "left"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
-  { id: "leg", name: "Leg", description: "Test leg.", tags: ["limb", "right"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
-  { id: "head", name: "Head", description: "Test head.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  { id: "arm", name: "Arm", description: "Test arm.", tags: ["limb", "left"], ...TEST_PART_PHYSICALS },
+  { id: "leg", name: "Leg", description: "Test leg.", tags: ["limb", "right"], ...TEST_PART_PHYSICALS },
+  { id: "head", name: "Head", description: "Test head.", tags: ["core"], ...TEST_PART_PHYSICALS },
 ];
 
 const ANATOMY: Anatomy = createAnatomy([
@@ -175,14 +168,14 @@ describe("tag selection regression: reads BodyPartDefinition.tags, not BodyPart"
   it("through a BodyPointModifier resolved by resolveBodyPointModifiersByPart", () => {
     const modifier: BodyPointModifier = {
       selector: tagSelector,
-      operation: { kind: "adjust-base-bp", amount: 3 },
+      operation: { kind: "modify-destruction-resistance", multiplier: 3 },
     };
 
     const resolved = resolveBodyPointModifiersByPart(ANATOMY.parts, DEFINITIONS, [modifier]);
 
-    expect(resolved.get("arm-1")?.additiveBaseBP).toBe(3);
-    expect(resolved.get("leg-1")?.additiveBaseBP).toBe(3);
-    expect(resolved.get("head-1")?.additiveBaseBP).toBe(0);
+    expect(resolved.get("arm-1")?.destructionResistance).toBe(3);
+    expect(resolved.get("leg-1")?.destructionResistance).toBe(3);
+    expect(resolved.get("head-1")?.destructionResistance).toBe(1);
   });
 
   it("through a SpecialPointDefinition placement selector resolved by resolveCriticalPoints", () => {
