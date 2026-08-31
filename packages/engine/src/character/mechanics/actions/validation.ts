@@ -218,6 +218,8 @@ export function findActionCapacityContributionIssues(
     const contribution =
       contributions[index];
 
+    if (contribution === undefined) continue;
+
     /*
      * TypeScript normally guarantees this, but runtime/homebrew content may
      * still cross the engine boundary with malformed data.

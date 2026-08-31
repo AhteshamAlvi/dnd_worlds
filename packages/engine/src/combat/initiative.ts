@@ -290,7 +290,8 @@ export function findInitiativeTieIssues(
         (entry) => entry.combatantId,
       ),
       message:
-        `Initiative tie at value ${group[0].value}; ` +
+        // findInitiativeTies only returns groups of two or more entries.
+        `Initiative tie at value ${group[0]!.value}; ` +
         "a tie-breaking rule must resolve this before Initiative order can be established.",
     }));
 }
@@ -450,9 +451,13 @@ export function findFirstEligibleInitiativeIndex(
     index < order.length;
     index += 1
   ) {
+    const entry = order[index];
+
+    if (entry === undefined) continue;
+
     if (
       isInitiativeEligible(
-        order[index].combatantId,
+        entry.combatantId,
         combatants,
       )
     ) {
@@ -510,9 +515,13 @@ export function findNextEligibleInitiativeIndex(
       (currentIndex + offset) %
       order.length;
 
+    const entry = order[index];
+
+    if (entry === undefined) continue;
+
     if (
       isInitiativeEligible(
-        order[index].combatantId,
+        entry.combatantId,
         combatants,
       )
     ) {
@@ -544,5 +553,5 @@ export function findNextEligibleInitiativeEntry(
     return null;
   }
 
-  return order[nextIndex];
+  return order[nextIndex] ?? null;
 }
