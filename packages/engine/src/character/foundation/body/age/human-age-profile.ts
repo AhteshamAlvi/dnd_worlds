@@ -19,12 +19,12 @@
  *     0    49.5 cm    1.76 kg   2.3 L   7.2     3.79     5
  *     2    85.8 cm    8.86 kg  10.7 L  12.0    13.37     7
  *     6   115.5 cm   20.13 kg  23.1 L  15.1    28.21     8
- *    12   146.9 cm   43.01 kg  46.2 L  19.9    56.62     9
+ *    12   146.9 cm   41.62 kg  44.7 L  19.3    56.62     9
  *    16   160.1 cm   56.37 kg  56.2 L  22.0    84.75     9
  *    20   165.0 cm   62.00 kg  60.0 L  22.8   100.00    10
  *    40   165.0 cm   62.68 kg  61.2 L  23.0   100.00    10
  *    60   163.4 cm   59.36 kg  60.7 L  22.2    85.97     9
- *    80   160.1 cm   51.61 kg  55.7 L  20.1    67.25     9
+ *    80   160.1 cm   51.61 kg  55.6 L  20.1    67.25     9
  *
  * Every column is generated — height, mass and size by
  * measurements/resolution.ts, normalized Strength Points and STR by
@@ -41,13 +41,23 @@
  * little under two doublings below them — STR 8.
  *
  * The twelve-year-old is the one row worth arguing about. Scale 0.89 puts them
- * at 147 cm against a real ~149, and mass follows to 43.0 kg against a real
- * ~40 — around 7% heavy, at BMI 19.9 where a real twelve-year-old is nearer
- * 18. The alternative, scale 0.85, lands the height at 140 cm and forces bulk
- * to RISE from 1.10 at six to 1.13 to reach a believable mass, making a
- * twelve-year-old stockier than a six-year-old. Slightly heavy at a correct
- * height beats correct weight at a wrong one, and keeps the bulk curve
- * monotonic through childhood.
+ * at 147 cm against a real ~149, which is the number Scale actually means and
+ * the one worth getting right: Size and Mass follow it as a cube and Structural
+ * Capacity as a square, so an error here is an error everywhere downstream. The
+ * alternative anchor, 0.85, lands the height at 140 cm — a ten-year-old's
+ * height on a twelve-year-old — and then needs Bulk to RISE from 1.10 at six to
+ * 1.13 to reach a believable mass, making a twelve-year-old stockier than a
+ * six-year-old.
+ *
+ * Correct height taken, mass is then tuned with Bulk rather than by moving
+ * Scale, because Bulk reaches Mass and Size and never reaches Structural
+ * Capacity: every value in the STR column is identical at any Bulk, so this is
+ * a free choice physically. Bulk 1.04 is the lowest value the curve allows.
+ * Childhood Bulk is strictly decreasing — 1.30, 1.22, 1.10, 1.04, 1.03, 1.00 —
+ * because children lean out as they grow rather than pausing, and 1.03 would
+ * tie the twelve-year-old with the sixteen-year-old. It lands 41.6 kg at BMI
+ * 19.3 against a real ~40 kg at ~18: about 3% heavy, down from the 7% that
+ * Bulk 1.08 gave.
  *
  *
  * KNOWN LIMITATION BELOW ABOUT AGE FOUR
@@ -96,7 +106,7 @@ export const HUMAN_AGE_PROFILE: SpeciesAgeProfile = {
     {
       age: 12,
       scale: 0.89,
-      morphology: { muscularity: 0.75, bulk: 1.08, adiposity: 1.12 },
+      morphology: { muscularity: 0.75, bulk: 1.04, adiposity: 1.12 },
       lifeStage: "Adolescent",
     },
     {
