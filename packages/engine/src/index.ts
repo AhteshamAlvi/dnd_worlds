@@ -321,6 +321,18 @@ export {
   validateBodyPartSelector,
 } from "./character/foundation/body/selectors";
 
+export {
+  JOINT_DOWNSTREAM_EFFECTIVENESS_MULTIPLIER,
+  resolveBodyCapability,
+} from "./character/foundation/body/capability";
+
+export type {
+  CapabilityResolutionInput,
+  InaccessibilitySource,
+  ResolvedBodyCapability,
+  ResolvedPartCapability,
+} from "./character/foundation/body/capability";
+
 export type {
   BodyPointModifier,
   ResolvedBodyPartBP,
