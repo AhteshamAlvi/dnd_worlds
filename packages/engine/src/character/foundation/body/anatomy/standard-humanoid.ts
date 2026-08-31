@@ -81,9 +81,9 @@
  * prevent: measured as an unsigned longest path, this body is 176 cm tall.
  */
 
-import { createAnatomy } from "./creation";
+import { createAnatomy, createReferenceForm } from "./creation";
 import type { BodyPartCreationSpec } from "./creation";
-import type { Anatomy } from "./types";
+import type { Anatomy, ReferenceForm } from "./types";
 
 export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   {
@@ -218,3 +218,13 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
 export const STANDARD_HUMANOID_ANATOMY: Anatomy = createAnatomy(
   STANDARD_HUMANOID_BODY_PART_SPECS,
 );
+
+/*
+ * What a standard humanoid is SUPPOSED to have — the normalization
+ * denominator, and deliberately not the same value as the anatomy above even
+ * though it is built from the same specs. The two diverge the moment a
+ * character is hurt: the Anatomy loses a severed Arm, the Reference Form goes
+ * on expecting one.
+ */
+export const STANDARD_HUMANOID_REFERENCE_FORM: ReferenceForm =
+  createReferenceForm(STANDARD_HUMANOID_BODY_PART_SPECS);

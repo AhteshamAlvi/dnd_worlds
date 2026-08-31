@@ -19,6 +19,7 @@ import type {
   BodyPartAttachment,
   BodyPartId,
   BodyPartTypeId,
+  ReferenceForm,
 } from "./types";
 
 
@@ -147,5 +148,31 @@ export function createAnatomy(
 ): Anatomy {
   return {
     parts: specs.map(createBodyPart),
+  };
+}
+
+/*
+ * Creates the Reference Form a body plan describes.
+ *
+ * Derived from the SPECS rather than from a live Anatomy, and that is the
+ * whole point. The Reference Form says what a body is supposed to contain, so
+ * reading it off the parts a character currently has would make it agree with
+ * damage — and a form that shrinks alongside the body is not a reference at
+ * all. A Human who loses both Arms is still a Human-shaped form that expects
+ * them, which is exactly what makes amputation lower Strength instead of
+ * cancelling itself out.
+ *
+ * A Reference Form changes only when the intended body plan changes: Species
+ * anatomy, ordinary age development, permanent anatomy modification, or an
+ * active form-replacing transformation. Never because of damage.
+ */
+export function createReferenceForm(
+  specs: readonly BodyPartCreationSpec[],
+): ReferenceForm {
+  return {
+    parts: specs.map((spec) => ({
+      id: spec.id,
+      type: spec.type,
+    })),
   };
 }
