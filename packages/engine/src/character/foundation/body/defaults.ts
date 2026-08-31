@@ -15,6 +15,7 @@ import {
   REFERENCE_MUSCULARITY,
 } from "./body-points/morphology";
 import { STANDARD_HUMANOID_ANATOMY } from "./anatomy/standard-humanoid";
+import { NEUTRAL_MORPHOLOGY } from "./types";
 import type { Body } from "./types";
 
 export const STANDARD_BODY: Body = {
@@ -24,5 +25,11 @@ export const STANDARD_BODY: Body = {
     muscularity: REFERENCE_MUSCULARITY,
     adiposity: REFERENCE_ADIPOSITY,
   },
+
+  characterScale: 1,
+  globalMorphology: NEUTRAL_MORPHOLOGY,
+  localMorphology: {},
+  strengthDevelopmentMuscularity: 1,
+
   anatomy: STANDARD_HUMANOID_ANATOMY,
 };

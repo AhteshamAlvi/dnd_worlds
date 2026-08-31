@@ -29,6 +29,7 @@ import {
 import type { ResolveRecoveryInput } from "../character/mechanics/recovery/resolution";
 
 import { days, hours } from "../time/duration";
+import { TEST_BODY_STATE, TEST_PART_PHYSICALS } from "./fixtures/body";
 
 const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
 
@@ -41,7 +42,7 @@ const DEFINITIONS: readonly BodyPartDefinition[] = [
     description: "Test torso.",
     tags: ["core"],
     baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY,
+    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
   },
 ];
 
@@ -52,6 +53,7 @@ function bodyWithParts(anatomy: Anatomy): Body {
     heightCm: REFERENCE_HEIGHT_CM,
     massKg: REFERENCE_MASS_KG,
     build: { muscularity: REFERENCE_MUSCULARITY, adiposity: REFERENCE_ADIPOSITY },
+    ...TEST_BODY_STATE,
     anatomy,
   };
 }

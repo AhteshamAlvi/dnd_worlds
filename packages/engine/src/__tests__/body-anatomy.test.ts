@@ -30,6 +30,7 @@ import {
   resolveAnatomy,
 } from "../character/foundation/body/anatomy/resolution";
 import { validateAnatomy } from "../character/foundation/body/anatomy/validation";
+import { TEST_PART_PHYSICALS } from "./fixtures/body";
 import type {
   Anatomy,
   BodyPartDefinition,
@@ -43,8 +44,8 @@ const NEUTRAL_SENSITIVITY = {
 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "limb", name: "Limb", description: "Test limb.", tags: ["limb"], baseBP: 5, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  { id: "limb", name: "Limb", description: "Test limb.", tags: ["limb"], baseBP: 5, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
 ];
 
 function threeArmAnatomy(): Anatomy {

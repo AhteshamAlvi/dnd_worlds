@@ -33,6 +33,7 @@ import { createAnatomy } from "../character/foundation/body/anatomy/creation";
 import { resolveMorphology } from "../character/foundation/body/body-points/morphology";
 import { resolveBodyPoints } from "../character/foundation/body/body-points/resolution";
 import { resolveCriticalPoints } from "../character/foundation/body/critical-points/resolution";
+import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -417,7 +418,7 @@ describe("registering custom Body content", () => {
       description: "A homebrew prehensile tail.",
       tags: ["limb"],
       baseBP: 6,
-      morphologySensitivity: { height: 0, mass: 0, muscularity: 0.3, adiposity: 0.05 },
+      morphologySensitivity: { height: 0, mass: 0, muscularity: 0.3, adiposity: 0.05 }, ...TEST_PART_PHYSICALS,
     };
 
     expect(registerDefinition("body-part", tailDefinition)).toEqual({ ok: true });

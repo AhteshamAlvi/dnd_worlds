@@ -28,11 +28,12 @@ import {
   validateBodyPointResolution,
 } from "../character/foundation/body/body-points/validation";
 import { getBodyPartDefinition } from "../character/foundation/body/anatomy/body-parts";
+import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
 const NEUTRAL_SENSITIVITY = { height: 0, mass: 0, muscularity: 0, adiposity: 0 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "torso", name: "Torso", description: "Test torso.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
 ];
 
 const REFERENCE_INPUT: BodyMorphologyInput = {

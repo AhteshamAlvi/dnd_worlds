@@ -18,6 +18,7 @@ import {
 
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import type { SpecialPointDefinition } from "../character/foundation/body/critical-points/types";
+import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
 import {
   findRecoveryLocationIssues,
@@ -37,7 +38,7 @@ const BODY_PART_DEFINITIONS: readonly BodyPartDefinition[] = [
     description: "Test torso.",
     tags: ["core"],
     baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY,
+    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
   },
   {
     id: "limb",
@@ -45,7 +46,7 @@ const BODY_PART_DEFINITIONS: readonly BodyPartDefinition[] = [
     description: "Test limb.",
     tags: ["limb"],
     baseBP: 20,
-    morphologySensitivity: NEUTRAL_SENSITIVITY,
+    morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS,
   },
 ];
 

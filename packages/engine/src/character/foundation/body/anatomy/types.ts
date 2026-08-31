@@ -113,9 +113,123 @@ export interface BodyPartDefinition {
 
   readonly tags: readonly BodyPartTag[];
 
+  /**
+   * TRANSITIONAL. The pre-refactor Body Point baseline.
+   *
+   * BP is being moved onto Structural Capacity (`reference.structuralCapacity`)
+   * but that formula does not land until the Body Point rewrite. Until then BP
+   * still resolves from this field, so it is kept alongside the new physical
+   * reference data rather than replaced by it, and the two deliberately
+   * disagree per part (Neck 4 vs 2, Leg 14 vs 16, ...).
+   *
+   * Delete together with `morphologySensitivity` once BP consumes SC.
+   */
   readonly baseBP: number;
 
+  /**
+   * TRANSITIONAL. The pre-refactor generic morphology response.
+   *
+   * Superseded by `sensitivity`. Kept for the same reason as `baseBP`.
+   */
   readonly morphologySensitivity: MorphologySensitivity;
+
+  /** Physical reference values at Scale 1 with all morphology neutral. */
+  readonly reference: BodyPartReference;
+
+  /** How strongly this kind of part responds to each morphology dimension. */
+  readonly sensitivity: BodyPartMorphologySensitivity;
+}
+
+
+/*
+ * Physical reference values for one kind of body part.
+ *
+ * These describe the part as it exists in the Basic Human Standard: Effective
+ * Scale 1.0, every morphology value 1.0, undamaged. Everything else in the
+ * Body pipeline is expressed as a factor applied to these.
+ *
+ * Units are real physical units — centimetres, litres, kilograms — because a
+ * body that reports 165 cm and 62 kg can be sanity-checked against reality in
+ * a way that abstract "size points" cannot.
+ *
+ * `structuralCapacity` is the shared foundation beneath both durability and
+ * force. It is not a Body Point value and not a Strength Point value; BP and
+ * SP are each derived from it by different formulas.
+ *
+ * `intrinsicPhysicalForce` is the part's authored baseline capacity to produce
+ * force, as a multiplier on its Structural Capacity:
+ *
+ *   1 → an ordinary force-producing part
+ *   0 → real physical structure that generates no force of its own
+ *
+ * A bone spike, shell plate, or decorative horn therefore contributes Size,
+ * Mass, Structural Capacity and Body Points while contributing no Strength
+ * Points. This is why normalization needs no separate "force-contributing"
+ * flag: parts that make no force contribute zero to the numerator on their
+ * own arithmetic.
+ *
+ * Distinguish this authored baseline from the Effect-level
+ * modifyBase/ResolvedIntrinsicPhysicalForce vocabulary, which modifies it.
+ *
+ * `heightContribution` is the fraction of this part's resolved Length that
+ * counts as vertical extent. 0 means the part never contributes to Height —
+ * an Arm is 55 cm long and contributes none of it. A Human Foot is 25 cm long
+ * from ankle to toe but only 7 cm of that is height, hence 0.28.
+ */
+export interface BodyPartReference {
+  readonly lengthCm: number;
+  readonly sizeL: number;
+  readonly massKg: number;
+
+  readonly structuralCapacity: number;
+
+  /** Default 1. Never negative. */
+  readonly intrinsicPhysicalForce: number;
+
+  /** 0 to 1. Zero means this part does not contribute to Height. */
+  readonly heightContribution: number;
+}
+
+
+/*
+ * How strongly one kind of body part responds to each morphology dimension.
+ *
+ * Each value is the fraction of a morphology deviation that reaches this
+ * particular part. An Arm has `bulkSize: 1.00` and a Head has `bulkSize:
+ * 0.15`, so a broadly-built character has substantially thicker arms and a
+ * barely-larger skull.
+ *
+ * Muscularity is deliberately split across three separate responses:
+ *
+ *   muscularityMass       → how much heavier muscle makes the part
+ *   muscularityStructural → how much more Structural Capacity it gains
+ *   muscularityForce      → how much more force it can actually produce
+ *
+ * The third exists because Strength doubles per tier while Structural
+ * Capacity responds only linearly. Without a separate force response, reaching
+ * high Strength would demand physically absurd Muscularity and therefore
+ * absurd Mass. Structural response stays linear; force response is exponential.
+ *
+ * `muscularityStructural` must lie in [0, 1]. Above 1 the structural factor
+ * `1 + ((M - 1) * s)` can go negative at low Muscularity, which would produce
+ * negative Structural Capacity, Body Points and Strength Points. Enforced in
+ * validation, not by this type.
+ *
+ * `muscularityForce` need only be non-negative — its formula, 2^((M - 1) * s),
+ * stays positive for every finite input.
+ */
+export interface BodyPartMorphologySensitivity {
+  readonly bulkSize: number;
+  readonly adipositySize: number;
+
+  readonly muscularityMass: number;
+  readonly adiposityMass: number;
+
+  /** Must be within [0, 1]. See the note above. */
+  readonly muscularityStructural: number;
+
+  /** Must be >= 0. */
+  readonly muscularityForce: number;
 }
 
 
@@ -194,4 +308,70 @@ export interface BodyPart {
  */
 export interface Anatomy {
   readonly parts: readonly BodyPart[];
+}
+
+/*
+ * The physical state of one body-part instance.
+ *
+ * "active"
+ * → physically present. Contributes Size, Mass, Height, Structural Capacity,
+ *   Body Points, Strength Points, Anatomical Points and connections.
+ *
+ * "suppressed"
+ * → temporarily absent through a reversible effect. Contributes nothing to
+ *   the current body, but its state is retained so it can return.
+ *
+ * "archived-removed"
+ * → destroyed or severed. Contributes nothing, but its specification is kept
+ *   so extraordinary regeneration can recreate this specific structure.
+ *
+ * Suppressed and archived-removed parts both leave the current body, and so
+ * both reduce Strength the same way. They differ in what happens next: one is
+ * expected back on its own, the other needs a mechanic to restore it.
+ *
+ * Note that none of these states change the Reference Form. What a body is
+ * SUPPOSED to contain and what it CURRENTLY contains are separate questions;
+ * damage answers only the second.
+ */
+export type BodyPartState =
+  | "active"
+  | "suppressed"
+  | "archived-removed";
+
+export const BODY_PART_STATES = [
+  "active",
+  "suppressed",
+  "archived-removed",
+] as const satisfies readonly BodyPartState[];
+
+
+/*
+ * The anatomy a physical form is supposed to contain when intact.
+ *
+ * This is the normalization denominator, and it is deliberately NOT the set of
+ * parts a character currently has. A Human who loses both Arms is still a
+ * Human-shaped form that is supposed to have them: the Reference Form stays at
+ * 100 Structural Capacity while the parts actually present now total 64, and
+ * Strength falls accordingly.
+ *
+ * Were the denominator to shrink alongside the numerator, amputation would
+ * cancel itself out and a limbless character would read as exactly as strong
+ * as an intact one.
+ *
+ * A Reference Form changes only when the intended body plan changes — Species
+ * anatomy, normal age development, permanent anatomy modification, or an
+ * active form-replacing transformation. It never changes because of damage.
+ */
+export interface ReferenceForm {
+  readonly parts: readonly ReferenceFormPart[];
+}
+
+
+/*
+ * One BodyPart the Reference Form expects, independent of whether the
+ * character currently possesses it.
+ */
+export interface ReferenceFormPart {
+  readonly id: BodyPartId;
+  readonly type: BodyPartTypeId;
 }

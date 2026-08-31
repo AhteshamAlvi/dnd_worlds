@@ -29,6 +29,7 @@ import {
 import type { BodyMorphologyInput } from "../character/foundation/body/body-points/morphology";
 import { createAnatomy } from "../character/foundation/body/anatomy/creation";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
+import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
 const REFERENCE_INPUT: BodyMorphologyInput = {
   heightCm: REFERENCE_HEIGHT_CM,
@@ -42,7 +43,7 @@ const FULLY_SENSITIVE: BodyPartDefinition = {
   description: "Test torso.",
   tags: [],
   baseBP: 10,
-  morphologySensitivity: { height: 1, mass: 1, muscularity: 1, adiposity: 1 },
+  morphologySensitivity: { height: 1, mass: 1, muscularity: 1, adiposity: 1 }, ...TEST_PART_PHYSICALS,
 };
 
 const ZERO_SENSITIVITY: BodyPartDefinition = {
@@ -51,7 +52,7 @@ const ZERO_SENSITIVITY: BodyPartDefinition = {
   description: "Test head.",
   tags: [],
   baseBP: 8,
-  morphologySensitivity: { height: 0, mass: 0, muscularity: 1, adiposity: 1 },
+  morphologySensitivity: { height: 0, mass: 0, muscularity: 1, adiposity: 1 }, ...TEST_PART_PHYSICALS,
 };
 
 describe("reference morphology", () => {

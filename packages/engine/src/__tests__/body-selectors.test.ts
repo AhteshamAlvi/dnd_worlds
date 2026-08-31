@@ -26,6 +26,7 @@ import { resolveBodyPointModifiersByPart } from "../character/foundation/body/bo
 import type { BodyPointModifier } from "../character/foundation/body/body-points/types";
 import { resolveCriticalPoints } from "../character/foundation/body/critical-points/resolution";
 import type { SpecialPointDefinition } from "../character/foundation/body/critical-points/types";
+import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
 const NEUTRAL_SENSITIVITY = {
   height: 0,
@@ -35,9 +36,9 @@ const NEUTRAL_SENSITIVITY = {
 };
 
 const DEFINITIONS: readonly BodyPartDefinition[] = [
-  { id: "arm", name: "Arm", description: "Test arm.", tags: ["limb", "left"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "leg", name: "Leg", description: "Test leg.", tags: ["limb", "right"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
-  { id: "head", name: "Head", description: "Test head.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY },
+  { id: "arm", name: "Arm", description: "Test arm.", tags: ["limb", "left"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  { id: "leg", name: "Leg", description: "Test leg.", tags: ["limb", "right"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
+  { id: "head", name: "Head", description: "Test head.", tags: ["core"], baseBP: 10, morphologySensitivity: NEUTRAL_SENSITIVITY, ...TEST_PART_PHYSICALS },
 ];
 
 const ANATOMY: Anatomy = createAnatomy([
