@@ -16,15 +16,15 @@
  * WHAT THIS CURVE RESOLVES TO
  *
  *   age   height      mass     size    BMI   normSP   STR
- *     0    49.5 cm    1.76 kg   2.3 L   7.2     3.79     5
- *     2    85.8 cm    8.86 kg  10.7 L  12.0    13.37     7
- *     6   115.5 cm   20.13 kg  23.1 L  15.1    28.21     8
- *    12   146.9 cm   41.62 kg  44.7 L  19.3    56.62     9
+ *     0    49.5 cm    1.83 kg   2.3 L   7.5     3.79     5
+ *     2    85.8 cm    9.10 kg  10.7 L  12.4    13.37     7
+ *     6   115.5 cm   20.37 kg  23.1 L  15.3    28.21     8
+ *    12   146.9 cm   41.93 kg  44.7 L  19.4    56.62     9
  *    16   160.1 cm   56.37 kg  56.2 L  22.0    84.75     9
  *    20   165.0 cm   62.00 kg  60.0 L  22.8   100.00    10
- *    40   165.0 cm   62.68 kg  61.2 L  23.0   100.00    10
- *    60   163.4 cm   59.36 kg  60.7 L  22.2    85.97     9
- *    80   160.1 cm   51.61 kg  55.6 L  20.1    67.25     9
+ *    40   165.0 cm   63.11 kg  61.2 L  23.2   100.00    10
+ *    60   163.4 cm   60.22 kg  60.7 L  22.6    85.97     9
+ *    80   160.1 cm   52.24 kg  55.6 L  20.4    67.25     9
  *
  * Every column is generated — height, mass and size by
  * measurements/resolution.ts, normalized Strength Points and STR by
@@ -56,7 +56,7 @@
  * Childhood Bulk is strictly decreasing — 1.30, 1.22, 1.10, 1.04, 1.03, 1.00 —
  * because children lean out as they grow rather than pausing, and 1.03 would
  * tie the twelve-year-old with the sixteen-year-old. It lands 41.6 kg at BMI
- * 19.3 against a real ~40 kg at ~18: about 3% heavy, down from the 7% that
+ * 19.4 against a real ~40 kg at ~18: about 4% heavy, down from the 8% that
  * Bulk 1.08 gave.
  *
  *

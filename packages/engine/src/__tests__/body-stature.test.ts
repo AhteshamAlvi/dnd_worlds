@@ -420,40 +420,75 @@ describe("band validation", () => {
 });
 
 
-describe("KNOWN CALIBRATION GAP: Adiposity barely moves Mass", () => {
+describe("Adiposity can now reach the mass band", () => {
   /*
-   * Documented rather than hidden, and asserted so it cannot drift unnoticed.
+   * This block used to assert the opposite, as a documented calibration gap.
+   * Adiposity had its own authored mass sensitivity, independent of its size
+   * sensitivity, and the Human table set them at 0.171 for volume against
+   * 0.092 for mass. Fat therefore made a body visibly larger while barely
+   * making it heavier: a body at FIVE TIMES reference adiposity reached 84.8
+   * kg at BMI 31 — clinically obese — and read as perfectly ordinary. No
+   * value of Adiposity could reach the band; it needed about 7.5 to get there.
    *
-   * The Phase 1 Human sensitivity table gives Adiposity a far weaker grip on
-   * Mass than Bulk has: whole-body adiposityMass response is about 0.09 per
-   * unit of deviation against bulkSize's 0.87, nearly ten to one. The
-   * consequence is that Adiposity CANNOT reach the mass band from below,
-   * however extreme it gets. A body at five times the reference adiposity is
-   * 84.8 kg on a 165 cm frame — BMI 31, clinically obese — and reads ordinary.
-   *
-   * This is a property of the authored sensitivities, not of the band: the
-   * band is doing exactly what it was asked. Retuning adiposityMass is real
-   * content work that touches Size and Mass across every Species, so it is
-   * flagged rather than quietly done here.
+   * Adiposity mass is now the volume adiposity adds times the Species'
+   * soft-tissue density, so tissue cannot appear without weighing something.
+   * The threshold moved from an absurd 7.5 to an extreme-but-meaningful 5.03.
    */
-  it("cannot push a body out of the mass band with Adiposity alone", () => {
-    const enormouslyFat = assess({ character: { adiposity: 5 } });
+  it("makes an extremely fat body genuinely heavy", () => {
+    const veryFat = assess({ character: { adiposity: 5 } });
 
-    expect(enormouslyFat.mass.resolved).toBeCloseTo(84.77, 1);
-    expect(enormouslyFat.mass.ratio).toBeLessThan(
-      HUMAN_STATURE_BANDS.mass.max,
-    );
-    expect(enormouslyFat.mass.standing).toBe("ordinary");
+    expect(veryFat.mass.resolved).toBeCloseTo(98.95, 1);
+    expect(veryFat.mass.ratio).toBeCloseTo(1.596, 3);
   });
 
-  it("reaches the same mass through Bulk and is flagged", () => {
-    const equallyHeavy = assess({ character: { bulk: 1.45 } });
-
-    expect(equallyHeavy.mass.resolved).toBeCloseTo(86.18, 2);
-    expect(equallyHeavy.mass.standing).toBe("ordinary");
-
-    expect(assess({ character: { bulk: 1.7 } }).mass.standing).toBe(
-      "exceptional",
+  it("crosses the band just past Adiposity 5", () => {
+    expect(assess({ character: { adiposity: 5 } }).mass.standing).toBe(
+      "ordinary",
     );
+
+    expect(assess({ character: { adiposity: 5.1 } }).mass.deviation).toBe(
+      "above",
+    );
+  });
+
+  /*
+   * The sanity check that says the model is coherent rather than merely
+   * retuned. These two bodies weigh almost the same and are built completely
+   * differently — the fat one carries its weight in five more litres of
+   * low-density tissue, the thick one in a heavier frame. A single "build"
+   * score could not tell them apart, and neither could the old model, which
+   * put them 15 kg apart for no physical reason.
+   */
+  it("puts a very fat body and a very thick body at comparable Mass", () => {
+    const fat = assess({ character: { adiposity: 5 } });
+    const thick = assess({ character: { bulk: 1.7 } });
+
+    expect(fat.mass.resolved).toBeCloseTo(98.95, 1);
+    expect(thick.mass.resolved).toBeCloseTo(99.61, 1);
+
+    expect(Math.abs(fat.mass.resolved - thick.mass.resolved)).toBeLessThan(1);
+  });
+
+  /*
+   * Downward too, and this is the direction that needs watching: below
+   * Adiposity 1 the formula REMOVES soft tissue and the mass leaves with it.
+   *
+   * A Human at Adiposity ZERO — every litre of adipose volume taken out —
+   * still weighs 52.8 kg at ratio 0.85, comfortably inside the band. That is
+   * the right answer rather than a gap: a body with no fat is lean, not
+   * emaciated, and reaching the lower bound takes a genuinely small frame
+   * rather than merely a very lean one. Bulk is what gets you there.
+   *
+   * It also stays positive, which is the property the validator protects: no
+   * Human part is less dense than the 0.9 kg/L tissue being removed from it.
+   */
+  it("removes mass with the tissue below Adiposity 1, without going negative", () => {
+    const lean = assess({ character: { adiposity: 0 } });
+
+    expect(lean.mass.resolved).toBeCloseTo(52.76, 1);
+    expect(lean.mass.ratio).toBeCloseTo(0.851, 3);
+    expect(lean.mass.standing).toBe("ordinary");
+
+    expect(assess({ character: { bulk: 0.65 } }).mass.deviation).toBe("below");
   });
 });

@@ -81,4 +81,20 @@ export interface SpeciesBodyProfile {
    * itself a claim about the Species and should be written down as one.
    */
   readonly stature: SpeciesStatureBands;
+
+  /*
+   * What this Species' soft tissue weighs, in kg per litre.
+   *
+   * The one number that turns adiposity into mass. There is no per-BodyPart
+   * adiposity mass sensitivity any more: a definition says how much soft-tissue
+   * VOLUME a part gains, and this says what that volume weighs, so the two can
+   * never drift into claiming fat that adds bulk without adding weight.
+   *
+   * Human-calibrated at 0.9 (see DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L).
+   * Species with materially different biology override it; a creature whose
+   * fat differs from part to part is a special case that can grow local
+   * overrides later rather than making everyone author eight identical numbers
+   * today.
+   */
+  readonly adiposeTissueDensityKgPerL: number;
 }

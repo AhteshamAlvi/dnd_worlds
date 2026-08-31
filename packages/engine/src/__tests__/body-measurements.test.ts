@@ -170,17 +170,23 @@ describe("morphology factors", () => {
    * causes, and multiplying them would let a muscular-and-soft body reach a
    * density nothing has.
    */
-  it("adds the two mass-composition contributions rather than multiplying them", () => {
-    const both: BodyMorphology = {
-      ...NEUTRAL_MORPHOLOGY,
-      muscularity: 2,
-      adiposity: 2,
-    };
+  /*
+   * The mass composition factor is Muscularity ALONE now. Adiposity used to
+   * appear here too with its own authored sensitivity, which let a definition
+   * claim fat that adds volume without adding weight — and the Human table did
+   * exactly that. Adiposity mass is derived from the volume it adds instead;
+   * see the adipose-tissue describe block below.
+   */
+  it("responds to Muscularity and not to Adiposity", () => {
+    const muscular: BodyMorphology = { ...NEUTRAL_MORPHOLOGY, muscularity: 2 };
+    const fat: BodyMorphology = { ...NEUTRAL_MORPHOLOGY, adiposity: 2 };
 
-    expect(resolveMassCompositionFactor(both, arm.sensitivity)).toBeCloseTo(
-      1 + 0.45 + 0.06,
+    expect(resolveMassCompositionFactor(muscular, arm.sensitivity)).toBeCloseTo(
+      1 + 0.45,
       10,
     );
+
+    expect(resolveMassCompositionFactor(fat, arm.sensitivity)).toBe(1);
   });
 
   /*
@@ -540,15 +546,15 @@ describe("the Human age curve, resolved end to end", () => {
    * a six-year-old.
    */
   it.each([
-    [0, 49.5, 1.76],
-    [2, 85.8, 8.86],
-    [6, 115.5, 20.13],
-    [12, 146.85, 41.62],
+    [0, 49.5, 1.83],
+    [2, 85.8, 9.10],
+    [6, 115.5, 20.37],
+    [12, 146.85, 41.93],
     [16, 160.05, 56.37],
     [20, 165, 62],
-    [40, 165, 62.68],
-    [60, 163.35, 59.36],
-    [80, 160.05, 51.61],
+    [40, 165, 63.11],
+    [60, 163.35, 60.22],
+    [80, 160.05, 52.24],
   ])(
     "resolves a %i-year-old Human to %f cm and %f kg",
     (age, expectedCm, expectedKg) => {

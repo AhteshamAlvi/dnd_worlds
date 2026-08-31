@@ -191,7 +191,20 @@ export type HeightAxisSign = 1 | -1;
  * 0.15`, so a broadly-built character has substantially thicker arms and a
  * barely-larger skull.
  *
- * Muscularity is deliberately split across three separate responses:
+ * There is no adiposity MASS sensitivity, and its absence is the interesting
+ * part of this type. Fat cannot add volume to a body without weighing
+ * something, so asking a definition to answer "how much larger does adiposity
+ * make this part" AND, separately, "how much heavier" invites the two answers
+ * to drift apart — which they had, badly: the Human table gave adiposity a
+ * whole-body size response of 0.171 and a mass response of 0.092, so a body
+ * could become visibly obese while barely gaining weight. Adiposity mass is
+ * now derived from the volume adiposity adds, times the Species' soft-tissue
+ * density. One question, one answer, and mass follows from physics.
+ *
+ * Muscularity keeps its own mass sensitivity, because Muscularity genuinely
+ * does not work that way: it is denser tissue developing INSIDE the volume
+ * that already exists, not new volume appearing. It is deliberately split
+ * across three separate responses:
  *
  *   muscularityMass       → how much heavier muscle makes the part
  *   muscularityStructural → how much more Structural Capacity it gains
@@ -215,7 +228,6 @@ export interface BodyPartMorphologySensitivity {
   readonly adipositySize: number;
 
   readonly muscularityMass: number;
-  readonly adiposityMass: number;
 
   /** Must be within [0, 1]. See the note above. */
   readonly muscularityStructural: number;

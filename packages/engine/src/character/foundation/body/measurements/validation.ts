@@ -14,6 +14,11 @@
  */
 
 import { createBodyPartDefinitionMap } from "../selectors";
+import {
+  DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
+  resolvePartMeasurements,
+} from "./resolution";
+import type { BodyMorphology } from "../types";
 import type {
   Anatomy,
   BodyPartDefinition,
@@ -27,7 +32,9 @@ import type {
 export type MeasurementValidationIssueCode =
   | "height-relevant-cycle"
   | "unknown-body-part-type"
-  | "invalid-effective-scale";
+  | "invalid-effective-scale"
+  | "invalid-adipose-tissue-density"
+  | "non-positive-resolved-mass";
 
 
 /*
@@ -181,12 +188,26 @@ export function validateMeasurementInputs(
   anatomy: Anatomy,
   definitions: readonly BodyPartDefinition[],
   effectiveScale: number,
+  morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>> = {},
+  adiposeTissueDensityKgPerL = DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
 ): MeasurementValidationResult {
   const definitionsById = createBodyPartDefinitionMap(definitions);
 
   const issues: MeasurementValidationIssue[] = [
     ...findEffectiveScaleIssues(effectiveScale),
   ];
+
+  if (
+    !Number.isFinite(adiposeTissueDensityKgPerL) ||
+    adiposeTissueDensityKgPerL <= 0
+  ) {
+    issues.push({
+      code: "invalid-adipose-tissue-density",
+      message:
+        `Adipose tissue density must be finite and greater than 0 kg/L; ` +
+        `got ${adiposeTissueDensityKgPerL}.`,
+    });
+  }
 
   for (const part of anatomy.parts) {
     if (part.state !== "active") continue;
@@ -198,6 +219,54 @@ export function validateMeasurementInputs(
           `BodyPart "${part.id}" references unknown type "${part.type}", ` +
           "so its physical measurements cannot be resolved.",
         partId: part.id,
+      });
+    }
+  }
+
+  /*
+   * Very low Adiposity removes soft tissue, and removing tissue can in
+   * principle remove more mass than a part had. The formula subtracts
+   * (1 - Adiposity) x volume x density from a part whose lean mass came from
+   * its own reference density, so it goes negative only where a definition
+   * claims a part is LESS dense than the soft tissue being taken out of it —
+   * a physically incoherent authoring combination rather than a legal extreme.
+   *
+   * No Human part is anywhere near it: the least dense is Upper Body at 0.984
+   * kg/L against 0.9 tissue, and its adiposity size sensitivity is 0.22, so
+   * even Adiposity 0 leaves it at about 80% of its mass. This exists so that
+   * unusual anatomy fails loudly at the point of authoring rather than
+   * resolving to a body part that weighs less than nothing.
+   */
+  for (const part of anatomy.parts) {
+    if (part.state !== "active") continue;
+
+    const definition = definitionsById.get(part.type);
+
+    if (definition === undefined) continue;
+
+    const morphology = morphologyByPartId[part.id];
+
+    if (morphology === undefined) continue;
+
+    const resolved = resolvePartMeasurements(
+      part.id,
+      definition.reference,
+      definition.sensitivity,
+      morphology,
+      effectiveScale,
+      adiposeTissueDensityKgPerL,
+    );
+
+    if (!Number.isFinite(resolved.massKg) || resolved.massKg <= 0) {
+      issues.push({
+        code: "non-positive-resolved-mass",
+        partId: part.id,
+        message:
+          `BodyPart "${part.id}" resolves to ${resolved.massKg} kg. Removing ` +
+          `soft tissue at Adiposity ${morphology.adiposity} has taken more ` +
+          `mass than the part has, which means its adiposity size sensitivity ` +
+          `and the Species' adipose tissue density disagree with its own ` +
+          `reference density.`,
       });
     }
   }

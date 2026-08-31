@@ -32,7 +32,6 @@ export const TEST_PART_PHYSICALS = {
     bulkSize: 0,
     adipositySize: 0,
     muscularityMass: 0,
-    adiposityMass: 0,
     muscularityStructural: 0,
     muscularityForce: 0,
   },

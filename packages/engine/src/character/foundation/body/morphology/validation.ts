@@ -33,7 +33,6 @@ const PLAIN_SENSITIVITIES = [
   "bulkSize",
   "adipositySize",
   "muscularityMass",
-  "adiposityMass",
 ] as const;
 
 

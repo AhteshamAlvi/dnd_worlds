@@ -83,43 +83,96 @@ export function resolveAdipositySizeFactor(
 
 
 /*
+ * The default density of adipose and other soft tissue, in kg per litre.
+ *
+ * Real adipose tissue sits at roughly 0.90 to 0.92 kg/L, against the ~1.06 of
+ * lean tissue and far more for bone. This is the physical constant that makes
+ * a fat body lighter for its size than a muscular one without anybody
+ * authoring that relationship: the reference Human is 62 kg in 60 L, a density
+ * of 1.033, and every litre adiposity adds arrives at 0.9.
+ *
+ * Species-overridable, because soft tissue is a biological fact rather than a
+ * universal one, but authored once per Species instead of once per BodyPart —
+ * a creature whose fat differs from its arm fat is a special case, not the
+ * normal one.
+ */
+export const DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L = 0.9;
+
+
+/*
  * How much heavier this part's composition makes it, at unchanged volume.
  *
  *   1 + ((Muscularity - 1) x MuscularityMassSensitivity)
- *     + ((Adiposity   - 1) x AdiposityMassSensitivity)
  *
- * The two contributions ADD rather than multiply. They are two components of
- * one body's composition, not two independent causes, and adding keeps a
- * muscular-and-soft body from compounding into a density nothing could have.
+ * Muscularity only. Adiposity used to appear here too, with its own authored
+ * sensitivity, and that was the mistake: it let a definition claim adiposity
+ * adds a lot of volume and very little weight. The Human table did exactly
+ * that — a whole-body size response of 0.171 against a mass response of 0.092
+ * — so an Adiposity 5 body gained 41 litres and only 23 kg, and read as
+ * unremarkable on any mass measure while being obviously obese by volume.
  *
- * Adiposity appears in both this factor and the size factor because fat adds
- * volume and mass at once. Muscularity appears only here.
+ * Muscularity belongs here and adiposity does not, because they are physically
+ * different events. Muscularity is tissue developing inside a volume that
+ * already exists, so it is genuinely a density change. Adiposity is new tissue
+ * appearing, so its mass is that tissue's volume times what that tissue
+ * weighs — see resolveAdiposityMassDelta.
  */
 export function resolveMassCompositionFactor(
   morphology: BodyMorphology,
   sensitivity: BodyPartMorphologySensitivity,
 ): number {
+  return 1 + ((morphology.muscularity - 1) * sensitivity.muscularityMass);
+}
+
+
+/*
+ * The volume adiposity adds to a part, in litres.
+ *
+ * Taken against the part's volume BEFORE adiposity — scaled reference size
+ * through Length and Bulk — so that adiposity is a proportion of the body it
+ * is being added to rather than of the body it produces. A broader frame
+ * carries proportionally more fat at the same Adiposity, which is right, and
+ * the term stays linear in (Adiposity - 1) instead of compounding with itself.
+ *
+ * Negative below Adiposity 1: soft tissue is removed rather than added, and
+ * the mass leaves with it.
+ */
+export function resolveAdiposityVolumeDeltaL(
+  preAdiposityVolumeL: number,
+  morphology: BodyMorphology,
+  sensitivity: BodyPartMorphologySensitivity,
+): number {
   return (
-    1 +
-    ((morphology.muscularity - 1) * sensitivity.muscularityMass) +
-    ((morphology.adiposity - 1) * sensitivity.adiposityMass)
+    preAdiposityVolumeL *
+    (morphology.adiposity - 1) *
+    sensitivity.adipositySize
   );
 }
 
 
 /*
- * Resolves one BodyPart's Length, Size and Mass.
+ * The mass that added soft tissue brings with it.
  *
- * Takes the definition's reference values and sensitivities rather than the
- * definition itself so that the arithmetic stays testable against invented
- * anatomy without needing a registered BodyPartDefinition.
+ * The whole point of the change: tissue cannot appear as volume without
+ * weighing something, so there is no second sensitivity that could disagree
+ * with the first. Every future Species answers one question about adiposity —
+ * how much bulk of soft tissue does this part gain — and its weight follows.
  */
+export function resolveAdiposityMassDeltaKg(
+  adiposityVolumeDeltaL: number,
+  tissueDensityKgPerL: number,
+): number {
+  return adiposityVolumeDeltaL * tissueDensityKgPerL;
+}
+
+
 export function resolvePartMeasurements(
   partId: BodyPartId,
   reference: BodyPartReference,
   sensitivity: BodyPartMorphologySensitivity,
   morphology: BodyMorphology,
   effectiveScale: number,
+  adiposeTissueDensityKgPerL = DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
 ): ResolvedPartMeasurements {
   const scale3 = effectiveScale * effectiveScale * effectiveScale;
 
@@ -137,24 +190,45 @@ export function resolvePartMeasurements(
     sensitivity,
   );
 
+  /*
+   * The part's volume before adiposity: everything Scale, Length and Bulk
+   * make it, and nothing fat has added yet. Both the size factor and the
+   * adiposity mass delta are taken against this, which is what keeps the two
+   * consistent by construction — the same litres that appear in Size are the
+   * litres that are weighed into Mass.
+   */
+  const preAdiposityVolumeL =
+    reference.sizeL * scale3 * lengthFactor * effectiveBulk;
+
+  const adiposityVolumeDeltaL = resolveAdiposityVolumeDeltaL(
+    preAdiposityVolumeL,
+    morphology,
+    sensitivity,
+  );
+
   return {
     partId,
 
     lengthCm: reference.lengthCm * effectiveScale * lengthFactor,
 
-    sizeL:
-      reference.sizeL *
-      scale3 *
-      lengthFactor *
-      effectiveBulk *
-      adipositySizeFactor,
+    sizeL: preAdiposityVolumeL * adipositySizeFactor,
 
+    /*
+     * Lean mass through the multiplicative chain, then adipose tissue ADDED
+     * rather than multiplied in. Fat is not a property of the rest of the
+     * body; it is extra tissue sitting alongside it, and it weighs what it
+     * weighs regardless of how muscular the part underneath happens to be.
+     */
     massKg:
       reference.massKg *
-      scale3 *
-      lengthFactor *
-      effectiveBulk *
-      massCompositionFactor,
+        scale3 *
+        lengthFactor *
+        effectiveBulk *
+        massCompositionFactor +
+      resolveAdiposityMassDeltaKg(
+        adiposityVolumeDeltaL,
+        adiposeTissueDensityKgPerL,
+      ),
   };
 }
 
@@ -183,6 +257,7 @@ export function resolveBodyMeasurements(
   definitions: readonly BodyPartDefinition[],
   morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>,
   effectiveScale: number,
+  adiposeTissueDensityKgPerL = DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
 ): ResolvedBodyMeasurements {
   const definitionsById = createBodyPartDefinitionMap(definitions);
 
@@ -217,6 +292,7 @@ export function resolveBodyMeasurements(
       definition.sensitivity,
       morphology,
       effectiveScale,
+      adiposeTissueDensityKgPerL,
     );
 
     parts.push(measurements);
