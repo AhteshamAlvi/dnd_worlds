@@ -140,16 +140,35 @@ export function resolvePartIntrinsicMaxSP(
  * Resolved mode walks the anatomy the character actually has, and honours
  * state: suppressed and archived-removed parts contribute nothing.
  */
-function participatingParts(
+/*
+ * The slots of the intact Reference Form.
+ *
+ * Used for STR in BOTH modes, which is the change that separated Strength from
+ * anatomy instance history. Damage, amputation and suppression do not answer
+ * "what kind of body is this", so they do not reach this list.
+ */
+function formParts(
+  input: StrengthResolutionInput,
+): readonly { readonly id: BodyPartId; readonly type: BodyPartTypeId }[] {
+  return input.referenceForm.parts.map((part) => ({
+    id: part.id,
+    type: part.type,
+  }));
+}
+
+
+/*
+ * The anatomy actually present.
+ *
+ * In base mode this is the form itself: base mode ignores instance state by
+ * definition, so that permanent advancement is never priced against transient
+ * misfortune.
+ */
+function presentParts(
   input: StrengthResolutionInput,
   mode: BodyResolutionOptions["mode"],
 ): readonly { readonly id: BodyPartId; readonly type: BodyPartTypeId }[] {
-  if (mode === "base") {
-    return input.referenceForm.parts.map((part) => ({
-      id: part.id,
-      type: part.type,
-    }));
-  }
+  if (mode === "base") return formParts(input);
 
   return input.anatomy.parts
     .filter((part) => part.state === "active")
@@ -157,12 +176,6 @@ function participatingParts(
 }
 
 
-/*
- * Resolves a body's Strength in one mode.
- *
- * The denominator is the same in both modes on purpose. It describes what the
- * form is supposed to contain, and damage does not answer that question.
- */
 export function resolveBodyStrength(
   input: StrengthResolutionInput,
   options: BodyResolutionOptions,
@@ -174,40 +187,55 @@ export function resolveBodyStrength(
       ? input.base
       : input.resolved ?? input.base;
 
-  const parts: ResolvedPartStrength[] = [];
-  const byPartId: Record<BodyPartId, ResolvedPartStrength> = {};
+  const resolvePartSet = (
+    participants: readonly {
+      readonly id: BodyPartId;
+      readonly type: BodyPartTypeId;
+    }[],
+  ): {
+    readonly parts: ResolvedPartStrength[];
+    readonly byPartId: Record<BodyPartId, ResolvedPartStrength>;
+    readonly total: number;
+  } => {
+    const parts: ResolvedPartStrength[] = [];
+    const byPartId: Record<BodyPartId, ResolvedPartStrength> = {};
 
-  for (const participant of participatingParts(input, options.mode)) {
-    const definition = definitionsById.get(participant.type);
+    for (const participant of participants) {
+      const definition = definitionsById.get(participant.type);
 
-    /*
-     * Same convention as the other physical resolvers: anatomy and Reference
-     * Form are assumed validated, so an unknown type is an invalid engine
-     * state rather than an input to tolerate.
-     */
-    if (definition === undefined) {
-      throw new Error(
-        `Cannot resolve Strength for BodyPart "${participant.id}": ` +
-        `unknown BodyPartDefinition "${participant.type}".`,
+      /*
+       * Same convention as the other physical resolvers: anatomy and Reference
+       * Form are assumed validated, so an unknown type is an invalid engine
+       * state rather than an input to tolerate.
+       */
+      if (definition === undefined) {
+        throw new Error(
+          `Cannot resolve Strength for BodyPart "${participant.id}": ` +
+          `unknown BodyPartDefinition "${participant.type}".`,
+        );
+      }
+
+      const resolved = resolvePartIntrinsicMaxSP(
+        participant.id,
+        definition,
+        context.morphologyByPartId[participant.id] ?? NEUTRAL_MORPHOLOGY,
+        context.effectiveScale,
+        context.intrinsicForceModifierByPartId?.[participant.id] ?? 1,
       );
+
+      parts.push(resolved);
+      byPartId[participant.id] = resolved;
     }
 
-    const resolved = resolvePartIntrinsicMaxSP(
-      participant.id,
-      definition,
-      context.morphologyByPartId[participant.id] ?? NEUTRAL_MORPHOLOGY,
-      context.effectiveScale,
-      context.intrinsicForceModifierByPartId?.[participant.id] ?? 1,
-    );
+    return {
+      parts,
+      byPartId,
+      total: parts.reduce((sum, part) => sum + part.intrinsicMaxSP, 0),
+    };
+  };
 
-    parts.push(resolved);
-    byPartId[participant.id] = resolved;
-  }
-
-  const totalIntrinsicBodySP = parts.reduce(
-    (total, part) => total + part.intrinsicMaxSP,
-    0,
-  );
+  const form = resolvePartSet(formParts(input));
+  const present = resolvePartSet(presentParts(input, options.mode));
 
   const referenceFormAnatomicalCapacity =
     resolveReferenceFormAnatomicalCapacity(
@@ -216,7 +244,7 @@ export function resolveBodyStrength(
     );
 
   const normalizedBodySP = resolveNormalizedBodySP(
-    totalIntrinsicBodySP,
+    form.total,
     referenceFormAnatomicalCapacity,
   );
 
@@ -225,14 +253,18 @@ export function resolveBodyStrength(
   return {
     mode: options.mode,
 
-    parts,
-    byPartId,
+    formParts: form.parts,
+    formByPartId: form.byPartId,
 
-    totalIntrinsicBodySP,
+    referenceFormIntrinsicSP: form.total,
     referenceFormAnatomicalCapacity,
     normalizedBodySP,
     strengthPosition,
 
     displayedStrength: resolveDisplayedStrength(strengthPosition),
+
+    presentParts: present.parts,
+    presentByPartId: present.byPartId,
+    presentIntrinsicSP: present.total,
   };
 }

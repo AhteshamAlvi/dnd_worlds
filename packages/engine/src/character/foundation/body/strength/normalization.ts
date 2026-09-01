@@ -6,25 +6,46 @@
  *
  * 1 · NORMALIZATION — why extra anatomy is not free Strength
  *
+  *   ReferenceFormIntrinsicSP        = sum of IntrinsicMaxSP
+ *                                     over the INTACT Reference Form
+ *
  *   ReferenceFormAnatomicalCapacity = sum of ReferenceStructuralCapacity
  *                                     over the INTACT Reference Form
  *
- *   NormalizedBodySP = 100 x TotalIntrinsicBodySP
+ *   NormalizedBodySP = 100 x ReferenceFormIntrinsicSP
  *                          / ReferenceFormAnatomicalCapacity
  *
- * The denominator is what the form is SUPPOSED to contain, never what the body
- * currently has. Both halves of that matter, in opposite directions.
+ * BOTH halves are taken over the intact Reference Form, and the ratio is
+ * therefore what that form's anatomy makes of its own reference structure:
+ * Scale squared, times a structure-weighted average of the Muscularity and
+ * intrinsic-force response. Nothing about what has happened to the character
+ * appears anywhere in it.
  *
- * A Species whose intact form genuinely has four Arms and four Hands raises
- * both numerator and denominator — 136 over 136 — and normalizes to 100. No
- * free Strength for owning more ordinary anatomy.
+ * WHAT NORMALIZATION IS FOR
  *
- * A Human who loses both Arms and Hands raises neither: the form still expects
- * 100 and the body now produces 64, so Strength falls to 64. Were the
- * denominator to shrink alongside, amputation would cancel itself out and a
- * limbless character would read as exactly as strong as an intact one. This is
- * the single bug this whole design exists to avoid, and it is why the
- * denominator is computed from a different input than the numerator.
+ * Stopping extra ORDINARY anatomy from buying free Strength. A Species whose
+ * intact form genuinely has four Arms and four Hands puts 136 in both halves
+ * and still normalizes to 100 — it owns two more Arms' worth of real Strength
+ * Points and is not a higher Strength tier for it. That invariant needs one
+ * anatomy set on both sides, not two.
+ *
+ * WHAT IT IS NOT FOR, ANY MORE
+ *
+ * An earlier model took the numerator over currently-present anatomy, so a
+ * Human losing both Arms and Hands read 64 over 100 and dropped to STR 9. That
+ * conflated two different questions: how strong the character fundamentally
+ * is, and how much of their body is available to use. Their remaining muscles
+ * did not become weaker when the Arms left.
+ *
+ * So amputation, suppression, severance and Joint failure no longer touch STR
+ * at all. They reduce presentIntrinsicSP — the force actually there — which is
+ * resolved alongside this and never inside it. STR describes the strength
+ * quality of the intact form; instance history describes how much of that form
+ * is left.
+ *
+ * A consequence worth stating plainly: a form permanently changed to an
+ * armless one is STR 10 with far less raw whole-body SP than an ordinary
+ * Human. That is not a penalty being healed. There was never a penalty.
  *
  *
  * 2 · POSITION — why Strength is logarithmic
@@ -111,14 +132,15 @@ export function resolveReferenceFormAnatomicalCapacity(
 
 
 /*
- * Normalizes a body's total intrinsic Strength Points against its own form.
+ * Normalizes the intact Reference Form's intrinsic Strength Points against
+ * that same form's anatomical capacity.
  *
  * A form with no anatomical capacity at all normalizes to 0 rather than to
  * NaN. Dividing nothing by nothing is not 100% of anything, and a body with no
  * structure produces no force, so 0 is both the safe answer and the true one.
  */
 export function resolveNormalizedBodySP(
-  totalIntrinsicBodySP: number,
+  referenceFormIntrinsicSP: number,
   referenceFormAnatomicalCapacity: number,
 ): number {
   if (
@@ -130,7 +152,7 @@ export function resolveNormalizedBodySP(
 
   return (
     REFERENCE_NORMALIZED_BODY_SP *
-    (totalIntrinsicBodySP / referenceFormAnatomicalCapacity)
+    (referenceFormIntrinsicSP / referenceFormAnatomicalCapacity)
   );
 }
 

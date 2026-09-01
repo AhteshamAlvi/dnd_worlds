@@ -140,7 +140,7 @@ describe("the Human calibration gate", () => {
   it("puts the reference Human at 100 SP, 100 capacity, position 10, STR 10", () => {
     const resolved = humanStrength();
 
-    expect(resolved.totalIntrinsicBodySP).toBeCloseTo(100, 10);
+    expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(100, 10);
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
     expect(resolved.strengthPosition).toBeCloseTo(10, 10);
@@ -202,7 +202,7 @@ describe("the Giant gate", () => {
   it("resolves a Scale-10 fixture to 10,000 normalized SP, position 16.64, STR 16", () => {
     const resolved = humanStrength("resolved", 10);
 
-    expect(resolved.totalIntrinsicBodySP).toBeCloseTo(10_000, 6);
+    expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(10_000, 6);
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(10_000, 6);
     expect(resolved.strengthPosition).toBeCloseTo(16.6438561898, 8);
@@ -255,18 +255,24 @@ describe("Reference-Form normalization", () => {
     const resolved = strengthOf(anatomy, referenceForm, "resolved");
 
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(136, 10);
-    expect(resolved.totalIntrinsicBodySP).toBeCloseTo(136, 10);
+    expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(136, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
     expect(resolved.displayedStrength).toBe(10);
   });
 
   /*
-   * The mirror image, and the bug this design exists to prevent. Missing
-   * anatomy lowers ONLY the numerator: the form still expects 100, the body
-   * produces 64. Were the denominator to shrink alongside, a limbless
-   * character would read as exactly as strong as an intact one.
+   * The rule that changed, and it changed on purpose.
+   *
+   * An earlier model took the numerator over currently-present anatomy, so an
+   * amputated Human read 64 over 100 and dropped to STR 9. That conflated two
+   * different questions — how strong the character fundamentally is, and how
+   * much of their body is available to use — and answered both with one
+   * number. Their remaining muscles did not get weaker when the Arms left.
+   *
+   * STR now describes the intact form and never moves. What moves is
+   * presentIntrinsicSP: the force actually there.
    */
-  it("drops an amputated Human to 64 / 100 -> position 9.36 -> STR 9", () => {
+  it("leaves an amputated Human at STR 10 with 64 present SP", () => {
     let anatomy = STANDARD_HUMANOID_ANATOMY;
 
     for (const id of ["arm-1", "hand-1", "arm-2", "hand-2"]) {
@@ -280,10 +286,12 @@ describe("Reference-Form normalization", () => {
     );
 
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(100, 10);
-    expect(resolved.totalIntrinsicBodySP).toBeCloseTo(64, 10);
-    expect(resolved.normalizedBodySP).toBeCloseTo(64, 10);
-    expect(resolved.strengthPosition).toBeCloseTo(9.3561438103, 8);
-    expect(resolved.displayedStrength).toBe(9);
+    expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(100, 10);
+    expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
+    expect(resolved.displayedStrength).toBe(10);
+
+    // The loss is here, and only here.
+    expect(resolved.presentIntrinsicSP).toBeCloseTo(64, 10);
   });
 
   it("computes the denominator before Scale, Muscularity and force modifiers", () => {
@@ -314,35 +322,52 @@ describe("base and resolved modes", () => {
    * so base mode ignores instance state entirely and evaluates the Base
    * Reference Form as intact.
    */
-  it("ignores anatomy instance state in base mode", () => {
-    expect(
-      strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, "base")
-        .normalizedBodySP,
-    ).toBeCloseTo(100, 10);
+  it("reports the same STR in both modes, whatever has happened", () => {
+    for (const mode of ["base", "resolved"] as const) {
+      expect(
+        strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, mode)
+          .normalizedBodySP,
+      ).toBeCloseTo(100, 10);
+    }
   });
 
-  it("honours anatomy instance state in resolved mode", () => {
+  /*
+   * Base mode ignores instance state by definition, so its present SP is the
+   * form's. That is what keeps permanent advancement from being priced against
+   * transient misfortune.
+   */
+  it("separates present SP by mode", () => {
+    expect(
+      strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, "base")
+        .presentIntrinsicSP,
+    ).toBeCloseTo(100, 10);
+
     expect(
       strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, "resolved")
-        .normalizedBodySP,
+        .presentIntrinsicSP,
     ).toBeCloseTo(64, 10);
   });
 
-  it("treats suppression exactly as removal, in resolved mode only", () => {
+  /*
+   * Suppression is removal for the purposes of what is physically there, and
+   * is nothing at all for the purposes of STR. A character whose Arms are
+   * temporarily sealed away is not a lower Strength tier while it lasts.
+   */
+  it("treats suppression as removal for present SP and not for STR", () => {
     const suppressed = ["arm-1", "hand-1", "arm-2", "hand-2"].reduce(
       (anatomy, id) => setBodyPartState(anatomy, id, "suppressed"),
       STANDARD_HUMANOID_ANATOMY,
     );
 
-    expect(
-      strengthOf(suppressed, STANDARD_HUMANOID_REFERENCE_FORM, "resolved")
-        .normalizedBodySP,
-    ).toBeCloseTo(64, 10);
+    const resolved = strengthOf(
+      suppressed,
+      STANDARD_HUMANOID_REFERENCE_FORM,
+      "resolved",
+    );
 
-    expect(
-      strengthOf(suppressed, STANDARD_HUMANOID_REFERENCE_FORM, "base")
-        .normalizedBodySP,
-    ).toBeCloseTo(100, 10);
+    expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
+    expect(resolved.displayedStrength).toBe(10);
+    expect(resolved.presentIntrinsicSP).toBeCloseTo(64, 10);
   });
 
   /*
@@ -408,7 +433,7 @@ describe("inert anatomy", () => {
     );
 
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(120, 10);
-    expect(resolved.totalIntrinsicBodySP).toBeCloseTo(100, 10);
+    expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(83.3333333333, 8);
     expect(resolved.displayedStrength).toBe(9);
   });
@@ -423,8 +448,8 @@ describe("inert anatomy", () => {
       [...DEFINITIONS, CREST],
     );
 
-    expect(resolved.byPartId["crest-1"]?.structuralCapacity).toBeCloseTo(20, 10);
-    expect(resolved.byPartId["crest-1"]?.intrinsicMaxSP).toBe(0);
+    expect(resolved.formByPartId["crest-1"]?.structuralCapacity).toBeCloseTo(20, 10);
+    expect(resolved.formByPartId["crest-1"]?.intrinsicMaxSP).toBe(0);
   });
 });
 
@@ -461,7 +486,7 @@ describe("the zero-Strength rule", () => {
       [...DEFINITIONS, INERT],
     );
 
-    expect(resolved.totalIntrinsicBodySP).toBe(0);
+    expect(resolved.referenceFormIntrinsicSP).toBe(0);
     expect(resolved.normalizedBodySP).toBe(0);
     expect(resolved.strengthPosition).toBeNull();
     expect(resolved.displayedStrength).toBe(0);
@@ -583,7 +608,7 @@ describe("Strength advancement", () => {
       result.payload.strengthDevelopmentMuscularity,
     );
 
-    const totalSC = advanced.parts.reduce(
+    const totalSC = advanced.formParts.reduce(
       (total, part) => total + part.structuralCapacity,
       0,
     );

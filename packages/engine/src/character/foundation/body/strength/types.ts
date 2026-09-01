@@ -65,10 +65,9 @@ export interface StrengthPhysicalContext {
  * Everything Strength resolution needs about a body.
  *
  * `anatomy` is what the character currently has; `referenceForm` is what their
- * form is supposed to have. Both are required, and they are genuinely
- * different inputs — the numerator comes from one and the denominator from the
- * other, which is the entire reason amputation lowers Strength rather than
- * cancelling itself out.
+ * form is supposed to have. Both are required, and they answer different
+ * questions: the Reference Form alone produces STR, while current anatomy
+ * produces the force actually available. Neither substitutes for the other.
  */
 export interface StrengthResolutionInput {
   readonly anatomy: Anatomy;
@@ -113,14 +112,34 @@ export interface ResolvedPartStrength {
  * value. `displayedStrength` is always numeric — 0 in exactly that case, and
  * 1..30 otherwise. Derived Attributes sum STR directly and cannot take a null.
  */
+/*
+ * A body's Strength, in two clearly separated halves.
+ *
+ * THE FORM half drives STR. It is computed over every slot of the intact
+ * Reference Form, so it answers "how strong is a body of this kind, built this
+ * way" — a question about Scale, morphology and intrinsic force, and about
+ * nothing that has happened to the character.
+ *
+ * THE PRESENT half is what the anatomy actually there can produce. It answers
+ * "how much force does this character currently have available", which damage,
+ * amputation, suppression and severance all change.
+ *
+ * Conflating those two was the old model's mistake. A Human who loses an Arm
+ * has less total usable force; their remaining muscles did not drop a Strength
+ * tier. STR describes the strength quality of the intact form; instance
+ * history describes how much of that form is left to use.
+ */
 export interface ResolvedBodyStrength {
   readonly mode: BodyResolutionMode;
 
-  readonly parts: readonly ResolvedPartStrength[];
+  /* ---- The form: what drives STR --------------------------------------- */
 
-  readonly byPartId: Readonly<Record<BodyPartId, ResolvedPartStrength>>;
+  readonly formParts: readonly ResolvedPartStrength[];
 
-  readonly totalIntrinsicBodySP: number;
+  readonly formByPartId: Readonly<Record<BodyPartId, ResolvedPartStrength>>;
+
+  /** Sum over every slot of the intact Reference Form. */
+  readonly referenceFormIntrinsicSP: number;
 
   readonly referenceFormAnatomicalCapacity: number;
 
@@ -129,4 +148,18 @@ export interface ResolvedBodyStrength {
   readonly strengthPosition: number | null;
 
   readonly displayedStrength: number;
+
+  /* ---- What is actually present: never touches STR ---------------------- */
+
+  readonly presentParts: readonly ResolvedPartStrength[];
+
+  readonly presentByPartId: Readonly<Record<BodyPartId, ResolvedPartStrength>>;
+
+  /*
+   * Sum over anatomy physically present. Equal to referenceFormIntrinsicSP on
+   * an intact body, lower on a damaged one, and identical to it in base mode —
+   * base mode ignores instance state by definition, so there is nothing for it
+   * to differ from.
+   */
+  readonly presentIntrinsicSP: number;
 }
