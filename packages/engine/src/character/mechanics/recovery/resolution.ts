@@ -84,11 +84,23 @@ import type {
  * Reference Vitality for natural BP recovery.
  *
  * At VIT 10, each damaged BodyPart recovers 10% of its Maximum BP per 24
- * hours. Every +5 VIT doubles the daily fraction, mirroring
- * body-points/resolution.ts's Constitution-to-BP ladder exactly (same
- * reference of 10, same doubling interval of 5, same "every mechanic reads
- * its own attribute the same way" shape).
+ * hours, and every +5 VIT doubles the daily fraction.
+ *
+ * This ladder USED to be described as mirroring the Constitution-to-BP ladder
+ * exactly. It no longer does, and should not: Constitution's interval moved
+ * from 5 to 2 when Body Points began consuming Structural Capacity, calibrated
+ * against what a point of Strength buys. Following it here would be
+ * catastrophic rather than consistent — at interval 2, VIT 20 would restore
+ * 2^5 = 32 times the daily fraction, which is 320% of a part's Maximum BP per
+ * day.
+ *
+ * What the two ladders share is the SHAPE, not the numbers: every mechanic
+ * reads its own attribute against its own reference with its own doubling
+ * interval, chosen for what that mechanic is calibrated against. Durability
+ * and healing rate are different questions and are allowed different answers.
  */
+/* One of four independent baseline-10 anchors; see
+ * attributes/resolution.ts's STANDARD_MODIFIER_REFERENCE_SCORE. */
 export const VIT_RECOVERY_REFERENCE = 10;
 export const VIT_RECOVERY_DOUBLING_INTERVAL = 5;
 export const REFERENCE_DAILY_RECOVERY_FRACTION = 0.10;

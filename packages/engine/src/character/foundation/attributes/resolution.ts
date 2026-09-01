@@ -95,6 +95,14 @@ export function resolveAttributeLayers(
  * body-points/resolution.ts and VIT_RECOVERY_REFERENCE in
  * mechanics/recovery/resolution.ts.
  */
+/*
+ * Four mechanics anchor on an attribute score of 10 meaning "ordinary", each
+ * naming its own constant: this one, REFERENCE_CONSTITUTION (body-points),
+ * VIT_RECOVERY_REFERENCE (mechanics/recovery) and REFERENCE_STRENGTH_POSITION
+ * (body/strength). They are deliberately independent — each mechanic picks the
+ * baseline it is calibrated against, and they are not required to agree — but
+ * changing what counts as an ordinary Human is therefore four edits, not one.
+ */
 export const STANDARD_MODIFIER_REFERENCE_SCORE = 10;
 export const STANDARD_MODIFIER_DIVISOR = 2;
 

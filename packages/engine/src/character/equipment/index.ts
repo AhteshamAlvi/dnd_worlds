@@ -3,9 +3,29 @@
  *
  * Items are ordinary data-driven content: what makes an Item mechanical is
  * the Effects it declares, in exactly the vocabulary a Trait or a Condition
- * uses. That is why gauntlets granting STR +2 need no equipment-specific
- * modifier path — the difference between a Trait and an Item is when the
- * Effects apply, not what they are allowed to be.
+ * uses. That is why an Item needs no equipment-specific modifier path — the
+ * difference between a Trait and an Item is when the Effects apply, not what
+ * they are allowed to be.
+ *
+ *
+ * KNOWN: THE WEIGHTED GAUNTLETS HAVE NO CORRECT HOME YET
+ *
+ * The Weighted Gauntlets below declare `modifyResolvedAttribute` on "str".
+ * That is valid today and will not be: Strength stops being a stored Attribute
+ * and becomes derived from Body, so there is no stored `str` for an Effect to
+ * modify.
+ *
+ * The obvious replacement is wrong too. Body's design is explicit that
+ * equipment leverage does NOT alter Intrinsic Max SP — "Situational Skills,
+ * Techniques, maneuvers, equipment leverage, and action bonuses do not alter
+ * Intrinsic Max SP. They apply later, to action resolution" — and folding
+ * gauntlets in at that level would make a character permanently stronger for
+ * holding a lever.
+ *
+ * So this Item is waiting on one of two things: a resolved-only Body effect
+ * (defensible, since the weight really is on the body while worn), or the
+ * action-resolution layer that does not exist yet. It is left as-is and
+ * flagged rather than quietly re-pointed at the nearest Effect that compiles.
  *
  * Equipment slots, encumbrance and body integration are deliberately absent.
  * Nothing in the rules layer needs them to resolve an Item, and inventing a

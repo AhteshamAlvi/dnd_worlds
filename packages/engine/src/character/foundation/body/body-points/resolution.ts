@@ -70,6 +70,8 @@ import type {
  * constant precisely so it is a one-line retune once a damage model exists.
  * 3 is the obvious alternative.
  */
+/* One of four independent baseline-10 anchors; see
+ * attributes/resolution.ts's STANDARD_MODIFIER_REFERENCE_SCORE. */
 export const REFERENCE_CONSTITUTION = 10;
 export const CONSTITUTION_DOUBLING_INTERVAL = 2;
 

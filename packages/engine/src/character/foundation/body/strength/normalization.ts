@@ -67,6 +67,8 @@ import type {
  * middle of the scale rather than being placed on it by hand.
  */
 export const REFERENCE_NORMALIZED_BODY_SP = 100;
+/* One of four independent baseline-10 anchors; see
+ * attributes/resolution.ts's STANDARD_MODIFIER_REFERENCE_SCORE. */
 export const REFERENCE_STRENGTH_POSITION = 10;
 
 /*

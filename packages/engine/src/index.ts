@@ -263,168 +263,15 @@ export {
   validateDerivedAttributes,
 } from "./character/foundation/attributes/derived/validation";
 
-export type {
-  Body,
-  BodyMorphology,
-} from "./character/foundation/body/types";
-
-export { NEUTRAL_MORPHOLOGY } from "./character/foundation/body/types";
-
-export type {
-  Anatomy,
-  BodyAttachmentSiteId,
-  BodyPart,
-  BodyPartAttachment,
-  BodyPartDefinition,
-  BodyPartId,
-  BodyPartTag,
-  BodyPartMorphologySensitivity,
-  BodyPartReference,
-  BodyPartState,
-  BodyPartTypeId,
-  ReferenceForm,
-} from "./character/foundation/body/anatomy/types";
-
-export type {
-  BodyPartCreationSpec,
-} from "./character/foundation/body/anatomy/creation";
-
-export type {
-  AnatomyModification,
-} from "./character/foundation/body/anatomy/modification";
-
-export {
-  createAnatomy,
-} from "./character/foundation/body/anatomy/creation";
-
-export {
-  applyAnatomyModifications,
-  destroyBodyPart,
-  setBodyPartIntegrity,
-  setBodyPartState,
-} from "./character/foundation/body/anatomy/modification";
-
-export {
-  resolveAnatomy,
-} from "./character/foundation/body/anatomy/resolution";
-
-export {
-  validateAnatomyData,
-} from "./character/foundation/body/anatomy/validation";
-
-export type {
-  BodyPartSelector,
-} from "./character/foundation/body/selectors";
-
-export {
-  selectBodyParts,
-  validateBodyPartSelector,
-} from "./character/foundation/body/selectors";
-
-export {
-  getAnatomicalPointState,
-  isAnatomicalPointActive,
-  selectDestroyedJointPointIds,
-  selectDestroyedPointIds,
-  setAnatomicalPointState,
-} from "./character/foundation/body/critical-points/state";
-
-export type {
-  AnatomicalPointState,
-  AnatomicalPointStates,
-} from "./character/foundation/body/critical-points/state";
-
-export {
-  JOINT_DOWNSTREAM_EFFECTIVENESS_MULTIPLIER,
-  resolveBodyCapability,
-} from "./character/foundation/body/capability";
-
-export type {
-  CapabilityResolutionInput,
-  InaccessibilitySource,
-  ResolvedBodyCapability,
-  ResolvedPartCapability,
-} from "./character/foundation/body/capability";
-
-export type {
-  BodyPointModifier,
-  ResolvedBodyPartBP,
-  ResolvedBodyPoints,
-} from "./character/foundation/body/body-points/types";
-
-export { resolveMorphology } from "./character/foundation/body/morphology/resolution";
-
-export type {
-  MorphologyResolutionInput,
-  MorphologySource,
-} from "./character/foundation/body/morphology/types";
-
-export { resolveEffectiveScale } from "./character/foundation/body/scale";
-
-export {
-  CONSTITUTION_DOUBLING_INTERVAL,
-  getConstitutionBPMultiplier,
-  resolveBodyPoints,
-  resolveBuildFactor,
-} from "./character/foundation/body/body-points/resolution";
-
-
-export {
-  validateBodyPointResolution,
-} from "./character/foundation/body/body-points/validation";
-
-export type {
-  AnatomicalPointCategory,
-  AnatomicalPointDefinition,
-  CriticalOutcome,
-  CriticalPointInstance,
-  ResolvedCriticalPoints,
-  SpecialPointDefinition,
-} from "./character/foundation/body/critical-points/types";
-
-export {
-  applyWeakMultiplier,
-  evaluateCritical,
-  evaluateFatal,
-  evaluateJoint,
-  hasCategory,
-  resolveThreshold,
-  resolveCriticalPoints,
-} from "./character/foundation/body/critical-points/resolution";
-
-export {
-  validateCriticalPointData,
-} from "./character/foundation/body/critical-points/validation";
-
-export type {
-  BodyDamageInput,
-  BodyDamageOutcome,
-  BodyDamageTarget,
-} from "./character/foundation/body/damage";
-
-export {
-  applyBodyDamage,
-} from "./character/foundation/body/damage";
-
-export type { KnownBodyPartTypeId } from "./character/foundation/body/anatomy/body-parts";
-export {
-  BODY_PART_DEFINITIONS,
-  getBodyPartDefinition,
-  isKnownBodyPartTypeId,
-} from "./character/foundation/body/anatomy/body-parts";
-
-export {
-  STANDARD_HUMANOID_ANATOMY,
-} from "./character/foundation/body/anatomy/standard-humanoid";
-
-export type { KnownSpecialPointTypeId } from "./character/foundation/body/critical-points/special-points";
-export {
-  SPECIAL_POINT_DEFINITIONS,
-  getSpecialPointDefinition,
-  isKnownSpecialPointTypeId,
-} from "./character/foundation/body/critical-points/special-points";
-
-export { STANDARD_BODY } from "./character/foundation/body/defaults";
+/*
+ * The whole Body subsystem, through its own barrel.
+ *
+ * Previously this file hand-maintained two dozen Body export blocks and had
+ * fallen five phases behind: measurements, Structural Capacity, Strength,
+ * stature and Age were all unreachable from outside the package. A single
+ * re-export cannot drift that way.
+ */
+export * from "./character/foundation/body";
 
 export type {
   AuraPool,
@@ -743,13 +590,6 @@ export {
  * one ceiling, and reports which Injuries have fully healed. See
  * character/mechanics/recovery/resolution.ts for the full pipeline.
  */
-
-export type {
-  BodyPartRecoveryInput,
-  BodyPartRecoveryResult,
-} from "./character/foundation/body/body-points/recovery";
-
-export { applyBodyPartRecovery } from "./character/foundation/body/body-points/recovery";
 
 export type {
   ActiveRecoveryCap,
