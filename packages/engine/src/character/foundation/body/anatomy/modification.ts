@@ -1,16 +1,18 @@
 /*
- * Persistent Anatomy modification.
+ * Structural Anatomy modification.
  *
  * This module provides the generic structural operations used to change a
- * character's physical Anatomy.
+ * resolved Anatomy tree.
  *
  * These operations are content-agnostic. Species, Traits, mutations,
  * transformations, Injuries, prosthetics, and other systems may request
  * Anatomy modifications, but this module does not know what caused them.
  *
- * Permanent changes may be committed to Body.anatomy.
- * The same operations may later be applied transiently during Anatomy
- * resolution without mutating the stored Anatomy.
+ * Every one of them acts on a DERIVED tree and none of them persists anything.
+ * Anatomy is instantiated from a Reference Form and the character's continuity
+ * state (anatomy/creation.ts), so what a body permanently is gets changed by
+ * writing continuity or by changing the form — never by editing a tree that
+ * the next resolution is going to rebuild anyway.
  *
  * Structural validation belongs to anatomy/validation.ts.
  */
@@ -332,15 +334,14 @@ export function reattachBodyPart(
  *
  * If the requested part does not exist, the returned Anatomy is unchanged —
  * matching addBodyPart/removeBodyPart/replaceBodyPart's convention, and
- * letting a caller apply damage against a temporary-only BodyPart (present in
- * a resolved Anatomy but not in stored Anatomy) without special-casing it:
- * the call is simply a no-op against the tree that doesn't have that part.
+ * letting a caller apply damage against a BodyPart some other tree does not
+ * have without special-casing it: the call is simply a no-op there.
  *
  * Deliberately NOT part of the AnatomyModification union: that union is
  * structural-only (see ReattachBodyPartOperation's comment) and is applied by
- * resolveAnatomy as *temporary* modifications. Persistent damage going
- * through that path would let a transient effect masquerade as accumulated
- * damage, so this is called directly by the damage pipeline instead.
+ * resolveAnatomy as *temporary* modifications. Damage that is meant to last is
+ * written to continuity state by the damage pipeline, which calls this to work
+ * out what the hit did rather than to record it.
  *
  * Takes the new integrity rather than an amount of damage, because deciding
  * how much integrity a hit costs needs Maximum BP, and Maximum BP is derived

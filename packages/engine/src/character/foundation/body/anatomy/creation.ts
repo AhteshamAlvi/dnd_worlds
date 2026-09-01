@@ -55,10 +55,10 @@ export const DEFAULT_REFERENCE_FORM_ID = "default";
  * doubles back, or meets its parent partway along says so explicitly; the
  * standard humanoid does exactly that for its Lower Body, Arms and Legs.
  *
- * Defaults exist on the CREATION spec only. The persistent BodyPartAttachment
- * requires both coordinates outright, so stored anatomy is always explicit and
- * pre-refactor Body JSON that lacks them fails validation instead of silently
- * acquiring a body plan nobody authored.
+ * Defaults exist on the CREATION spec only. Both BodyPartAttachment and the
+ * Reference Form's own attachment require the coordinates outright, so an
+ * authored body plan is always explicit and one that lacks them fails
+ * validation instead of silently acquiring geometry nobody wrote.
  */
 export const DEFAULT_ATTACHMENT_PARENT_POSITION = 1;
 export const DEFAULT_ATTACHMENT_CHILD_POSITION = 0;

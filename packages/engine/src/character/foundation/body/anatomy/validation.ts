@@ -483,10 +483,10 @@ function validateBodyPartState(
     /*
      * Both connection coordinates are required and must land on the 0..1
      * longitudinal axis they index into. This is deliberately strict rather
-     * than defaulted: pre-refactor Body JSON has no coordinates at all, and it
-     * should fail loudly here instead of silently acquiring a body plan nobody
-     * authored. The creation helpers supply defaults for anatomy being built
-     * from a spec; stored anatomy is always explicit.
+     * than defaulted: a body plan with no coordinates should fail loudly here
+     * instead of silently acquiring geometry nobody authored. The creation
+     * helpers supply defaults for anatomy being built from a spec; a Reference
+     * Form and the anatomy instantiated from it are always explicit.
      */
     if (!isValidAttachmentPosition(part.attachment.parentPosition)) {
       issues.push({

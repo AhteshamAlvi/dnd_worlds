@@ -46,12 +46,21 @@
  * checked would silently lose that failure, because an archived Head no longer
  * hosts a Brain point. See body-damage.test.ts's fatal-ordering regression.
  *
- * Damage is applied to two separate Anatomy trees on purpose: the resolved
- * tree (which may include temporary-only parts) feeds Body Point resolution,
- * while the stored tree feeds persistence. Writing integrity is a no-op
- * against a tree that does not contain the target id, so a temporary-only
- * target takes damage for this resolution and persists nothing — matching the
- * rule that temporary Anatomy modifications never mutate stored Anatomy.
+ * There is one Anatomy tree, and it is derived. Damage is applied to it to
+ * work out what this hit did, and PERSISTED against anatomical identity — the
+ * continuity record, not the instance that happened to be standing there. The
+ * two used to be one job done twice, against a resolved tree and a stored one.
+ *
+ * Recording it on the identity is what makes damage outlive the instance. A
+ * limb rebuilt under a new id is still hurt, and so is the foreleg it becomes
+ * when its owner turns into a wolf. Integrity is stored as a FRACTION for that
+ * second case: forms have different Maximum BP for the same identity, so
+ * carrying raw missing BP across a transformation would heal or maim a
+ * character for changing shape.
+ *
+ * A temporary-only target — anatomy present for this resolution alone — takes
+ * damage the same way, and the continuity record it writes simply describes an
+ * identity nothing permanent expresses.
  *
  * Nothing here touches any BodyPart other than the resolved host and, on
  * destruction, its descendants. That is the entire "no damage spill"

@@ -22,8 +22,9 @@
  *   arm-3
  *   arm-4
  *
- * When the temporary modifications stop applying, resolution begins again
- * from the unchanged stored Anatomy and the extra parts disappear naturally.
+ * When the temporary modifications stop applying, resolution begins again from
+ * the form and the character's continuity state, and the extra parts disappear
+ * naturally — there is no edited tree left behind to undo.
  *
  * This module performs structural resolution only. Body Points, morphology,
  * Critical Points, Injuries, and other Body mechanics are resolved elsewhere.

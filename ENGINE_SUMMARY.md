@@ -1,6 +1,6 @@
 # Nenworld Rules Engine — Consolidated State
 
-**Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `newbranch-refactor` @ `e004135`
+**Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `newbranch-refactor` @ `910a089`
 **Snapshot:** 2026-09-01 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
 **Health:** `vitest run` → **41 files, 1,023 tests, all passing** (~1.8 s). `tsc --noEmit` → **clean**.
@@ -32,7 +32,10 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       ├── character/equipment/     items
       ├── character/foundation/
       │      ├── attributes/       base · derived · physical · speed · strength · stats · modifiers
-      │      ├── body/             ~12,400 LOC — the largest subsystem (§5)
+      │      ├── body/             ~15,000 LOC — the largest subsystem (§5)
+      │      │                     continuity · effects · regeneration · validation ·
+      │      │                     anatomy/reference-forms · measurements · structure ·
+      │      │                     strength · body-points · critical-points · stature
       │      ├── aura/             ~1,330 LOC
       │      └── nen/              ~3,970 LOC  (NOT exported)
       ├── character/progression/   levels · stats · growth
@@ -121,8 +124,9 @@ not healed. Base-mode replacement changes the permanent form; resolved-mode repl
 view that vanishes with its Effect and never writes to the sheet.
 
 `suppress` is invalid on `modifyBaseBodyAnatomy`. **Damage-driven loss is never an Effect** —
-destruction sets instance state to `archived-removed`, so the normalization denominator can't
-shrink and cancel the loss out.
+destruction is recorded against continuity state, so the normalization denominator can't shrink
+and cancel the loss out. Routing it through `removeFromForm` would take the Reference Form with
+it, and a form that stops expecting the arm it just lost is a form that has healed.
 
 ### Requirements — 16 types
 
@@ -473,10 +477,15 @@ anatomy resolves 1.00 (the mechanic simply doesn't constrain it), not 0.
 
 ### 5.10 Archive and Stature
 
-Destroyed parts stay in the anatomy store as `archived-removed`; `ArchivedBodyPart` and
-"orphaned" are **derived views**, never a second container, so identity, tree position,
-attachment geometry and point associations survive. A record is *orphaned* when its slot is
-absent from the current Reference Form — retained inert, never auto-deleted.
+Destruction is recorded on the identity (`AnatomicalContinuityState.destroyed`), and
+instantiation renders that identity — and everything the blueprint hangs off it — as an
+`archived-removed` BodyPart rather than omitting it. Keeping the absent part visible is what
+`archive.ts` reports on and what regeneration finds; every physical resolver already skips
+non-active anatomy, so it costs nothing.
+
+`ArchivedBodyPart` and "orphaned" are **derived views**, never a second container. A record is
+*orphaned* when its identity's slot is absent from the current Reference Form — retained inert,
+never auto-deleted, and expressible again the moment a form containing it returns.
 
 `stature/` asks "is this a height a member of this Species can simply have?" as a **ratio** to an
 ordinary same-age member, never centimetres. Human bands: height `0.89–1.20` (147–198 cm adult),
@@ -485,8 +494,11 @@ Strength progression would generate characters the engine rejects.
 
 ### 5.11 Species profile and the root resolver
 
-`SpeciesBodyProfile {standardScale, referenceForm, globalMorphology, localMorphology, stature,
-adiposeTissueDensityKgPerL, ageProfile}`. Body never asks what Species a character is; a Giant is
+`SpeciesBodyProfile {standardScale, referenceFormId, globalMorphology, localMorphology, stature,
+adiposeTissueDensityKgPerL, ageProfile}` — the body plan by **id**, so one authoritative copy
+lives in the Reference Form catalog and a transformation can name it without being a Species.
+`localMorphology` here is the Species' own, keyed by slot; what is unusual about one individual's
+anatomy is keyed by continuity identity and lives on the character. Body never asks what Species a character is; a Giant is
 large because its profile says `standardScale: 10`. `HUMAN_BODY_PROFILE` stands in when no
 Species is authored. Ancestry is walked for the first profile, so the six Bender sub-species
 inherit Human's.
@@ -630,7 +642,7 @@ Progression writes **stored** values only, which is why it sits outside `foundat
 
 ## 10 · Recovery (`character/mechanics/recovery/`)
 
-The Body↔Status seam — the only file allowed to know a part's `recoveryProgress` and an Injury's
+The Body↔Status seam — the only file allowed to know a part's `integrity` and an Injury's
 treatment state at once.
 
 ```
@@ -641,7 +653,13 @@ Per pass: resolve BP once → derive raw BP recovered over the elapsed `GameDura
 part reduce all active untreated Injury caps to **one effective ceiling** (the lowest; caps only
 restrict) → `applyBodyPartRecovery()` → report Injuries whose **entire** location has reached Max BP.
 
-Recovery works in exact-integrity space; destroyed parts are never restored by ordinary healing.
+It reads a manifestation and writes an **identity**: healing is recorded on continuity state, so a
+limb that heals stays healed through regeneration and through a change of form. Injuries are
+grouped by continuity key, and an identity the current form does not express is not asked whether
+it healed — dormant anatomy is not there to heal.
+
+Recovery works in exact-integrity space; destroyed parts are never restored by ordinary healing —
+that is `regenerateAnatomy`'s job, and it grows a limb back whole rather than merely present.
 It **reports** healed ids and never mutates `character.injuries`. `detectInjuryOverlap()` raises a
 non-blocking GM decision when a second Injury lands on anatomy carrying banked progress
 (default: preserve).
@@ -663,7 +681,7 @@ Technique granting a Skill, a Skill requiring a Trait). Custom definitions live 
 the engine holds them for the session and never persists them.
 
 **`resolveCharacter()`** — pure; twice gives the same answer. Returns
-`EngineResult<ResolvedCharacter>`: the body can fail to resolve (anatomy naming an unknown
+`EngineResult<ResolvedCharacter>`: the body can fail to resolve (a form naming an unknown
 BodyPartDefinition, a zero Effective Scale) and every stat below it depends on that. An
 ineligible sheet is *not* a failure — it resolves, and validation judges it.
 
@@ -673,7 +691,8 @@ authored character
   ↓ fixpoint expansion   follow grants until nothing new appears (MAX_EXPANSION_PASSES 32)
   ↓ resolveRuleEffects()
 attribute modifiers: stored → base → resolved
-  ↓ RESOLVE BODY         morphology → measurements → SC → strength → BP → capability → locomotion
+  ↓ RESOLVE BODY         form (+ replaceForm) → instantiate anatomy from continuity →
+                         morphology → measurements → SC → strength → BP → capability → locomotion
   ↓ STR from normalized SP; Size/Mass burden on AGI and DEX (once, from the FORM measurements)
   ↓ CharacterStats → Derived Attributes → movement
 ```
@@ -767,13 +786,13 @@ rather than an edit to the book.
 
 ---
 
-## 14 · Test coverage (39 files, 959 tests)
+## 14 · Test coverage (41 files, 1,023 tests)
 
 | Area | Files (tests) |
 |---|---|
-| Body | strength 56 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · damage 24 · selectors 24 · structure 22 · archive 20 · recovery 19 · effects 19 · morphology-layers 17 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **~467** |
+| Body | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · effects-integration 29 · damage 25 · **continuity 24** · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · effects 19 · recovery 19 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **528** |
 | Attributes | standard-modifier 39 · derived 35 · phase9-model 34 · physical 15 · propagation 7 — **130** |
-| Progression | 55 |
+| Progression | 58 |
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
 | Rules | requirements 25 · check-modifiers 22 · effects 16 — **63** |
@@ -848,7 +867,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 39 files, 959 tests
+cd packages/engine && npx vitest run     # 41 files, 1,023 tests
 ```
 
 ```bash
