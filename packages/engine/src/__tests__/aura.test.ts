@@ -26,8 +26,7 @@ import type { AuraOutput } from "../character/foundation/aura/types";
 // A neutral baseline with only CON/VIT varied, so each test states exactly
 // what it depends on.
 function attributesWith(con: number, vit: number): Attributes {
-  return {
-    str: 10, agi: 10, dex: 10, con, vit,
+  return { agi: 10, dex: 10, con, vit,
     int: 10, wis: 10, per: 10, spi: 10, cha: 10,
   };
 }

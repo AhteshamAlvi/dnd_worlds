@@ -1,9 +1,9 @@
 /*
- * Tests the ten Derived Attributes: their formulas, the shared rounding rule,
+ * Tests the ten Derived CharacterStats: their formulas, the shared rounding rule,
  * and the explanation/trace layer.
  *
  * The property under test throughout is that a Derived Attribute is nothing
- * but a rounded mean of resolved Attributes — no situational modifier, no
+ * but a rounded mean of resolved CharacterStats — no situational modifier, no
  * stored state, nothing a Trait can write to directly. Propagation from a
  * changed Attribute is covered in attribute-propagation.test.ts; check
  * modifiers in check-modifiers.test.ts.
@@ -18,7 +18,7 @@ import {
   explainDerivedAttribute,
   resolveAccuracy,
   resolveAcrobatics,
-  resolveAthletics,
+  resolveSpeed,
   resolveCombatAbility,
   resolveConcealment,
   resolveDerivedAttribute,
@@ -34,13 +34,14 @@ import {
   DERIVED_ATTRIBUTE_NAMES,
 } from "../character/foundation/attributes/derived/types";
 import { validateDerivedAttributes } from "../character/foundation/attributes/derived/validation";
-import type { Attributes } from "../character/foundation/attributes/types";
+import type { CharacterStats } from "../character/foundation/attributes/stats";
+import { createCharacterStats } from "../character/foundation/attributes/stats";
 
 import { TEST_ATTRIBUTES } from "./fixtures/character";
 
 // Every attribute distinct, so a formula reading the wrong key produces a
 // visibly wrong number rather than coincidentally the right one.
-const DISTINCT: Attributes = {
+const DISTINCT: CharacterStats = {
   str: 11,
   agi: 13,
   dex: 15,
@@ -55,7 +56,7 @@ const DISTINCT: Attributes = {
 
 describe("the ticket's baseline case", () => {
   it("gives every Derived Attribute 10 when every Attribute is 10", () => {
-    const derived = resolveDerivedAttributes(TEST_ATTRIBUTES);
+    const derived = resolveDerivedAttributes(createCharacterStats(TEST_ATTRIBUTES, 10));
 
     for (const name of DERIVED_ATTRIBUTE_NAMES) {
       expect(derived[name]).toBe(10);
@@ -64,7 +65,7 @@ describe("the ticket's baseline case", () => {
 
   it("gives every Derived Attribute a +0 standard modifier at 10", () => {
     const scores = resolveDerivedScores(
-      resolveDerivedAttributes(TEST_ATTRIBUTES),
+      resolveDerivedAttributes(createCharacterStats(TEST_ATTRIBUTES, 10)),
     );
 
     for (const name of DERIVED_ATTRIBUTE_NAMES) {
@@ -77,7 +78,7 @@ describe("the ten formulas", () => {
   it.each([
     // name, function, expected against DISTINCT
     ["combatAbility", resolveCombatAbility, 14], // (11+13+15+16+14)/5 = 13.8 -> 14
-    ["athletics", resolveAthletics, 12], //         (11+13)/2 = 12
+    ["speed", resolveSpeed, 12], //         (11+13)/2 = 12
     ["acrobatics", resolveAcrobatics, 14], //       (13+15)/2 = 14
     ["accuracy", resolveAccuracy, 16], //           (15+16)/2 = 15.5 -> 16
     ["detection", resolveDetection, 15], //         (16+14)/2 = 15
@@ -104,7 +105,7 @@ describe("the source table matches the Rulebook formulas", () => {
   // stops a silent formula change.
   it.each([
     ["combatAbility", ["str", "agi", "dex", "per", "wis"]],
-    ["athletics", ["str", "agi"]],
+    ["speed", ["str", "agi"]],
     ["acrobatics", ["agi", "dex"]],
     ["accuracy", ["dex", "per"]],
     ["detection", ["per", "wis"]],
@@ -145,11 +146,11 @@ describe("rounding", () => {
   });
 
   /*
-   * Derived Attributes can go negative: the 1-30 range binds stored scores
+   * Derived CharacterStats can go negative: the 1-30 range binds stored scores
    * only, and Conditions/injuries may drive a Resolved score below it.
    */
   it("handles negative scores, rounding toward positive infinity on a tie", () => {
-    const penalized: Attributes = { ...DISTINCT, dex: -15, wis: -14 };
+    const penalized: CharacterStats = { ...DISTINCT, dex: -15, wis: -14 };
 
     // (-15 + -14) / 2 = -14.5 -> -14, not -15
     expect(resolveConcealment(penalized)).toBe(-14);
@@ -205,8 +206,9 @@ describe("validation", () => {
 
   it("rejects a non-finite value", () => {
     const derived = {
+  str: 10,
       ...resolveDerivedAttributes(DISTINCT),
-      athletics: Number.NaN,
+      speed: Number.NaN,
     };
 
     const result = validateDerivedAttributes(derived);
@@ -214,13 +216,14 @@ describe("validation", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.errors.map((error) => error.code)).toContain(
-        "attributes.derived.athletics.non-finite",
+        "attributes.derived.speed.non-finite",
       );
     }
   });
 
   it("rejects a fractional value", () => {
     const derived = {
+  str: 10,
       ...resolveDerivedAttributes(DISTINCT),
       stamina: 14.5,
     };

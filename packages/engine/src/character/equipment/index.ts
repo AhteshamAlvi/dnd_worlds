@@ -53,10 +53,32 @@ export const ITEM_DEFINITIONS = {
     id: "gauntlets",
     name: "Reinforced Gauntlets",
     description: "Weighted gauntlets that lend force to a blow when worn.",
+    /*
+     * Deliberately effect-less, and this is the honest answer rather than a
+     * placeholder.
+     *
+     * These declared modifyResolvedAttribute on "str", which stopped being
+     * expressible the moment Strength became derived from the body — there is
+     * no stored str for an Effect to modify.
+     *
+     * The obvious replacement is also wrong. Body's design is explicit that
+     * "situational Skills, Techniques, maneuvers, EQUIPMENT LEVERAGE, and
+     * action bonuses do not alter Intrinsic Max SP; they apply later, to
+     * action resolution" — so modifyResolvedIntrinsicPhysicalForce would make
+     * a character permanently stronger for wearing gloves, which is the exact
+     * thing that rule exists to prevent.
+     *
+     * The correct home turns out to already exist. A modifyCheck effect IS an
+     * action-resolution bonus: it adds to the modifier of a kind of check
+     * without touching any score, which is exactly what "applies later, to
+     * action resolution" describes. Gauntlets make blows land harder while
+     * worn and make the wearer no stronger the moment they come off, and that
+     * is a situational modifier rather than a physical fact about the body.
+     */
     equippedEffects: [
       {
-        type: "modifyResolvedAttribute",
-        attribute: "str",
+        type: "modifyCheck",
+        check: { kind: "derivedAttribute", derivedAttribute: "combatAbility" },
         amount: 2,
       },
     ],

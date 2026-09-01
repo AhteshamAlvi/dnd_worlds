@@ -27,7 +27,7 @@ afterEach(() => {
 
 const STRENGTH_UP: Effect = {
   type: "modifyResolvedAttribute",
-  attribute: "str",
+  attribute: "agi",
   amount: 2,
 };
 
@@ -43,7 +43,7 @@ describe("effects are independent of their source", () => {
 
     expect(fromEach("trait")).toEqual(fromEach("item"));
     expect(fromEach("item")).toEqual(fromEach("condition"));
-    expect(fromEach("condition")).toEqual([{ attribute: "str", amount: 2 }]);
+    expect(fromEach("condition")).toEqual([{ attribute: "agi", amount: 2 }]);
   });
 
   it("keeps the source on every modifier it produces", () => {
@@ -157,8 +157,19 @@ describe("effects reaching a character", () => {
       }),
     );
 
-    expect(equipped.attributes.resolved.str).toBe(12);
-    expect(carried.attributes.resolved.str).toBe(10);
+    /*
+     * The gauntlets are a situational check modifier rather than a score
+     * change — equipment leverage belongs to action resolution, not to the
+     * body — so what equipping them changes is the modifier a Combat Ability
+     * check receives, not any Attribute.
+     */
+    expect(equipped.effects.checkModifiers).toHaveLength(1);
+    expect(equipped.effects.checkModifiers[0]?.amount).toBe(2);
+
+    expect(carried.effects.checkModifiers).toEqual([]);
+
+    expect(equipped.attributes.resolved.agi).toBe(10);
+    expect(carried.attributes.resolved.agi).toBe(10);
   });
 
   it("applies a possessed Item's effect without it being worn", () => {
@@ -250,7 +261,7 @@ describe("grant effects", () => {
         description: "A test Sub-trait.",
         parentTraitId: "spider-mutation",
         effects: [
-          { type: "modifyBaseAttribute", attribute: "str", amount: 1 },
+          { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
         ],
       });
     }
@@ -286,7 +297,7 @@ describe("grant effects", () => {
 
     // Both Sub-traits contributed, so the grant chain ran to the end rather
     // than stopping at the first level.
-    expect(resolved.attributes.base.str).toBe(12);
+    expect(resolved.attributes.base.agi).toBe(12);
     expect(resolved.capabilities.skills["wall-sticking"]).toBeDefined();
   });
 

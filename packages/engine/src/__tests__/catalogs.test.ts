@@ -288,7 +288,7 @@ describe("findCatalogReferenceIssues", () => {
       name: "Broken",
       description: "A test Trait.",
       effects: [
-        { type: "modifyBaseAttribute", attribute: "str", amount: Number.NaN },
+        { type: "modifyBaseAttribute", attribute: "agi", amount: Number.NaN },
       ],
     });
 

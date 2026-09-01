@@ -3,6 +3,12 @@
  * range a stored score is allowed to occupy, and how each attribute is
  * decided at character creation.
  *
+ * Strength is deliberately absent. It is not stored, not assignable from the
+ * starting array, and not buyable with an ordinary Stat Point — it is derived
+ * from the body, and buying it means solving for the Muscularity that doubles
+ * this body's normalized Strength Points. See attributes/strength.ts for the
+ * ladder and attributes/stats.ts for the Stat block that reads it back.
+ *
  * Source: Rulebook "01 Core Rules/Attributes". These describe *stored*
  * values — the numbers the player authored and progression writes, before
  * any Trait, Condition or Item has been applied. Anything that adjusts a
@@ -15,7 +21,6 @@ import type { AttributeKey } from "./types";
 // Iteration order for anything that walks every attribute in turn. The
 // `satisfies` clause makes a missing or misspelled key a compile error.
 export const ATTRIBUTE_KEYS = [
-  "str",
   "agi",
   "dex",
   "con",
@@ -42,7 +47,6 @@ export const ATTRIBUTE_MAX = 30;
  * Stat Points.
  */
 export const ORDINARY_ATTRIBUTE_KEYS = [
-  "str",
   "agi",
   "dex",
   "con",

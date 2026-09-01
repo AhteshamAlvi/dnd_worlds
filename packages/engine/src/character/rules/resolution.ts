@@ -792,9 +792,19 @@ export function meetsRequirement(
         requirement.layer,
       );
 
+      /*
+       * A derived-attribute requirement checked against attributes alone sees
+       * STR 0, because Strength is not stored. Requirements resolve before
+       * Body does, so the honest value is not available here — a requirement
+       * that depends on Strength must be expressed against the resolved
+       * character instead. Supplying 0 keeps the arithmetic defined rather
+       * than silently inventing a Strength nobody resolved.
+       */
       return (
-        resolveDerivedAttribute(requirement.derivedAttribute, attributes) >=
-        requirement.minimum
+        resolveDerivedAttribute(requirement.derivedAttribute, {
+          ...attributes,
+          str: 0,
+        }) >= requirement.minimum
       );
     }
 

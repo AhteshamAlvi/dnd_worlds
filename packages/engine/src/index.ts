@@ -239,10 +239,55 @@ export type {
 } from "./character/foundation/attributes/derived/resolution";
 
 export {
+  createCharacterStats,
+  CHARACTER_STAT_KEYS,
+  isCharacterStatKey,
+} from "./character/foundation/attributes/stats";
+export type {
+  CharacterStatKey,
+  CharacterStats,
+} from "./character/foundation/attributes/stats";
+
+export {
+  REFERENCE_NORMALIZED_BODY_SP as ATTRIBUTE_REFERENCE_NORMALIZED_BODY_SP,
+  REFERENCE_STRENGTH_POSITION,
+  ZERO_STRENGTH,
+  resolveDisplayedStrength,
+  resolveStrength,
+  resolveStrengthPosition,
+} from "./character/foundation/attributes/strength";
+
+export {
+  MASS_BURDEN_SENSITIVITY,
+  REFERENCE_BODY_MASS_KG,
+  REFERENCE_BODY_SIZE_L,
+  SIZE_BURDEN_SENSITIVITY,
+  applyPhysicalScaleSteps,
+  resolveLinearSizeRatio,
+  resolvePhysicalScaleBurden,
+  resolvePhysicalScaleSteps,
+  resolveRawPhysicalScaleBurden,
+} from "./character/foundation/attributes/physical";
+export type { PhysicalScaleBurden } from "./character/foundation/attributes/physical";
+
+export {
+  REFERENCE_MOVEMENT_RATE_MPS,
+  REFERENCE_SPEED_POSITION,
+  ROUND_DURATION_SECONDS,
+  SPEED_DOUBLING_INTERVAL,
+  STANDARD_ACTIONS_PER_TURN,
+  resolveActionMovementSeconds,
+  resolveMovement,
+  resolveMovementRateMps,
+  resolveMoveDistanceMeters,
+} from "./character/foundation/attributes/speed";
+export type { ResolvedMovement } from "./character/foundation/attributes/speed";
+
+export {
   DERIVED_ATTRIBUTE_SOURCES,
   resolveDerivedAttribute,
   resolveCombatAbility,
-  resolveAthletics,
+  resolveSpeed,
   resolveAcrobatics,
   resolveAccuracy,
   resolveDetection,

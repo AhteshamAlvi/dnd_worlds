@@ -436,21 +436,21 @@ describe("stat points", () => {
 
   describe("spendStatPoints", () => {
     it("raises the target Attribute and debits the balance", () => {
-      const result = spendStatPoints(TEST_ATTRIBUTES, 5, "str", 2);
+      const result = spendStatPoints(TEST_ATTRIBUTES, 5, "agi", 2);
 
       expect(result.success).toBe(true);
       if (!result.success) return;
 
-      expect(result.payload.attributes.str).toBe(12);
+      expect(result.payload.attributes.agi).toBe(12);
       expect(result.payload.remainingStatPoints).toBe(3);
       expect(result.payload.previousScore).toBe(10);
       expect(result.payload.newScore).toBe(12);
     });
 
     it("does not mutate the Attributes object it was given", () => {
-      spendStatPoints(TEST_ATTRIBUTES, 5, "str", 2);
+      spendStatPoints(TEST_ATTRIBUTES, 5, "agi", 2);
 
-      expect(TEST_ATTRIBUTES.str).toBe(10);
+      expect(TEST_ATTRIBUTES.agi).toBe(10);
     });
 
     it("defaults to spending a single point", () => {
@@ -480,7 +480,7 @@ describe("stat points", () => {
     });
 
     it("refuses to spend more points than the character has", () => {
-      const result = spendStatPoints(TEST_ATTRIBUTES, 1, "str", 2);
+      const result = spendStatPoints(TEST_ATTRIBUTES, 1, "agi", 2);
 
       expect(result.success).toBe(false);
       if (!result.success) {
@@ -492,9 +492,9 @@ describe("stat points", () => {
 
     it("refuses to spend past the Base Attribute cap", () => {
       const result = spendStatPoints(
-        { ...TEST_ATTRIBUTES, str: 29 },
+        { ...TEST_ATTRIBUTES, agi: 29 },
         5,
-        "str",
+        "agi",
         2,
       );
 
@@ -534,7 +534,7 @@ describe("stat points", () => {
 
     it("does not touch or require an ordinary Stat Point balance", () => {
       const result = applyLimitedStatPointGrant(TEST_ATTRIBUTES, {
-        attribute: "str",
+        attribute: "agi",
         amount: 1,
       });
 
@@ -546,8 +546,8 @@ describe("stat points", () => {
 
     it("still refuses to exceed the Base Attribute cap", () => {
       const result = applyLimitedStatPointGrant(
-        { ...TEST_ATTRIBUTES, str: 29 },
-        { attribute: "str", amount: 2 },
+        { ...TEST_ATTRIBUTES, agi: 29 },
+        { attribute: "agi", amount: 2 },
       );
 
       expect(result.success).toBe(false);
@@ -560,7 +560,7 @@ describe("stat points", () => {
 
     it("rejects a zero or negative grant amount", () => {
       const result = applyLimitedStatPointGrant(TEST_ATTRIBUTES, {
-        attribute: "str",
+        attribute: "agi",
         amount: 0,
       });
 

@@ -1,5 +1,6 @@
 /*
- * The ten character attributes, and the three stages a score passes through.
+ * The nine stored character attributes, and the three stages a score passes
+ * through.
  *
  * Source: Rulebook "01 Core Rules/Attributes". The legal range lives in
  * base.ts and is enforced in validation.ts, not by these types — a number out
@@ -7,9 +8,15 @@
  * error in the workbench.
  */
 
-// The ten attribute scores every character carries.
+/*
+ * The nine attribute scores every character stores.
+ *
+ * Strength is absent. It is derived from the body rather than authored, so it
+ * has no stored value to hold here — see attributes/strength.ts. What reads
+ * STR alongside these is CharacterStats in attributes/stats.ts, which is this
+ * plus the one derived number.
+ */
 export interface Attributes {
-  readonly str: number;
   readonly agi: number;
   readonly dex: number;
   readonly con: number;

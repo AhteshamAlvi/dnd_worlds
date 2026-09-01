@@ -24,6 +24,7 @@ import { DERIVED_ATTRIBUTE_NAMES } from "../character/foundation/attributes/deri
 import type { Attributes } from "../character/foundation/attributes/types";
 
 import { TEST_ATTRIBUTES } from "./fixtures/character";
+import { createCharacterStats } from "../character/foundation/attributes/stats";
 
 describe("the ladder printed in the Rulebook", () => {
   it.each([
@@ -102,7 +103,7 @@ describe("one ladder for both kinds of score", () => {
 
     const attributeScores = resolveAttributeScores(attributes);
     const derivedScores = resolveDerivedScores(
-      resolveDerivedAttributes(attributes),
+      resolveDerivedAttributes(createCharacterStats(attributes, 10)),
     );
 
     // AGI 17 and Acrobatics round((17+17)/2) = 17 are the same number, so
@@ -134,7 +135,7 @@ describe("ResolvedScore bundlers", () => {
 
   it("covers every Derived Attribute", () => {
     const scores = resolveDerivedScores(
-      resolveDerivedAttributes(TEST_ATTRIBUTES),
+      resolveDerivedAttributes(createCharacterStats(TEST_ATTRIBUTES, 10)),
     );
 
     expect(Object.keys(scores).sort()).toEqual(
@@ -144,7 +145,6 @@ describe("ResolvedScore bundlers", () => {
 
   it("agrees with deriveStandardModifier for every Attribute", () => {
     const attributes: Attributes = {
-      str: 3,
       agi: 30,
       dex: 15,
       con: 8,

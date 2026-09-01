@@ -12,7 +12,6 @@ import { createCharacterId } from "../../character/id";
 import type { Character } from "../../character/types";
 
 export const TEST_ATTRIBUTES: Attributes = {
-  str: 10,
   agi: 10,
   dex: 10,
   con: 10,

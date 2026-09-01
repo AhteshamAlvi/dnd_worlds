@@ -44,14 +44,19 @@ export interface DerivedAttributes {
   readonly combatAbility: number;
 
   /**
-   * General forceful physical capability derived from:
+   * Ordinary combat movement capability derived from:
    *
    * STR, AGI
    *
-   * Used for movement-related physical activity such as running,
-   * climbing, jumping, swimming, and similar exertion.
+   * Converts to an actual velocity — see attributes/speed.ts. Speed 10 is the
+   * Standard Human at 10/3 m/s, and every +3 doubles it.
+   *
+   * This is the INTACT capability. What a character can currently manage is
+   * that rate multiplied by their locomotor condition, which is resolved
+   * separately: a Speed 10 character with a ruined leg still has Speed 10 and
+   * simply cannot use all of it.
    */
-  readonly athletics: number;
+  readonly speed: number;
 
   /**
    * General body-control capability derived from:
@@ -141,7 +146,7 @@ export type DerivedAttributeName = keyof DerivedAttributes;
  */
 export const DERIVED_ATTRIBUTE_NAMES = [
   "combatAbility",
-  "athletics",
+  "speed",
   "acrobatics",
   "accuracy",
   "detection",

@@ -105,6 +105,35 @@ import {
 
 import type { Character } from "./types";
 
+import { listDefinitions } from "./catalogs";
+import { resolveBody } from "./foundation/body/resolution";
+import { resolveAge } from "./foundation/body/age/resolution";
+import { NEUTRAL_MORPHOLOGY } from "./foundation/body/types";
+import { HUMAN_BODY_PROFILE } from "./foundation/body/human-profile";
+import type { SpeciesBodyProfile } from "./foundation/body/species-profile";
+import {
+  applyPhysicalScaleSteps,
+  resolvePhysicalScaleBurden,
+} from "./foundation/attributes/physical";
+import { resolveStrength } from "./foundation/attributes/strength";
+import { createCharacterStats } from "./foundation/attributes/stats";
+import { resolveMovement } from "./foundation/attributes/speed";
+import type { Attributes } from "./foundation/attributes/types";
+import type { CharacterStats } from "./foundation/attributes/stats";
+import type { PhysicalScaleBurden } from "./foundation/attributes/physical";
+import type { ResolvedMovement } from "./foundation/attributes/speed";
+import type { ResolvedBody } from "./foundation/body/resolution";
+import type { EngineTrace } from "../infrastructure/trace";
+
+/*
+ * The age a character resolves at when none is authored.
+ *
+ * A Species age curve holds flat outside its anchors, so this only decides
+ * where an unstated age sits on the curve — and "grown up" is the assumption
+ * that surprises nobody.
+ */
+const MATURE_ADULT_AGE = 20;
+
 /**
  * A character with everything derivable derived.
  *
@@ -130,6 +159,29 @@ export interface ResolvedCharacter {
    * by moving the number Acrobatics is calculated from — see
    * foundation/attributes/derived/types.ts.
    */
+  /*
+   * The physically-resolved stat block. Attributes after the Size/Mass burden
+   * has moved AGI and DEX, plus the Strength derived from the body — which is
+   * what every derived attribute was actually computed from.
+   */
+  readonly stats: CharacterStats;
+
+  /** Everything physical, and the trace explaining it. */
+  readonly body: ResolvedBody;
+  readonly bodyTrace: EngineTrace;
+
+  readonly physicalScaleBurden: PhysicalScaleBurden;
+
+  /** Unclamped ladder position. Displayed Strength is stats.str. */
+  readonly strengthPosition: number | null;
+
+  /*
+   * Both movement numbers. baseMovementRateMps is what an intact body of this
+   * Speed manages; currentMovementRateMps is what this one can. A GM seeing
+   * only one cannot explain why a character moved 5 metres instead of 10.
+   */
+  readonly movement: ResolvedMovement;
+
   readonly derivedAttributes: DerivedAttributes;
 
   /** Each Derived Attribute with its standard modifier. */
@@ -171,6 +223,30 @@ const MAX_EXPANSION_PASSES = 32;
  * Species come with their ancestry expanded, because being a Firebender means
  * being a Human and any Effects on Human apply to them too.
  */
+/*
+ * The body profile a character's ancestry resolves to.
+ *
+ * Walks the ancestry for the first Species declaring one, so a Sub-species
+ * that is physically identical to its parent inherits rather than repeating —
+ * the six Bender lineages say nothing about bodies and get the Human profile.
+ *
+ * A character with no Species at all still has a body, so the Human standard
+ * stands in rather than resolution failing. Body is physics; every character
+ * has one.
+ */
+function resolveSpeciesBodyProfile(
+  character: Character,
+): SpeciesBodyProfile {
+  for (const speciesId of collectSpeciesAncestry(character.species ?? [])) {
+    const body = getSpeciesDefinition(speciesId)?.body;
+
+    if (body !== undefined) return body;
+  }
+
+  return HUMAN_BODY_PROFILE;
+}
+
+
 function seedSources(character: Character): readonly RuleEffectSource[] {
   const sources: RuleEffectSource[] = [];
 
@@ -375,12 +451,112 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
   );
 
   /*
-   * Derived Attributes come off the RESOLVED layer, which is what makes
-   * propagation free: a Trait's +2 AGI is already in attributes.resolved by
-   * this point, so Athletics, Acrobatics and Combat Ability all move with it
-   * without a second propagation path that could fall out of step.
+   * BODY RESOLVES BETWEEN ATTRIBUTES AND DERIVED ATTRIBUTES.
+   *
+   * It has to. Base AGI and DEX depend on the body's Size and Mass, and
+   * Strength is derived from its Structural Capacity — so the physical
+   * pipeline sits in the middle of the Attribute pipeline rather than beside
+   * it.
+   *
+   * The order is an ordering, not a cycle. Constitution is STORED, so Body
+   * Points can read it the moment stored attributes exist; and Structural
+   * Capacity, Intrinsic SP and normalized SP never read Constitution at all,
+   * so Strength does not wait on anything Body Points produce. Nothing in
+   * body/ reads a Derived Attribute, and nothing in body/ imports from
+   * attributes/.
+   *
+   *   stored attributes (CON)
+   *     -> Body: morphology, measurements, SC, SP, BP, capability, locomotion
+   *     -> STR from normalized SP, physical burden on AGI/DEX
+   *     -> Derived Attributes, which may now read STR
    */
-  const derivedAttributes = resolveDerivedAttributes(attributes.resolved);
+  const speciesBody = resolveSpeciesBodyProfile(character);
+
+  const age = speciesBody.ageProfile;
+
+  const resolvedAge =
+    age === undefined
+      ? undefined
+      : resolveAge(age, character.details?.age ?? MATURE_ADULT_AGE);
+
+  const neutralSource = { global: NEUTRAL_MORPHOLOGY, local: {} };
+
+  const body = resolveBody({
+    anatomy: character.body.anatomy,
+    referenceForm: speciesBody.referenceForm,
+    definitions: listDefinitions("body-part"),
+    specialPointDefinitions: listDefinitions("special-point"),
+
+    morphology: {
+      species: {
+        global: speciesBody.globalMorphology,
+        local: speciesBody.localMorphology,
+      },
+      age:
+        resolvedAge === undefined
+          ? neutralSource
+          : {
+              global: resolvedAge.globalMorphology,
+              local: resolvedAge.localMorphology,
+            },
+      character: {
+        global: character.body.globalMorphology,
+        local: character.body.localMorphology,
+      },
+      strengthDevelopmentMuscularity:
+        character.body.strengthDevelopmentMuscularity,
+      effectLayers: [],
+    },
+
+    speciesStandardScale: speciesBody.standardScale,
+    ageScale: resolvedAge?.scale ?? 1,
+    characterScale: character.body.characterScale,
+    constitution: attributes.resolved.con,
+    adiposeTissueDensityKgPerL: speciesBody.adiposeTissueDensityKgPerL,
+    anatomicalPoints: character.body.anatomicalPoints,
+  });
+
+  if (!body.success) {
+    throw new Error("Body resolution failed during character resolution.");
+  }
+
+  const resolvedBody = body.payload;
+
+  /*
+   * Size and Mass reach AGI and DEX here, once, and never again. Every derived
+   * stat that consumes AGI or DEX inherits the effect for free; reapplying it
+   * inside Acrobatics or Accuracy would charge a large creature twice.
+   *
+   * The FORM measurements are used, never the present ones — otherwise losing
+   * an Arm would make a character lighter and therefore quicker.
+   */
+  const physicalBurden = resolvePhysicalScaleBurden(
+    resolvedBody.measurements.form,
+  );
+
+  const physicalAttributes: Attributes = {
+    ...attributes.resolved,
+    agi: applyPhysicalScaleSteps(attributes.resolved.agi, physicalBurden.steps),
+    dex: applyPhysicalScaleSteps(attributes.resolved.dex, physicalBurden.steps),
+  };
+
+  const strength = resolveStrength(resolvedBody.strength.normalizedBodySP);
+
+  const stats = createCharacterStats(physicalAttributes, strength.displayed);
+
+  /*
+   * Derived Attributes come off the physically-resolved stat block, which is
+   * what makes propagation free: a Trait's +2 AGI and a Giant's -4 physical
+   * burden are both already in there, so Speed, Acrobatics, Combat Ability,
+   * Accuracy and Concealment all move with them without a second propagation
+   * path that could fall out of step.
+   */
+  const derivedAttributes = resolveDerivedAttributes(stats);
+
+  const movement = resolveMovement(
+    (stats.str + stats.agi) / 2,
+    resolvedBody.locomotion.fraction,
+  );
 
   const traits = resolveTraits(character.traits ?? [], resolved.traitGrants);
 
@@ -395,6 +571,18 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
     character,
     attributes,
     attributeScores: resolveAttributeScores(attributes.resolved),
+
+    /*
+     * The physically-resolved stat block: attributes after the Size/Mass
+     * burden, plus the Strength that fell out of the body. This is what
+     * derived attributes were computed from and what a sheet should show.
+     */
+    stats,
+    body: resolvedBody,
+    bodyTrace: body.trace,
+    physicalScaleBurden: physicalBurden,
+    strengthPosition: strength.position,
+    movement,
 
     derivedAttributes,
     derivedScores: resolveDerivedScores(derivedAttributes),

@@ -285,10 +285,10 @@ describe("status resolution respects stage and expiry", () => {
       ],
       treatmentEffects: {
         untreated: [
-          { type: "modifyResolvedAttribute", attribute: "str", amount: -1 },
+          { type: "modifyResolvedAttribute", attribute: "agi", amount: -1 },
         ],
         treated: [
-          { type: "modifyResolvedAttribute", attribute: "str", amount: 0 },
+          { type: "modifyResolvedAttribute", attribute: "agi", amount: 0 },
         ],
       },
     });
@@ -304,7 +304,7 @@ describe("status resolution respects stage and expiry", () => {
 
     expect(untreated[0]?.effects).toEqual([
       { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
-      { type: "modifyResolvedAttribute", attribute: "str", amount: -1 },
+      { type: "modifyResolvedAttribute", attribute: "agi", amount: -1 },
     ]);
 
     const treated = collectInjuryEffectSources([
@@ -318,7 +318,7 @@ describe("status resolution respects stage and expiry", () => {
 
     expect(treated[0]?.effects).toEqual([
       { type: "modifyResolvedAttribute", attribute: "dex", amount: -1 },
-      { type: "modifyResolvedAttribute", attribute: "str", amount: 0 },
+      { type: "modifyResolvedAttribute", attribute: "agi", amount: 0 },
     ]);
   });
 

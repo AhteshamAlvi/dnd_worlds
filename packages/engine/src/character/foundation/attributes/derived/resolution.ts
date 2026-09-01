@@ -33,11 +33,8 @@ import {
 } from "../../../../infrastructure/trace";
 
 import { deriveStandardModifier } from "../resolution";
-import type {
-  AttributeKey,
-  Attributes,
-  ResolvedScore,
-} from "../types";
+import type { ResolvedScore } from "../types";
+import type { CharacterStatKey, CharacterStats } from "../stats";
 import {
   DERIVED_ATTRIBUTE_NAMES,
   type DerivedAttributeName,
@@ -53,7 +50,7 @@ import {
  */
 export const DERIVED_ATTRIBUTE_SOURCES = {
   combatAbility: ["str", "agi", "dex", "per", "wis"],
-  athletics: ["str", "agi"],
+  speed: ["str", "agi"],
   acrobatics: ["agi", "dex"],
   accuracy: ["dex", "per"],
   detection: ["per", "wis"],
@@ -63,7 +60,7 @@ export const DERIVED_ATTRIBUTE_SOURCES = {
   willpower: ["wis", "spi"],
   intimidation: ["cha", "spi"],
 } as const satisfies Readonly<
-  Record<DerivedAttributeName, readonly AttributeKey[]>
+  Record<DerivedAttributeName, readonly CharacterStatKey[]>
 >;
 
 
@@ -76,11 +73,11 @@ export const DERIVED_ATTRIBUTE_SOURCES = {
  */
 export function resolveDerivedAttribute(
   name: DerivedAttributeName,
-  attributes: Attributes,
+  attributes: CharacterStats,
 ): number {
   return roundedAverage(
     ...DERIVED_ATTRIBUTE_SOURCES[name].map(
-      (key: AttributeKey) => attributes[key],
+      (key: CharacterStatKey) => attributes[key],
     ),
   );
 }
@@ -93,20 +90,29 @@ export function resolveDerivedAttribute(
  *
  *   round((STR + AGI + DEX + PER + WIS) / 5)
  */
-export function resolveCombatAbility(attributes: Attributes): number {
+export function resolveCombatAbility(attributes: CharacterStats): number {
   return resolveDerivedAttribute("combatAbility", attributes);
 }
 
 
 /**
- * Resolve Athletics.
+ * Resolve Speed.
  *
  * Formula:
  *
  *   round((STR + AGI) / 2)
+ *
+ * Speed replaced Speed, which averaged the same two Stats but described a
+ * vague "forceful physical capability". Speed says one thing and converts to
+ * metres per second — see attributes/speed.ts — so a Move covers a distance
+ * rather than a feeling.
+ *
+ * Size and Mass are NOT applied here. They have already moved AGI through the
+ * physical base resolution, and applying them again would charge a large
+ * creature twice for being large.
  */
-export function resolveAthletics(attributes: Attributes): number {
-  return resolveDerivedAttribute("athletics", attributes);
+export function resolveSpeed(attributes: CharacterStats): number {
+  return resolveDerivedAttribute("speed", attributes);
 }
 
 
@@ -117,7 +123,7 @@ export function resolveAthletics(attributes: Attributes): number {
  *
  *   round((AGI + DEX) / 2)
  */
-export function resolveAcrobatics(attributes: Attributes): number {
+export function resolveAcrobatics(attributes: CharacterStats): number {
   return resolveDerivedAttribute("acrobatics", attributes);
 }
 
@@ -129,7 +135,7 @@ export function resolveAcrobatics(attributes: Attributes): number {
  *
  *   round((DEX + PER) / 2)
  */
-export function resolveAccuracy(attributes: Attributes): number {
+export function resolveAccuracy(attributes: CharacterStats): number {
   return resolveDerivedAttribute("accuracy", attributes);
 }
 
@@ -145,7 +151,7 @@ export function resolveAccuracy(attributes: Attributes): number {
  * performing the Detection check, as modifyCheck Effects scoped to this
  * Derived Attribute.
  */
-export function resolveDetection(attributes: Attributes): number {
+export function resolveDetection(attributes: CharacterStats): number {
   return resolveDerivedAttribute("detection", attributes);
 }
 
@@ -161,7 +167,7 @@ export function resolveDetection(attributes: Attributes): number {
  * performing the Concealment check, as modifyCheck Effects scoped to this
  * Derived Attribute.
  */
-export function resolveConcealment(attributes: Attributes): number {
+export function resolveConcealment(attributes: CharacterStats): number {
   return resolveDerivedAttribute("concealment", attributes);
 }
 
@@ -173,7 +179,7 @@ export function resolveConcealment(attributes: Attributes): number {
  *
  *   round((INT + WIS + PER) / 3)
  */
-export function resolveInvestigation(attributes: Attributes): number {
+export function resolveInvestigation(attributes: CharacterStats): number {
   return resolveDerivedAttribute("investigation", attributes);
 }
 
@@ -185,7 +191,7 @@ export function resolveInvestigation(attributes: Attributes): number {
  *
  *   round((CON + VIT) / 2)
  */
-export function resolveStamina(attributes: Attributes): number {
+export function resolveStamina(attributes: CharacterStats): number {
   return resolveDerivedAttribute("stamina", attributes);
 }
 
@@ -197,7 +203,7 @@ export function resolveStamina(attributes: Attributes): number {
  *
  *   round((WIS + SPI) / 2)
  */
-export function resolveWillpower(attributes: Attributes): number {
+export function resolveWillpower(attributes: CharacterStats): number {
   return resolveDerivedAttribute("willpower", attributes);
 }
 
@@ -209,7 +215,7 @@ export function resolveWillpower(attributes: Attributes): number {
  *
  *   round((CHA + SPI) / 2)
  */
-export function resolveIntimidation(attributes: Attributes): number {
+export function resolveIntimidation(attributes: CharacterStats): number {
   return resolveDerivedAttribute("intimidation", attributes);
 }
 
@@ -223,7 +229,7 @@ export function resolveIntimidation(attributes: Attributes): number {
  * and equipped Item.
  */
 export function resolveDerivedAttributes(
-  attributes: Attributes,
+  attributes: CharacterStats,
 ): DerivedAttributes {
   const derived = {} as Record<DerivedAttributeName, number>;
 
@@ -263,7 +269,7 @@ export function resolveDerivedScores(
  * One contributing Attribute's part in a Derived Attribute.
  */
 export interface DerivedAttributeContribution {
-  readonly attribute: AttributeKey;
+  readonly attribute: CharacterStatKey;
   readonly score: number;
 }
 
@@ -271,7 +277,7 @@ export interface DerivedAttributeContribution {
 /**
  * The full arithmetic behind one Derived Attribute.
  *
- * "Why is my Athletics 15" is answerable only with the contributing scores,
+ * "Why is my Speed 15" is answerable only with the contributing scores,
  * not the total — the same reason explainAttribute exists for Attributes.
  */
 export interface DerivedAttributeExplanation {
@@ -292,9 +298,9 @@ export interface DerivedAttributeExplanation {
  */
 export function explainDerivedAttribute(
   name: DerivedAttributeName,
-  attributes: Attributes,
+  attributes: CharacterStats,
 ): DerivedAttributeExplanation {
-  const sources: readonly AttributeKey[] = DERIVED_ATTRIBUTE_SOURCES[name];
+  const sources: readonly CharacterStatKey[] = DERIVED_ATTRIBUTE_SOURCES[name];
 
   const contributions = sources.map((attribute) => ({
     attribute,
@@ -327,7 +333,7 @@ export function explainDerivedAttribute(
  */
 export function createDerivedAttributeTraceNode(
   name: DerivedAttributeName,
-  attributes: Attributes,
+  attributes: CharacterStats,
 ): TraceNode {
   const explanation = explainDerivedAttribute(name, attributes);
 
@@ -356,7 +362,7 @@ export function createDerivedAttributeTraceNode(
  * One trace node per Derived Attribute, beneath a single parent.
  */
 export function createDerivedAttributeResolutionTrace(
-  attributes: Attributes,
+  attributes: CharacterStats,
 ): TraceNode {
   return createTraceNode({
     id: "character.attributes.derived.resolve",

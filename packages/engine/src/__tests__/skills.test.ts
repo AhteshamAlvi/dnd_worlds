@@ -250,7 +250,7 @@ describe("skill mastery: depth", () => {
           rank: 3,
           description: "Adhesion under much greater force.",
           effects: [
-            { type: "modifyResolvedAttribute", attribute: "str", amount: 1 },
+            { type: "modifyResolvedAttribute", attribute: "agi", amount: 1 },
           ],
         },
       ],
@@ -281,8 +281,7 @@ describe("skill requirements", () => {
   const context = (
     overrides: Partial<Parameters<typeof satisfiesSkillRequirements>[1]> = {},
   ) => {
-    const attributes = {
-      str: 10, agi: 10, dex: 10, con: 10, vit: 10,
+    const attributes = { agi: 10, dex: 10, con: 10, vit: 10,
       int: 10, wis: 10, per: 10, spi: 10, cha: 10,
     };
 

@@ -178,7 +178,9 @@ describe("attribute provenance", () => {
       resolved.resolvedAttributeModifiers,
     );
 
-    expect(node.children).toHaveLength(10);
+    // Nine stored attributes. Strength is derived from the body and has no
+    // stored value to trace a provenance for.
+    expect(node.children).toHaveLength(9);
 
     const dex = node.children.find(
       (child) => child.id === "character.attributes.dex.resolve",
@@ -207,13 +209,13 @@ describe("attribute provenance", () => {
         {
           rank: 1,
           effects: [
-            { type: "modifyBaseAttribute", attribute: "str", amount: 1 },
+            { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
           ],
         },
         {
           rank: 2,
           effects: [
-            { type: "modifyBaseAttribute", attribute: "str", amount: 1 },
+            { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
           ],
         },
       ],
@@ -224,7 +226,7 @@ describe("attribute provenance", () => {
     );
 
     const explanation = explainAttribute(
-      "str",
+      "agi",
       resolved.attributes,
       resolved.baseAttributeModifiers,
       resolved.resolvedAttributeModifiers,
@@ -240,7 +242,7 @@ describe("attribute provenance", () => {
     );
 
     const str = node.children.find(
-      (child) => child.id === "character.attributes.str.resolve",
+      (child) => child.id === "character.attributes.agi.resolve",
     );
 
     const contributions = Object.entries(str?.inputs ?? {}).filter(([key]) =>

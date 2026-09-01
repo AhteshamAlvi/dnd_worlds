@@ -37,11 +37,7 @@ import {
 } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
-import { STANDARD_HUMANOID_REFERENCE_FORM } from "../foundation/body/anatomy/standard-humanoid";
-import { HUMAN_AGE_PROFILE } from "../foundation/body/age/human-age-profile";
-import { DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L } from "../foundation/body/measurements/resolution";
-import { HUMAN_STATURE_BANDS } from "../foundation/body/stature/human-stature-bands";
-import { NEUTRAL_MORPHOLOGY } from "../foundation/body/types";
+import { HUMAN_BODY_PROFILE } from "../foundation/body/human-profile";
 import type { SpeciesBodyProfile } from "../foundation/body/species-profile";
 
 /**
@@ -104,15 +100,7 @@ export const SPECIES_DEFINITIONS = {
     id: "human",
     name: "Human",
     description: "A member of the human species.",
-    body: {
-      standardScale: 1,
-      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
-      globalMorphology: NEUTRAL_MORPHOLOGY,
-      localMorphology: {},
-      stature: HUMAN_STATURE_BANDS,
-      adiposeTissueDensityKgPerL: DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
-      ageProfile: HUMAN_AGE_PROFILE,
-    },
+    body: HUMAN_BODY_PROFILE,
   },
 
   /*

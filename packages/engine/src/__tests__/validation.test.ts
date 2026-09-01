@@ -36,7 +36,7 @@ describe("validateAttributes", () => {
   it("rejects an attribute below the minimum", () => {
     const result = validateAttributes({
       ...TEST_ATTRIBUTES,
-      str: 0,
+      agi: 0,
     });
 
     expect(result.success).toBe(false);
@@ -345,7 +345,7 @@ describe("rule validation", () => {
   it("accepts well-formed rules", () => {
     expect(
       findRuleValidationIssues(
-        [{ type: "modifyBaseAttribute", attribute: "str", amount: 2 }],
+        [{ type: "modifyBaseAttribute", attribute: "agi", amount: 2 }],
         [{ type: "hasTrait", traitId: "firebending" }],
       ),
     ).toEqual([]);
@@ -356,7 +356,7 @@ describe("rule validation", () => {
       findEffectsValidationIssues([
         {
           type: "modifyResolvedAttribute",
-          attribute: "str",
+          attribute: "agi",
           amount: Number.POSITIVE_INFINITY,
         },
       ]),

@@ -30,8 +30,7 @@ afterEach(() => {
   clearCustomDefinitions();
 });
 
-const FLAT_ATTRIBUTES = {
-  str: 10, agi: 10, dex: 10, con: 10, vit: 10,
+const FLAT_ATTRIBUTES = { agi: 10, dex: 10, con: 10, vit: 10,
   int: 10, wis: 10, per: 10, spi: 10, cha: 10,
 };
 
@@ -79,7 +78,7 @@ describe("attribute requirements", () => {
   it("treats the minimum as inclusive", () => {
     expect(
       meetsRequirement(
-        { type: "attributeMinimum", attribute: "str", layer: "base", minimum: 10 },
+        { type: "attributeMinimum", attribute: "agi", layer: "base", minimum: 10 },
         contextWith(),
       ),
     ).toBe(true);
@@ -88,26 +87,26 @@ describe("attribute requirements", () => {
 
 describe("derived attribute requirements", () => {
   it("checks the Derived Attribute calculated from the layer it names", () => {
-    // Athletics = round((STR + AGI) / 2), so 16/16 -> 16 and 10/10 -> 10.
+    // Acrobatics = round((AGI + DEX) / 2), so 16/16 -> 16 and 10/10 -> 10.
     const context = contextWith({
       attributes: {
-        stored: { ...FLAT_ATTRIBUTES, str: 16, agi: 16 },
-        base: { ...FLAT_ATTRIBUTES, str: 16, agi: 16 },
+        stored: { ...FLAT_ATTRIBUTES, agi: 16, dex: 16 },
+        base: { ...FLAT_ATTRIBUTES, agi: 16, dex: 16 },
         resolved: FLAT_ATTRIBUTES,
       },
     });
 
-    const athleticsAtLeast14 = (
+    const acrobaticsAtLeast14 = (
       layer: "stored" | "base" | "resolved",
     ): Requirement => ({
       type: "derivedAttributeMinimum",
-      derivedAttribute: "athletics",
+      derivedAttribute: "acrobatics",
       layer,
       minimum: 14,
     });
 
-    expect(meetsRequirement(athleticsAtLeast14("base"), context)).toBe(true);
-    expect(meetsRequirement(athleticsAtLeast14("resolved"), context)).toBe(
+    expect(meetsRequirement(acrobaticsAtLeast14("base"), context)).toBe(true);
+    expect(meetsRequirement(acrobaticsAtLeast14("resolved"), context)).toBe(
       false,
     );
   });
@@ -124,7 +123,6 @@ describe("derived attribute requirements", () => {
     //                = round((18 + 18 + 18 + 6 + 6) / 5) = round(13.2) = 13
     const lopsided = {
       ...FLAT_ATTRIBUTES,
-      str: 18,
       agi: 18,
       dex: 18,
       per: 6,
@@ -143,7 +141,7 @@ describe("derived attribute requirements", () => {
       meetsRequirement(
         {
           type: "derivedAttributeMinimum",
-          derivedAttribute: "combatAbility",
+          derivedAttribute: "acrobatics",
           layer: "base",
           minimum: 12,
         },
@@ -157,7 +155,7 @@ describe("derived attribute requirements", () => {
       meetsRequirement(
         {
           type: "all",
-          requirements: (["str", "agi", "dex", "per", "wis"] as const).map(
+          requirements: (["agi", "agi", "dex", "per", "wis"] as const).map(
             (attribute) => ({
               type: "attributeMinimum" as const,
               attribute,
@@ -208,7 +206,7 @@ describe("derived attribute requirements", () => {
       requirements: [
         {
           type: "derivedAttributeMinimum",
-          derivedAttribute: "combatAbility",
+          derivedAttribute: "acrobatics",
           layer: "base",
           minimum: 14,
         },
@@ -228,7 +226,7 @@ describe("derived attribute requirements", () => {
     // Five 15s average to 15.
     const veteran = resolveCharacter(
       createTestCharacter({
-        attributes: { str: 15, agi: 15, dex: 15, per: 15, wis: 15 },
+        attributes: { agi: 15, dex: 15, per: 15, wis: 15 },
       }),
     );
 
@@ -544,5 +542,54 @@ describe("requirements against a real character", () => {
         resolved.requirementContext,
       ),
     ).toBe(true);
+  });
+});
+
+
+describe("derived requirements and Body-derived Strength", () => {
+  /*
+   * A documented limitation rather than a bug.
+   *
+   * Requirements resolve during grant expansion, which happens BEFORE the body
+   * does — a Trait can grant another Trait, and what a body is depends on what
+   * Traits ended up on it. Strength is derived from that body, so it genuinely
+   * does not exist yet at requirement time.
+   *
+   * The requirement layer therefore evaluates STR as 0 rather than inventing a
+   * value nobody resolved. Content that needs to gate on Strength must gate on
+   * the resolved character instead, where the real number exists.
+   */
+  it("sees Strength as 0 and says so consistently", () => {
+    const high = { ...FLAT_ATTRIBUTES, agi: 30, dex: 30, per: 30, wis: 30 };
+
+    const context = contextWith({
+      attributes: { stored: high, base: high, resolved: high },
+    });
+
+    // combatAbility averages STR, AGI, DEX, PER, WIS. With four 30s and a
+    // STR of 0 the mean is 24, not 30.
+    expect(
+      meetsRequirement(
+        {
+          type: "derivedAttributeMinimum",
+          derivedAttribute: "combatAbility",
+          layer: "resolved",
+          minimum: 24,
+        },
+        context,
+      ),
+    ).toBe(true);
+
+    expect(
+      meetsRequirement(
+        {
+          type: "derivedAttributeMinimum",
+          derivedAttribute: "combatAbility",
+          layer: "resolved",
+          minimum: 25,
+        },
+        context,
+      ),
+    ).toBe(false);
   });
 });

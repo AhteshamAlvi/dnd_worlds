@@ -61,12 +61,18 @@ import {
 // ---------------------------------------------------------------------------
 
 /*
- * One completed Combat Round represents two seconds of in-game time.
+ * One completed Combat Round represents six seconds of in-game time.
+ *
+ * A Round is not a Turn. A creature may take several Turns within one Round,
+ * spending its Round Action budget across them — Combat Ability decides how
+ * many Actions the Round holds, and Actions per Turn decides how finely those
+ * are sliced. Movement reads the Turn division, never the Round budget: see
+ * foundation/attributes/speed.ts.
  *
  * The Time module ultimately performs the clock advancement. Round only
  * declares the duration represented by a completed cycle.
  */
-export const COMBAT_ROUND_DURATION_SECONDS = 2;
+export const COMBAT_ROUND_DURATION_SECONDS = 6;
 
 
 // ---------------------------------------------------------------------------
