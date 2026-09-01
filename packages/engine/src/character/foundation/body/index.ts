@@ -296,16 +296,15 @@ export {
   resolvePartIntrinsicMaxSP,
 } from "./strength/resolution";
 
+/*
+ * Body stops at normalizedBodySP. Position, the cap and displayed Strength are
+ * facts about the Attribute ladder and live in
+ * foundation/attributes/strength.ts.
+ */
 export {
-  MAX_DISPLAYED_STRENGTH,
-  MIN_DISPLAYED_STRENGTH,
   REFERENCE_NORMALIZED_BODY_SP,
-  REFERENCE_STRENGTH_POSITION,
-  ZERO_STRENGTH,
-  resolveDisplayedStrength,
   resolveNormalizedBodySP,
   resolveReferenceFormAnatomicalCapacity,
-  resolveStrengthPosition,
 } from "./strength/normalization";
 
 export type {

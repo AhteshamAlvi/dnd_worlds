@@ -37,12 +37,14 @@ import {
   advanceStrength,
   solveMonotonicTarget,
 } from "../character/foundation/body/strength/advancement";
+import { ATTRIBUTE_MAX } from "../character/foundation/attributes/base";
 import {
-  MAX_DISPLAYED_STRENGTH,
   resolveDisplayedStrength,
+  resolveStrengthPosition,
+} from "../character/foundation/attributes/strength";
+import {
   resolveNormalizedBodySP,
   resolveReferenceFormAnatomicalCapacity,
-  resolveStrengthPosition,
 } from "../character/foundation/body/strength/normalization";
 import {
   resolveBodyStrength,
@@ -145,8 +147,8 @@ describe("the Human calibration gate", () => {
     expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(100, 10);
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
-    expect(resolved.strengthPosition).toBeCloseTo(10, 10);
-    expect(resolved.displayedStrength).toBe(10);
+    expect(resolveStrengthPosition(resolved.normalizedBodySP)).toBeCloseTo(10, 10);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(10);
   });
 
   it("reads the same in base mode as in resolved mode on an intact body", () => {
@@ -207,13 +209,13 @@ describe("the Giant gate", () => {
     expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(10_000, 6);
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(10_000, 6);
-    expect(resolved.strengthPosition).toBeCloseTo(16.6438561898, 8);
-    expect(resolved.displayedStrength).toBe(16);
+    expect(resolveStrengthPosition(resolved.normalizedBodySP)).toBeCloseTo(16.6438561898, 8);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(16);
   });
 
   it("gains exactly two Strength points per doubling of Scale", () => {
-    const single = humanStrength("resolved", 1).strengthPosition!;
-    const doubled = humanStrength("resolved", 2).strengthPosition!;
+    const single = resolveStrengthPosition(humanStrength("resolved", 1).normalizedBodySP)!;
+    const doubled = resolveStrengthPosition(humanStrength("resolved", 2).normalizedBodySP)!;
 
     expect(doubled - single).toBeCloseTo(2, 10);
   });
@@ -259,7 +261,7 @@ describe("Reference-Form normalization", () => {
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(136, 10);
     expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(136, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
-    expect(resolved.displayedStrength).toBe(10);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(10);
   });
 
   /*
@@ -290,7 +292,7 @@ describe("Reference-Form normalization", () => {
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(100, 10);
     expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
-    expect(resolved.displayedStrength).toBe(10);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(10);
 
     // The loss is here, and only here.
     expect(resolved.presentIntrinsicSP).toBeCloseTo(64, 10);
@@ -368,7 +370,7 @@ describe("base and resolved modes", () => {
     );
 
     expect(resolved.normalizedBodySP).toBeCloseTo(100, 10);
-    expect(resolved.displayedStrength).toBe(10);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(10);
     expect(resolved.presentIntrinsicSP).toBeCloseTo(64, 10);
   });
 
@@ -437,7 +439,7 @@ describe("inert anatomy", () => {
     expect(resolved.referenceFormAnatomicalCapacity).toBeCloseTo(120, 10);
     expect(resolved.referenceFormIntrinsicSP).toBeCloseTo(100, 10);
     expect(resolved.normalizedBodySP).toBeCloseTo(83.3333333333, 8);
-    expect(resolved.displayedStrength).toBe(9);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(9);
   });
 
   it("gives the crest itself exactly zero Strength Points", () => {
@@ -490,9 +492,9 @@ describe("the zero-Strength rule", () => {
 
     expect(resolved.referenceFormIntrinsicSP).toBe(0);
     expect(resolved.normalizedBodySP).toBe(0);
-    expect(resolved.strengthPosition).toBeNull();
-    expect(resolved.displayedStrength).toBe(0);
-    expect(resolved.displayedStrength).not.toBeNull();
+    expect(resolveStrengthPosition(resolved.normalizedBodySP)).toBeNull();
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(0);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).not.toBeNull();
   });
 
   it("gives a body with no anatomy left a Strength of 0 rather than NaN", () => {
@@ -503,8 +505,8 @@ describe("the zero-Strength rule", () => {
     );
 
     expect(resolved.normalizedBodySP).toBe(0);
-    expect(resolved.strengthPosition).toBeNull();
-    expect(resolved.displayedStrength).toBe(0);
+    expect(resolveStrengthPosition(resolved.normalizedBodySP)).toBeNull();
+    expect(resolveDisplayedStrength(resolveStrengthPosition(resolved.normalizedBodySP))).toBe(0);
   });
 
   it("normalizes against a zero-capacity form as 0 rather than NaN", () => {
@@ -547,7 +549,7 @@ describe("Strength representation and the cap", () => {
     // 100 x 2^20 is the least normalized SP that reaches position 30.
     const enormous = resolveStrengthPosition(1e12)!;
 
-    expect(enormous).toBeGreaterThan(MAX_DISPLAYED_STRENGTH);
+    expect(enormous).toBeGreaterThan(ATTRIBUTE_MAX);
     expect(resolveDisplayedStrength(enormous)).toBe(30);
 
     const tiny = resolveStrengthPosition(0.000001)!;
@@ -571,6 +573,28 @@ describe("Strength advancement", () => {
       definitions: DEFINITIONS,
       morphology: morphologyInput(muscularity),
       effectiveScale: 1,
+      baseDisplayedStrength: resolveDisplayedStrength(
+        resolveStrengthPosition(
+          resolveBodyStrength(
+            {
+              anatomy: STANDARD_HUMANOID_ANATOMY,
+              referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+              definitions: DEFINITIONS,
+              base: {
+                morphologyByPartId: resolveMorphology(
+                  morphologyInput(muscularity),
+                  morphologyTargetsForReferenceForm(
+                    STANDARD_HUMANOID_REFERENCE_FORM,
+                  ),
+                ),
+                effectiveScale: 1,
+              },
+            },
+            { mode: "base" },
+          ).normalizedBodySP,
+        ),
+      ),
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
   }
 
@@ -596,7 +620,7 @@ describe("Strength advancement", () => {
     expect(result.payload.previousNormalizedBodySP).toBeCloseTo(100, 10);
     expect(result.payload.normalizedBodySP).toBeCloseTo(200, 6);
     expect(result.payload.previousDisplayedStrength).toBe(10);
-    expect(result.payload.displayedStrength).toBe(11);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(result.payload.normalizedBodySP))).toBe(11);
   });
 
   it("raises total Structural Capacity to ~143.85 at that Muscularity", () => {
@@ -651,7 +675,7 @@ describe("Strength advancement", () => {
     if (!second.success) throw new Error("expected success");
 
     expect(second.payload.normalizedBodySP).toBeCloseTo(400, 4);
-    expect(second.payload.displayedStrength).toBe(12);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(second.payload.normalizedBodySP))).toBe(12);
   });
 
   /*
@@ -671,6 +695,8 @@ describe("Strength advancement", () => {
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 1,
+      baseDisplayedStrength: 10,
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
 
     if (!result.success) throw new Error("expected success");
@@ -715,6 +741,8 @@ describe("advancement refusals", () => {
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 2 ** 11,
+      baseDisplayedStrength: 30,
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
 
     expect(result.success).toBe(false);
@@ -727,7 +755,7 @@ describe("advancement refusals", () => {
   it("still allows the purchase that carries a character to the cap", () => {
     const belowCap = humanStrength("base", 2 ** 9);
 
-    expect(belowCap.displayedStrength).toBeLessThan(MAX_DISPLAYED_STRENGTH);
+    expect(resolveDisplayedStrength(resolveStrengthPosition(belowCap.normalizedBodySP))).toBeLessThan(ATTRIBUTE_MAX);
 
     const result = advanceStrength({
       anatomy: STANDARD_HUMANOID_ANATOMY,
@@ -735,6 +763,10 @@ describe("advancement refusals", () => {
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 2 ** 9,
+      baseDisplayedStrength: resolveDisplayedStrength(
+        resolveStrengthPosition(belowCap.normalizedBodySP),
+      ),
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
 
     expect(result.success).toBe(true);
@@ -766,6 +798,8 @@ describe("advancement refusals", () => {
       definitions: [...DEFINITIONS, INERT],
       morphology: morphologyInput(1),
       effectiveScale: 1,
+      baseDisplayedStrength: 10,
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
 
     expect(result.success).toBe(false);
@@ -803,6 +837,8 @@ describe("advancement refusals", () => {
       definitions: [...DEFINITIONS, STONE],
       morphology: morphologyInput(1),
       effectiveScale: 1,
+      baseDisplayedStrength: 10,
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
 
     expect(result.success).toBe(false);
@@ -821,6 +857,8 @@ describe("advancement refusals", () => {
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 2 ** 11,
+      baseDisplayedStrength: 30,
+      maximumDisplayedStrength: ATTRIBUTE_MAX,
     });
 
     expect(failed.trace.root.id).toBe("body.strength.advancement");
@@ -1073,7 +1111,7 @@ describe("the Human age curve's Strength", () => {
       );
 
       expect(strength.normalizedBodySP).toBeCloseTo(expectedSP, 2);
-      expect(strength.displayedStrength).toBe(expectedStrength);
+      expect(resolveDisplayedStrength(resolveStrengthPosition(strength.normalizedBodySP))).toBe(expectedStrength);
     },
   );
 
@@ -1082,6 +1120,10 @@ describe("the Human age curve's Strength", () => {
       resolveAge(HUMAN_AGE_PROFILE, 20).globalMorphology,
     ).toEqual(NEUTRAL_MORPHOLOGY);
 
-    expect(humanStrength("resolved").displayedStrength).toBe(10);
+    expect(
+      resolveDisplayedStrength(
+        resolveStrengthPosition(humanStrength("resolved").normalizedBodySP),
+      ),
+    ).toBe(10);
   });
 });

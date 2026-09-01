@@ -48,30 +48,10 @@
  * Human. That is not a penalty being healed. There was never a penalty.
  *
  *
- * 2 · POSITION — why Strength is logarithmic
- *
- *   StrengthPosition = 10 + log2(NormalizedBodySP / 100)
- *
- * Each point of Strength is a doubling of real force. The reference Human sits
- * at exactly 100 normalized SP and therefore exactly position 10. Position is
- * NEVER clamped: a creature at 10,000 normalized SP genuinely occupies
- * position 16.64, and throwing that away at the physics layer would make the
- * value useless for comparing two things that both display 16.
- *
- *
- * 3 · DISPLAY — why the cap lives here and nowhere else
- *
- *   DisplayedSTR = clamp(1, 30, floor(StrengthPosition))
- *
- * The 1..30 range is a Stat-surface convention, not a physical fact, so it is
- * applied at the surface and nowhere earlier. Flooring means characters sharing
- * a displayed Strength share a tier without sharing a precise SP.
- *
- * Zero is reserved for one case: a body that produces no force at all. There,
- * position is `null` because log2(0) has no value, but displayed Strength is
- * 0 and NOT null — `derived/resolution.ts` sums ["str","agi","dex","per","wis"]
- * directly and a null would poison the sum, while `deriveStandardModifier` is
- * deliberately unclamped so 0 -> -5 is safe.
+ * Position, the 1..30 cap and displayed Strength are NOT here. Body stops at
+ * normalizedBodySP; turning that into a ladder position is a fact about the
+ * Attribute ladder, and it lives in foundation/attributes/strength.ts. This
+ * file used to own both and duplicated ATTRIBUTE_MIN/ATTRIBUTE_MAX to do it.
  */
 
 import { createBodyPartDefinitionMap } from "../selectors";
@@ -81,25 +61,13 @@ import type {
 } from "../anatomy/types";
 
 
-
 /*
- * The normalized Strength Points of the Basic Human Standard, and the
- * displayed Strength that corresponds to it. The reference body defines the
- * middle of the scale rather than being placed on it by hand.
+ * The reference point normalization is expressed against. Not the ladder's
+ * reference position — that is attributes/strength.ts — just the scale factor
+ * that makes an ordinary body read 100 rather than 1.
  */
 export const REFERENCE_NORMALIZED_BODY_SP = 100;
-/* One of four independent baseline-10 anchors; see
- * attributes/resolution.ts's STANDARD_MODIFIER_REFERENCE_SCORE. */
-export const REFERENCE_STRENGTH_POSITION = 10;
 
-/*
- * The Stat-surface range. `ZERO_STRENGTH` is outside it on purpose: it means
- * "this body produces no force", which is a different statement from "this
- * body is very weak", and 1 is already reserved for the second.
- */
-export const MIN_DISPLAYED_STRENGTH = 1;
-export const MAX_DISPLAYED_STRENGTH = 30;
-export const ZERO_STRENGTH = 0;
 
 
 /*
@@ -153,46 +121,5 @@ export function resolveNormalizedBodySP(
   return (
     REFERENCE_NORMALIZED_BODY_SP *
     (referenceFormIntrinsicSP / referenceFormAnatomicalCapacity)
-  );
-}
-
-
-/*
- * The continuous physical Strength position. Never clamped.
- *
- * `null` for a body producing no force, where the logarithm has no value.
- * Everywhere else this is the honest number, and the character sheet's own
- * limits are somebody else's problem.
- */
-export function resolveStrengthPosition(
-  normalizedBodySP: number,
-): number | null {
-  if (!Number.isFinite(normalizedBodySP) || normalizedBodySP <= 0) {
-    return null;
-  }
-
-  return (
-    REFERENCE_STRENGTH_POSITION +
-    Math.log2(normalizedBodySP / REFERENCE_NORMALIZED_BODY_SP)
-  );
-}
-
-
-/*
- * The Strength that appears on the character sheet.
- *
- * The cap applies HERE and nowhere earlier. A character at position 31.4
- * displays 30 while remaining, physically, at 31.4 — which is what lets
- * advancement refuse correctly at the cap instead of silently succeeding
- * against a number that was clamped before anyone looked at it.
- */
-export function resolveDisplayedStrength(
-  strengthPosition: number | null,
-): number {
-  if (strengthPosition === null) return ZERO_STRENGTH;
-
-  return Math.min(
-    MAX_DISPLAYED_STRENGTH,
-    Math.max(MIN_DISPLAYED_STRENGTH, Math.floor(strengthPosition)),
   );
 }

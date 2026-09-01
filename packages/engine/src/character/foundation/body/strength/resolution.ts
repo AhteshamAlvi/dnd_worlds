@@ -39,10 +39,8 @@ import { createBodyPartDefinitionMap } from "../selectors";
 import { resolvePartStructuralCapacity } from "../structure/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../types";
 import {
-  resolveDisplayedStrength,
   resolveNormalizedBodySP,
   resolveReferenceFormAnatomicalCapacity,
-  resolveStrengthPosition,
 } from "./normalization";
 import type { BodyMorphology } from "../types";
 import type { BodyResolutionOptions } from "../resolution-mode";
@@ -248,8 +246,6 @@ export function resolveBodyStrength(
     referenceFormAnatomicalCapacity,
   );
 
-  const strengthPosition = resolveStrengthPosition(normalizedBodySP);
-
   return {
     mode: options.mode,
 
@@ -259,9 +255,6 @@ export function resolveBodyStrength(
     referenceFormIntrinsicSP: form.total,
     referenceFormAnatomicalCapacity,
     normalizedBodySP,
-    strengthPosition,
-
-    displayedStrength: resolveDisplayedStrength(strengthPosition),
 
     presentParts: present.parts,
     presentByPartId: present.byPartId,

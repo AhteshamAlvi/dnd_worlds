@@ -143,11 +143,12 @@ export interface ResolvedBodyStrength {
 
   readonly referenceFormAnatomicalCapacity: number;
 
+  /*
+   * Where Body stops. Turning this into a ladder position and a displayed
+   * Stat belongs to foundation/attributes/strength.ts — those are facts about
+   * the 1..30 ladder, not about physics.
+   */
   readonly normalizedBodySP: number;
-
-  readonly strengthPosition: number | null;
-
-  readonly displayedStrength: number;
 
   /* ---- What is actually present: never touches STR ---------------------- */
 

@@ -46,7 +46,6 @@ import {
   resolveMorphology,
 } from "../morphology/resolution";
 import { resolveBodyStrength } from "./resolution";
-import { MAX_DISPLAYED_STRENGTH } from "./normalization";
 import { validateStrengthAdvancementInputs } from "./validation";
 import type { EngineResult } from "../../../../infrastructure/result";
 import type { MorphologyResolutionInput } from "../morphology/types";
@@ -213,6 +212,17 @@ export function solveMonotonicTarget(
  * from where a character already is.
  */
 export interface StrengthAdvancementInput {
+  /*
+   * The character's current base displayed Strength, and the ladder's ceiling.
+   *
+   * Supplied rather than derived, exactly as morphologyByPartId and
+   * effectiveScale are: Body produces normalizedBodySP and stops, so it cannot
+   * compute either of these without importing the Attribute ladder and
+   * inverting a dependency that has been one-way since Phase 1.
+   */
+  readonly baseDisplayedStrength: number;
+  readonly maximumDisplayedStrength: number;
+
   readonly anatomy: Anatomy;
   readonly referenceForm: ReferenceForm;
   readonly definitions: readonly BodyPartDefinition[];
@@ -241,7 +251,6 @@ export interface StrengthAdvancement {
   readonly normalizedBodySP: number;
 
   readonly previousDisplayedStrength: number;
-  readonly displayedStrength: number;
 }
 
 
@@ -374,14 +383,25 @@ export function advanceStrength(
 
   const previousNormalizedBodySP = previous.normalizedBodySP;
 
-  if (previous.displayedStrength >= MAX_DISPLAYED_STRENGTH) {
+  /*
+   * The cap, checked against numbers the caller supplies rather than ones this
+   * module computes.
+   *
+   * Body no longer knows what a displayed Strength is — that is a fact about
+   * the Attribute ladder. But this operation still has to be the single place
+   * advancement can be refused, so the ladder hands its two numbers down the
+   * same way morphology and effective scale are handed down. One public
+   * contract; ladder knowledge stays in the ladder.
+   */
+  if (input.baseDisplayedStrength >= input.maximumDisplayedStrength) {
     return failure(
       "body.strength.advancement.at_cap",
       "This character is already at the maximum ordinary Strength and " +
       "cannot buy further Strength advancement.",
       {
-        required: `base displayed Strength below ${MAX_DISPLAYED_STRENGTH}`,
-        actual: previous.displayedStrength,
+        required:
+          `base displayed Strength below ${input.maximumDisplayedStrength}`,
+        actual: input.baseDisplayedStrength,
       },
     );
   }
@@ -420,8 +440,7 @@ export function advanceStrength(
       previousNormalizedBodySP,
       normalizedBodySP: advanced.normalizedBodySP,
 
-      previousDisplayedStrength: previous.displayedStrength,
-      displayedStrength: advanced.displayedStrength,
+      previousDisplayedStrength: input.baseDisplayedStrength,
     },
     trace: { root: traceNode },
     warnings: [],
