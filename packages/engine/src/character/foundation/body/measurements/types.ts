@@ -37,6 +37,30 @@ export interface ResolvedPartMeasurements {
   readonly lengthCm: number;
   readonly sizeL: number;
   readonly massKg: number;
+
+  /*
+   * The factors that produced those three numbers, retained rather than
+   * discarded.
+   *
+   * A resolved measurement is otherwise unexplainable: "this Arm weighs 3.1 kg"
+   * is a fact nobody can argue with and nobody can debug. Keeping the factors
+   * is what lets a trace answer the question this subsystem is most often
+   * asked — why did a Trait change Mass but not Size? — by showing that it
+   * moved massComposition and left effectiveBulk and adipositySize alone.
+   *
+   * `preAdiposityVolumeL` is the part's volume before fat is added: everything
+   * Scale, Length and Bulk make it. Both the size factor and the adiposity
+   * mass delta are taken against it, which is what keeps the litres that
+   * appear in Size and the litres that are weighed into Mass the same litres.
+   */
+  readonly lengthFactor: number;
+  readonly effectiveBulk: number;
+  readonly adipositySizeFactor: number;
+  readonly massCompositionFactor: number;
+
+  readonly preAdiposityVolumeL: number;
+  readonly adiposityVolumeDeltaL: number;
+  readonly adiposityMassDeltaKg: number;
 }
 
 
@@ -63,4 +87,27 @@ export interface ResolvedBodyMeasurements {
   readonly totalMassKg: number;
 
   readonly heightCm: number;
+}
+
+
+/*
+ * A body measured twice, because two different questions need two answers.
+ *
+ * FORM measures the current Reference Form as intact. It is what the body is
+ * SUPPOSED to be, and it is what physical Attribute resolution reads — so that
+ * losing an Arm cannot make a character lighter and therefore quicker. An
+ * amputation that raised AGI would be the same class of bug as an amputation
+ * that raised Strength.
+ *
+ * PRESENT measures the anatomy actually there, honouring suppression and
+ * destruction. It is what a scale would read and what physical consequences
+ * of missing anatomy are computed from.
+ *
+ * Both go through identical formulas. Only the anatomy source differs, which
+ * is the same shape as the form/present split in Strength — and for the same
+ * reason: what a body is and what has happened to it are separate facts.
+ */
+export interface ResolvedBodyMeasurementViews {
+  readonly form: ResolvedBodyMeasurements;
+  readonly present: ResolvedBodyMeasurements;
 }

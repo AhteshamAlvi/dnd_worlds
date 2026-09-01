@@ -39,6 +39,7 @@ import { resolveHeightCm } from "./height";
 import type { BodyMorphology } from "../types";
 import type {
   Anatomy,
+  ReferenceForm,
   BodyPartDefinition,
   BodyPartId,
   BodyPartMorphologySensitivity,
@@ -47,6 +48,7 @@ import type {
 import type {
   ResolvedBodyMeasurements,
   ResolvedPartMeasurements,
+  ResolvedBodyMeasurementViews,
 } from "./types";
 
 
@@ -206,6 +208,11 @@ export function resolvePartMeasurements(
     sensitivity,
   );
 
+  const adiposityMassDeltaKg = resolveAdiposityMassDeltaKg(
+    adiposityVolumeDeltaL,
+    adiposeTissueDensityKgPerL,
+  );
+
   return {
     partId,
 
@@ -225,10 +232,16 @@ export function resolvePartMeasurements(
         lengthFactor *
         effectiveBulk *
         massCompositionFactor +
-      resolveAdiposityMassDeltaKg(
-        adiposityVolumeDeltaL,
-        adiposeTissueDensityKgPerL,
-      ),
+      adiposityMassDeltaKg,
+
+    lengthFactor,
+    effectiveBulk,
+    adipositySizeFactor,
+    massCompositionFactor,
+
+    preAdiposityVolumeL,
+    adiposityVolumeDeltaL,
+    adiposityMassDeltaKg,
   };
 }
 
@@ -318,6 +331,108 @@ export function resolveBodyMeasurements(
       anatomy,
       definitions,
       lengthCmByPartId,
+    ),
+  };
+}
+
+
+/*
+ * Measures the current Reference Form as intact.
+ *
+ * The form has no BodyPart instances — it is a list of anatomical positions —
+ * so results are keyed by slot id, and there is no instance state to honour
+ * because none exists to be damaged. That is the entire point: this is what
+ * the body is SUPPOSED to be.
+ *
+ * Physical Attribute resolution reads these numbers rather than the present
+ * ones, so that losing an Arm cannot make a character lighter and therefore
+ * quicker. An amputation that raised AGI would be the same class of bug as an
+ * amputation that raised Strength, and it is ruled out here rather than
+ * corrected downstream.
+ *
+ * Height comes back as 0 because a Reference Form carries no connection
+ * geometry — slots say what anatomy is expected, not how it is joined. Callers
+ * needing intact height should measure the anatomy with every part treated as
+ * active instead.
+ */
+export function resolveReferenceFormMeasurements(
+  referenceForm: ReferenceForm,
+  definitions: readonly BodyPartDefinition[],
+  morphologyBySlotId: Readonly<Record<string, BodyMorphology>>,
+  effectiveScale: number,
+  adiposeTissueDensityKgPerL = DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
+): ResolvedBodyMeasurements {
+  const definitionsById = createBodyPartDefinitionMap(definitions);
+
+  const parts: ResolvedPartMeasurements[] = [];
+  const byPartId: Record<BodyPartId, ResolvedPartMeasurements> = {};
+
+  for (const slot of referenceForm.parts) {
+    const definition = definitionsById.get(slot.type);
+
+    /*
+     * A Reference Form may legitimately outlive a catalog entry, so an unknown
+     * type contributes nothing rather than throwing. Validation reports it.
+     */
+    if (definition === undefined) continue;
+
+    const measurements = resolvePartMeasurements(
+      slot.slotId,
+      definition.reference,
+      definition.sensitivity,
+      morphologyBySlotId[slot.slotId] ?? NEUTRAL_MORPHOLOGY,
+      effectiveScale,
+      adiposeTissueDensityKgPerL,
+    );
+
+    parts.push(measurements);
+    byPartId[slot.slotId] = measurements;
+  }
+
+  return {
+    parts,
+    byPartId,
+
+    totalSizeL: parts.reduce((total, part) => total + part.sizeL, 0),
+    totalMassKg: parts.reduce((total, part) => total + part.massKg, 0),
+
+    heightCm: 0,
+  };
+}
+
+
+/*
+ * Measures a body both ways at once.
+ *
+ * Identical formulas, different anatomy sources. Callers that need to be sure
+ * they are reading the right one should take this and name the view at the
+ * point of use rather than being handed a bare ResolvedBodyMeasurements and
+ * guessing.
+ */
+export function resolveBodyMeasurementViews(
+  anatomy: Anatomy,
+  referenceForm: ReferenceForm,
+  definitions: readonly BodyPartDefinition[],
+  morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>,
+  morphologyBySlotId: Readonly<Record<string, BodyMorphology>>,
+  effectiveScale: number,
+  adiposeTissueDensityKgPerL = DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
+): ResolvedBodyMeasurementViews {
+  return {
+    form: resolveReferenceFormMeasurements(
+      referenceForm,
+      definitions,
+      morphologyBySlotId,
+      effectiveScale,
+      adiposeTissueDensityKgPerL,
+    ),
+
+    present: resolveBodyMeasurements(
+      anatomy,
+      definitions,
+      morphologyByPartId,
+      effectiveScale,
+      adiposeTissueDensityKgPerL,
     ),
   };
 }

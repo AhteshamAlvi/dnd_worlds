@@ -227,6 +227,7 @@ export {
 
 export type {
   ResolvedBodyMeasurements,
+  ResolvedBodyMeasurementViews,
   ResolvedPartMeasurements,
 } from "./measurements/types";
 export {
@@ -235,6 +236,8 @@ export {
   resolveAdiposityMassDeltaKg,
   resolveAdiposityVolumeDeltaL,
   resolveBodyMeasurements,
+  resolveBodyMeasurementViews,
+  resolveReferenceFormMeasurements,
   resolveEffectiveBulk,
   resolveMassCompositionFactor,
   resolvePartMeasurements,
