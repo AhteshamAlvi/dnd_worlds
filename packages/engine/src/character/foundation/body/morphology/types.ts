@@ -18,7 +18,11 @@
  */
 
 import type { BodyMorphology } from "../types";
-import type { AnatomySlotKey, BodyPartId } from "../anatomy/types";
+import type {
+  AnatomySlotKey,
+  BodyPartId,
+  ContinuityKey,
+} from "../anatomy/types";
 
 
 /*
@@ -57,14 +61,28 @@ export interface MorphologySource {
  * persistent Body state, not an Effect, and it is multiplied in here exactly
  * once — a second path would double-count every Strength point ever bought.
  *
- * `effectLayers` is empty until the Body Effect vocabulary exists. Each entry
- * is one already-combined layer, so callers decide what counts as a layer and
- * this file only multiplies them.
+ * `effectLayers` carries the morphology Body Effects declared, one entry per
+ * already-combined layer — body/effects.ts builds one per resolution mode.
+ * Callers decide what counts as a layer; this file only multiplies them.
  */
 export interface MorphologyResolutionInput {
   readonly species: MorphologySource;
   readonly age: MorphologySource;
   readonly character: MorphologySource;
+
+  /*
+   * What is unusual about this particular character's particular anatomy,
+   * keyed by CONTINUITY identity rather than by slot.
+   *
+   * Its own field rather than another MorphologySource because it is keyed
+   * differently, and that difference is the point: a Troll's 20%-longer right
+   * arm is a fact about their upper-limb:right, so it follows that identity
+   * through regeneration and through a change of form, while a Species' local
+   * morphology is a fact about a slot in one body plan and does not.
+   */
+  readonly individual: Readonly<
+    Record<ContinuityKey, Partial<BodyMorphology>>
+  >;
 
   readonly strengthDevelopmentMuscularity: number;
 

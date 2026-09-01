@@ -58,7 +58,12 @@ import { resolveCharacter, type ResolvedCharacter } from "./resolution";
 
 import { validateDerivedAttributes } from "./foundation/attributes/derived/validation";
 
-import { listDefinitions } from "./catalogs";
+import {
+  findBodyValidationIssues,
+  toBodyEngineError,
+} from "./foundation/body/validation";
+import { assessStature } from "./foundation/body/stature/resolution";
+import { checkStatureJustified } from "./foundation/body/stature/justification";
 
 import {
   findRecoveryValidationIssues,
@@ -248,8 +253,9 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
   "injury-body-part-unknown": {
     code: "character.injury.body_part_unknown",
     describe: (issue) =>
-      `Injury "${issue.id}" references BodyPart "${issue.bodyPartId}", which does not exist on this character.`,
-    resolution: "Point the injury at a BodyPart the character actually has.",
+      `Injury "${issue.id}" references anatomy "${issue.continuityKey}", which this character's body has never had.`,
+    resolution:
+      "Point the injury at anatomy one of this character's forms actually contains.",
   },
   "injury-body-part-not-applicable": {
     code: "character.injury.body_part_not_applicable",
@@ -404,31 +410,41 @@ function findCharacterReferenceIssues(
       resolved.requirementContext,
     ),
     ...findConditionValidationIssues(character.conditions ?? []),
+    /*
+     * The RESOLVED anatomy, not the stored one.
+     *
+     * Body Effects genuinely change what anatomy a character has — one can add
+     * a limb, another can take a slot out of the form — so an Injury has to be
+     * judged against the body that actually resolved. Validating against the
+     * sheet would reject an Injury on anatomy the character demonstrably has,
+     * and accept one on anatomy an Effect replaced out from under it.
+     */
     ...findRecoveryValidationIssues(
-      character.body.anatomy,
-      listDefinitions("body-part"),
-      listDefinitions("special-point"),
+      resolved.body.anatomy,
+      resolved.knownContinuityKeys,
+      resolved.bodyInput.definitions,
+      resolved.bodyInput.specialPointDefinitions,
       character.injuries ?? [],
     ),
     ...findItemValidationIssues(character.items ?? []),
   ];
 }
 
-// Checks identity fields and catalog references, and folds in attribute
-// validation.
+/*
+ * Checks identity fields and catalog references, and folds in attribute,
+ * derived-attribute, Body and stature validation.
+ *
+ * Body is judged from the RESOLVED body rather than the stored one, so an
+ * Effect that changed the body plan has its result validated rather than its
+ * declaration. Every physical rule belongs to the Body subsystem that owns it;
+ * this file only decides that a character has to satisfy them, and turns what
+ * they report into EngineErrors.
+ */
 export function validateCharacter(
   character: Character,
 ): EngineResult<Character> {
   const errors: EngineError[] = [];
   const warnings: Warning[] = [];
-
-  /*
-   * Resolved once and threaded through everything that needs it. Both the
-   * catalog-reference checks (which judge Requirements against the resolved
-   * character) and the Derived Attribute self-check read from this, and
-   * resolution is the expensive part of validating a character.
-   */
-  const resolved = resolveCharacter(character);
 
   // Lets the UI pin any diagnostic back to the character it came from.
   const subject: DiagnosticSubject = {
@@ -436,6 +452,12 @@ export function validateCharacter(
     id: character.id,
   };
 
+  /*
+   * Everything that can be judged from the sheet alone, before anything is
+   * resolved. Kept first so that a character whose body cannot resolve still
+   * gets told about an empty name or an out-of-range Attribute, rather than
+   * only about the body.
+   */
   if (character.id.trim().length === 0) {
     errors.push({
       code: "character.id.empty",
@@ -482,6 +504,49 @@ export function validateCharacter(
   }
 
   /*
+   * Resolved once and threaded through everything that needs it. Both the
+   * catalog-reference checks (which judge Requirements against the resolved
+   * character) and the Derived Attribute self-check read from this, and
+   * resolution is the expensive part of validating a character.
+   *
+   * Resolution can fail — a body whose anatomy names a BodyPartDefinition that
+   * does not exist has no measurements, no Strength and therefore no Derived
+   * Attributes. That is reported here rather than thrown, and the checks below
+   * that need a resolved character are skipped rather than run against
+   * something invented to stand in for one.
+   */
+  const resolution = resolveCharacter(character);
+
+  warnings.push(...resolution.warnings);
+
+  if (!resolution.success) {
+    for (const error of resolution.errors) {
+      errors.push({ ...error, subject });
+    }
+
+    return {
+      success: false,
+      trace: {
+        root: createTraceNode({
+          id: "character.validate",
+          label: "Validate character",
+          inputs: {
+            id: { value: character.id },
+            name: { value: character.details.name },
+          },
+          output: false,
+          children: [attributesResult.trace.root, resolution.trace.root],
+          warnings,
+        }),
+      },
+      warnings,
+      errors: errors as NonEmptyArray<EngineError>,
+    };
+  }
+
+  const resolved = resolution.payload;
+
+  /*
    * Derived Attributes are computed rather than authored, so this is a
    * self-check on the engine's own arithmetic rather than on anything the
    * player typed — a non-finite Derived Attribute means a contributing
@@ -504,6 +569,78 @@ export function validateCharacter(
 
   for (const issue of referenceIssues) {
     errors.push(toEngineError(issue, subject));
+  }
+
+  /*
+   * The body.
+   *
+   * Judged against what was ACTUALLY resolved — the anatomy and Reference Form
+   * after Body Effects, and the morphology the physics used — rather than
+   * against what the sheet stores. An Effect that adds anatomy has to have its
+   * anatomy validated, and re-deriving any of it here would be a second
+   * implementation of the layer stack that could disagree about which body was
+   * being judged.
+   *
+   * Every rule belongs to the Body subsystem that owns it; this only decides
+   * that a character has to satisfy them. See foundation/body/validation.ts.
+   */
+  for (const issue of findBodyValidationIssues({
+    anatomy: resolved.body.anatomy,
+    referenceForm: resolved.body.referenceForm,
+    definitions: resolved.bodyInput.definitions,
+
+    morphologyByPartId: resolved.body.morphologyByPartId,
+    morphologyBySlotId: resolved.body.morphologyBySlotId,
+    authoredMorphology: resolved.body.morphologyInput,
+
+    effectiveScale: resolved.body.effectiveScale,
+
+    ...(resolved.bodyInput.adiposeTissueDensityKgPerL !== undefined
+      ? {
+          adiposeTissueDensityKgPerL:
+            resolved.bodyInput.adiposeTissueDensityKgPerL,
+        }
+      : {}),
+    ...(resolved.speciesBodyProfile.ageProfile !== undefined
+      ? { ageProfile: resolved.speciesBodyProfile.ageProfile }
+      : {}),
+
+    statureBands: resolved.speciesBodyProfile.stature,
+  })) {
+    errors.push(toBodyEngineError(issue, subject));
+  }
+
+  /*
+   * Stature — the one Body rule that needs to know about content.
+   *
+   * assessStature only describes a body; whether an exceptional one is ALLOWED
+   * depends on the Traits and Conditions the character carries, which Body must
+   * never import. Resolution collected those allowances from applicable content
+   * and stamped each with its source; this is where they are spent.
+   *
+   * The assessment runs against the resolved layer stack for the same reason
+   * body validation does: a character whose Trait made them tall is tall, and
+   * the rule has to see the height the physics produced.
+   */
+  const stature = checkStatureJustified(
+    assessStature({
+      anatomy: resolved.body.anatomy,
+      definitions: resolved.bodyInput.definitions,
+      morphology: resolved.body.morphologyInput,
+
+      speciesStandardScale: resolved.bodyInput.speciesStandardScale,
+      ageScale: resolved.bodyInput.ageScale,
+      characterScale: resolved.bodyInput.characterScale,
+
+      bands: resolved.speciesBodyProfile.stature,
+    }),
+    resolved.statureJustifications,
+  );
+
+  if (!stature.success) {
+    for (const error of stature.errors) {
+      errors.push({ ...error, subject });
+    }
   }
 
   const referenceTraceNode = createTraceNode({
@@ -541,6 +678,8 @@ export function validateCharacter(
         attributesResult.trace.root,
         derivedResult.trace.root,
         referenceTraceNode,
+        resolution.trace.root,
+        stature.trace.root,
       ],
       warnings,
     }),

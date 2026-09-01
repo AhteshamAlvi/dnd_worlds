@@ -56,7 +56,7 @@ import type {
 import type {
   Anatomy,
   BodyPartDefinition,
-  BodyPartId,
+  ReferenceAnatomySlotId,
   ReferenceForm,
 } from "../anatomy/types";
 
@@ -231,7 +231,15 @@ export interface StrengthAdvancementInput {
 
   readonly effectiveScale: number;
 
-  readonly intrinsicForceModifierByPartId?: Readonly<Record<BodyPartId, number>>;
+  /*
+   * Keyed by SLOT id, because advancement resolves the intact Reference Form
+   * and the form's part list is slot ids. Instance-keyed modifiers belong to
+   * resolved-mode Strength and have no bearing on what a permanent
+   * advancement costs.
+   */
+  readonly intrinsicForceModifierBySlotId?: Readonly<
+    Record<ReferenceAnatomySlotId, number>
+  >;
 }
 
 
@@ -274,16 +282,25 @@ function baseStrengthAt(
 ): ResolvedBodyStrength {
   const targets = morphologyTargetsForReferenceForm(input.referenceForm);
 
+  /*
+   * Slot-keyed only. Base mode resolves the intact Reference Form and reads
+   * nothing instance-keyed, which is what keeps advancement priced against the
+   * body a character permanently has rather than the one they are currently
+   * standing in.
+   */
   const context: StrengthPhysicalContext = {
-    morphologyByPartId: resolveMorphology(
+    morphologyBySlotId: resolveMorphology(
       { ...input.morphology, strengthDevelopmentMuscularity },
       targets,
     ),
 
     effectiveScale: input.effectiveScale,
 
-    ...(input.intrinsicForceModifierByPartId !== undefined
-      ? { intrinsicForceModifierByPartId: input.intrinsicForceModifierByPartId }
+    ...(input.intrinsicForceModifierBySlotId !== undefined
+      ? {
+          intrinsicForceModifierBySlotId:
+            input.intrinsicForceModifierBySlotId,
+        }
       : {}),
   };
 

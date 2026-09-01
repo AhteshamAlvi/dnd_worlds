@@ -12,20 +12,25 @@
  * Pipeline (locked order):
  *
  * 1. resolve current Anatomy (stored + temporary modifications)
- * 2. resolve current Critical/Semicritical/Joint instances
+ * 2. resolve current Anatomical Point instances
  * 3. receive target + penetrating damage
- * 4. apply the Joint multiplier, if the target is a Joint
- * 5. resolve Body Points BEFORE the hit, for the host's Maximum and exact
+ * 4. resolve Body Points BEFORE the hit, for the host's Maximum and exact
  *    Current BP
+ * 5. apply the Weak multiplier if the target carries that category, THEN round
  * 6. newExactBP = exactCurrentBP - appliedDamage
  * 7. if newExactBP <= 0 the host is DESTROYED; otherwise store the new
  *    integrity fraction
- * 8. check fatal Critical failure using the step-2 point set — BEFORE the
- *    destroyed part stops hosting its points
+ * 8. evaluate Fatal, Critical and Joint independently against the step-2 point
+ *    set — BEFORE the destroyed part stops hosting its points
  * 9. archive the destroyed host and its structural descendants
  * 10. return the new persistent Anatomy for the caller to store
  *
- * Step 5 happening before the hit rather than after is the whole shape of the
+ * Step 5 is the only damage multiplier in the pipeline. Joints do NOT multiply
+ * damage; they carry a threshold that breaks the connection, and where a joint
+ * genuinely is a soft target its definition also declares itself Weak. See
+ * critical-points/types.ts for the four independent categories.
+ *
+ * Step 4 happening before the hit rather than after is the whole shape of the
  * new model. Damage is subtracted in exact BP and the result is divided back
  * into a fraction, so a hit is a transition between two known states rather
  * than a number accumulating against a moving Maximum.
@@ -69,6 +74,11 @@ import {
   destroyBodyPart,
   setBodyPartIntegrity,
 } from "./anatomy/modification";
+import {
+  destroyContinuity,
+  setContinuityIntegrity,
+} from "./continuity";
+import type { ContinuityStates } from "./continuity";
 import type { AnatomyModification } from "./anatomy/modification";
 import { resolveAnatomy } from "./anatomy/resolution";
 import type {
@@ -117,7 +127,22 @@ export type BodyDamageTarget =
   | { readonly kind: "special-point"; readonly pointId: CriticalPointId };
 
 export interface BodyDamageInput {
-  readonly body: Body;
+  /*
+   * The anatomy this hit lands on — already resolved, because anatomy is
+   * derived and there is no stored tree to damage any more.
+   */
+  readonly anatomy: Anatomy;
+
+  /*
+   * The persistent state this hit updates. Damage is recorded against
+   * anatomical IDENTITY rather than against the instance standing there, so it
+   * survives regeneration and follows the character through a change of form.
+   */
+  readonly continuity: ContinuityStates;
+
+  /** Persistent Anatomical Point state, for Body.anatomicalPoints. */
+  readonly anatomicalPoints: AnatomicalPointStates;
+
   readonly constitution: number;
 
   /*
@@ -145,7 +170,17 @@ export interface BodyDamageInput {
 }
 
 export interface BodyDamageOutcome {
-  // New persistent state — the caller stores this back onto Body.anatomy.
+  /*
+   * New persistent state — the caller stores this back onto Body.continuity.
+   *
+   * Integrity is recorded as a FRACTION, which is what makes damage survive a
+   * transformation: a form with different Maximum BP for the same identity
+   * recalculates Current BP from the fraction rather than inheriting raw
+   * missing points it has no room for.
+   */
+  readonly continuity: ContinuityStates;
+
+  /** The anatomy this hit produced, for a caller that wants to show it. */
   readonly anatomy: Anatomy;
 
   /*
@@ -284,7 +319,7 @@ export function applyBodyDamage(
   }
 
   const resolvedAnatomy = resolveAnatomy(
-    input.body.anatomy,
+    input.anatomy,
     temporaryAnatomyModifications,
   );
 
@@ -396,8 +431,8 @@ export function applyBodyDamage(
           archivedPartIds: [],
         };
 
-  const damagedResolvedAnatomy = writeOutcome(resolvedAnatomy).anatomy;
-  const storedOutcome = writeOutcome(input.body.anatomy);
+  const resolvedOutcome = writeOutcome(resolvedAnatomy);
+  const damagedResolvedAnatomy = resolvedOutcome.anatomy;
 
   const bodyPoints = resolveBodyPoints({
     anatomy: damagedResolvedAnatomy,
@@ -499,16 +534,48 @@ export function applyBodyDamage(
   const anatomicalPoints = destroyedPointIds.reduce(
     (states, pointId) =>
       setAnatomicalPointState(states, pointId, "archived-removed"),
-    input.body.anatomicalPoints,
+    input.anatomicalPoints,
   );
 
   const destroyedPartIds = destroyed ? [hostPartId] : [];
 
-  const anatomy = storedOutcome.anatomy;
+  const anatomy = damagedResolvedAnatomy;
 
-  const removedPartIds = storedOutcome.archivedPartIds;
+  const removedPartIds = resolvedOutcome.archivedPartIds;
+
+  /*
+   * Persistence, recorded against identity.
+   *
+   * Destruction is written for the host and for everything the cascade took
+   * with it, because each of those is a separate identity that is now absent.
+   * Anything that merely lost BP records a fraction instead.
+   */
+  const continuityKeyOf = new Map(
+    resolvedAnatomy.parts.map((part) => [part.id, part.continuityKey] as const),
+  );
+
+  let continuity = input.continuity;
+
+  if (destroyed) {
+    for (const partId of removedPartIds) {
+      const key = continuityKeyOf.get(partId);
+
+      if (key !== undefined) continuity = destroyContinuity(continuity, key);
+    }
+  } else {
+    const key = continuityKeyOf.get(hostPartId);
+
+    if (key !== undefined) {
+      continuity = setContinuityIntegrity(
+        continuity,
+        key,
+        newExactBP / hostBP.maximumBP,
+      );
+    }
+  }
 
   const outcome: BodyDamageOutcome = {
+    continuity,
     anatomy,
     anatomicalPoints,
     destroyedPointIds,

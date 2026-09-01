@@ -4,8 +4,8 @@
  * Lifetime XP produces Levels; Levels produce Stat Points and Growth Points;
  * those buy permanent progress. Progression only ever writes *stored* values
  * — authored attributes, trained Mastery — which is why it sits outside
- * foundation rather than inside it, and why a Trait's +1 STR and a Limited
- * Stat Point's +1 STR are different things: the first modifies the derived
+ * foundation rather than inside it, and why a Trait's +1 AGI and a Limited
+ * Stat Point's +1 AGI are different things: the first modifies the derived
  * Base score and disappears with the Trait, the second is the character's
  * own number changing for good.
  *

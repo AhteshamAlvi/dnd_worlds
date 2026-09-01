@@ -552,7 +552,14 @@ export {
  *
  * A host that wants to know what a character can actually do calls this
  * rather than assembling the answer from the domains, which is the only way
- * grants, ancestry and the attribute ladder all get applied consistently.
+ * grants, ancestry, the body and the attribute ladder all get applied
+ * consistently.
+ *
+ * It returns an EngineResult because the body can fail to resolve — anatomy
+ * naming a BodyPartDefinition that does not exist has no measurements and
+ * therefore no Strength, and nothing below it can be computed. Content the
+ * character is merely not ELIGIBLE for is not a failure: an ineligible sheet
+ * resolves, and validateCharacter is what judges it.
  */
 export type { ResolvedCharacter } from "./character/resolution";
 

@@ -18,7 +18,10 @@ import { describe, expect, it } from "vitest";
 import { applyBodyDamage } from "../character/foundation/body/damage";
 import type { BodyDamageInput } from "../character/foundation/body/damage";
 import { listDefinitions } from "../character/catalogs";
-import { STANDARD_BODY } from "../character/foundation/body/defaults";
+import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+import type { Anatomy } from "../character/foundation/body/anatomy/types";
+import type { AnatomicalPointStates } from "../character/foundation/body/critical-points/state";
 import {
   morphologyTargetsForAnatomy,
   resolveMorphology,
@@ -40,15 +43,18 @@ const NEUTRAL_MORPHOLOGY_BY_PART = resolveMorphology(
     species: NEUTRAL_SOURCE,
     age: NEUTRAL_SOURCE,
     character: NEUTRAL_SOURCE,
+    individual: {},
     strengthDevelopmentMuscularity: 1,
     effectLayers: [],
   },
-  morphologyTargetsForAnatomy(STANDARD_BODY.anatomy),
+  morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY),
 );
 
 function baseInput(overrides: Partial<BodyDamageInput> = {}): BodyDamageInput {
   return {
-    body: STANDARD_BODY,
+    anatomy: STANDARD_HUMANOID_ANATOMY,
+    continuity: {},
+    anatomicalPoints: {},
     constitution: REFERENCE_CONSTITUTION,
     morphologyByPartId: NEUTRAL_MORPHOLOGY_BY_PART,
     effectiveScale: 1,
@@ -369,17 +375,32 @@ describe("structural destruction cascade", () => {
 });
 
 describe("purity", () => {
-  it("does not mutate the input Body", () => {
-    const before = JSON.parse(JSON.stringify(STANDARD_BODY)) as Body;
+  it("does not mutate the anatomy it was given", () => {
+    const before = JSON.parse(
+      JSON.stringify(STANDARD_HUMANOID_ANATOMY),
+    ) as Anatomy;
 
     applyBodyDamage(baseInput({ penetratingDamage: 999 }));
 
-    expect(STANDARD_BODY).toEqual(before);
+    expect(STANDARD_HUMANOID_ANATOMY).toEqual(before);
   });
 
   it("returns a new Anatomy object distinct from the input", () => {
     const outcome = requireSuccess(applyBodyDamage(baseInput()));
-    expect(outcome.anatomy).not.toBe(STANDARD_BODY.anatomy);
+    expect(outcome.anatomy).not.toBe(STANDARD_HUMANOID_ANATOMY);
+  });
+
+  it("records damage against the identity rather than the instance", () => {
+    const outcome = requireSuccess(applyBodyDamage(baseInput()));
+
+    /*
+     * Arm 14 Max BP, 4 damage: 10/14 remaining, stored as a fraction so a form
+     * with a different Maximum BP for the same identity recalculates rather
+     * than inheriting points it has no room for.
+     */
+    expect(
+      outcome.continuity[continuityKey("upper-limb:left")]?.integrity,
+    ).toBeCloseTo(10 / 14, 10);
   });
 });
 

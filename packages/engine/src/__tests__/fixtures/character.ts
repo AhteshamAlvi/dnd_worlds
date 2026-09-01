@@ -10,6 +10,10 @@ import type { Body } from "../../character/foundation/body/types";
 import type { Attributes } from "../../character/foundation/attributes/types";
 import { createCharacterId } from "../../character/id";
 import type { Character } from "../../character/types";
+import {
+  resolveCharacter,
+  type ResolvedCharacter,
+} from "../../character/resolution";
 
 export const TEST_ATTRIBUTES: Attributes = {
   agi: 10,
@@ -66,4 +70,25 @@ export function createTestCharacter(
       ...attributes,
     },
   };
+}
+
+/*
+ * Resolves a fixture character, failing the test if it cannot be resolved.
+ *
+ * resolveCharacter returns an EngineResult because a body can fail to resolve.
+ * Almost every test here is about what a VALID character resolves to, so
+ * unwrapping at each call site would bury the assertion under a success check.
+ * Tests that are about the failure branch call resolveCharacter directly.
+ */
+export function resolveTestCharacter(character: Character): ResolvedCharacter {
+  const result = resolveCharacter(character);
+
+  if (!result.success) {
+    throw new Error(
+      "Expected the test character to resolve, but body resolution failed: " +
+      result.errors.map((error) => `${error.code} — ${error.message}`).join("; "),
+    );
+  }
+
+  return result.payload;
 }

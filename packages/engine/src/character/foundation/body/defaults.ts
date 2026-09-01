@@ -10,18 +10,20 @@
  * the property the measurement subsystem was built to get.
  */
 
-import { STANDARD_HUMANOID_ANATOMY } from "./anatomy/standard-humanoid";
 import { NEUTRAL_MORPHOLOGY } from "./types";
 import type { Body } from "./types";
 
 export const STANDARD_BODY: Body = {
   characterScale: 1,
   globalMorphology: NEUTRAL_MORPHOLOGY,
-  localMorphology: {},
   strengthDevelopmentMuscularity: 1,
 
-  anatomy: STANDARD_HUMANOID_ANATOMY,
-
-  /* Nothing has happened to this body, so it records nothing. */
+  /*
+   * Nothing has happened to this body, so it records nothing at all — no
+   * anatomy, because anatomy is instantiated from whatever form the character
+   * has, and no continuity state, because every identity is intact and
+   * unremarkable until something makes it otherwise.
+   */
+  continuity: {},
   anatomicalPoints: {},
 };

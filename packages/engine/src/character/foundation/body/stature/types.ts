@@ -138,12 +138,24 @@ export interface StatureAssessment {
  * and hands them over; Body only checks that the deviation in front of it is
  * covered.
  */
-export interface StatureJustification {
-  /** The Trait or Condition granting this. Carried for diagnostics only. */
-  readonly sourceId: string;
-
+/*
+ * One exceptional stature a piece of content permits.
+ *
+ * Split from StatureJustification so that authored content declares the
+ * ALLOWANCE and the layer that owns the content supplies the source. A Trait
+ * saying "this character may be taller than a Human ordinarily is" should not
+ * also have to repeat its own id, and letting it would make the id something a
+ * second place could get wrong.
+ */
+export interface StatureAllowance {
   readonly dimension: "height" | "mass";
   readonly deviation: Exclude<StatureDeviation, "within">;
+}
+
+
+export interface StatureJustification extends StatureAllowance {
+  /** The Trait or Condition granting this. Carried for diagnostics only. */
+  readonly sourceId: string;
 }
 
 

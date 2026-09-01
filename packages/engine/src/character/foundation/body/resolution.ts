@@ -36,7 +36,11 @@
  */
 
 import { createTraceNode } from "../../../infrastructure/trace";
-import type { EngineResult } from "../../../infrastructure/result";
+import type {
+  EngineResult,
+  NonEmptyArray,
+} from "../../../infrastructure/result";
+import type { EngineError } from "../../../infrastructure/diagnostics";
 import type { TraceNode } from "../../../infrastructure/trace";
 import type { JsonValue } from "../../../infrastructure/json";
 
@@ -48,6 +52,12 @@ import type { JsonValue } from "../../../infrastructure/json";
  */
 const traced = (value: unknown): JsonValue => value as JsonValue;
 
+import { applyBodyEffects } from "./effects";
+import { individualMorphologyByContinuityKey } from "./continuity";
+import {
+  findBodyResolutionBlockers,
+  toBodyEngineError,
+} from "./validation";
 import { resolveBodyCapability } from "./capability";
 import { resolveLocomotion } from "./locomotion";
 import { resolveBodyMeasurementViews } from "./measurements/resolution";
@@ -64,6 +74,8 @@ import { resolveEffectiveScale } from "./scale";
 import { DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L } from "./measurements/resolution";
 
 import type { AnatomicalPointStates } from "./critical-points/state";
+import type { ContinuityStates } from "./continuity";
+import type { BodyEffectInput } from "./effects";
 import type { BodyPointModifier } from "./body-points/types";
 import type { BodyResolutionMode } from "./resolution-mode";
 import type { InaccessibilitySource } from "./capability";
@@ -79,13 +91,45 @@ import type { SpecialPointDefinition } from "./critical-points/types";
 import type {
   Anatomy,
   BodyPartDefinition,
+  BodyPartId,
   ReferenceForm,
+  ReferenceFormPart,
 } from "./anatomy/types";
+import type { BodyMorphology } from "./types";
 
 
 export interface BodyResolutionInput {
-  readonly anatomy: Anatomy;
+  /*
+   * The body plan this character has before any Effect changes it. Anatomy is
+   * instantiated from it and never supplied directly — a stored tree alongside
+   * the form it came from is free to disagree with it.
+   */
   readonly referenceForm: ReferenceForm;
+
+  /*
+   * Everything persistently true of this body's anatomy, by identity. See
+   * body/continuity.ts.
+   */
+  readonly continuity: ContinuityStates;
+
+  /** Overrides the instance ids instantiation generates. */
+  readonly instanceIdFor?: (part: ReferenceFormPart) => BodyPartId;
+
+  /*
+   * Physical Effects declared by this character's content, split by mode.
+   *
+   * Applied BEFORE anything is resolved, because they change what there is to
+   * resolve — anatomy, the Reference Form, Scale, morphology, force and
+   * destruction resistance. `mode` selects which layers participate; see
+   * body/effects.ts.
+   */
+  readonly effects?: BodyEffectInput;
+
+  /*
+   * The Reference Forms a `replaceForm` anatomy Effect may name. The body's
+   * own form is always available and does not need repeating here.
+   */
+  readonly referenceForms?: readonly ReferenceForm[];
 
   readonly definitions: readonly BodyPartDefinition[];
   readonly specialPointDefinitions: readonly SpecialPointDefinition[];
@@ -111,7 +155,37 @@ export interface BodyResolutionInput {
 export interface ResolvedBody {
   readonly mode: BodyResolutionMode;
 
+  /*
+   * The body every number below was actually resolved from — after Body
+   * Effects added, removed, suppressed or replaced anatomy. Exposed because a
+   * caller comparing a resolved character against the sheet otherwise has no
+   * way to see that an Effect changed the body plan.
+   */
+  readonly anatomy: Anatomy;
+  readonly referenceForm: ReferenceForm;
+
   readonly effectiveScale: number;
+
+  /*
+   * The morphology every physical resolver actually used, in both keyings:
+   * by instance for the anatomy present, by Reference Form slot for the intact
+   * form. Kept because validation and the stature rule need the SAME numbers
+   * the physics used — recomputing them would be a second implementation of
+   * the layer stack.
+   */
+  readonly morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>;
+  readonly morphologyBySlotId: Readonly<Record<string, BodyMorphology>>;
+
+  /*
+   * The layer stack those maps came from, Body Effect layers included.
+   *
+   * The stature rule re-resolves this body with the character's own
+   * contributions neutralised, which needs the layers still separable — a
+   * flattened per-part map cannot be taken apart again. Exposing the stack
+   * that was actually used is what keeps stature judging the same body the
+   * physics resolved.
+   */
+  readonly morphologyInput: MorphologyResolutionInput;
 
   readonly measurements: ResolvedBodyMeasurementViews;
   readonly structure: ResolvedBodyStructuralCapacity;
@@ -136,11 +210,36 @@ export function resolveBody(
 ): EngineResult<ResolvedBody> {
   const mode = input.mode ?? "resolved";
 
-  const effectiveScale = resolveEffectiveScale(
-    input.speciesStandardScale,
-    input.ageScale,
-    input.characterScale,
+  /*
+   * Effects first. Everything below resolves the body they produced, not the
+   * body that was authored — an Arm an Effect added has to be measured, and a
+   * limb an Effect suppressed must not be.
+   */
+  const effects = applyBodyEffects(
+    {
+      referenceForm: input.referenceForm,
+      continuity: input.continuity,
+      definitions: input.definitions,
+      ...(input.instanceIdFor !== undefined
+        ? { instanceIdFor: input.instanceIdFor }
+        : {}),
+      ...(input.referenceForms !== undefined
+        ? { referenceForms: input.referenceForms }
+        : {}),
+      ...(input.effects !== undefined ? { effects: input.effects } : {}),
+    },
+    mode,
   );
+
+  const anatomy = effects.anatomy;
+  const referenceForm = effects.referenceForm;
+
+  const effectiveScale =
+    resolveEffectiveScale(
+      input.speciesStandardScale,
+      input.ageScale,
+      input.characterScale,
+    ) * effects.scaleMultiplier;
 
   const adiposeDensity =
     input.adiposeTissueDensityKgPerL ??
@@ -148,15 +247,56 @@ export function resolveBody(
 
   const children: TraceNode[] = [];
 
+  /*
+   * Preconditions, before anything is computed.
+   *
+   * The physical resolvers assume a validated body and throw on one that is
+   * not — an unknown BodyPartDefinition surfaces as an exception three modules
+   * down rather than as something a caller can report. Checking here is what
+   * makes this function's EngineResult contract real: invalid authored anatomy
+   * comes back as a failure with a trace, the same as every other engine entry
+   * point.
+   */
+  const blockers = findBodyResolutionBlockers(
+    anatomy,
+    referenceForm,
+    input.definitions,
+    effectiveScale,
+  );
+
+  if (blockers.length > 0) {
+    return {
+      success: false,
+      trace: {
+        root: createTraceNode({
+          id: "body.resolve",
+          label: "Resolve Body",
+          output: false,
+          inputs: {
+            parts: { value: anatomy.parts.length },
+            referenceFormSlots: { value: referenceForm.parts.length },
+            effectiveScale: { value: effectiveScale },
+          },
+        }),
+      },
+      warnings: [...effects.warnings],
+      errors: blockers.map((issue) =>
+        toBodyEngineError(issue),
+      ) as NonEmptyArray<EngineError>,
+    };
+  }
+
   children.push(
     createTraceNode({
       id: "body.scale",
       label: "Effective Scale",
-      formula: "speciesStandardScale x ageScale x characterScale",
+      formula:
+        "speciesStandardScale x ageScale x characterScale x effectMultiplier",
       inputs: {
         speciesStandardScale: { value: input.speciesStandardScale },
         ageScale: { value: input.ageScale },
         characterScale: { value: input.characterScale },
+        effectMultiplier: { value: effects.scaleMultiplier },
       },
       output: traced({ effectiveScale }),
     }),
@@ -164,14 +304,35 @@ export function resolveBody(
 
   /* ---- morphology ---------------------------------------------------- */
 
+  /*
+   * Effect-declared morphology joins the layer stack rather than replacing
+   * anything: Species, age, the character and their Strength development all
+   * still apply, and the Effect layers multiply on top in mode order.
+   */
+  const morphology: MorphologyResolutionInput = {
+    ...input.morphology,
+
+    /*
+     * The individual layer comes from continuity state rather than from the
+     * caller, so that "this character's own arm" cannot be supplied
+     * inconsistently with the integrity and destruction sitting beside it.
+     */
+    individual: individualMorphologyByContinuityKey(input.continuity),
+
+    effectLayers: [
+      ...input.morphology.effectLayers,
+      ...effects.morphologyLayers,
+    ],
+  };
+
   const morphologyByPartId = resolveMorphology(
-    input.morphology,
-    morphologyTargetsForAnatomy(input.anatomy),
+    morphology,
+    morphologyTargetsForAnatomy(anatomy),
   );
 
   const morphologyBySlotId = resolveMorphology(
-    input.morphology,
-    morphologyTargetsForReferenceForm(input.referenceForm),
+    morphology,
+    morphologyTargetsForReferenceForm(referenceForm),
   );
 
   children.push(
@@ -186,8 +347,8 @@ export function resolveBody(
   /* ---- measurements --------------------------------------------------- */
 
   const measurements = resolveBodyMeasurementViews(
-    input.anatomy,
-    input.referenceForm,
+    anatomy,
+    referenceForm,
     input.definitions,
     morphologyByPartId,
     morphologyBySlotId,
@@ -222,7 +383,7 @@ export function resolveBody(
   /* ---- structure ------------------------------------------------------ */
 
   const structure = resolveBodyStructuralCapacity(
-    input.anatomy,
+    anatomy,
     input.definitions,
     morphologyByPartId,
     effectiveScale,
@@ -239,13 +400,35 @@ export function resolveBody(
 
   /* ---- strength ------------------------------------------------------- */
 
+  /*
+   * Both contexts get both keyings, and both get the same effect modifiers —
+   * applyBodyEffects already selected the layers this mode may see, and only
+   * one context is ever read.
+   *
+   * The two maps are NOT interchangeable. Strength resolves the intact form by
+   * slot id and the anatomy present by instance id, and the two coincide only
+   * while every instance is still named after the slot it occupies. A
+   * regenerated limb ends that.
+   */
   const strength = resolveBodyStrength(
     {
-      anatomy: input.anatomy,
-      referenceForm: input.referenceForm,
+      anatomy,
+      referenceForm,
       definitions: input.definitions,
-      base: { morphologyByPartId: morphologyBySlotId, effectiveScale },
-      resolved: { morphologyByPartId, effectiveScale },
+      base: {
+        morphologyBySlotId,
+        morphologyByPartId,
+        effectiveScale,
+        intrinsicForceModifierBySlotId: effects.intrinsicForceModifierBySlotId,
+        intrinsicForceModifierByPartId: effects.intrinsicForceModifierByPartId,
+      },
+      resolved: {
+        morphologyBySlotId,
+        morphologyByPartId,
+        effectiveScale,
+        intrinsicForceModifierBySlotId: effects.intrinsicForceModifierBySlotId,
+        intrinsicForceModifierByPartId: effects.intrinsicForceModifierByPartId,
+      },
     },
     { mode },
   );
@@ -271,14 +454,24 @@ export function resolveBody(
 
   /* ---- body points ---------------------------------------------------- */
 
+  /*
+   * Caller-supplied modifiers first, Effect-declared ones after. Destruction
+   * resistances multiply, so the order changes nothing arithmetically and is
+   * fixed only so a trace reads the same way twice.
+   */
+  const bodyPointModifiers = [
+    ...(input.bodyPointModifiers ?? []),
+    ...effects.bodyPointModifiers,
+  ];
+
   const points = resolveBodyPoints({
-    anatomy: input.anatomy,
+    anatomy,
     definitions: input.definitions,
     morphologyByPartId,
     effectiveScale,
     constitution: input.constitution,
-    ...(input.bodyPointModifiers !== undefined
-      ? { modifiers: input.bodyPointModifiers }
+    ...(bodyPointModifiers.length > 0
+      ? { modifiers: bodyPointModifiers }
       : {}),
   });
 
@@ -298,13 +491,13 @@ export function resolveBody(
   /* ---- points, capability, locomotion --------------------------------- */
 
   const anatomicalPoints = resolveCriticalPoints(
-    input.anatomy,
+    anatomy,
     input.definitions,
     input.specialPointDefinitions,
   );
 
   const capability = resolveBodyCapability({
-    anatomy: input.anatomy,
+    anatomy,
     points: anatomicalPoints,
     pointStates: input.anatomicalPoints ?? {},
     bodyPoints: points,
@@ -314,7 +507,7 @@ export function resolveBody(
   });
 
   const locomotion = resolveLocomotion(
-    input.anatomy,
+    anatomy,
     input.definitions,
     capability,
   );
@@ -338,7 +531,12 @@ export function resolveBody(
     success: true,
     payload: {
       mode,
+      anatomy,
+      referenceForm,
       effectiveScale,
+      morphologyByPartId,
+      morphologyBySlotId,
+      morphologyInput: morphology,
       measurements,
       structure,
       strength,
@@ -354,6 +552,6 @@ export function resolveBody(
         children,
       }),
     },
-    warnings: [],
+    warnings: [...effects.warnings],
   };
 }

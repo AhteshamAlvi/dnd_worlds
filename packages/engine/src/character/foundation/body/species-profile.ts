@@ -14,7 +14,7 @@
  */
 
 import type { BodyMorphology } from "./types";
-import type { BodyPartId, ReferenceForm } from "./anatomy/types";
+import type { BodyPartId, ReferenceFormId } from "./anatomy/types";
 import type { SpeciesStatureBands } from "./stature/types";
 import type { SpeciesAgeProfile } from "./age/types";
 
@@ -49,14 +49,22 @@ import type { SpeciesAgeProfile } from "./age/types";
  * and the denominator by the same 36, and it resolves to STR 10 like anyone
  * else while still owning two more Arms' worth of real Strength Points.
  *
- * The Age profile is deliberately absent for now; it arrives with the Age
- * subsystem, along with the anchors and interpolation that turn a character's
- * age into Scale and morphology.
+ * `ageProfile` is the anchors and interpolation that turn a character's age
+ * into Scale and morphology. It is optional: a Species whose age has no
+ * physical consequence simply omits it and resolves at neutral.
  */
 export interface SpeciesBodyProfile {
   readonly standardScale: number;
 
-  readonly referenceForm: ReferenceForm;
+  /*
+   * The body plan a mature member of this Species has, by id.
+   *
+   * A reference rather than the form itself, so that the same plan can be
+   * named by a transformation, a mutation or an Item without going through the
+   * Species that happens to use it — and so there is one authoritative copy of
+   * what a Human body is arranged like. See anatomy/reference-forms.ts.
+   */
+  readonly referenceFormId: ReferenceFormId;
 
   /** Species morphology applied to every BodyPart of this Species. */
   readonly globalMorphology: BodyMorphology;

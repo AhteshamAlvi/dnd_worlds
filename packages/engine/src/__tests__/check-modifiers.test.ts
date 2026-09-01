@@ -31,10 +31,12 @@ import {
 import { findEffectValidationIssues } from "../character/rules/validation";
 import type { CheckScope } from "../character/rules/effects";
 
-import { resolveCharacter } from "../character/resolution";
 import { validateCharacter } from "../character/validation";
 
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -222,7 +224,7 @@ describe("modifyCheck flows through effect resolution", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "keen-eyes" }] }),
     );
 
@@ -238,7 +240,7 @@ describe("modifyCheck flows through effect resolution", () => {
   it("reaches a resolved character from a Skill", () => {
     registerContort();
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ skills: [{ skillId: "contort" }] }),
     );
 
@@ -252,11 +254,11 @@ describe("a check modifier never touches the sheet", () => {
   it("leaves the Attribute score and its standard modifier alone", () => {
     registerContort();
 
-    const withoutSkill = resolveCharacter(
+    const withoutSkill = resolveTestCharacter(
       createTestCharacter({ attributes: { agi: 19 } }),
     );
 
-    const withSkill = resolveCharacter(
+    const withSkill = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 19 },
         skills: [{ skillId: "contort" }],
@@ -275,11 +277,11 @@ describe("a check modifier never touches the sheet", () => {
   it("leaves every Derived Attribute alone", () => {
     registerContort();
 
-    const withoutSkill = resolveCharacter(
+    const withoutSkill = resolveTestCharacter(
       createTestCharacter({ attributes: { agi: 19 } }),
     );
 
-    const withSkill = resolveCharacter(
+    const withSkill = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 19 },
         skills: [{ skillId: "contort" }],
@@ -296,7 +298,7 @@ describe("the ticket's worked example, end to end", () => {
     registerFlexible();
     registerContort();
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 17 },
         traits: [{ traitId: "flexible" }],
@@ -338,7 +340,7 @@ describe("the ticket's worked example, end to end", () => {
       effects: [{ type: "modifyCheck", check: ACROBATICS_CHECK, amount: 2 }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 17, dex: 17 },
         techniques: [{ techniqueId: "tumbling" }],

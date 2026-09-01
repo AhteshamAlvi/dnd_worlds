@@ -28,6 +28,9 @@ import type {
   BodyPartDefinition,
   BodyPartId,
   BodyPartTypeId,
+  ContinuityKey,
+  ReferenceAnatomySlotId,
+  ReferenceForm,
 } from "./types";
 
 
@@ -607,4 +610,240 @@ export function validateAnatomyData(
     ...definitionResult.issues,
     ...anatomyResult.issues,
   ]);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reference Form validation                                                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Stable machine-readable categories for Reference Form failures.
+ *
+ * A form is a blueprint anatomy is instantiated FROM, so a malformed one does
+ * not produce a wrong body — it produces a body that cannot be built. These
+ * are checked at the form rather than at every character wearing it.
+ */
+export type ReferenceFormValidationIssueCode =
+  | "invalid-reference-form-id"
+  | "empty-reference-form"
+  | "duplicate-slot-id"
+  | "invalid-slot-id"
+  | "unknown-body-part-type"
+  | "invalid-continuity-key"
+  | "duplicate-continuity-key"
+  | "missing-parent-slot"
+  | "self-parent-slot"
+  | "invalid-attachment-site"
+  | "invalid-attachment-position"
+  | "attachment-cycle"
+  | "missing-root";
+
+
+export interface ReferenceFormValidationIssue {
+  readonly code: ReferenceFormValidationIssueCode;
+  readonly message: string;
+
+  readonly slotId?: ReferenceAnatomySlotId;
+  readonly continuityKey?: ContinuityKey;
+}
+
+
+export interface ReferenceFormValidationResult {
+  readonly valid: boolean;
+  readonly issues: readonly ReferenceFormValidationIssue[];
+}
+
+
+/*
+ * Validates one Reference Form as a complete anatomical blueprint.
+ *
+ * Cross-form reuse of a continuity key is not merely allowed, it is the entire
+ * mechanism: a Wolf's foreleg and a Human's arm are supposed to say the same
+ * identity. WITHIN one form it is rejected, because two slots claiming one
+ * identity leaves every persistent value — morphology, integrity, an Injury —
+ * with two places to land and no rule for choosing.
+ */
+export function validateReferenceForm(
+  form: ReferenceForm,
+  definitions: readonly BodyPartDefinition[],
+): ReferenceFormValidationResult {
+  const issues: ReferenceFormValidationIssue[] = [];
+
+  if (!isValidIdentifier(form.id)) {
+    issues.push({
+      code: "invalid-reference-form-id",
+      message: "A Reference Form must have a non-empty id.",
+    });
+  }
+
+  if (form.parts.length === 0) {
+    issues.push({
+      code: "empty-reference-form",
+      message:
+        `Reference Form "${form.id}" declares no anatomy. A form with no ` +
+        "parts cannot instantiate a body.",
+    });
+
+    return createReferenceFormValidationResult(issues);
+  }
+
+  const knownTypes = new Set(definitions.map((definition) => definition.id));
+
+  const seenSlots = new Set<ReferenceAnatomySlotId>();
+  const seenContinuity = new Set<ContinuityKey>();
+
+  for (const part of form.parts) {
+    if (!isValidIdentifier(part.slotId)) {
+      issues.push({
+        code: "invalid-slot-id",
+        message: `Reference Form "${form.id}" has a slot with an empty id.`,
+      });
+    } else if (seenSlots.has(part.slotId)) {
+      issues.push({
+        code: "duplicate-slot-id",
+        slotId: part.slotId,
+        message:
+          `Reference Form "${form.id}" declares slot "${part.slotId}" twice.`,
+      });
+    } else {
+      seenSlots.add(part.slotId);
+    }
+
+    if (!knownTypes.has(part.type)) {
+      issues.push({
+        code: "unknown-body-part-type",
+        slotId: part.slotId,
+        message:
+          `Reference Form "${form.id}" slot "${part.slotId}" references ` +
+          `unknown BodyPartDefinition "${part.type}".`,
+      });
+    }
+
+    if (!isValidIdentifier(part.continuityKey)) {
+      issues.push({
+        code: "invalid-continuity-key",
+        slotId: part.slotId,
+        message:
+          `Reference Form "${form.id}" slot "${part.slotId}" has an empty ` +
+          "continuity identity. Continuity is authored, never inferred.",
+      });
+    } else if (seenContinuity.has(part.continuityKey)) {
+      issues.push({
+        code: "duplicate-continuity-key",
+        slotId: part.slotId,
+        continuityKey: part.continuityKey,
+        message:
+          `Reference Form "${form.id}" gives continuity identity ` +
+          `"${part.continuityKey}" to more than one slot. Persistent state — ` +
+          "morphology, integrity, Injuries — would have two places to land " +
+          "and no rule for choosing between them.",
+      });
+    } else {
+      seenContinuity.add(part.continuityKey);
+    }
+  }
+
+  let roots = 0;
+
+  for (const part of form.parts) {
+    if (part.attachment === null) {
+      roots += 1;
+
+      continue;
+    }
+
+    const { parentSlotId, site, parentPosition, childPosition } =
+      part.attachment;
+
+    if (parentSlotId === part.slotId) {
+      issues.push({
+        code: "self-parent-slot",
+        slotId: part.slotId,
+        message:
+          `Reference Form "${form.id}" slot "${part.slotId}" is its own parent.`,
+      });
+    } else if (!seenSlots.has(parentSlotId)) {
+      issues.push({
+        code: "missing-parent-slot",
+        slotId: part.slotId,
+        message:
+          `Reference Form "${form.id}" slot "${part.slotId}" attaches to ` +
+          `"${parentSlotId}", which this form does not declare.`,
+      });
+    }
+
+    if (site !== undefined && !isValidIdentifier(site)) {
+      issues.push({
+        code: "invalid-attachment-site",
+        slotId: part.slotId,
+        message:
+          `Reference Form "${form.id}" slot "${part.slotId}" has an empty ` +
+          "attachment-site identifier.",
+      });
+    }
+
+    for (const position of [parentPosition, childPosition]) {
+      if (!isValidAttachmentPosition(position)) {
+        issues.push({
+          code: "invalid-attachment-position",
+          slotId: part.slotId,
+          message:
+            `Reference Form "${form.id}" slot "${part.slotId}" must have ` +
+            "attachment positions within [0, 1].",
+        });
+      }
+    }
+  }
+
+  if (roots === 0) {
+    issues.push({
+      code: "missing-root",
+      message:
+        `Reference Form "${form.id}" has no unattached slot. Anatomy is a ` +
+        "forest, so at least one part must attach to nothing.",
+    });
+  }
+
+  /*
+   * Cycles, by walking each slot up to a root. Anatomy is a forest and Height
+   * resolution depends on it: a cycle is two independent assertions about one
+   * vertical coordinate, which needs a constraint solver rather than a walk.
+   */
+  const parentOf = new Map(
+    form.parts.map(
+      (part) => [part.slotId, part.attachment?.parentSlotId] as const,
+    ),
+  );
+
+  for (const part of form.parts) {
+    const seen = new Set<ReferenceAnatomySlotId>([part.slotId]);
+
+    let current = parentOf.get(part.slotId);
+
+    while (current !== undefined) {
+      if (seen.has(current)) {
+        issues.push({
+          code: "attachment-cycle",
+          slotId: part.slotId,
+          message:
+            `Reference Form "${form.id}" slot "${part.slotId}" is part of an ` +
+            "attachment cycle.",
+        });
+
+        break;
+      }
+
+      seen.add(current);
+      current = parentOf.get(current);
+    }
+  }
+
+  return createReferenceFormValidationResult(issues);
+}
+
+
+function createReferenceFormValidationResult(
+  issues: readonly ReferenceFormValidationIssue[],
+): ReferenceFormValidationResult {
+  return { valid: issues.length === 0, issues };
 }

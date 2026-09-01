@@ -88,6 +88,7 @@ function capability(
       species: NEUTRAL_SOURCE,
       age: NEUTRAL_SOURCE,
       character: NEUTRAL_SOURCE,
+      individual: {},
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },

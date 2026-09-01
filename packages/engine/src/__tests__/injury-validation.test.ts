@@ -16,6 +16,7 @@ import {
   type CharacterInjury,
 } from "../character/status/injuries";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import type { SpecialPointDefinition } from "../character/foundation/body/critical-points/types";
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
@@ -56,10 +57,17 @@ const BODY_PART_DEFINITIONS: readonly BodyPartDefinition[] = [
 
 const ANATOMY: Anatomy = {
   parts: [
-    { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1 },
-    { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 1 },
+    { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 1 },
+    { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "limb-1", continuityKey: continuityKey("limb-1"), state: "active", integrity: 1 },
   ],
 };
+
+/*
+ * Every identity this test body knows. Validity is judged against what the
+ * body HAS EVER had, not against what is currently manifested — see
+ * mechanics/recovery/validation.ts.
+ */
+const KNOWN_CONTINUITY = new Set(ANATOMY.parts.map((part) => part.continuityKey));
 
 const ELBOW_SPECIAL_POINT: SpecialPointDefinition = {
   id: "elbow",
@@ -96,7 +104,7 @@ describe("treatment status validation", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
     ];
@@ -114,7 +122,7 @@ describe("treatment status validation", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     expect(findInjuryValidationIssues(injuries)).toEqual([]);
@@ -130,7 +138,7 @@ describe("treatment status validation", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "broken-rib", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "broken-rib", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     expect(findInjuryValidationIssues(injuries)).toEqual([
@@ -156,7 +164,7 @@ describe("treatment status validation", () => {
       {
         id: "injury-1",
         injuryId: "bruise",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
     ];
@@ -184,7 +192,7 @@ describe("treatment status validation", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "pending",
       },
     ] as unknown as readonly CharacterInjury[];
@@ -259,12 +267,13 @@ describe("Body-aware location validation", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "sprain", location: { bodyPartIds: ["limb-1"] } },
+      { id: "injury-1", injuryId: "sprain", location: { continuityKeys: [continuityKey("limb-1")] } },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -282,12 +291,13 @@ describe("Body-aware location validation", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "sprain", location: { bodyPartIds: ["limb-99"] } },
+      { id: "injury-1", injuryId: "sprain", location: { continuityKeys: [continuityKey("limb-99")] } },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -297,7 +307,7 @@ describe("Body-aware location validation", () => {
         type: "injury-body-part-unknown",
         id: "injury-1",
         injuryId: "sprain",
-        bodyPartId: "limb-99",
+        continuityKey: continuityKey("limb-99"),
       },
     ]);
   });
@@ -312,12 +322,13 @@ describe("Body-aware location validation", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "sprain", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "sprain", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -342,12 +353,13 @@ describe("Body-aware location validation", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "elbow-dislocation", location: { bodyPartIds: ["limb-1"] } },
+      { id: "injury-1", injuryId: "elbow-dislocation", location: { continuityKeys: [continuityKey("limb-1")] } },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -370,13 +382,14 @@ describe("Body-aware location validation", () => {
       {
         id: "injury-1",
         injuryId: "elbow-dislocation",
-        location: { bodyPartIds: ["limb-1"], specialPointDefinitionId: "not-real" },
+        location: { continuityKeys: [continuityKey("limb-1")], specialPointDefinitionId: "not-real" },
       },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -404,13 +417,14 @@ describe("Body-aware location validation", () => {
       {
         id: "injury-1",
         injuryId: "elbow-dislocation",
-        location: { bodyPartIds: ["limb-1"], specialPointDefinitionId: "wrist" },
+        location: { continuityKeys: [continuityKey("limb-1")], specialPointDefinitionId: "wrist" },
       },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -442,13 +456,14 @@ describe("Body-aware location validation", () => {
         id: "injury-1",
         injuryId: "elbow-dislocation",
         // torso-1 exists, but the Elbow Special Point is only hosted by limbs.
-        location: { bodyPartIds: ["torso-1"], specialPointDefinitionId: "elbow" },
+        location: { continuityKeys: [continuityKey("torso-1")], specialPointDefinitionId: "elbow" },
       },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -465,12 +480,13 @@ describe("Body-aware location validation", () => {
 
   it("skips an unknown Injury — status/injuries.ts already reports that", () => {
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "not-real", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "not-real", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     expect(
       findRecoveryLocationIssues(
         ANATOMY,
+        KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
@@ -492,11 +508,12 @@ describe("findRecoveryValidationIssues composes both layers without duplicating 
     const injuries: readonly CharacterInjury[] = [
       // Missing treatmentStatus (intrinsic) AND occupies the wrong BodyPart
       // type (Body-aware).
-      { id: "injury-1", injuryId: "broken-rib", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "broken-rib", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     const issues = findRecoveryValidationIssues(
       ANATOMY,
+      KNOWN_CONTINUITY,
       BODY_PART_DEFINITIONS,
       SPECIAL_POINT_DEFINITIONS,
       injuries,
@@ -520,7 +537,13 @@ describe("findRecoveryValidationIssues composes both layers without duplicating 
 
   it("finds no issues for an empty Injury list", () => {
     expect(
-      findRecoveryValidationIssues(ANATOMY, BODY_PART_DEFINITIONS, SPECIAL_POINT_DEFINITIONS, []),
+      findRecoveryValidationIssues(
+        ANATOMY,
+        KNOWN_CONTINUITY,
+        BODY_PART_DEFINITIONS,
+        SPECIAL_POINT_DEFINITIONS,
+        [],
+      ),
     ).toEqual([]);
   });
 });

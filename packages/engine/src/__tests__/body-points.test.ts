@@ -16,6 +16,7 @@
 
 import { describe, expect, it } from "vitest";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type {
   Anatomy,
   BodyPartDefinition,
@@ -65,7 +66,7 @@ const DEFINITIONS: readonly BodyPartDefinition[] = [
 function anatomy(integrity = 1): Anatomy {
   return {
     parts: [
-      { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity },
+      { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity },
     ],
   };
 }
@@ -82,6 +83,7 @@ function morphologyFor(
         global: { ...NEUTRAL_MORPHOLOGY, ...character },
         local: {},
       },
+      individual: {},
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
@@ -341,7 +343,7 @@ describe("integrity", () => {
       const resolved = resolveBodyPoints({
         anatomy: {
           parts: [
-            { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state, integrity: 0 },
+            { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state, integrity: 0 },
           ],
         },
         definitions: DEFINITIONS,
@@ -461,6 +463,7 @@ describe("Body Point validation", () => {
             attachment: null,
             referenceFormId: "default",
             referenceSlotId: "torso-1",
+            continuityKey: continuityKey("torso-1"),
             state: "archived-removed",
             integrity: 0.5,
           },

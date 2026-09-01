@@ -81,11 +81,6 @@
  * source.
  */
 
-import type {
-  ReferenceAnatomySlotId,
-  ReferenceFormId,
-  BodyPartTypeId,
-} from "../foundation/body/anatomy/types";
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type { AttributeKey } from "../foundation/attributes/types";
 import type {
@@ -291,73 +286,27 @@ export interface GrantTechniqueEffect {
 
 
 /*
- * Which morphology dimension an effect changes.
+ * The Body-facing vocabulary — owned by Body, re-exported here.
+ *
+ * These four types describe anatomy, morphology and force, which is Body's
+ * subject matter and not the rules layer's. They live in
+ * foundation/body/effects.ts alongside the code that applies them, so that
+ * there is one definition rather than a copy here that has to be kept in step
+ * by hand, and so the dependency runs one way: rules reads Body's vocabulary,
+ * Body never reads rules.
  */
-export type BodyMorphologyProperty =
-  | "length"
-  | "bulk"
-  | "muscularity"
-  | "adiposity";
-
-
-/*
- * What a Body effect applies to.
- *
- * Absent means the whole body. A selector narrows it to matching BodyParts —
- * "every Arm", "everything tagged limb" — which is how Long Arms says what it
- * means without naming instances that may not exist yet.
- */
-export type BodyEffectTarget = BodyPartSelector | undefined;
-
-
-/*
- * How an anatomy effect changes a body.
- *
- * The four modes differ in TWO independent ways — what happens to the
- * Reference Form, and what happens to the anatomy present — and the
- * combinations are not interchangeable:
- *
- *   addToForm       form grows        anatomy gains the part
- *   removeFromForm  form shrinks      instance retained, no longer expected
- *   suppress        form UNCHANGED    instance hidden, damage preserved
- *   replaceForm     form replaced     the new form's anatomy
- *
- * suppress is invalid on a BASE anatomy effect and the type says so. A
- * permanent effect that hides a part without changing the body plan is a
- * contradiction: the form would go on expecting anatomy that permanently is
- * not there, with nothing ever able to resolve the disagreement.
- *
- * Note what is absent: damage-driven loss is NOT here and must never be
- * expressed as one of these. Destruction sets anatomy instance state directly.
- * Routing it through removeFromForm would shrink the Reference Form too, and a
- * form that stops expecting the arm it just lost is a form that has healed.
- */
-export type BodyAnatomyOperation =
-  | {
-      readonly mode: "addToForm";
-      readonly slotId: ReferenceAnatomySlotId;
-      readonly type: BodyPartTypeId;
-      readonly attachToSlotId?: ReferenceAnatomySlotId;
-    }
-  | {
-      readonly mode: "removeFromForm";
-      readonly slotId: ReferenceAnatomySlotId;
-    }
-  | {
-      readonly mode: "suppress";
-      readonly target: BodyPartSelector;
-    }
-  | {
-      readonly mode: "replaceForm";
-      readonly referenceFormId: ReferenceFormId;
-    };
-
-
-/** Every anatomy operation a permanent effect may perform. */
-export type BaseBodyAnatomyOperation = Exclude<
+import type {
+  BodyMorphologyProperty,
   BodyAnatomyOperation,
-  { readonly mode: "suppress" }
->;
+  BaseBodyAnatomyOperation,
+} from "../foundation/body/effects";
+
+export type {
+  BodyMorphologyProperty,
+  BodyEffectTarget,
+  BodyAnatomyOperation,
+  BaseBodyAnatomyOperation,
+} from "../foundation/body/effects";
 
 
 /*

@@ -95,6 +95,10 @@ import type {
 } from "./effects";
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type {
+  StatureAllowance,
+  StatureJustification,
+} from "../foundation/body/stature/types";
+import type {
   AttributeRequirementLayer,
   Requirement,
 } from "./requirements";
@@ -132,6 +136,13 @@ export interface RuleSourceRef {
 export interface RuleEffectSource {
   readonly source: RuleSourceRef;
   readonly effects: readonly Effect[];
+
+  /*
+   * Exceptional stature this source permits. Carried alongside Effects rather
+   * than through a second collection pass, because it applies under exactly
+   * the same condition they do: the source is applicable to this character.
+   */
+  readonly statureAllowances?: readonly StatureAllowance[];
 }
 
 
@@ -287,6 +298,15 @@ export interface ResolvedRuleEffects {
   readonly techniqueGrants: readonly TechniqueGrant[];
 
   readonly body: ResolvedBodyEffects;
+
+  /*
+   * Every exceptional stature this character's applicable content permits,
+   * stamped with the content that permitted it.
+   *
+   * Body checks coverage and never asks what a Trait is, so the source id is
+   * carried for diagnostics only — see foundation/body/stature/justification.ts.
+   */
+  readonly statureJustifications: readonly StatureJustification[];
 }
 
 
@@ -330,6 +350,17 @@ export function resolveRuleEffects(
   const resolvedAttributeModifiers: SourcedAttributeModifier[] = [];
 
   const checkModifiers: SourcedCheckModifier[] = [];
+
+  const statureJustifications: StatureJustification[] = [];
+
+  for (const ruleSource of sources) {
+    for (const allowance of ruleSource.statureAllowances ?? []) {
+      statureJustifications.push({
+        ...allowance,
+        sourceId: ruleSource.source.id,
+      });
+    }
+  }
 
   const traitGrants: TraitGrant[] = [];
   const skillGrants: SkillGrant[] = [];
@@ -489,6 +520,8 @@ export function resolveRuleEffects(
     techniqueGrants,
 
     body: { base: bodyBase, resolved: bodyResolved },
+
+    statureJustifications,
   };
 }
 

@@ -103,6 +103,11 @@ import {
   type SourcedAttributeModifier,
 } from "./rules/resolution";
 
+import {
+  contributesNothing,
+  sourceContributions,
+} from "./rules/content";
+
 import type { Character } from "./types";
 
 import { listDefinitions } from "./catalogs";
@@ -110,6 +115,10 @@ import { resolveBody } from "./foundation/body/resolution";
 import { resolveAge } from "./foundation/body/age/resolution";
 import { NEUTRAL_MORPHOLOGY } from "./foundation/body/types";
 import { HUMAN_BODY_PROFILE } from "./foundation/body/human-profile";
+import {
+  STANDARD_HUMANOID_FORM,
+  getReferenceFormDefinition,
+} from "./foundation/body/anatomy/reference-forms";
 import type { SpeciesBodyProfile } from "./foundation/body/species-profile";
 import {
   applyPhysicalScaleSteps,
@@ -122,8 +131,15 @@ import type { Attributes } from "./foundation/attributes/types";
 import type { CharacterStats } from "./foundation/attributes/stats";
 import type { PhysicalScaleBurden } from "./foundation/attributes/physical";
 import type { ResolvedMovement } from "./foundation/attributes/speed";
-import type { ResolvedBody } from "./foundation/body/resolution";
-import type { EngineTrace } from "../infrastructure/trace";
+import type {
+  BodyResolutionInput,
+  ResolvedBody,
+} from "./foundation/body/resolution";
+import type { StatureJustification } from "./foundation/body/stature/types";
+import type { ContinuityKey } from "./foundation/body/anatomy/types";
+import type { EngineResult } from "../infrastructure/result";
+import type { EngineTrace, TraceNode } from "../infrastructure/trace";
+import { createTraceNode } from "../infrastructure/trace";
 
 /*
  * The age a character resolves at when none is authored.
@@ -166,6 +182,16 @@ export interface ResolvedCharacter {
    */
   readonly stats: CharacterStats;
 
+  /*
+   * The physical baseline this character's ancestry collapsed to.
+   *
+   * Kept because ancestry resolution happens here and nowhere else: a caller
+   * asking which Species standard Scale, age curve or stature bands applied
+   * would otherwise have to walk the ancestry a second time and could get a
+   * different answer.
+   */
+  readonly speciesBodyProfile: SpeciesBodyProfile;
+
   /** Everything physical, and the trace explaining it. */
   readonly body: ResolvedBody;
   readonly bodyTrace: EngineTrace;
@@ -197,6 +223,32 @@ export interface ResolvedCharacter {
 
   readonly baseAttributeModifiers: readonly SourcedAttributeModifier[];
   readonly resolvedAttributeModifiers: readonly SourcedAttributeModifier[];
+
+  /*
+   * The exact input the body was resolved from.
+   *
+   * Carried so that anything needing to ask a SECOND physical question — body
+   * validation, the stature rule, base-mode re-resolution — asks it of the
+   * same body, rather than reassembling the layer stack and risking a
+   * different one.
+   */
+  readonly bodyInput: BodyResolutionInput;
+
+  /*
+   * Every anatomical identity this body knows, whether or not the current form
+   * expresses it. What Injury VALIDITY is judged against — see
+   * mechanics/recovery/validation.ts for why that is a different question from
+   * whether an Injury currently applies.
+   */
+  readonly knownContinuityKeys: ReadonlySet<ContinuityKey>;
+
+  /*
+   * Exceptional stature this character's content permits, with provenance.
+   *
+   * Resolution collects them; validation is where they are spent. See
+   * foundation/body/stature/justification.ts.
+   */
+  readonly statureJustifications: readonly StatureJustification[];
 
   /**
    * The character as a Requirement asks about them.
@@ -253,23 +305,39 @@ function seedSources(character: Character): readonly RuleEffectSource[] {
   for (const speciesId of collectSpeciesAncestry(character.species ?? [])) {
     const definition = getSpeciesDefinition(speciesId);
 
-    if (definition?.effects !== undefined) {
-      sources.push({
-        source: { type: "species", id: speciesId },
-        effects: definition.effects,
-      });
-    }
+    if (definition === undefined) continue;
+
+    const effects = definition.effects ?? [];
+
+    /*
+     * Emptiness is asked of the DEFINITION, not of its Effects. A Species or
+     * Trait that only permits an unusual stature carries no Effect at all, and
+     * skipping it for that would quietly make the character it explains
+     * illegal.
+     */
+    if (contributesNothing(definition, effects)) continue;
+
+    sources.push({
+      source: { type: "species", id: speciesId },
+      effects,
+      ...sourceContributions(definition),
+    });
   }
 
   for (const clan of character.clans ?? []) {
     const definition = getClanDefinition(clan.clanId);
 
-    if (definition?.effects !== undefined) {
-      sources.push({
-        source: { type: "clan", id: clan.clanId },
-        effects: definition.effects,
-      });
-    }
+    if (definition === undefined) continue;
+
+    const effects = definition.effects ?? [];
+
+    if (contributesNothing(definition, effects)) continue;
+
+    sources.push({
+      source: { type: "clan", id: clan.clanId },
+      effects,
+      ...sourceContributions(definition),
+    });
   }
 
   sources.push(
@@ -289,11 +357,16 @@ function seedSources(character: Character): readonly RuleEffectSource[] {
 function traitSource(traitId: string): RuleEffectSource | undefined {
   const definition = getTraitDefinition(traitId);
 
-  if (definition?.effects === undefined) return undefined;
+  if (definition === undefined) return undefined;
+
+  const effects = definition.effects ?? [];
+
+  if (contributesNothing(definition, effects)) return undefined;
 
   return {
     source: { type: "trait", id: traitId },
-    effects: definition.effects,
+    effects,
+    ...sourceContributions(definition),
   };
 }
 
@@ -307,11 +380,12 @@ function techniqueSource(
 
   const effects = collectTechniqueEffects(definition, mastery);
 
-  if (effects.length === 0) return undefined;
+  if (contributesNothing(definition, effects)) return undefined;
 
   return {
     source: { type: "technique", id: techniqueId },
     effects,
+    ...sourceContributions(definition),
   };
 }
 
@@ -325,21 +399,59 @@ function skillSource(
 
   const effects = collectSkillEffects(definition, mastery);
 
-  if (effects.length === 0) return undefined;
+  if (contributesNothing(definition, effects)) return undefined;
 
   return {
     source: { type: "skill", id: skillId },
     effects,
+    ...sourceContributions(definition),
   };
 }
+
+/*
+ * The trace both branches return.
+ *
+ * Body's own trace hangs beneath a character-level node rather than being
+ * returned as-is, so a failure explains which character stopped and a success
+ * has one root a caller can rely on. Body is currently the only sub-resolution
+ * that traces; the others are arithmetic over values already in the payload.
+ */
+function characterTrace(
+  character: Character,
+  bodyRoot: TraceNode,
+  resolved: boolean,
+): EngineTrace {
+  return {
+    root: createTraceNode({
+      id: "character.resolve",
+      label: "Resolve character",
+      inputs: {
+        id: { value: character.id },
+        name: { value: character.details.name },
+      },
+      output: resolved,
+      children: [bodyRoot],
+    }),
+  };
+}
+
 
 /**
  * Resolve a character.
  *
  * Pure: nothing in the authored character is written to, and calling this
  * twice on the same character produces the same answer.
+ *
+ * Returns an EngineResult rather than a bare ResolvedCharacter because the
+ * body can fail to resolve — anatomy referencing a BodyPartDefinition that
+ * does not exist, an Effective Scale of zero — and every stat below the body
+ * depends on it. Content the character is merely not ELIGIBLE for is not a
+ * failure and never has been: an ineligible sheet resolves successfully and
+ * validation is what judges it.
  */
-export function resolveCharacter(character: Character): ResolvedCharacter {
+export function resolveCharacter(
+  character: Character,
+): EngineResult<ResolvedCharacter> {
   const authoredSkills = toSkillMasteryRecord(character.skills);
   const authoredTechniques = toTechniqueMasteryRecord(character.techniques);
 
@@ -481,11 +593,52 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
 
   const neutralSource = { global: NEUTRAL_MORPHOLOGY, local: {} };
 
-  const body = resolveBody({
-    anatomy: character.body.anatomy,
-    referenceForm: speciesBody.referenceForm,
+  /*
+   * The Species' body plan, by id.
+   *
+   * Forms are content now, so a Species names one rather than owning the only
+   * copy — which is what lets a transformation target the same plan. A profile
+   * naming a form nothing declares falls back to the Human standard rather
+   * than failing resolution, for the same reason an unstated Species does:
+   * every character has a body.
+   */
+  const speciesForm =
+    getReferenceFormDefinition(speciesBody.referenceFormId) ??
+    STANDARD_HUMANOID_FORM;
+
+  const bodyInput: BodyResolutionInput = {
+    referenceForm: speciesForm,
+    continuity: character.body.continuity,
     definitions: listDefinitions("body-part"),
     specialPointDefinitions: listDefinitions("special-point"),
+
+    /*
+     * The physical Effects this character's content declared, both modes.
+     *
+     * Resolution runs in resolved mode, so Body applies the base layer and
+     * then the resolved one. Base-mode resolution — what Strength advancement
+     * is priced against — receives the same object and takes the base layer
+     * alone, which is why both are handed over rather than one being chosen
+     * here.
+     */
+    effects: resolved.body,
+
+    /*
+     * The forms a replaceForm Effect may name.
+     *
+     * Every Reference Form the loaded Species declare, which is the whole set
+     * of body plans this world contains — there is no Reference Form catalog
+     * domain, and inventing one to hold plans that Species already own would
+     * be two places for the same fact. A transformation into another kind of
+     * body therefore names that Species' form and gets it.
+     */
+    /*
+     * Every form a replaceForm Effect may name — the whole Reference Form
+     * catalog, rather than only the plans some Species happens to use. That is
+     * the point of forms being content: a were-form or a summoned shape need
+     * not be a Species to be transformed into.
+     */
+    referenceForms: listDefinitions("reference-form"),
 
     morphology: {
       species: {
@@ -501,8 +654,17 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
             },
       character: {
         global: character.body.globalMorphology,
-        local: character.body.localMorphology,
+
+        /*
+         * The character layer carries only their GLOBAL build. What is unusual
+         * about one particular limb is keyed by continuity identity and is
+         * supplied by body resolution from the continuity state, so it travels
+         * with the limb rather than with the slot.
+         */
+        local: {},
       },
+      individual: {},
+
       strengthDevelopmentMuscularity:
         character.body.strengthDevelopmentMuscularity,
       effectLayers: [],
@@ -514,13 +676,43 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
     constitution: attributes.resolved.con,
     adiposeTissueDensityKgPerL: speciesBody.adiposeTissueDensityKgPerL,
     anatomicalPoints: character.body.anatomicalPoints,
-  });
+  };
 
+  const body = resolveBody(bodyInput);
+
+  /*
+   * A body that cannot resolve stops the character.
+   *
+   * Every number below this point is derived from the body — Strength, the
+   * Size and Mass burden on AGI and DEX, and through those every Derived
+   * Attribute. There is no partially-resolved character to hand back, so the
+   * failure propagates with the body's own errors, trace and warnings intact
+   * rather than being turned into an exception the caller cannot inspect.
+   */
   if (!body.success) {
-    throw new Error("Body resolution failed during character resolution.");
+    return {
+      success: false,
+      trace: characterTrace(character, body.trace.root, false),
+      warnings: body.warnings,
+      errors: body.errors,
+    };
   }
 
   const resolvedBody = body.payload;
+
+  /*
+   * Every anatomical identity this character's body knows about.
+   *
+   * Three sources, and the third is the one that matters: identities with
+   * persistent state that no CURRENT form expresses. A Dragon's wing injury
+   * has to stay valid while its owner is human, so an identity the character
+   * has a record for counts whether or not anything is standing in it today.
+   */
+  const knownContinuityKeys: ReadonlySet<ContinuityKey> = new Set([
+    ...speciesForm.parts.map((part) => part.continuityKey),
+    ...resolvedBody.referenceForm.parts.map((part) => part.continuityKey),
+    ...(Object.keys(character.body.continuity) as ContinuityKey[]),
+  ]);
 
   /*
    * Size and Mass reach AGI and DEX here, once, and never again. Every derived
@@ -567,7 +759,7 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
     techniqueGrants: resolved.techniqueGrants,
   });
 
-  return {
+  const payload: ResolvedCharacter = {
     character,
     attributes,
     attributeScores: resolveAttributeScores(attributes.resolved),
@@ -578,6 +770,7 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
      * derived attributes were computed from and what a sheet should show.
      */
     stats,
+    speciesBodyProfile: speciesBody,
     body: resolvedBody,
     bodyTrace: body.trace,
     physicalScaleBurden: physicalBurden,
@@ -600,6 +793,17 @@ export function resolveCharacter(character: Character): ResolvedCharacter {
       traits,
       capabilities,
     ),
+
+    bodyInput,
+    knownContinuityKeys,
+    statureJustifications: resolved.statureJustifications,
+  };
+
+  return {
+    success: true,
+    payload,
+    trace: characterTrace(character, body.trace.root, true),
+    warnings: body.warnings,
   };
 }
 

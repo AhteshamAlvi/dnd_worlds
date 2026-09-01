@@ -152,13 +152,15 @@ describe("validateCharacter", () => {
     }
   });
 
-  it("includes attribute, derived-attribute and reference validation beneath the character trace", () => {
+  it("includes attribute, derived-attribute, reference, body and stature validation beneath the character trace", () => {
     const result = validateCharacter(createTestCharacter());
 
     expect(result.trace.root.children.map((child) => child.id)).toEqual([
       "character.attributes.validate",
       "attributes.derived.validate",
       "character.references.validate",
+      "character.resolve",
+      "body.stature.justification",
     ]);
   });
 

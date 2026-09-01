@@ -9,6 +9,19 @@ import { describe, expect, it } from "vitest";
 
 import { BODY_PART_DEFINITIONS } from "../character/foundation/body/anatomy/body-parts";
 import {
+  destroyContinuity,
+  regenerateContinuity,
+} from "../character/foundation/body/continuity";
+import type { ContinuityStates } from "../character/foundation/body/continuity";
+import { STANDARD_HUMANOID_FORM } from "../character/foundation/body/anatomy/reference-forms";
+import {
+  STANDARD_HUMANOID_BODY_PART_SPECS,
+  STANDARD_HUMANOID_FORM_ID,
+} from "../character/foundation/body/anatomy/standard-humanoid";
+import { resolveBody } from "../character/foundation/body/resolution";
+import { SPECIAL_POINT_DEFINITIONS } from "../character/foundation/body/critical-points/special-points";
+import type { BodyPartCreationSpec } from "../character/foundation/body/anatomy/creation";
+import {
   combineWithinLayer,
   multiplyLayers,
   resolvePartMorphology,
@@ -18,11 +31,27 @@ import {
   findSensitivityIssues,
 } from "../character/foundation/body/morphology/validation";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
+import {
+  anatomySlotKey,
+  continuityKey,
+} from "../character/foundation/body/anatomy/types";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import type {
   MorphologyResolutionInput,
   MorphologySource,
 } from "../character/foundation/body/morphology/types";
+
+/*
+ * Slot keys are built with the constructor, never written by hand.
+ *
+ * They are form-scoped ("standard-humanoid:arm-1"), and the branding on
+ * AnatomySlotKey exists so a raw BodyPart instance id cannot be handed to a
+ * slot-keyed map by accident — which is exactly how Body.localMorphology spent
+ * this refactor silently inert.
+ */
+const TEST_FORM = "test-form";
+
+const slot = (slotId: string) => anatomySlotKey(TEST_FORM, slotId);
 
 const NEUTRAL_SOURCE: MorphologySource = {
   global: NEUTRAL_MORPHOLOGY,
@@ -33,6 +62,7 @@ const NEUTRAL_INPUT: MorphologyResolutionInput = {
   species: NEUTRAL_SOURCE,
   age: NEUTRAL_SOURCE,
   character: NEUTRAL_SOURCE,
+  individual: {},
   strengthDevelopmentMuscularity: 1,
   effectLayers: [],
 };
@@ -115,7 +145,7 @@ describe("combining across layers", () => {
 
 describe("resolving a BodyPart through the full stack", () => {
   it("leaves a neutral body neutral", () => {
-    expect(resolvePartMorphology(NEUTRAL_INPUT, "arm-1")).toEqual(
+    expect(resolvePartMorphology(NEUTRAL_INPUT, slot("arm-1"), continuityKey("arm-1"))).toEqual(
       NEUTRAL_MORPHOLOGY,
     );
   });
@@ -128,7 +158,7 @@ describe("resolving a BodyPart through the full stack", () => {
       character: { global: { ...NEUTRAL_MORPHOLOGY, bulk: 1.5 }, local: {} },
     };
 
-    expect(resolvePartMorphology(input, "arm-1").bulk).toBeCloseTo(1.98, 10);
+    expect(resolvePartMorphology(input, slot("arm-1"), continuityKey("arm-1")).bulk).toBeCloseTo(1.98, 10);
   });
 
   /*
@@ -141,12 +171,12 @@ describe("resolving a BodyPart through the full stack", () => {
       ...NEUTRAL_INPUT,
       species: {
         global: { ...NEUTRAL_MORPHOLOGY, bulk: 1.3 },
-        local: { "arm-1": { length: 1.4 } },
+        local: { [slot("arm-1")]: { length: 1.4 } },
       },
     };
 
-    const arm = resolvePartMorphology(input, "arm-1");
-    const leg = resolvePartMorphology(input, "leg-1");
+    const arm = resolvePartMorphology(input, slot("arm-1"), continuityKey("arm-1"));
+    const leg = resolvePartMorphology(input, slot("leg-1"), continuityKey("leg-1"));
 
     expect(arm.bulk).toBeCloseTo(1.3, 10);
     expect(arm.length).toBeCloseTo(1.4, 10);
@@ -165,7 +195,7 @@ describe("resolving a BodyPart through the full stack", () => {
       strengthDevelopmentMuscularity: 1.5747,
     };
 
-    const resolved = resolvePartMorphology(input, "arm-1");
+    const resolved = resolvePartMorphology(input, slot("arm-1"), continuityKey("arm-1"));
 
     expect(resolved.muscularity).toBeCloseTo(1.88964, 10);
     expect(resolved.bulk).toBeCloseTo(1, 10);
@@ -183,7 +213,7 @@ describe("resolving a BodyPart through the full stack", () => {
     };
 
     expect(
-      resolvePartMorphology(input, "arm-1").muscularity,
+      resolvePartMorphology(input, slot("arm-1"), continuityKey("arm-1")).muscularity,
     ).toBeCloseTo(1.5, 10);
   });
 });
@@ -251,5 +281,178 @@ describe("sensitivity validation", () => {
         sensitivity: { ...arm.sensitivity, muscularityForce: 4 },
       }),
     ).toEqual([]);
+  });
+});
+
+
+/*
+ * What a regenerated limb comes back as.
+ *
+ * Two things have to be true at once, and they pull in opposite directions:
+ *
+ *   the limb keeps its own INDIVIDUAL morphology  — it is still this
+ *   character's unusually long right arm, not a species-default one
+ *
+ *   the limb reflects CURRENT GLOBAL development  — including Strength bought
+ *   while it was missing
+ *
+ * Both fall out of where each value lives. Individual morphology is keyed by
+ * anatomical POSITION, which outlives the tissue occupying it, so the new
+ * instance inherits it by standing in the same slot. Global development lives
+ * on the body as a whole and is multiplied in as its own layer, so it reaches
+ * whatever anatomy is present at the time.
+ *
+ * Regeneration therefore reconstructs an anatomical position from the
+ * character's current state. It does not restore a snapshot of what that limb
+ * was like on the day it was lost.
+ */
+describe("a regenerated limb", () => {
+  const DEFINITION_LIST = Object.values(
+    BODY_PART_DEFINITIONS,
+  ) as readonly BodyPartDefinition[];
+
+  const SPECIAL_POINTS = Object.values(SPECIAL_POINT_DEFINITIONS);
+
+  const RIGHT_ARM = continuityKey("upper-limb:right");
+
+  /*
+   * This character's right arm is 20% longer than an ordinary one, recorded
+   * against the IDENTITY rather than against a slot or an instance. That is
+   * what makes it survive both regeneration and a change of form.
+   */
+  const LONG_RIGHT_ARM: ContinuityStates = {
+    [RIGHT_ARM]: { morphology: { length: 1.2 } },
+  };
+
+  function resolve(
+    continuity: ContinuityStates,
+    strengthDevelopmentMuscularity: number,
+    instanceIdFor?: (part: { readonly slotId: string }) => string,
+  ) {
+    const result = resolveBody({
+      referenceForm: STANDARD_HUMANOID_FORM,
+      continuity,
+      definitions: DEFINITION_LIST,
+      specialPointDefinitions: SPECIAL_POINTS,
+      ...(instanceIdFor !== undefined ? { instanceIdFor } : {}),
+
+      morphology: {
+        species: NEUTRAL_SOURCE,
+        age: NEUTRAL_SOURCE,
+        character: NEUTRAL_SOURCE,
+        individual: {},
+        strengthDevelopmentMuscularity,
+        effectLayers: [],
+      },
+
+      speciesStandardScale: 1,
+      ageScale: 1,
+      characterScale: 1,
+      constitution: 10,
+    });
+
+    if (!result.success) throw new Error("expected the body to resolve");
+
+    return result.payload;
+  }
+
+  /* Regeneration produces a NEW instance in the same anatomical position. */
+  const regrown = (part: { readonly slotId: string }) =>
+    part.slotId === "arm-2" ? "regrown-arm-2" : part.slotId;
+
+  const lengthOf = (
+    body: ReturnType<typeof resolve>,
+    partId: string,
+  ): number | undefined =>
+    body.measurements.present.parts.find((part) => part.partId === partId)
+      ?.lengthCm;
+
+  it("keeps the individual morphology of the identity it grew back into", () => {
+    const original = resolve(LONG_RIGHT_ARM, 1);
+    const regenerated = resolve(LONG_RIGHT_ARM, 1, regrown);
+
+    /* 55 cm reference length, 20% longer. */
+    expect(lengthOf(original, "arm-2")).toBeCloseTo(66, 6);
+    expect(lengthOf(regenerated, "regrown-arm-2")).toBeCloseTo(66, 6);
+
+    /*
+     * The instance id genuinely changed, so this is the identity carrying the
+     * morphology and not the slot happening to be named the same thing.
+     */
+    expect(lengthOf(regenerated, "arm-2")).toBeUndefined();
+
+    /* And the other arm is untouched. */
+    expect(lengthOf(regenerated, "arm-1")).toBeCloseTo(55, 6);
+  });
+
+  it("reflects Strength development bought while it was missing", () => {
+    const before = resolve(LONG_RIGHT_ARM, 1);
+    const after = resolve(LONG_RIGHT_ARM, 1.5747, regrown);
+
+    const muscularityOf = (
+      body: ReturnType<typeof resolve>,
+      partId: string,
+    ) => body.morphologyByPartId[partId]?.muscularity;
+
+    expect(muscularityOf(before, "arm-2")).toBeCloseTo(1, 10);
+
+    /*
+     * The limb was absent while this was bought and still carries it. Global
+     * development belongs to the body, not to the instances that happened to
+     * exist when it was acquired — which is why it is stored once on Body and
+     * never written onto a BodyPart or a continuity record.
+     */
+    expect(muscularityOf(after, "regrown-arm-2")).toBeCloseTo(1.5747, 10);
+
+    /* Both facts hold at once: current development AND its own length. */
+    expect(lengthOf(after, "regrown-arm-2")).toBeCloseTo(66, 6);
+  });
+
+  it("comes back from destruction rather than being recreated neutral", () => {
+    const destroyed = destroyContinuity(LONG_RIGHT_ARM, RIGHT_ARM);
+
+    const missing = resolve(destroyed, 1.5747);
+
+    /* Destroyed anatomy is instantiated as archived, and takes its hand. */
+    expect(
+      missing.anatomy.parts.find((part) => part.id === "arm-2")?.state,
+    ).toBe("archived-removed");
+    expect(
+      missing.anatomy.parts.find((part) => part.id === "hand-2")?.state,
+    ).toBe("archived-removed");
+    expect(lengthOf(missing, "arm-2")).toBeUndefined();
+
+    const regenerated = resolve(
+      regenerateContinuity(destroyed, RIGHT_ARM),
+      1.5747,
+      regrown,
+    );
+
+    /*
+     * Their own arm, at their current development — not a species-default one,
+     * and not the arm they lost.
+     */
+    expect(lengthOf(regenerated, "regrown-arm-2")).toBeCloseTo(66, 6);
+    expect(
+      regenerated.morphologyByPartId["regrown-arm-2"]?.muscularity,
+    ).toBeCloseTo(1.5747, 10);
+  });
+
+  it("resolves the whole body identically whichever instance holds the identity", () => {
+    const original = resolve(LONG_RIGHT_ARM, 1.5747);
+    const regenerated = resolve(LONG_RIGHT_ARM, 1.5747, regrown);
+
+    expect(regenerated.measurements.present.totalMassKg).toBeCloseTo(
+      original.measurements.present.totalMassKg,
+      6,
+    );
+    expect(regenerated.strength.normalizedBodySP).toBeCloseTo(
+      original.strength.normalizedBodySP,
+      6,
+    );
+    expect(regenerated.measurements.present.heightCm).toBeCloseTo(
+      original.measurements.present.heightCm,
+      6,
+    );
   });
 });

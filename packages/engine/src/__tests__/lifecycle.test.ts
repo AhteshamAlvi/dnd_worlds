@@ -13,6 +13,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
@@ -32,9 +34,11 @@ import {
 import { findConditionValidationIssues } from "../character/status/conditions";
 import { findInjuryValidationIssues } from "../character/status/injuries";
 
-import { resolveCharacter } from "../character/resolution";
 import { validateCharacter } from "../character/validation";
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -297,7 +301,7 @@ describe("status resolution respects stage and expiry", () => {
       {
         id: "injury-1",
         injuryId: "sprained-wrist",
-        location: { bodyPartIds: ["hand-1"] },
+        location: { continuityKeys: [continuityKey("extremity:upper-left")] },
         treatmentStatus: "untreated",
       },
     ]);
@@ -311,7 +315,7 @@ describe("status resolution respects stage and expiry", () => {
       {
         id: "injury-1",
         injuryId: "sprained-wrist",
-        location: { bodyPartIds: ["hand-1"] },
+        location: { continuityKeys: [continuityKey("extremity:upper-left")] },
         treatmentStatus: "treated",
       },
     ]);
@@ -338,7 +342,7 @@ describe("status resolution respects stage and expiry", () => {
       {
         id: "injury-1",
         injuryId: "bruise",
-        location: { bodyPartIds: ["hand-1"] },
+        location: { continuityKeys: [continuityKey("extremity:upper-left")] },
       },
     ]);
 
@@ -357,7 +361,7 @@ describe("lifecycle fields reach resolveCharacter and validateCharacter", () => 
       ...WORSENING_CONDITION,
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { con: 12 },
         conditions: [{ conditionId: "worsening-flu", stage: 2 }],
@@ -404,7 +408,7 @@ describe("lifecycle fields reach resolveCharacter and validateCharacter", () => 
           {
             id: "injury-1",
             injuryId: "broken-rib",
-            location: { bodyPartIds: ["upper-body-1"] },
+            location: { continuityKeys: [continuityKey("torso:upper")] },
           },
         ],
       }),
@@ -441,7 +445,7 @@ describe("lifecycle fields reach resolveCharacter and validateCharacter", () => 
           {
             id: "injury-1",
             injuryId: "broken-rib",
-            location: { bodyPartIds: ["upper-body-1"] },
+            location: { continuityKeys: [continuityKey("torso:upper")] },
             treatmentStatus: "untreated",
           },
         ],

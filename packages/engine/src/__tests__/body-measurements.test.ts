@@ -43,6 +43,7 @@ import {
   resolveMorphology,
 } from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
+import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { BodyMorphology } from "../character/foundation/body/types";
 import type {
   Anatomy,
@@ -71,6 +72,7 @@ function neutralMorphology(
       species: NEUTRAL_SOURCE,
       age: NEUTRAL_SOURCE,
       character: NEUTRAL_SOURCE,
+      individual: {},
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
@@ -507,6 +509,7 @@ describe("measurement preconditions", () => {
           attachment: { parentId: "b", parentPosition: 1, childPosition: 0 },
           referenceFormId: "default",
           referenceSlotId: "a",
+          continuityKey: continuityKey("a"),
           state: "active",
           integrity: 1,
         },
@@ -516,6 +519,7 @@ describe("measurement preconditions", () => {
           attachment: { parentId: "a", parentPosition: 1, childPosition: 0 },
           referenceFormId: "default",
           referenceSlotId: "b",
+          continuityKey: continuityKey("b"),
           state: "active",
           integrity: 1,
         },
@@ -575,6 +579,7 @@ describe("the Human age curve, resolved end to end", () => {
             local: resolved.localMorphology,
           },
           character: NEUTRAL_SOURCE,
+          individual: {},
           strengthDevelopmentMuscularity: 1,
           effectLayers: [],
         },

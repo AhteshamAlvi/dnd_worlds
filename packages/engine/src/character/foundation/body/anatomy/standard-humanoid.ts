@@ -81,19 +81,22 @@
  * prevent: measured as an unsigned longest path, this body is 176 cm tall.
  */
 
-import { createAnatomy, createReferenceForm } from "./creation";
+import { createReferenceForm, instantiateAnatomy } from "./creation";
+import { continuityKey } from "./types";
 import type { BodyPartCreationSpec } from "./creation";
 import type { Anatomy, ReferenceForm } from "./types";
 
 export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   {
     id: "upper-body-1",
+    continuityKey: continuityKey("torso:upper"),
     type: "upper-body",
     name: "Upper Body",
     attachment: null,
   },
   {
     id: "neck-1",
+    continuityKey: continuityKey("neck"),
     type: "neck",
     name: "Neck",
     attachment: {
@@ -105,6 +108,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "head-1",
+    continuityKey: continuityKey("head"),
     type: "head",
     name: "Head",
     attachment: {
@@ -116,6 +120,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "lower-body-1",
+    continuityKey: continuityKey("torso:lower"),
     type: "lower-body",
     name: "Lower Body",
     attachment: {
@@ -127,6 +132,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "arm-1",
+    continuityKey: continuityKey("upper-limb:left"),
     type: "arm",
     name: "Left Arm",
     attachment: {
@@ -138,6 +144,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "hand-1",
+    continuityKey: continuityKey("extremity:upper-left"),
     type: "hand",
     name: "Left Hand",
     attachment: {
@@ -149,6 +156,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "arm-2",
+    continuityKey: continuityKey("upper-limb:right"),
     type: "arm",
     name: "Right Arm",
     attachment: {
@@ -160,6 +168,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "hand-2",
+    continuityKey: continuityKey("extremity:upper-right"),
     type: "hand",
     name: "Right Hand",
     attachment: {
@@ -171,6 +180,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "leg-1",
+    continuityKey: continuityKey("lower-limb:left"),
     type: "leg",
     name: "Left Leg",
     attachment: {
@@ -182,6 +192,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "foot-1",
+    continuityKey: continuityKey("extremity:lower-left"),
     type: "foot",
     name: "Left Foot",
     attachment: {
@@ -193,6 +204,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "leg-2",
+    continuityKey: continuityKey("lower-limb:right"),
     type: "leg",
     name: "Right Leg",
     attachment: {
@@ -204,6 +216,7 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
   {
     id: "foot-2",
+    continuityKey: continuityKey("extremity:lower-right"),
     type: "foot",
     name: "Right Foot",
     attachment: {
@@ -226,20 +239,25 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
  */
 export const STANDARD_HUMANOID_FORM_ID = "standard-humanoid";
 
-export const STANDARD_HUMANOID_ANATOMY: Anatomy = createAnatomy(
-  STANDARD_HUMANOID_BODY_PART_SPECS,
-  STANDARD_HUMANOID_FORM_ID,
-);
-
 /*
- * What a standard humanoid is SUPPOSED to have — the normalization
- * denominator, and deliberately not the same value as the anatomy above even
- * though it is built from the same specs. The two diverge the moment a
- * character is hurt: the Anatomy loses a severed Arm, the Reference Form goes
- * on expecting one.
+ * An intact standard humanoid, instantiated from the blueprint below.
+ *
+ * Derived rather than authored a second time. The specs describe one body plan
+ * and this is that plan with nothing yet having happened to it, so the two
+ * cannot drift — which they could, and did, while anatomy and Reference Form
+ * were two hand-maintained structures.
  */
-export const STANDARD_HUMANOID_REFERENCE_FORM: ReferenceForm =
+export const STANDARD_HUMANOID_ANATOMY: Anatomy = instantiateAnatomy(
   createReferenceForm(
     STANDARD_HUMANOID_BODY_PART_SPECS,
     STANDARD_HUMANOID_FORM_ID,
-  );
+  ),
+  {},
+);
+
+/*
+ * The Reference Form itself is authored in reference-forms.ts, as a catalog
+ * definition. It is not restated here: a body plan that exists in two places
+ * is a body plan that will eventually exist in two versions, and that is the
+ * exact failure the whole continuity model was built to end.
+ */

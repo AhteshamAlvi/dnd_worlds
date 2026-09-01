@@ -15,7 +15,10 @@
 import { describe, expect, it } from "vitest";
 
 import { listDefinitions } from "../character/catalogs";
-import { STANDARD_HUMANOID_ANATOMY, STANDARD_HUMANOID_REFERENCE_FORM } from "../character/foundation/body/anatomy/standard-humanoid";
+import { STANDARD_HUMANOID_FORM } from "../character/foundation/body/anatomy/reference-forms";
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+import { destroyContinuity } from "../character/foundation/body/continuity";
+import type { ContinuityStates } from "../character/foundation/body/continuity";
 import { setBodyPartState } from "../character/foundation/body/anatomy/modification";
 import { HUMAN_BODY_PROFILE } from "../character/foundation/body/human-profile";
 import { resolveBody } from "../character/foundation/body/resolution";
@@ -43,16 +46,17 @@ const STORED = {
   int: 10, wis: 10, per: 10, spi: 10, cha: 10,
 };
 
-function resolve(scale: number, anatomy: Anatomy = STANDARD_HUMANOID_ANATOMY) {
+function resolve(scale: number, continuity: ContinuityStates = {}) {
   const body = resolveBody({
-    anatomy,
-    referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+    referenceForm: STANDARD_HUMANOID_FORM,
+    continuity,
     definitions: listDefinitions("body-part"),
     specialPointDefinitions: listDefinitions("special-point"),
     morphology: {
       species: NEUTRAL_SOURCE,
       age: NEUTRAL_SOURCE,
       character: NEUTRAL_SOURCE,
+      individual: {},
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
@@ -193,12 +197,18 @@ describe("Speed scaling", () => {
 
 
 describe("locomotion gates movement, never Speed", () => {
-  function legless(): Anatomy {
-    return ["leg-1", "foot-1", "leg-2", "foot-2"].reduce(
-      (anatomy, id) => setBodyPartState(anatomy, id, "archived-removed"),
-      STANDARD_HUMANOID_ANATOMY,
+  /*
+   * Destruction is recorded against IDENTITY now, and instantiation cascades:
+   * destroying a Leg takes the Foot hanging off it, so only the limbs
+   * themselves are named here.
+   */
+  const destroyed = (...keys: readonly string[]): ContinuityStates =>
+    keys.reduce(
+      (states, key) => destroyContinuity(states, continuityKey(key)),
+      {} as ContinuityStates,
     );
-  }
+
+  const legless = () => destroyed("lower-limb:left", "lower-limb:right");
 
   /*
    * The gap this closes. Strength describes the intact form and AGI reads
@@ -220,12 +230,7 @@ describe("locomotion gates movement, never Speed", () => {
   });
 
   it("halves movement when one of two chains is gone", () => {
-    const oneLeg = ["leg-1", "foot-1"].reduce(
-      (anatomy, id) => setBodyPartState(anatomy, id, "archived-removed"),
-      STANDARD_HUMANOID_ANATOMY,
-    );
-
-    const lost = resolve(1, oneLeg);
+    const lost = resolve(1, destroyed("lower-limb:left"));
 
     expect(lost.body.locomotion.fraction).toBe(0.5);
     expect(lost.movement.moveDistanceMeters).toBeCloseTo(5, 10);
@@ -236,12 +241,7 @@ describe("locomotion gates movement, never Speed", () => {
    * tell an Arm from a Leg, which is why locomotion resolves per chain.
    */
   it("ignores anatomy that does not carry the body", () => {
-    const armless = ["arm-1", "hand-1", "arm-2", "hand-2"].reduce(
-      (anatomy, id) => setBodyPartState(anatomy, id, "archived-removed"),
-      STANDARD_HUMANOID_ANATOMY,
-    );
-
-    const lost = resolve(1, armless);
+    const lost = resolve(1, destroyed("upper-limb:left", "upper-limb:right"));
 
     expect(lost.body.locomotion.fraction).toBe(1);
     expect(lost.movement.moveDistanceMeters).toBeCloseTo(10, 10);

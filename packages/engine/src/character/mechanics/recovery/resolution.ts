@@ -44,6 +44,9 @@ import type {
 import {
   applyBodyPartRecovery,
 } from "../../foundation/body/body-points/recovery";
+import { setContinuityIntegrity } from "../../foundation/body/continuity";
+import type { ContinuityStates } from "../../foundation/body/continuity";
+import type { ContinuityKey } from "../../foundation/body/anatomy/types";
 import {
   resolveBodyPoints,
 } from "../../foundation/body/body-points/resolution";
@@ -128,17 +131,17 @@ export function deriveDailyRecoveryFraction(vit: number): number {
 /* Recovery ceilings                                                         */
 /* -------------------------------------------------------------------------- */
 
-function groupInjuriesByBodyPart(
+function groupInjuriesByContinuity(
   injuries: readonly CharacterInjury[],
-): ReadonlyMap<BodyPartId, readonly CharacterInjury[]> {
-  const map = new Map<BodyPartId, CharacterInjury[]>();
+): ReadonlyMap<ContinuityKey, readonly CharacterInjury[]> {
+  const map = new Map<ContinuityKey, CharacterInjury[]>();
 
   for (const injury of injuries) {
-    for (const partId of injury.location.bodyPartIds) {
-      const existing = map.get(partId);
+    for (const key of injury.location.continuityKeys) {
+      const existing = map.get(key);
 
       if (existing === undefined) {
-        map.set(partId, [injury]);
+        map.set(key, [injury]);
       } else {
         existing.push(injury);
       }
@@ -196,7 +199,12 @@ export function resolveBodyPartRecoveryCeiling(
 /* -------------------------------------------------------------------------- */
 
 export interface ResolveRecoveryInput {
-  readonly body: Body;
+  /** The current manifestation — what is there to heal. */
+  readonly anatomy: Anatomy;
+
+  /** The persistent state healing is recorded against. */
+  readonly continuity: ContinuityStates;
+
   readonly constitution: number;
 
   readonly bodyPartDefinitions: readonly BodyPartDefinition[];
@@ -218,7 +226,15 @@ export interface ResolveRecoveryInput {
 }
 
 export interface ResolveRecoveryOutcome {
-  // New persistent state — the caller stores this back onto Body.anatomy.
+  /*
+   * New persistent state — the caller stores this back onto Body.continuity.
+   *
+   * Recovery reads a manifestation and writes an identity, so a limb that
+   * heals stays healed through regeneration and through a change of form.
+   */
+  readonly continuity: ContinuityStates;
+
+  /** The healed anatomy, for a caller that wants to show it. */
   readonly anatomy: Anatomy;
 
   readonly parts: readonly BodyPartRecoveryOutcome[];
@@ -240,7 +256,7 @@ export interface ResolveRecoveryOutcome {
 export function resolveRecovery(
   input: ResolveRecoveryInput,
 ): ResolveRecoveryOutcome {
-  const anatomy = input.body.anatomy;
+  const anatomy = input.anatomy;
   const bodyPointModifiers = input.bodyPointModifiers ?? [];
 
   const resolveBP = (target: Anatomy) =>
@@ -262,11 +278,18 @@ export function resolveRecovery(
   const dailyFraction = deriveDailyRecoveryFraction(input.vit);
   const elapsedDays = toDays(input.elapsed);
 
-  const injuriesByPart = groupInjuriesByBodyPart(input.injuries);
+  const injuriesByContinuity = groupInjuriesByContinuity(input.injuries);
 
   const partOutcomes: BodyPartRecoveryOutcome[] = [];
 
-  const updatedParts: readonly BodyPart[] = anatomy.parts.map((part) => {
+  /*
+   * Recovery reads the current manifestation and writes the persistent
+   * identity. A part heals because it is the anatomy that is there; what
+   * healed is the identity, which is what survives the instance.
+   */
+  let continuity = input.continuity;
+
+  const updatedParts: readonly BodyPart[] = anatomy.parts.map((part: BodyPart) => {
     /*
      * Undamaged parts and departed ones are both skipped, and for different
      * reasons: the first has nothing to restore, the second is not there to
@@ -281,7 +304,7 @@ export function resolveRecovery(
     const { ceiling } = resolveBodyPartRecoveryCeiling(
       part.id,
       maximumBP,
-      injuriesByPart.get(part.id) ?? [],
+      injuriesByContinuity.get(part.continuityKey) ?? [],
     );
 
     const recoveryAmountBP = dailyFraction * maximumBP * elapsedDays;
@@ -301,22 +324,36 @@ export function resolveRecovery(
       ceiling,
     });
 
+    continuity = setContinuityIntegrity(
+      continuity,
+      part.continuityKey,
+      result.integrity,
+    );
+
     return { ...part, integrity: result.integrity };
   });
 
   const newAnatomy: Anatomy = { parts: updatedParts };
 
-  const integrityByPartAfter = new Map(
-    updatedParts.map((part) => [part.id, part.integrity]),
+  const integrityByContinuityAfter = new Map(
+    updatedParts.map((part) => [part.continuityKey, part.integrity]),
   );
 
   const removedInjuries: RecoveredInjuryRemoval[] = [];
 
   for (const injury of input.injuries) {
-    const fullyHealed = injury.location.bodyPartIds.every((partId) => {
-      const integrity = integrityByPartAfter.get(partId);
-      return integrity !== undefined && integrity >= 1;
-    });
+    /*
+     * Only identities the current form actually manifests are asked. An Injury
+     * on anatomy this form does not express is dormant, and dormant anatomy
+     * does not heal — it is not there to heal.
+     */
+    const manifested = injury.location.continuityKeys.filter((key) =>
+      integrityByContinuityAfter.has(key),
+    );
+
+    const fullyHealed =
+      manifested.length === injury.location.continuityKeys.length &&
+      manifested.every((key) => (integrityByContinuityAfter.get(key) ?? 0) >= 1);
 
     if (fullyHealed) {
       removedInjuries.push({
@@ -329,6 +366,7 @@ export function resolveRecovery(
   const bodyPointsAfterRecovery = resolveBP(newAnatomy);
 
   return {
+    continuity,
     anatomy: newAnatomy,
     parts: partOutcomes,
     removedInjuries,
@@ -357,23 +395,23 @@ export function detectInjuryOverlap(
   existingInjuries: readonly CharacterInjury[],
   newInjury: CharacterInjury,
 ): readonly InjuryOverlapFlag[] {
-  const partsById = new Map(
-    anatomy.parts.map((part) => [part.id, part]),
+  const partsByContinuity = new Map(
+    anatomy.parts.map((part) => [part.continuityKey, part]),
   );
 
   const flags: InjuryOverlapFlag[] = [];
 
-  for (const bodyPartId of newInjury.location.bodyPartIds) {
+  for (const bodyPartId of newInjury.location.continuityKeys) {
     for (const existing of existingInjuries) {
       if (existing.id === newInjury.id) continue;
-      if (!existing.location.bodyPartIds.includes(bodyPartId)) continue;
+      if (!existing.location.continuityKeys.includes(bodyPartId)) continue;
 
       flags.push({
         bodyPartId,
         existingCharacterInjuryId: existing.id,
         newCharacterInjuryId: newInjury.id,
         integrityAtOverlap:
-          partsById.get(bodyPartId)?.integrity ?? 1,
+          partsByContinuity.get(bodyPartId)?.integrity ?? 1,
         recommendedDecision: "preserve",
         decisionId: "injury.overlap.recovery-progress-default",
       });

@@ -72,7 +72,7 @@ export type OrdinaryAttributeKey = typeof ORDINARY_ATTRIBUTE_KEYS[number];
 export type RolledAttributeKey = typeof ROLLED_ATTRIBUTE_KEYS[number];
 
 /**
- * Determine whether an Attribute is one of the eight ordinarily trainable
+ * Determine whether an Attribute is one of the seven ordinarily trainable
  * Attributes, as opposed to a rolled Attribute (SPI, CHA).
  */
 export function isOrdinaryAttributeKey(

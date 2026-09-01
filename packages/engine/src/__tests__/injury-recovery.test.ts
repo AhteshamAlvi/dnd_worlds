@@ -14,6 +14,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import {
   morphologyTargetsForAnatomy,
@@ -69,38 +70,38 @@ const REFERENCE_CONSTITUTION = 10;
 
 const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };
 
-function bodyWithParts(anatomy: Anatomy): Body {
-  return { ...TEST_BODY_STATE, anatomy };
-}
 
-function morphologyFor(body: Body) {
+
+function morphologyFor(anatomy: Anatomy) {
   return resolveMorphology(
     {
       species: NEUTRAL_SOURCE,
       age: NEUTRAL_SOURCE,
-      character: { global: body.globalMorphology, local: body.localMorphology },
-      strengthDevelopmentMuscularity: body.strengthDevelopmentMuscularity,
+      character: NEUTRAL_SOURCE,
+      individual: {},
+      strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
-    morphologyTargetsForAnatomy(body.anatomy),
+    morphologyTargetsForAnatomy(anatomy),
   );
 }
 
 // Maximum BP is 20, so integrity 0.25 is Current BP 5 — 15 points of damage.
-const DAMAGED_BODY: Body = bodyWithParts({
+const DAMAGED_BODY: Anatomy = ({
   parts: [
-    { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.25 },
+    { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.25 },
   ],
 });
 
 function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecoveryInput {
-  const body = overrides.body ?? DAMAGED_BODY;
+  const anatomy = overrides.anatomy ?? DAMAGED_BODY;
 
   return {
-    body,
+    anatomy,
+    continuity: {},
     constitution: REFERENCE_CONSTITUTION,
     bodyPartDefinitions: DEFINITIONS,
-    morphologyByPartId: morphologyFor(body),
+    morphologyByPartId: morphologyFor(anatomy),
     effectiveScale: 1,
     injuries: [],
     elapsed: days(1),
@@ -131,7 +132,7 @@ describe("untreated caps", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
     ];
@@ -150,7 +151,7 @@ describe("untreated caps", () => {
     registerTreatmentRequiredInjury("broken-rib", 0.5);
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "broken-rib", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "broken-rib", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     const outcome = resolveRecovery(baseInput({ injuries }));
@@ -166,7 +167,7 @@ describe("treatment clears the cap", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "treated",
       },
     ];
@@ -185,7 +186,7 @@ describe("treatment clears the cap", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "treated",
       },
     ];
@@ -209,7 +210,7 @@ describe("no-treatment Injuries", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     const outcome = resolveRecovery(baseInput({ injuries }));
@@ -231,13 +232,13 @@ describe("multiple caps", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
       {
         id: "injury-2",
         injuryId: "bruised-lung",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
     ];
@@ -256,13 +257,13 @@ describe("multiple caps", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
       {
         id: "injury-2",
         injuryId: "bruised-lung",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
     ];
@@ -298,17 +299,17 @@ describe("caps restrict restoration only", () => {
       {
         id: "injury-1",
         injuryId: "broken-rib",
-        location: { bodyPartIds: ["torso-1"] },
+        location: { continuityKeys: [continuityKey("torso-1")] },
         treatmentStatus: "untreated",
       },
     ];
 
     // Current BP already 15 of 20, well above the cap's ceiling of 6.
-    const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.75 }],
+    const body: Anatomy = ({
+      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.75 }],
     });
 
-    const outcome = resolveRecovery(baseInput({ body, injuries }));
+    const outcome = resolveRecovery(baseInput({ anatomy: body, injuries }));
 
     expect(outcome.parts[0]?.integrityAfter).toBe(0.75); // untouched, not pulled down to the cap
   });
@@ -325,14 +326,14 @@ describe("Injury removal", () => {
     });
 
     const injuries: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
-    const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.95 }],
+    const body: Anatomy = ({
+      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.95 }],
     });
 
-    const outcome = resolveRecovery(baseInput({ body, injuries }));
+    const outcome = resolveRecovery(baseInput({ anatomy: body, injuries }));
 
     expect(outcome.removedInjuries).toEqual([
       { characterInjuryId: "injury-1", injuryId: "bruise" },
@@ -352,23 +353,23 @@ describe("Injury removal", () => {
       {
         id: "injury-1",
         injuryId: "spinal-strain",
-        location: { bodyPartIds: ["torso-1", "limb-1"] },
+        location: { continuityKeys: [continuityKey("torso-1"), continuityKey("limb-1")] },
       },
     ];
 
     // torso-1 will fully heal this pass (damage 1); limb-1 will not (damage 15).
-    const body = bodyWithParts({
+    const body: Anatomy = ({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.95 },
-        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 0.25 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.95 },
+        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", continuityKey: continuityKey("limb-1"), state: "active", integrity: 0.25 },
       ],
     });
 
-    const partialOutcome = resolveRecovery(baseInput({ body, injuries, vit: 10 }));
+    const partialOutcome = resolveRecovery(baseInput({ anatomy: body, injuries, vit: 10 }));
     expect(partialOutcome.removedInjuries).toEqual([]);
 
     // Enough VIT to fully heal both parts in one pass.
-    const fullOutcome = resolveRecovery(baseInput({ body, injuries, vit: 40 }));
+    const fullOutcome = resolveRecovery(baseInput({ anatomy: body, injuries, vit: 40 }));
     expect(fullOutcome.removedInjuries).toEqual([
       { characterInjuryId: "injury-1", injuryId: "spinal-strain" },
     ]);
@@ -388,17 +389,17 @@ describe("Injury removal", () => {
 describe("overlapping Injuries", () => {
   it("flags a new Injury landing on a BodyPart that already carries one, preserving progress by default", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.85 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.85 }],
     };
 
     const existing: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     const newInjury: CharacterInjury = {
       id: "injury-2",
       injuryId: "broken-rib",
-      location: { bodyPartIds: ["torso-1"] },
+      location: { continuityKeys: [continuityKey("torso-1")] },
     };
 
     const flags = detectInjuryOverlap(anatomy, existing, newInjury);
@@ -418,19 +419,19 @@ describe("overlapping Injuries", () => {
   it("does not flag Injuries on different BodyParts", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1.0 },
-        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 1.0 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 1.0 },
+        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", continuityKey: continuityKey("limb-1"), state: "active", integrity: 1.0 },
       ],
     };
 
     const existing: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { bodyPartIds: ["torso-1"] } },
+      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     const newInjury: CharacterInjury = {
       id: "injury-2",
       injuryId: "sprain",
-      location: { bodyPartIds: ["limb-1"] },
+      location: { continuityKeys: [continuityKey("limb-1")] },
     };
 
     expect(detectInjuryOverlap(anatomy, existing, newInjury)).toEqual([]);

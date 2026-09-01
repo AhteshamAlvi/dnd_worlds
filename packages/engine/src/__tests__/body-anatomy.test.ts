@@ -18,6 +18,7 @@ import {
   replaceBodyPart,
   setBodyPartState,
 } from "../character/foundation/body/anatomy/modification";
+import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { AnatomyModification } from "../character/foundation/body/anatomy/modification";
 import { createAnatomy, createBodyPart } from "../character/foundation/body/anatomy/creation";
 import type { BodyPartCreationSpec } from "../character/foundation/body/anatomy/creation";
@@ -72,6 +73,13 @@ describe("createBodyPart / createAnatomy", () => {
       attachment: null,
       referenceFormId: "default",
       referenceSlotId: "torso-1",
+
+      /*
+       * A spec that names no identity gets one derived from its form and slot,
+       * namespaced so two unrelated body plans cannot collide into an
+       * accidental correspondence.
+       */
+      continuityKey: continuityKey("default:torso-1"),
       state: "active",
       integrity: 1,
     });
@@ -135,8 +143,8 @@ describe("addBodyPart / removeBodyPart / replaceBodyPart / reattachBodyPart", ()
   it("a replacement starts at full integrity even if the original was damaged", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1 },
-        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 0.5 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 1 },
+        { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "limb-1", continuityKey: continuityKey("limb-1"), state: "active", integrity: 0.5 },
       ],
     };
 
@@ -321,8 +329,8 @@ describe("Anatomy validation", () => {
   it("accepts multiple anatomical roots", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 },
-        { id: "b", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "b", state: "active", integrity: 1 },
+        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 },
+        { id: "b", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "b", continuityKey: continuityKey("b"), state: "active", integrity: 1 },
       ],
     };
 
@@ -332,8 +340,8 @@ describe("Anatomy validation", () => {
   it("rejects a duplicate BodyPart id", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 },
-        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 },
+        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 },
+        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 },
       ],
     };
 
@@ -344,7 +352,7 @@ describe("Anatomy validation", () => {
 
   it("rejects a missing parent", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "ghost", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -354,7 +362,7 @@ describe("Anatomy validation", () => {
 
   it("rejects self-parenting", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 }],
+      parts: [{ id: "a", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -365,8 +373,8 @@ describe("Anatomy validation", () => {
   it("rejects an attachment cycle", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: { parentId: "b", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 },
-        { id: "b", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "b", state: "active", integrity: 1 },
+        { id: "a", type: "torso", attachment: { parentId: "b", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 },
+        { id: "b", type: "torso", attachment: { parentId: "a", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "b", continuityKey: continuityKey("b"), state: "active", integrity: 1 },
       ],
     };
 
@@ -377,7 +385,7 @@ describe("Anatomy validation", () => {
 
   it("rejects an unknown BodyPart type", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "wing", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 1 }],
+      parts: [{ id: "a", type: "wing", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 1 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -388,7 +396,7 @@ describe("Anatomy validation", () => {
   it("rejects integrity outside [0, 1]", () => {
     for (const integrity of [-1, 1.5, Number.NaN]) {
       const anatomy: Anatomy = {
-        parts: [{ id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity }],
+        parts: [{ id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity }],
       };
 
       const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -407,7 +415,7 @@ describe("Anatomy validation", () => {
    */
   it("rejects an active part carrying zero integrity", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "active", integrity: 0 }],
+      parts: [{ id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "active", integrity: 0 }],
     };
 
     const result = validateAnatomy(anatomy, DEFINITIONS);
@@ -418,7 +426,7 @@ describe("Anatomy validation", () => {
   it("rejects a departed part still carrying integrity", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", state: "archived-removed", integrity: 0.5 },
+        { id: "a", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "a", continuityKey: continuityKey("a"), state: "archived-removed", integrity: 0.5 },
       ],
     };
 
@@ -515,7 +523,7 @@ describe("physical presence state and connection geometry", () => {
   it("rejects an attachment missing its coordinates", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 1 },
         {
           id: "limb-1",
           type: "limb",
@@ -538,7 +546,7 @@ describe("physical presence state and connection geometry", () => {
   it("rejects a coordinate off the end of the part it sits on", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 1 },
         {
           id: "limb-1",
           type: "limb",
@@ -561,7 +569,7 @@ describe("physical presence state and connection geometry", () => {
   it("rejects an unknown presence state", () => {
     const anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "gone", integrity: 1 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "gone", integrity: 1 },
       ],
     } as unknown as Anatomy;
 

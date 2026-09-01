@@ -50,9 +50,15 @@ describe("STANDARD_BODY", () => {
   it("sits exactly at neutral", () => {
     expect(STANDARD_BODY.characterScale).toBe(1);
     expect(STANDARD_BODY.globalMorphology).toEqual(NEUTRAL_MORPHOLOGY);
-    expect(STANDARD_BODY.localMorphology).toEqual({});
+    expect(STANDARD_BODY.continuity).toEqual({});
     expect(STANDARD_BODY.strengthDevelopmentMuscularity).toBe(1);
-    expect(STANDARD_BODY.anatomy).toBe(STANDARD_HUMANOID_ANATOMY);
+
+    /*
+     * No anatomy, because anatomy is no longer stored: it is instantiated from
+     * whichever Reference Form the character currently has. A neutral body is
+     * neutrality and nothing else.
+     */
+    expect(STANDARD_BODY).not.toHaveProperty("anatomy");
   });
 });
 
@@ -148,17 +154,18 @@ describe("reference humanoid Body Points", () => {
       age: neutralSource,
       character: {
         global: STANDARD_BODY.globalMorphology,
-        local: STANDARD_BODY.localMorphology,
+        local: {},
       },
+      individual: {},
       strengthDevelopmentMuscularity:
         STANDARD_BODY.strengthDevelopmentMuscularity,
       effectLayers: [],
     },
-    morphologyTargetsForAnatomy(STANDARD_BODY.anatomy),
+    morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY),
   );
 
   const bodyPoints = resolveBodyPoints({
-    anatomy: STANDARD_BODY.anatomy,
+    anatomy: STANDARD_HUMANOID_ANATOMY,
     definitions: BODY_PART_DEFINITIONS,
     morphologyByPartId: morphology,
     effectiveScale: STANDARD_BODY.characterScale,

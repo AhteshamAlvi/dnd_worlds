@@ -17,8 +17,10 @@ import {
   createAttributeResolutionTrace,
   explainAttribute,
 } from "../character/foundation/attributes/resolution";
-import { resolveCharacter } from "../character/resolution";
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -99,7 +101,7 @@ describe("attribute provenance", () => {
       ],
     });
 
-    return resolveCharacter(
+    return resolveTestCharacter(
       createTestCharacter({
         attributes: { dex: 16 },
         traits: [{ traitId: "quickened" }, { traitId: "one-armed" }],
@@ -221,7 +223,7 @@ describe("attribute provenance", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ skills: [{ skillId: "twin-boost", mastery: 2 }] }),
     );
 

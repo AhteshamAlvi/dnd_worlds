@@ -94,14 +94,47 @@ export type ReferenceAnatomySlotId = string;
  * "HumanForm:left-arm", "DragonForm:left-foreleg". Always built with
  * anatomySlotKey rather than by hand, so the separator never drifts.
  */
-export type AnatomySlotKey = string;
+export type AnatomySlotKey = string & { readonly __anatomySlotKey: unique symbol };
+
+
+/*
+ * A persistent anatomical identity, independent of any one form.
+ *
+ * The THIRD namespace, and the one that survives everything the other two
+ * cannot:
+ *
+ *   slotId         where anatomy sits inside ONE Reference Form
+ *   BodyPartId     which physical instance is standing there right now
+ *   ContinuityKey  what that anatomy IS, across forms and regenerations
+ *
+ * A Human right arm, a Wolf front-right leg and a Troll right arm are three
+ * slots in three forms and one identity: "upper-limb:right". That identity is
+ * what this character's own morphology, damage, recovery and Injuries belong
+ * to — so a limb that is severed, regrown, or carried through a
+ * transformation comes back as theirs rather than as a species default.
+ *
+ * Continuity is AUTHORED, never inferred. Two forms correspond because their
+ * definitions say so, and never because two slots share a name, a BodyPart
+ * type, or a slot id that happens to match.
+ */
+export type ContinuityKey = string & { readonly __continuityKey: unique symbol };
+
+
+/*
+ * The only sanctioned way to build one, so that the brand cannot be forged by
+ * a cast at a call site and every continuity key in the engine has been through
+ * one place.
+ */
+export function continuityKey(value: string): ContinuityKey {
+  return value as ContinuityKey;
+}
 
 
 export function anatomySlotKey(
   referenceFormId: ReferenceFormId,
   referenceSlotId: ReferenceAnatomySlotId,
 ): AnatomySlotKey {
-  return `${referenceFormId}:${referenceSlotId}`;
+  return `${referenceFormId}:${referenceSlotId}` as AnatomySlotKey;
 }
 
 
@@ -393,6 +426,15 @@ export interface BodyPart {
   readonly referenceFormId: ReferenceFormId;
   readonly referenceSlotId: ReferenceAnatomySlotId;
 
+  /*
+   * What this instance persistently IS, across forms and regenerations.
+   *
+   * Copied from the Reference Form slot it was instantiated into. It is what
+   * persistent state — individual morphology, integrity, Injuries — is keyed
+   * by, so none of it is lost when this particular instance is not.
+   */
+  readonly continuityKey: ContinuityKey;
+
   readonly state: BodyPartState;
 
   readonly integrity: number;
@@ -478,6 +520,21 @@ export const BODY_PART_STATES = [
  * anatomy, normal age development, permanent anatomy modification, or an
  * active form-replacing transformation. It never changes because of damage.
  */
+/*
+ * A complete anatomical blueprint: what parts a body of this kind has, how
+ * they connect, and what each one persistently is.
+ *
+ * Enough to INSTANTIATE anatomy from, which is the whole reason it carries
+ * attachment geometry. A form that only listed slots and types could say what
+ * a body was supposed to contain and could not build one, so every body plan
+ * had to be hand-authored a second time as a parallel tree — two structures
+ * describing one thing, free to drift.
+ *
+ * It owns topology and geometry, and deliberately nothing else. Morphology,
+ * damage, recovery and Injuries all belong to the CHARACTER, keyed by
+ * continuity identity, so that the same form can be worn by any number of
+ * different bodies.
+ */
 export interface ReferenceForm {
   readonly id: ReferenceFormId;
 
@@ -489,6 +546,25 @@ export interface ReferenceForm {
  * One BodyPart the Reference Form expects, independent of whether the
  * character currently possesses it.
  */
+/*
+ * How one Reference Form slot connects to its parent.
+ *
+ * The same geometry BodyPartAttachment carries, expressed between SLOTS rather
+ * than between instances — a blueprint connects positions, and the instances
+ * standing in them do not exist yet.
+ */
+export interface ReferenceFormAttachment {
+  readonly parentSlotId: ReferenceAnatomySlotId;
+  readonly site?: BodyAttachmentSiteId;
+
+  /** Where on the PARENT's 0..1 longitudinal axis this connection sits. */
+  readonly parentPosition: number;
+
+  /** Where on the CHILD's own 0..1 longitudinal axis it sits. */
+  readonly childPosition: number;
+}
+
+
 export interface ReferenceFormPart {
   /*
    * The anatomical position, not an instance. A Reference Form describes
@@ -498,4 +574,19 @@ export interface ReferenceFormPart {
   readonly slotId: ReferenceAnatomySlotId;
 
   readonly type: BodyPartTypeId;
+
+  /*
+   * What anatomy in this position persistently IS.
+   *
+   * The one field that makes forms comparable. A Wolf's front-right leg and a
+   * Human's right arm are the same identity said twice, and only because both
+   * definitions say "upper-limb:right" — never because anything about their
+   * slot ids, types or names looks alike.
+   */
+  readonly continuityKey: ContinuityKey;
+
+  /** Presentational only, exactly as BodyPart.name is. */
+  readonly name?: string;
+
+  readonly attachment: ReferenceFormAttachment | null;
 }

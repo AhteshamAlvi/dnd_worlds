@@ -59,6 +59,9 @@ import type { ItemDefinition } from "./equipment/types";
 import { bodyPartRegistry } from "./foundation/body/anatomy/body-parts";
 import type { BodyPartDefinition } from "./foundation/body/anatomy/types";
 import { specialPointRegistry } from "./foundation/body/critical-points/special-points";
+import { referenceFormRegistry } from "./foundation/body/anatomy/reference-forms";
+import { validateReferenceForm } from "./foundation/body/anatomy/validation";
+import type { ReferenceFormDefinition } from "./foundation/body/anatomy/reference-forms";
 import type { SpecialPointDefinition } from "./foundation/body/critical-points/types";
 
 // Singular on purpose: a domain names one kind of thing, and every message
@@ -73,7 +76,8 @@ export type CatalogDomain =
   | "injury"
   | "item"
   | "body-part"
-  | "special-point";
+  | "special-point"
+  | "reference-form";
 
 // What each domain's definitions actually are, so a caller that names a
 // domain literally gets that domain's own type back rather than the base one.
@@ -88,6 +92,7 @@ export interface CatalogDefinitions {
   item: ItemDefinition;
   "body-part": BodyPartDefinition;
   "special-point": SpecialPointDefinition;
+  "reference-form": ReferenceFormDefinition;
 }
 
 // Display order, and the order a host should render sections in: what a
@@ -104,6 +109,7 @@ export const CATALOG_DOMAINS = [
   "item",
   "body-part",
   "special-point",
+  "reference-form",
 ] as const satisfies readonly CatalogDomain[];
 
 type RegistryByDomain = {
@@ -112,6 +118,7 @@ type RegistryByDomain = {
 
 const REGISTRIES: RegistryByDomain = {
   species: speciesRegistry,
+  "reference-form": referenceFormRegistry,
   clan: clanRegistry,
   trait: traitRegistry,
   technique: techniqueRegistry,
@@ -137,6 +144,7 @@ export const CATALOG_DOMAIN_LABELS: Readonly<Record<CatalogDomain, string>> = {
   item: "Item",
   "body-part": "Body Part",
   "special-point": "Special Point",
+  "reference-form": "Reference Form",
 };
 
 // Every definition in a domain, authored first, then custom in the order it
@@ -407,6 +415,36 @@ export function findCatalogReferenceIssues(): readonly string[] {
           }
         }
       }
+    }
+  }
+
+  /*
+   * A Species names its body plan by id, so a profile pointing at a form
+   * nothing declares is exactly the kind of cross-domain claim this function
+   * exists to catch — neither domain can see the other, and resolution would
+   * quietly fall back to the Human standard rather than say so.
+   */
+  for (const species of REGISTRIES.species.all()) {
+    const formId = species.body?.referenceFormId;
+
+    if (formId !== undefined && !isKnownDefinitionId("reference-form", formId)) {
+      issues.push(
+        `Species "${species.id}" references unknown Reference Form "${formId}".`,
+      );
+    }
+  }
+
+  /*
+   * And every form has to be a blueprint anatomy can actually be built from.
+   * Checked here rather than per character, because a malformed form is wrong
+   * once rather than wrong for everyone wearing it.
+   */
+  for (const form of REGISTRIES["reference-form"].all()) {
+    for (const issue of validateReferenceForm(form, listDefinitions("body-part"))
+      .issues) {
+      issues.push(
+        `Reference Form "${form.id}" is malformed: ${issue.code} — ${issue.message}`,
+      );
     }
   }
 

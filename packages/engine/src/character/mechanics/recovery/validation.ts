@@ -27,6 +27,7 @@ import type {
   BodyPart,
   BodyPartDefinition,
   BodyPartId,
+  ContinuityKey,
 } from "../../foundation/body/anatomy/types";
 import {
   resolveCriticalPoints,
@@ -56,7 +57,13 @@ export type RecoveryLocationValidationIssue =
       readonly type: "injury-body-part-unknown";
       readonly id: CharacterInjuryId;
       readonly injuryId: InjuryId;
-      readonly bodyPartId: BodyPartId;
+
+      /*
+       * The identity, not an instance. An Injury names anatomy that outlives
+       * the tissue standing in it, so "unknown" means this character's body has
+       * never had such anatomy — not that it is currently missing.
+       */
+      readonly continuityKey: ContinuityKey;
     }
   | {
       readonly type: "injury-body-part-not-applicable";
@@ -189,6 +196,48 @@ function findSpecialPointApplicabilityIssues(
 }
 
 /*
+ * The anatomy the Special Point hosting check is resolved against.
+ *
+ * Every recorded part, whatever became of it.
+ *
+ * Anatomical Points resolve over ACTIVE anatomy, which is right for every
+ * mechanic asking what a body can currently do — a sealed arm has no usable
+ * Shoulder, and neither does a severed one. It is wrong for this question,
+ * because this question is not about what works. There are two questions here
+ * and only one of them is validation's:
+ *
+ *   IS THIS INJURY VALID?        does this anatomical position exist at all,
+ *                                and does the Injury belong on it
+ *
+ *   IS IT CURRENTLY MANIFESTED?  is that position present and usable right now
+ *
+ * The first is a fact about the sheet and is what this file decides. The second
+ * changes minute to minute — a limb is suppressed, severed, regenerated,
+ * transformed away by a change of form — and an authored record must not become
+ * illegal because of it. Telling a player to "point the Injury at the Special
+ * Point's actual host BodyParts" while their arm is temporarily sealed would be
+ * advice about data that is already correct.
+ *
+ * That applies to destruction too. Destroying a limb removes a current
+ * anatomical manifestation; it does not erase the anatomical history the
+ * archive exists to keep. An Injury on a destroyed arm may well stop applying —
+ * superseded by the destruction, or simply dormant until the limb is
+ * regenerated — but that is the Injury system's decision to make, not a
+ * side effect of the instance leaving active anatomy.
+ */
+function withEveryRecordedPositionPresent(anatomy: Anatomy): Anatomy {
+  if (anatomy.parts.every((part) => part.state === "active")) return anatomy;
+
+  return {
+    ...anatomy,
+    parts: anatomy.parts.map((part) =>
+      part.state === "active" ? part : { ...part, state: "active" as const },
+    ),
+  };
+}
+
+
+/*
  * Finds Body-aware problems with where a character's Injuries are located:
  * BodyPart ids that do not exist, locations that do not satisfy their
  * InjuryDefinition's applicability, and Special Point references that are
@@ -200,17 +249,27 @@ function findSpecialPointApplicabilityIssues(
  */
 export function findRecoveryLocationIssues(
   anatomy: Anatomy,
+  knownContinuityKeys: ReadonlySet<ContinuityKey>,
   bodyPartDefinitions: readonly BodyPartDefinition[],
   specialPointDefinitions: readonly SpecialPointDefinition[],
   injuries: readonly CharacterInjury[],
 ): readonly RecoveryLocationValidationIssue[] {
   const issues: RecoveryLocationValidationIssue[] = [];
 
-  const partsById = new Map(anatomy.parts.map((part) => [part.id, part]));
   const definitionsByType = createBodyPartDefinitionMap(bodyPartDefinitions);
 
+  /*
+   * The manifestation, by identity. An identity absent from this map is one
+   * the current form does not express — dormant, not wrong.
+   */
+  const manifested = new Map(
+    withEveryRecordedPositionPresent(anatomy).parts.map(
+      (part) => [part.continuityKey, part] as const,
+    ),
+  );
+
   const criticalPoints = resolveCriticalPoints(
-    anatomy,
+    withEveryRecordedPositionPresent(anatomy),
     bodyPartDefinitions,
     specialPointDefinitions,
   );
@@ -220,26 +279,53 @@ export function findRecoveryLocationIssues(
 
     if (definition === undefined) continue;
 
-    const bodyPartIds = injury.location.bodyPartIds;
+    const continuityKeys = injury.location.continuityKeys;
 
     const resolvedParts: BodyPart[] = [];
 
-    for (const bodyPartId of bodyPartIds) {
-      const part = partsById.get(bodyPartId);
+    let dormant = false;
 
-      if (part === undefined) {
+    for (const key of continuityKeys) {
+      /*
+       * VALIDITY. The identity has to be one this character's body knows —
+       * from a form they can take, or from persistent state a previous form
+       * left behind. An Injury on an identity nothing has ever had is a
+       * genuine authoring error.
+       */
+      if (!knownContinuityKeys.has(key)) {
         issues.push({
           type: "injury-body-part-unknown",
           id: injury.id,
           injuryId: injury.injuryId,
-          bodyPartId,
+          continuityKey: key,
         });
+
+        continue;
+      }
+
+      const part = manifested.get(key);
+
+      /*
+       * MANIFESTATION. A valid identity the current form does not express is
+       * dormant: no anatomy to check applicability against, and nothing wrong
+       * to report. It comes back when a form that expresses it does.
+       */
+      if (part === undefined) {
+        dormant = true;
 
         continue;
       }
 
       resolvedParts.push(part);
     }
+
+    /*
+     * Applicability and Special Point hosting are questions about the anatomy
+     * an Injury is currently sitting on, so a dormant Injury is not asked
+     * them. Asking would judge a Dragon's wing injury against a Human's
+     * shoulders and reject a record that is perfectly correct.
+     */
+    if (dormant || resolvedParts.length === 0) continue;
 
     issues.push(
       ...findBodyPartApplicabilityIssues(
@@ -250,12 +336,11 @@ export function findRecoveryLocationIssues(
       ),
     );
 
-    // Special Points actually hosted by one of this location's BodyParts —
-    // used to confirm the referenced Special Point is not just known and
-    // allowed, but genuinely present at this location.
+    const hostPartIds = resolvedParts.map((part) => part.id);
+
     const hostedSpecialPointDefinitionIds = new Set(
       criticalPoints.points
-        .filter((point) => bodyPartIds.includes(point.hostPartId))
+        .filter((point) => hostPartIds.includes(point.hostPartId))
         .map((point) => point.definitionId),
     );
 
@@ -270,6 +355,103 @@ export function findRecoveryLocationIssues(
   }
 
   return issues;
+}
+
+
+/*
+ * Which Injuries the current form actually expresses.
+ *
+ * The other half of the split findRecoveryLocationIssues makes. Validity is a
+ * fact about the sheet and is checked once; manifestation changes every time a
+ * character transforms, and is what decides whether an Injury's effects apply
+ * right now.
+ *
+ * An Injury manifests when the current form expresses EVERY identity it
+ * occupies and the anatomy standing there can host it. A Dragon's fractured
+ * wing is dormant as a Human and active again as an Angel, without the record
+ * ever changing.
+ */
+export function resolveInjuryManifestation(
+  anatomy: Anatomy,
+  bodyPartDefinitions: readonly BodyPartDefinition[],
+  specialPointDefinitions: readonly SpecialPointDefinition[],
+  injuries: readonly CharacterInjury[],
+): {
+  readonly active: readonly CharacterInjuryId[];
+  readonly dormant: readonly CharacterInjuryId[];
+} {
+  const active: CharacterInjuryId[] = [];
+  const dormant: CharacterInjuryId[] = [];
+
+  const definitionsByType = createBodyPartDefinitionMap(bodyPartDefinitions);
+
+  /* Only ACTIVE anatomy manifests. A suppressed or destroyed limb is not
+   * expressing anything, whatever the form says it should have. */
+  const manifested = new Map(
+    anatomy.parts
+      .filter((part) => part.state === "active")
+      .map((part) => [part.continuityKey, part] as const),
+  );
+
+  const criticalPoints = resolveCriticalPoints(
+    anatomy,
+    bodyPartDefinitions,
+    specialPointDefinitions,
+  );
+
+  for (const injury of injuries) {
+    const definition = getInjuryDefinition(injury.injuryId);
+
+    if (definition === undefined) {
+      dormant.push(injury.id);
+
+      continue;
+    }
+
+    const parts = injury.location.continuityKeys.map((key) =>
+      manifested.get(key),
+    );
+
+    if (parts.some((part) => part === undefined)) {
+      dormant.push(injury.id);
+
+      continue;
+    }
+
+    const resolvedParts = parts as readonly BodyPart[];
+
+    const hostPartIds = resolvedParts.map((part) => part.id);
+
+    const hosted = new Set(
+      criticalPoints.points
+        .filter((point) => hostPartIds.includes(point.hostPartId))
+        .map((point) => point.definitionId),
+    );
+
+    /*
+     * The Injury's own applicability decides whether it makes sense HERE.
+     * Continuity says which anatomy corresponds; it does not say that a wing
+     * fracture means anything on a limb that has no such structure.
+     */
+    const fits =
+      findBodyPartApplicabilityIssues(
+        injury,
+        resolvedParts,
+        definition.applicability.bodyParts,
+        definitionsByType,
+      ).length === 0 &&
+      findSpecialPointApplicabilityIssues(
+        injury,
+        definition.applicability.specialPointDefinitionIds,
+        specialPointDefinitions,
+        hosted,
+      ).length === 0;
+
+    if (fits) active.push(injury.id);
+    else dormant.push(injury.id);
+  }
+
+  return { active, dormant };
 }
 
 
@@ -291,6 +473,7 @@ export type RecoveryValidationIssue =
  */
 export function findRecoveryValidationIssues(
   anatomy: Anatomy,
+  knownContinuityKeys: ReadonlySet<ContinuityKey>,
   bodyPartDefinitions: readonly BodyPartDefinition[],
   specialPointDefinitions: readonly SpecialPointDefinition[],
   injuries: readonly CharacterInjury[],
@@ -299,6 +482,7 @@ export function findRecoveryValidationIssues(
     ...findInjuryValidationIssues(injuries),
     ...findRecoveryLocationIssues(
       anatomy,
+      knownContinuityKeys,
       bodyPartDefinitions,
       specialPointDefinitions,
       injuries,

@@ -25,12 +25,11 @@
  *   resolved  anatomy instance state is HONOURED — suppressed and
  *             archived-removed parts contribute nothing
  *
- * What it will also control, once the Body Effect vocabulary exists: which
- * Effect set feeds Scale, morphology and intrinsic force. Through this phase
- * both sets are empty, so the two modes see the same physical context and
- * differ only in the anatomy they count. That is why the physical context is
- * one value with an optional resolved override rather than two mandatory
- * copies of the same thing — see strength/types.ts.
+ * It also selects which Body Effects participate. Base mode applies the base
+ * layer alone — permanent physical facts about this body — and resolved mode
+ * applies that layer and then the resolved one, in that order. The two never
+ * merge: a transformation that doubles a character's Scale for a minute must
+ * not make their next point of Strength dearer. See body/effects.ts.
  *
  * Note what the mode does NOT control: the normalization denominator. The
  * Reference Form Anatomical Capacity is the same in both modes, because it

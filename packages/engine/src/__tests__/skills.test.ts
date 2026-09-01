@@ -55,8 +55,10 @@ import {
   satisfiesSkillRequirements,
 } from "../character/capabilities/validation";
 
-import { resolveCharacter } from "../character/resolution";
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -476,7 +478,7 @@ describe("authored versus granted capabilities", () => {
 
 describe("technique mastery grants skills through resolution", () => {
   it("hands over the Skills of every rank the character reached", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         techniques: [{ techniqueId: "martial-arts", mastery: 2 }],
       }),
@@ -492,7 +494,7 @@ describe("technique mastery grants skills through resolution", () => {
   });
 
   it("stops at the ranks the character has actually reached", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         techniques: [{ techniqueId: "martial-arts", mastery: 1 }],
       }),
@@ -502,7 +504,7 @@ describe("technique mastery grants skills through resolution", () => {
   });
 
   it("keeps trained depth in a Skill the Technique also grants", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         techniques: [{ techniqueId: "martial-arts", mastery: 1 }],
         skills: [{ skillId: "punch", mastery: 5 }],
@@ -542,7 +544,7 @@ describe("a capability listed twice", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         skills: [
           { skillId: "stacker", mastery: 1 },

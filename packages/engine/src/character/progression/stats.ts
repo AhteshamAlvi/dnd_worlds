@@ -3,7 +3,7 @@
  *
  * This file owns:
  *
- * - the Level 1 starting array for the eight normally trainable Attributes;
+ * - the Level 1 starting array for the seven normally trainable Attributes;
  * - ordinary Stat Points;
  * - natural Stat Point entitlement from character Level;
  * - post-cap Stat Point entitlement from Lifetime XP;
@@ -38,13 +38,22 @@
  *
  * Ordinary Stat Points may increase:
  *
- *   STR, AGI, DEX, CON, VIT, INT, WIS, PER
+ *   AGI, DEX, CON, VIT, INT, WIS, PER
  *
  * SPI and CHA are intentionally excluded. This classification is owned by
  * foundation/attributes/base.ts (ORDINARY_ATTRIBUTE_KEYS / ROLLED_ATTRIBUTE_KEYS).
  *
  * SPI and CHA are rolled separately during character creation and cannot be
  * increased by ordinary Stat Points.
+ *
+ * STR is absent for a different reason again, and a more fundamental one: it
+ * is not stored. Strength is derived from the body's Structural Capacity and
+ * force production, so there is nothing here for a Stat Point to increase.
+ * Raising it means changing the body, which is what
+ * foundation/body/strength/advancement.ts does — it solves for the Muscularity
+ * that doubles normalized Strength Points and persists that instead. A Stat
+ * Point spent on STR would write a number the physics would immediately
+ * contradict.
  *
  * They may still be permanently increased through Limited Stat Point grants
  * from quests, events, items, special mechanics, or direct GM grants.
@@ -53,11 +62,11 @@
  * STARTING ARRAY
  * --------------
  *
- * The eight normally trainable Attributes begin from the assignable array:
+ * The seven normally trainable Attributes begin from the assignable array:
  *
- *   11, 11, 10, 10, 10, 10, 9, 9
+ *   11, 11, 10, 10, 10, 9, 9
  *
- * Total:   80
+ * Total:   70
  * Average: 10
  *
  * SPI and CHA are not part of this array.
@@ -143,9 +152,9 @@
  *
  * Examples:
  *
- *   +1 STR
  *   +1 SPI
  *   +2 CON
+ *   +1 VIT
  *
  * Limited Stat Point grants:
  *
@@ -181,14 +190,22 @@ export const POST_CAP_STAT_POINTS_PER_MILESTONE = 1;
 
 
 /**
- * Assignable Level 1 array for the eight normally trainable Attributes.
+ * Assignable Level 1 array for the seven normally trainable Attributes.
+ *
+ * One entry per ORDINARY_ATTRIBUTE_KEYS entry, still averaging exactly 10.
+ *
+ * It lost a value rather than gaining one when STR stopped being stored. The
+ * array assigns scores to Attributes a character HAS, and there is no longer
+ * an eighth to assign one to: Strength is resolved from the body. Leaving the
+ * eighth value in place would have handed every character a score with nowhere
+ * to put it, and the shape — two above, two below, the rest at the reference —
+ * is preserved by dropping a 10.
  *
  * SPI and CHA are rolled separately and are deliberately not represented here.
  */
 export const STARTING_STAT_ARRAY = [
   11,
   11,
-  10,
   10,
   10,
   10,
@@ -208,7 +225,6 @@ export type { AttributeKey, OrdinaryAttributeKey };
  *
  * Examples:
  *
- *   { attribute: "str", amount: 1 }
  *   { attribute: "spi", amount: 1 }
  *   { attribute: "con", amount: 2 }
  */
@@ -635,7 +651,7 @@ export function grantStatPoints(
  *
  * Rules:
  *
- * - STR, AGI, DEX, CON, VIT, INT, WIS and PER are valid targets;
+ * - AGI, DEX, CON, VIT, INT, WIS and PER are valid targets;
  * - SPI and CHA cannot consume ordinary Stat Points;
  * - 1 Stat Point always purchases exactly +1 Base Attribute;
  * - multiple Stat Points may be spent at once;
@@ -695,10 +711,10 @@ export function spendStatPoints(
           code:
             "progression.stats.attribute.not_spendable",
           message:
-            "Ordinary Stat Points may only increase STR, AGI, DEX, CON, VIT, INT, WIS, or PER.",
+            "Ordinary Stat Points may only increase AGI, DEX, CON, VIT, INT, WIS, or PER.",
           audience: "player",
           required:
-            "STR, AGI, DEX, CON, VIT, INT, WIS, or PER",
+            "AGI, DEX, CON, VIT, INT, WIS, or PER",
           actual:
             attribute,
         },
@@ -948,7 +964,6 @@ export function spendStatPoints(
  *
  * Examples:
  *
- * - a quest grants +1 STR;
  * - a spiritual event grants +1 SPI;
  * - an item permanently grants +2 CHA;
  * - the GM directly grants +1 VIT.

@@ -31,12 +31,13 @@ import { setBodyPartState } from "../character/foundation/body/anatomy/modificat
 import {
   STANDARD_HUMANOID_ANATOMY,
   STANDARD_HUMANOID_BODY_PART_SPECS,
-  STANDARD_HUMANOID_REFERENCE_FORM,
+  STANDARD_HUMANOID_FORM_ID,
 } from "../character/foundation/body/anatomy/standard-humanoid";
 import {
   advanceStrength,
   solveMonotonicTarget,
 } from "../character/foundation/body/strength/advancement";
+import { STANDARD_HUMANOID_FORM } from "../character/foundation/body/anatomy/reference-forms";
 import { ATTRIBUTE_MAX } from "../character/foundation/attributes/base";
 import {
   resolveDisplayedStrength,
@@ -82,6 +83,7 @@ function morphologyInput(
     species: NEUTRAL_SOURCE,
     age: NEUTRAL_SOURCE,
     character: NEUTRAL_SOURCE,
+    individual: {},
     strengthDevelopmentMuscularity,
     effectLayers: [],
   };
@@ -96,23 +98,34 @@ function strengthOf(
   muscularity = 1,
   definitions: readonly BodyPartDefinition[] = DEFINITIONS,
 ) {
-  const partIds = [
-    ...morphologyTargetsForAnatomy(anatomy),
-    ...morphologyTargetsForReferenceForm(referenceForm),
-  ];
+  /*
+   * Two maps, resolved separately and keyed differently: the intact form by
+   * slot, the anatomy present by instance. They used to be merged into one,
+   * which worked only because the standard humanoid names every instance after
+   * its slot — and would have hidden a form-Strength lookup that missed on any
+   * body where those diverge.
+   */
+  const morphology = morphologyInput(muscularity);
+
+  const context = {
+    morphologyBySlotId: resolveMorphology(
+      morphology,
+      morphologyTargetsForReferenceForm(referenceForm),
+    ),
+    morphologyByPartId: resolveMorphology(
+      morphology,
+      morphologyTargetsForAnatomy(anatomy),
+    ),
+    effectiveScale,
+  };
 
   return resolveBodyStrength(
     {
       anatomy,
       referenceForm,
       definitions,
-      base: {
-        morphologyByPartId: resolveMorphology(
-          morphologyInput(muscularity),
-          partIds,
-        ),
-        effectiveScale,
-      },
+      base: context,
+      resolved: context,
     },
     { mode },
   );
@@ -126,7 +139,7 @@ function humanStrength(
 ) {
   return strengthOf(
     STANDARD_HUMANOID_ANATOMY,
-    STANDARD_HUMANOID_REFERENCE_FORM,
+    STANDARD_HUMANOID_FORM,
     mode,
     effectiveScale,
     muscularity,
@@ -285,7 +298,7 @@ describe("Reference-Form normalization", () => {
 
     const resolved = strengthOf(
       anatomy,
-      STANDARD_HUMANOID_REFERENCE_FORM,
+      STANDARD_HUMANOID_FORM,
       "resolved",
     );
 
@@ -301,7 +314,7 @@ describe("Reference-Form normalization", () => {
   it("computes the denominator before Scale, Muscularity and force modifiers", () => {
     expect(
       resolveReferenceFormAnatomicalCapacity(
-        STANDARD_HUMANOID_REFERENCE_FORM,
+        STANDARD_HUMANOID_FORM,
         DEFINITIONS,
       ),
     ).toBeCloseTo(100, 10);
@@ -329,7 +342,7 @@ describe("base and resolved modes", () => {
   it("reports the same STR in both modes, whatever has happened", () => {
     for (const mode of ["base", "resolved"] as const) {
       expect(
-        strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, mode)
+        strengthOf(AMPUTATED, STANDARD_HUMANOID_FORM, mode)
           .normalizedBodySP,
       ).toBeCloseTo(100, 10);
     }
@@ -342,12 +355,12 @@ describe("base and resolved modes", () => {
    */
   it("separates present SP by mode", () => {
     expect(
-      strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, "base")
+      strengthOf(AMPUTATED, STANDARD_HUMANOID_FORM, "base")
         .presentIntrinsicSP,
     ).toBeCloseTo(100, 10);
 
     expect(
-      strengthOf(AMPUTATED, STANDARD_HUMANOID_REFERENCE_FORM, "resolved")
+      strengthOf(AMPUTATED, STANDARD_HUMANOID_FORM, "resolved")
         .presentIntrinsicSP,
     ).toBeCloseTo(64, 10);
   });
@@ -365,7 +378,7 @@ describe("base and resolved modes", () => {
 
     const resolved = strengthOf(
       suppressed,
-      STANDARD_HUMANOID_REFERENCE_FORM,
+      STANDARD_HUMANOID_FORM,
       "resolved",
     );
 
@@ -388,7 +401,7 @@ describe("base and resolved modes", () => {
 
     for (const mode of ["base", "resolved"] as const) {
       expect(
-        strengthOf(hurt, STANDARD_HUMANOID_REFERENCE_FORM, mode)
+        strengthOf(hurt, STANDARD_HUMANOID_FORM, mode)
           .normalizedBodySP,
       ).toBeCloseTo(100, 10);
     }
@@ -569,7 +582,7 @@ describe("Strength advancement", () => {
   function advanceHuman(muscularity = 1) {
     return advanceStrength({
       anatomy: STANDARD_HUMANOID_ANATOMY,
-      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+      referenceForm: STANDARD_HUMANOID_FORM,
       definitions: DEFINITIONS,
       morphology: morphologyInput(muscularity),
       effectiveScale: 1,
@@ -578,13 +591,13 @@ describe("Strength advancement", () => {
           resolveBodyStrength(
             {
               anatomy: STANDARD_HUMANOID_ANATOMY,
-              referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+              referenceForm: STANDARD_HUMANOID_FORM,
               definitions: DEFINITIONS,
               base: {
-                morphologyByPartId: resolveMorphology(
+                morphologyBySlotId: resolveMorphology(
                   morphologyInput(muscularity),
                   morphologyTargetsForReferenceForm(
-                    STANDARD_HUMANOID_REFERENCE_FORM,
+                    STANDARD_HUMANOID_FORM,
                   ),
                 ),
                 effectiveScale: 1,
@@ -691,7 +704,7 @@ describe("Strength advancement", () => {
 
     const result = advanceStrength({
       anatomy: amputated,
-      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+      referenceForm: STANDARD_HUMANOID_FORM,
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 1,
@@ -737,7 +750,7 @@ describe("advancement refusals", () => {
     // Scale alone carries this fixture far past the ordinary cap.
     const result = advanceStrength({
       anatomy: STANDARD_HUMANOID_ANATOMY,
-      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+      referenceForm: STANDARD_HUMANOID_FORM,
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 2 ** 11,
@@ -759,7 +772,7 @@ describe("advancement refusals", () => {
 
     const result = advanceStrength({
       anatomy: STANDARD_HUMANOID_ANATOMY,
-      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+      referenceForm: STANDARD_HUMANOID_FORM,
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 2 ** 9,
@@ -853,7 +866,7 @@ describe("advancement refusals", () => {
   it("carries a trace on the failure branch as well as the success one", () => {
     const failed = advanceStrength({
       anatomy: STANDARD_HUMANOID_ANATOMY,
-      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+      referenceForm: STANDARD_HUMANOID_FORM,
       definitions: DEFINITIONS,
       morphology: morphologyInput(1),
       effectiveScale: 2 ** 11,
@@ -940,13 +953,13 @@ describe("the solver", () => {
 describe("monotonicity preconditions", () => {
   const neutralByPart = resolveMorphology(
     morphologyInput(1),
-    morphologyTargetsForReferenceForm(STANDARD_HUMANOID_REFERENCE_FORM),
+    morphologyTargetsForReferenceForm(STANDARD_HUMANOID_FORM),
   );
 
   it("accepts the standard humanoid", () => {
     expect(
       findStrengthMonotonicityIssues(
-        STANDARD_HUMANOID_REFERENCE_FORM,
+        STANDARD_HUMANOID_FORM,
         DEFINITIONS,
         neutralByPart,
       ),
@@ -954,7 +967,7 @@ describe("monotonicity preconditions", () => {
 
     expect(
       findStrengthAdvancementCapabilityIssues(
-        STANDARD_HUMANOID_REFERENCE_FORM,
+        STANDARD_HUMANOID_FORM,
         DEFINITIONS,
       ),
     ).toEqual([]);
@@ -962,7 +975,7 @@ describe("monotonicity preconditions", () => {
 
   it("rejects a non-positive Muscularity", () => {
     const issues = findStrengthMonotonicityIssues(
-      STANDARD_HUMANOID_REFERENCE_FORM,
+      STANDARD_HUMANOID_FORM,
       DEFINITIONS,
       {
         ...neutralByPart,
@@ -988,7 +1001,7 @@ describe("monotonicity preconditions", () => {
     };
 
     const issues = findStrengthMonotonicityIssues(
-      STANDARD_HUMANOID_REFERENCE_FORM,
+      STANDARD_HUMANOID_FORM,
       [...DEFINITIONS.filter((d) => d.id !== "arm"), broken],
       neutralByPart,
     );
@@ -1014,7 +1027,7 @@ describe("monotonicity preconditions", () => {
     };
 
     const issues = findStrengthMonotonicityIssues(
-      STANDARD_HUMANOID_REFERENCE_FORM,
+      STANDARD_HUMANOID_FORM,
       [...DEFINITIONS.filter((d) => d.id !== "leg"), broken],
       neutralByPart,
     );
@@ -1033,7 +1046,7 @@ describe("monotonicity preconditions", () => {
 
     expect(
       findStrengthMonotonicityIssues(
-        STANDARD_HUMANOID_REFERENCE_FORM,
+        STANDARD_HUMANOID_FORM,
         [...DEFINITIONS.filter((d) => d.id !== "head"), negative],
         neutralByPart,
       ).map((i) => i.code),
@@ -1049,7 +1062,7 @@ describe("monotonicity preconditions", () => {
 
     expect(
       findStrengthMonotonicityIssues(
-        STANDARD_HUMANOID_REFERENCE_FORM,
+        STANDARD_HUMANOID_FORM,
         [...DEFINITIONS.filter((d) => d.id !== "head"), inert],
         neutralByPart,
       ),
@@ -1083,29 +1096,37 @@ describe("the Human age curve's Strength", () => {
     (age, expectedSP, expectedStrength) => {
       const resolved = resolveAge(HUMAN_AGE_PROFILE, age);
 
-      const partIds = morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY);
+      const morphology = {
+        species: NEUTRAL_SOURCE,
+        age: {
+          global: resolved.globalMorphology,
+          local: resolved.localMorphology,
+        },
+        character: NEUTRAL_SOURCE,
+        individual: {},
+        strengthDevelopmentMuscularity: 1,
+        effectLayers: [],
+      };
+
+      const context = {
+        morphologyBySlotId: resolveMorphology(
+          morphology,
+          morphologyTargetsForReferenceForm(STANDARD_HUMANOID_FORM),
+        ),
+        morphologyByPartId: resolveMorphology(
+          morphology,
+          morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY),
+        ),
+        effectiveScale: resolved.scale,
+      };
 
       const strength = resolveBodyStrength(
         {
           anatomy: STANDARD_HUMANOID_ANATOMY,
-          referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+          referenceForm: STANDARD_HUMANOID_FORM,
           definitions: DEFINITIONS,
-          base: {
-            morphologyByPartId: resolveMorphology(
-              {
-                species: NEUTRAL_SOURCE,
-                age: {
-                  global: resolved.globalMorphology,
-                  local: resolved.localMorphology,
-                },
-                character: NEUTRAL_SOURCE,
-                strengthDevelopmentMuscularity: 1,
-                effectLayers: [],
-              },
-              partIds,
-            ),
-            effectiveScale: resolved.scale,
-          },
+          base: context,
+          resolved: context,
         },
         { mode: "resolved" },
       );
@@ -1125,5 +1146,112 @@ describe("the Human age curve's Strength", () => {
         resolveStrengthPosition(humanStrength("resolved").normalizedBodySP),
       ),
     ).toBe(10);
+  });
+});
+
+describe("instance ids and slot ids are looked up separately", () => {
+  /*
+   * The standard humanoid names every instance after the slot it occupies, so
+   * a resolver that looked the form's morphology up in an instance-keyed map
+   * still found it and every test passed. A regenerated limb ends that
+   * coincidence: it occupies its old slot under a new id.
+   *
+   * These bodies are identical in every physical respect. Only the instance
+   * ids differ.
+   */
+  const REGENERATED_SPECS: readonly BodyPartCreationSpec[] =
+    STANDARD_HUMANOID_BODY_PART_SPECS.map((spec) => ({
+      ...spec,
+      id: `regrown-${spec.id}`,
+      slotId: spec.id,
+      ...(spec.attachment === null
+        ? { attachment: null }
+        : {
+            attachment: {
+              ...spec.attachment,
+              parentId: `regrown-${spec.attachment.parentId}`,
+            },
+          }),
+    })) as readonly BodyPartCreationSpec[];
+
+  const REGENERATED_ANATOMY = createAnatomy(
+    REGENERATED_SPECS,
+    STANDARD_HUMANOID_FORM_ID,
+  );
+
+  /*
+   * The form is unchanged: it is built from the ORIGINAL specs, so its slot
+   * ids stay "arm-1" while the anatomy occupying them is "regrown-arm-1".
+   */
+  const FORM = createReferenceForm(
+    STANDARD_HUMANOID_BODY_PART_SPECS,
+    STANDARD_HUMANOID_FORM_ID,
+  );
+
+  it("resolves the same normalized Strength as a body whose ids coincide", () => {
+    const coinciding = strengthOf(
+      STANDARD_HUMANOID_ANATOMY,
+      STANDARD_HUMANOID_FORM,
+      "resolved",
+      1,
+      1.5747,
+    );
+
+    const regenerated = strengthOf(
+      REGENERATED_ANATOMY,
+      FORM,
+      "resolved",
+      1,
+      1.5747,
+    );
+
+    /*
+     * The number that would have moved. Before the split, the form part set
+     * looked "arm-1" up in a map keyed by "regrown-arm-1", missed, and fell
+     * back to neutral morphology — so this body resolved 100 instead of 200
+     * and lost a whole point of Strength for having healed.
+     */
+    expect(regenerated.normalizedBodySP).toBeCloseTo(
+      coinciding.normalizedBodySP,
+      6,
+    );
+    expect(regenerated.normalizedBodySP).toBeCloseTo(200, 2);
+  });
+
+  it("still resolves the present anatomy by instance id", () => {
+    const regenerated = strengthOf(
+      REGENERATED_ANATOMY,
+      FORM,
+      "resolved",
+      1,
+      1.5747,
+    );
+
+    expect(regenerated.presentIntrinsicSP).toBeCloseTo(
+      regenerated.referenceFormIntrinsicSP,
+      6,
+    );
+
+    expect(
+      regenerated.presentByPartId["regrown-arm-1"]?.intrinsicMaxSP,
+    ).toBeGreaterThan(0);
+
+    expect(regenerated.formByPartId["arm-1"]?.intrinsicMaxSP).toBeGreaterThan(0);
+  });
+
+  it("keeps a missing instance off the form and on the present set", () => {
+    const withoutAnArm = {
+      parts: REGENERATED_ANATOMY.parts.filter(
+        (part) => part.id !== "regrown-arm-1" && part.id !== "regrown-hand-1",
+      ),
+    };
+
+    const regenerated = strengthOf(withoutAnArm, FORM, "resolved");
+
+    // The form still expects the Arm, so STR is untouched.
+    expect(regenerated.normalizedBodySP).toBeCloseTo(100, 6);
+
+    // The force actually available is not.
+    expect(regenerated.presentIntrinsicSP).toBeCloseTo(82, 6);
   });
 });

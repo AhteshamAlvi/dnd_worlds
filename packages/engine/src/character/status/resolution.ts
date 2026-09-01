@@ -27,6 +27,10 @@
  *   its always-on ones, per InjuryDefinition.treatmentEffects.
  */
 
+import {
+  contributesNothing,
+  sourceContributions,
+} from "../rules/content";
 import type { RuleEffectSource } from "../rules/resolution";
 
 import {
@@ -72,11 +76,12 @@ export function collectConditionEffectSources(
       resolveStage(definition, condition),
     );
 
-    if (effects.length === 0) continue;
+    if (contributesNothing(definition, effects)) continue;
 
     sources.push({
       source: { type: "condition", id: condition.conditionId },
       effects,
+      ...sourceContributions(definition),
     });
   }
 
@@ -122,11 +127,12 @@ export function collectInjuryEffectSources(
 
     const effects = [...(definition.effects ?? []), ...treatmentEffects];
 
-    if (effects.length === 0) continue;
+    if (contributesNothing(definition, effects)) continue;
 
     sources.push({
       source: { type: "injury", id: injury.injuryId },
       effects,
+      ...sourceContributions(definition),
     });
   }
 

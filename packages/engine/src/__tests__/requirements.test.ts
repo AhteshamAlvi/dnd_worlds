@@ -23,8 +23,10 @@ import {
 import type { Requirement } from "../character/rules/requirements";
 import { getSkillDefinition } from "../character/capabilities/skills";
 
-import { resolveCharacter } from "../character/resolution";
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -214,7 +216,7 @@ describe("derived attribute requirements", () => {
     });
 
     // Combat Ability from five 10s is 10 — short of 14.
-    const untrained = resolveCharacter(createTestCharacter());
+    const untrained = resolveTestCharacter(createTestCharacter());
 
     expect(
       meetsAllRequirements(
@@ -224,7 +226,7 @@ describe("derived attribute requirements", () => {
     ).toBe(false);
 
     // Five 15s average to 15.
-    const veteran = resolveCharacter(
+    const veteran = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 15, dex: 15, per: 15, wis: 15 },
       }),
@@ -459,7 +461,7 @@ describe("requirements against a real character", () => {
       requirements: [{ type: "hasTechnique", techniqueId: "dragon-forms" }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         traits: [{ traitId: "dragon-blooded" }],
         skills: [{ skillId: "dragon-breath" }],
@@ -476,7 +478,7 @@ describe("requirements against a real character", () => {
 
   // A Trait lowering DEX is what a Base-layer prerequisite has to see.
   it("evaluates an attribute prerequisite against the derived Base score", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { dex: 15 },
         traits: [{ traitId: "one-armed" }],
@@ -496,11 +498,11 @@ describe("requirements against a real character", () => {
   // Level is derived from lifetime XP rather than stored, so a levelMinimum
   // requirement reads the same number progression would.
   it("derives the Level a levelMinimum requirement is judged against", () => {
-    const novice = resolveCharacter(createTestCharacter());
+    const novice = resolveTestCharacter(createTestCharacter());
 
     expect(novice.requirementContext.level).toBe(1);
 
-    const experienced = resolveCharacter(
+    const experienced = resolveTestCharacter(
       createTestCharacter({ lifetimeXp: 100_000 }),
     );
 
@@ -522,7 +524,7 @@ describe("requirements against a real character", () => {
   });
 
   it("falls back to Level 1 rather than throwing on malformed experience", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ lifetimeXp: -5 }),
     );
 
@@ -530,7 +532,7 @@ describe("requirements against a real character", () => {
   });
 
   it("counts an ancestor Species for a character who only lists a Sub-species", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         species: [{ speciesId: "bloodkin", percentage: 100 }],
       }),

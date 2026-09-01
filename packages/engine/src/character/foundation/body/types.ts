@@ -8,14 +8,17 @@
  * height are two sources that can disagree and one of them is always the wrong
  * one to trust.
  *
- * Anatomy is persistent character state and represents the body parts the
- * character currently physically possesses.
+ * Anatomy is NOT stored. It is instantiated at resolution from the Reference
+ * Form the character currently has and the continuity state below, because a
+ * stored tree alongside the form it came from is free to disagree with it —
+ * which is exactly how a transformed character kept limbs their new shape does
+ * not have.
  *
  * Derived values such as resolved Body Points, Current BP, morphology
  * multipliers, and Critical Point instances are not stored here.
  */
 
-import type { Anatomy, BodyPartId } from "./anatomy/types";
+import type { ContinuityStates } from "./continuity";
 import type { AnatomicalPointStates } from "./critical-points/state";
 
 
@@ -44,14 +47,17 @@ export interface Body {
   readonly globalMorphology: BodyMorphology;
 
   /**
-   * Per-BodyPart morphology overrides, layered on top of the global values.
+   * Everything persistently true of this body's anatomy, by continuity
+   * identity: individual morphology, integrity, destruction.
    *
-   * Keyed by BodyPart instance id, so one Arm can be longer than the other.
-   * Absent keys and absent properties simply contribute nothing.
+   * Keyed by identity rather than by slot or instance because it has to
+   * outlive both. A limb that is severed, regrown, or carried through a
+   * transformation is the same limb, and this is where that is recorded. See
+   * body/continuity.ts.
+   *
+   * Sparse: absent means intact and unremarkable.
    */
-  readonly localMorphology: Readonly<
-    Record<BodyPartId, Partial<BodyMorphology>>
-  >;
+  readonly continuity: ContinuityStates;
 
   /**
    * The Muscularity this character has physically developed through Strength
@@ -72,8 +78,6 @@ export interface Body {
    * second path would silently double-count it.
    */
   readonly strengthDevelopmentMuscularity: number;
-
-  readonly anatomy: Anatomy;
 
   /*
    * What has become of this body's Anatomical Points.

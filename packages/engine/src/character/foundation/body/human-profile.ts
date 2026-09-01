@@ -11,7 +11,7 @@
  * import from identity to find its own reference body.
  */
 
-import { STANDARD_HUMANOID_REFERENCE_FORM } from "./anatomy/standard-humanoid";
+import { STANDARD_HUMANOID_FORM_ID } from "./anatomy/standard-humanoid";
 import { HUMAN_AGE_PROFILE } from "./age/human-age-profile";
 import { DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L } from "./measurements/resolution";
 import { HUMAN_STATURE_BANDS } from "./stature/human-stature-bands";
@@ -20,7 +20,7 @@ import type { SpeciesBodyProfile } from "./species-profile";
 
 export const HUMAN_BODY_PROFILE: SpeciesBodyProfile = {
   standardScale: 1,
-  referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+  referenceFormId: STANDARD_HUMANOID_FORM_ID,
   globalMorphology: NEUTRAL_MORPHOLOGY,
   localMorphology: {},
   stature: HUMAN_STATURE_BANDS,

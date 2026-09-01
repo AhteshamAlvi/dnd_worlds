@@ -35,6 +35,10 @@
  * See types.ts for the Item shape and for which Effects apply when.
  */
 
+import {
+  contributesNothing,
+  sourceContributions,
+} from "../rules/content";
 import { createRegistry, scanReferences } from "../../infrastructure/registry";
 
 import type { RuleEffectSource } from "../rules/resolution";
@@ -132,11 +136,12 @@ export function collectItemEffectSources(
 
     const effects = getActiveItemEffects(definition, item);
 
-    if (effects.length === 0) continue;
+    if (contributesNothing(definition, effects)) continue;
 
     sources.push({
       source: { type: "item", id: item.itemId },
       effects,
+      ...sourceContributions(definition),
     });
   }
 

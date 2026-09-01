@@ -15,6 +15,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+
 import { createAnatomy, createReferenceForm } from "../character/foundation/body/anatomy/creation";
 import { setBodyPartState } from "../character/foundation/body/anatomy/modification";
 import { anatomySlotKey } from "../character/foundation/body/anatomy/types";
@@ -184,7 +186,15 @@ describe("slot occupancy", () => {
   it("distinguishes destroyed from never-instantiated", () => {
     const formExpectingATail: ReferenceForm = {
       id: "HumanForm",
-      parts: [...HUMAN_FORM.parts, { slotId: "tail", type: "tail" }],
+      parts: [
+        ...HUMAN_FORM.parts,
+        {
+          slotId: "tail",
+          type: "tail",
+          continuityKey: continuityKey("tail"),
+          attachment: null,
+        },
+      ],
     };
 
     const slots = resolveSlotOccupancy(
@@ -228,7 +238,15 @@ describe("ordinary regeneration", () => {
   it("cannot rebuild anatomy that never existed", () => {
     const formExpectingATail: ReferenceForm = {
       id: "HumanForm",
-      parts: [...HUMAN_FORM.parts, { slotId: "tail", type: "tail" }],
+      parts: [
+        ...HUMAN_FORM.parts,
+        {
+          slotId: "tail",
+          type: "tail",
+          continuityKey: continuityKey("tail"),
+          attachment: null,
+        },
+      ],
     };
 
     expect(
@@ -253,7 +271,7 @@ describe("Species body profiles", () => {
     const human = getSpeciesDefinition("human");
 
     expect(human?.body?.standardScale).toBe(1);
-    expect(human?.body?.referenceForm.id).toBe("standard-humanoid");
+    expect(human?.body?.referenceFormId).toBe("standard-humanoid");
     expect(human?.body?.stature).toBe(HUMAN_STATURE_BANDS);
     expect(human?.body?.ageProfile).toBe(HUMAN_AGE_PROFILE);
   });

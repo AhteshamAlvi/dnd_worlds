@@ -23,6 +23,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+
 import { applyBodyPartRecovery } from "../character/foundation/body/body-points/recovery";
 import type { Anatomy } from "../character/foundation/body/anatomy/types";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
@@ -58,42 +60,40 @@ const DEFINITIONS: readonly BodyPartDefinition[] = [
 const REFERENCE_CONSTITUTION = 10;
 const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };
 
-function bodyWithParts(anatomy: Anatomy): Body {
-  return { ...TEST_BODY_STATE, anatomy };
-}
-
 /** A single torso at the given integrity. Maximum BP is 20 throughout. */
-function singleTorso(integrity: number): Body {
-  return bodyWithParts({
+function singleTorso(integrity: number): Anatomy {
+  return {
     parts: [
-      { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity },
+      { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity },
     ],
-  });
+  };
 }
 
-function morphologyFor(body: Body) {
+function morphologyFor(anatomy: Anatomy) {
   return resolveMorphology(
     {
       species: NEUTRAL_SOURCE,
       age: NEUTRAL_SOURCE,
-      character: { global: body.globalMorphology, local: body.localMorphology },
-      strengthDevelopmentMuscularity: body.strengthDevelopmentMuscularity,
+      character: NEUTRAL_SOURCE,
+      individual: {},
+      strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
-    morphologyTargetsForAnatomy(body.anatomy),
+    morphologyTargetsForAnatomy(anatomy),
   );
 }
 
 function baseInput(
   overrides: Partial<ResolveRecoveryInput> = {},
 ): ResolveRecoveryInput {
-  const body = overrides.body ?? singleTorso(0.5);
+  const anatomy = overrides.anatomy ?? singleTorso(0.5);
 
   return {
-    body,
+    anatomy,
+    continuity: {},
     constitution: REFERENCE_CONSTITUTION,
     bodyPartDefinitions: DEFINITIONS,
-    morphologyByPartId: morphologyFor(body),
+    morphologyByPartId: morphologyFor(anatomy),
     effectiveScale: 1,
     injuries: [],
     elapsed: days(1),
@@ -213,14 +213,14 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
   });
 
   it("leaves undamaged BodyParts untouched", () => {
-    const body = bodyWithParts({
+    const body: Anatomy = ({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.5 },
-        { id: "torso-2", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-2", state: "active", integrity: 1 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.5 },
+        { id: "torso-2", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-2", continuityKey: continuityKey("torso-2"), state: "active", integrity: 1 },
       ],
     });
 
-    const outcome = resolveRecovery(baseInput({ body }));
+    const outcome = resolveRecovery(baseInput({ anatomy: body }));
 
     expect(outcome.parts.map((p) => p.partId)).toEqual(["torso-1"]);
     expect(
@@ -236,13 +236,13 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
   it.each(["suppressed", "archived-removed"] as const)(
     "does not restore %s anatomy",
     (state) => {
-      const body = bodyWithParts({
+      const body: Anatomy = ({
         parts: [
-          { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state, integrity: 0 },
+          { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state, integrity: 0 },
         ],
       });
 
-      const outcome = resolveRecovery(baseInput({ body }));
+      const outcome = resolveRecovery(baseInput({ anatomy: body }));
 
       expect(outcome.parts).toEqual([]);
       expect(outcome.anatomy.parts[0]?.state).toBe(state);
@@ -257,24 +257,24 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
    * either way. Exactness is what makes those two facts agree.
    */
   it("accumulates partial passes exactly", () => {
-    let body = singleTorso(0.5);
+    let anatomy = singleTorso(0.5);
 
     for (let pass = 0; pass < 4; pass += 1) {
       const outcome = resolveRecovery(
-        baseInput({ body, elapsed: hours(6) }),
+        baseInput({ anatomy, elapsed: hours(6) }),
       );
 
       expect(outcome.parts[0]?.bpRestored).toBeCloseTo(0.5, 10);
 
-      body = { ...body, anatomy: outcome.anatomy };
+      anatomy = outcome.anatomy;
     }
 
-    expect(body.anatomy.parts[0]?.integrity).toBeCloseTo(12 / 20, 10);
+    expect(anatomy.parts[0]?.integrity).toBeCloseTo(12 / 20, 10);
   });
 
   it("stops exactly at full health rather than overshooting", () => {
     // integrity 0.95 leaves room for 1 BP; VIT 25 offers 16.
-    const outcome = resolveRecovery(baseInput({ body: singleTorso(0.95), vit: 25 }));
+    const outcome = resolveRecovery(baseInput({ anatomy: singleTorso(0.95), vit: 25 }));
 
     expect(outcome.parts[0]?.bpRestored).toBeCloseTo(1, 10);
     expect(outcome.parts[0]?.integrityAfter).toBe(1);
@@ -287,10 +287,10 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
    * proportion — twice the raw BP, because there is twice as much body.
    */
   it("scales recovery with Maximum BP rather than with stored damage", () => {
-    const atCon10 = resolveRecovery(baseInput({ body: singleTorso(0.5) }));
+    const atCon10 = resolveRecovery(baseInput({ anatomy: singleTorso(0.5) }));
 
     const atCon12 = resolveRecovery(
-      baseInput({ body: singleTorso(0.5), constitution: 12 }),
+      baseInput({ anatomy: singleTorso(0.5), constitution: 12 }),
     );
 
     expect(atCon10.parts[0]?.bpRestored).toBeCloseTo(2, 10);

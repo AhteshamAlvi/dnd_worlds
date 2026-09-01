@@ -73,6 +73,8 @@ function assess(
         global: { ...NEUTRAL_MORPHOLOGY, ...overrides.character },
         local: overrides.local ?? {},
       },
+
+      individual: {},
       strengthDevelopmentMuscularity:
         overrides.strengthDevelopmentMuscularity ?? 1,
       effectLayers: [],

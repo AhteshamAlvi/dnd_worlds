@@ -16,6 +16,7 @@ import type { Definition } from "../../infrastructure/registry";
 
 import type { Effect } from "./effects";
 import type { Requirement } from "./requirements";
+import type { StatureAllowance } from "../foundation/body/stature/types";
 
 /**
  * A catalog definition that participates in the universal rules system.
@@ -27,7 +28,50 @@ import type { Requirement } from "./requirements";
 export interface EffectfulDefinition extends Definition {
   readonly effects?: readonly Effect[];
   readonly requirements?: readonly Requirement[];
+
+  /*
+   * Exceptional stature this content permits.
+   *
+   * Not an Effect, and deliberately so. An Effect changes a body; this changes
+   * whether a body the character already has is ALLOWED. A Species Trait for
+   * unusual height explains a 210 cm Human without making anyone taller, and
+   * conflating the two would mean every explanation also had to be a cause.
+   *
+   * The engine only checks coverage — per dimension and per direction. What
+   * counts as a legitimate reason is content's business; see
+   * foundation/body/stature/justification.ts.
+   */
+  readonly statureAllowances?: readonly StatureAllowance[];
 }
+
+/**
+ * The optional parts of a RuleEffectSource an EffectfulDefinition supplies.
+ *
+ * A source used to be worth building only when it had Effects. Stature
+ * allowances broke that: a Trait explaining an unusual height carries no
+ * Effect at all, and dropping it would have silently made the character
+ * illegal. Spread this into the source object so every builder answers the
+ * "is there anything here" question the same way.
+ */
+export function sourceContributions(
+  definition: EffectfulDefinition,
+): { readonly statureAllowances?: readonly StatureAllowance[] } {
+  const allowances = definition.statureAllowances ?? [];
+
+  return allowances.length > 0 ? { statureAllowances: allowances } : {};
+}
+
+
+/**
+ * Whether a definition contributes anything at all through the given Effects.
+ */
+export function contributesNothing(
+  definition: EffectfulDefinition,
+  effects: readonly Effect[],
+): boolean {
+  return effects.length === 0 && (definition.statureAllowances ?? []).length === 0;
+}
+
 
 /**
  * Every id a grant Effect points at, whatever kind of grant it is.

@@ -40,6 +40,40 @@
 /* -------------------------------------------------------------------------- */
 
 export type { Body, BodyMorphology } from "./types";
+
+export type {
+  AnatomicalContinuityState,
+  ContinuityStates,
+} from "./continuity";
+export {
+  INTACT_INTEGRITY,
+  continuityIntegrity,
+  continuityMorphology,
+  destroyContinuity,
+  getContinuityState,
+  individualMorphologyByContinuityKey,
+  isContinuityDestroyed,
+  regenerateContinuity,
+  setContinuityIntegrity,
+  setContinuityState,
+} from "./continuity";
+
+export type {
+  RegenerationInput,
+  RegenerationOutcome,
+} from "./regeneration";
+export { regenerateAnatomy } from "./regeneration";
+
+export type {
+  ReferenceFormDefinition,
+  KnownReferenceFormId,
+} from "./anatomy/reference-forms";
+export {
+  REFERENCE_FORM_DEFINITIONS,
+  STANDARD_HUMANOID_FORM,
+  getReferenceFormDefinition,
+  isKnownReferenceFormId,
+} from "./anatomy/reference-forms";
 export { NEUTRAL_MORPHOLOGY } from "./types";
 
 export { STANDARD_BODY } from "./defaults";
@@ -81,6 +115,8 @@ export type {
   BodyPartReference,
   BodyPartState,
   BodyPartTag,
+  ContinuityKey,
+  ReferenceFormAttachment,
   BodyPartTypeId,
   AnatomySlotKey,
   HeightAxisSign,
@@ -89,12 +125,13 @@ export type {
   ReferenceForm,
   ReferenceFormPart,
 } from "./anatomy/types";
-export { BODY_PART_STATES, anatomySlotKey } from "./anatomy/types";
+export { BODY_PART_STATES, anatomySlotKey, continuityKey } from "./anatomy/types";
 
 export type {
   BodyPartCreationAttachment,
   BodyPartCreationSpec,
 } from "./anatomy/creation";
+export { instantiateAnatomy } from "./anatomy/creation";
 export {
   DEFAULT_REFERENCE_FORM_ID,
   DEFAULT_ATTACHMENT_CHILD_POSITION,
@@ -142,7 +179,6 @@ export {
   STANDARD_HUMANOID_ANATOMY,
   STANDARD_HUMANOID_FORM_ID,
   STANDARD_HUMANOID_BODY_PART_SPECS,
-  STANDARD_HUMANOID_REFERENCE_FORM,
 } from "./anatomy/standard-humanoid";
 
 export type {
@@ -150,6 +186,12 @@ export type {
   AnatomyValidationIssueCode,
   AnatomyValidationResult,
 } from "./anatomy/validation";
+export type {
+  ReferenceFormValidationIssue,
+  ReferenceFormValidationIssueCode,
+  ReferenceFormValidationResult,
+} from "./anatomy/validation";
+export { validateReferenceForm } from "./anatomy/validation";
 export {
   validateAnatomy,
   validateAnatomyData,
@@ -338,6 +380,7 @@ export {
 
 export type {
   SpeciesStatureBands,
+  StatureAllowance,
   StatureAssessment,
   StatureAssessmentInput,
   StatureBand,
@@ -509,3 +552,47 @@ export type {
   BodyDamageTarget,
 } from "./damage";
 export { applyBodyDamage } from "./damage";
+
+
+/* -------------------------------------------------------------------------- */
+/* Body Effects — the physical vocabulary and its application                  */
+/* -------------------------------------------------------------------------- */
+
+export type {
+  BaseBodyAnatomyOperation,
+  BodyAnatomyOperation,
+  BodyEffectAnatomyModifier,
+  BodyEffectApplication,
+  BodyEffectApplicationInput,
+  BodyEffectInput,
+  BodyEffectLayerInput,
+  BodyEffectModifier,
+  BodyEffectMorphologyModifier,
+  BodyEffectTarget,
+  BodyMorphologyProperty,
+} from "./effects";
+export { NEUTRAL_BODY_EFFECT_LAYER, applyBodyEffects } from "./effects";
+
+
+/* -------------------------------------------------------------------------- */
+/* Whole-body validation                                                       */
+/* -------------------------------------------------------------------------- */
+
+export type {
+  BodyValidationDomain,
+  BodyValidationInput,
+  BodyValidationIssue,
+} from "./validation";
+export {
+  findBodyResolutionBlockers,
+  findBodyValidationIssues,
+  toBodyEngineError,
+} from "./validation";
+
+
+/* -------------------------------------------------------------------------- */
+/* The root resolver                                                           */
+/* -------------------------------------------------------------------------- */
+
+export type { BodyResolutionInput, ResolvedBody } from "./resolution";
+export { resolveBody } from "./resolution";

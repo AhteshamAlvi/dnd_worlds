@@ -15,6 +15,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+
 import {
   findTraitCatalogIssues,
   findTraitValidationIssues,
@@ -304,7 +306,7 @@ describe("injuries", () => {
         {
           id: "injury-1",
           injuryId: "battered",
-          location: { bodyPartIds: ["arm-1"] },
+          location: { continuityKeys: [continuityKey("upper-limb:left")] },
         },
       ]),
     ).toEqual([

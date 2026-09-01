@@ -52,6 +52,8 @@ import {
   spendGrowthPoints,
 } from "../character/progression/growth";
 
+import { ORDINARY_ATTRIBUTE_KEYS } from "../character/foundation/attributes/base";
+
 import { TEST_ATTRIBUTES } from "./fixtures/character";
 
 describe("levels", () => {
@@ -376,7 +378,21 @@ describe("levels", () => {
 
 describe("stat points", () => {
   it("assigns the documented Level 1 starting array", () => {
-    expect(STARTING_STAT_ARRAY).toEqual([11, 11, 10, 10, 10, 10, 9, 9]);
+    expect(STARTING_STAT_ARRAY).toEqual([11, 11, 10, 10, 10, 9, 9]);
+  });
+
+  it("has exactly one starting value per ordinarily trainable Attribute", () => {
+    expect(STARTING_STAT_ARRAY).toHaveLength(ORDINARY_ATTRIBUTE_KEYS.length);
+  });
+
+  it("still averages the reference score of 10", () => {
+    const total = STARTING_STAT_ARRAY.reduce((sum, score) => sum + score, 0);
+
+    expect(total / STARTING_STAT_ARRAY.length).toBe(10);
+  });
+
+  it("leaves no starting value for STR, which is derived rather than stored", () => {
+    expect(ORDINARY_ATTRIBUTE_KEYS).not.toContain("str");
   });
 
   describe("deriveNaturalStatPointsForLevel", () => {

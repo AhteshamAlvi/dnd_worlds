@@ -106,7 +106,7 @@
  * - whether an attack causes an Injury opportunity;
  * - Body Point damage;
  * - BodyPart destruction;
- * - Critical/Semicritical/Joint resolution;
+ * - Anatomical Point resolution;
  * - whether a concrete location satisfies an InjuryDefinition against a
  *   resolved Body;
  * - healing or recovery mechanics;
@@ -134,6 +134,7 @@ import type {
 
 import type {
   BodyPartId,
+  ContinuityKey,
 } from "../foundation/body/anatomy/types";
 
 import type {
@@ -314,18 +315,32 @@ export interface InjuryDefinition extends EffectfulDefinition {
 /**
  * Concrete anatomical location of one Injury carried by one character.
  *
- * BodyPart IDs refer to instances in that same character's stored Anatomy.
- * They are intentionally character-local rather than globally unique.
+ * Located by CONTINUITY identity rather than by BodyPart instance, because an
+ * Injury has to outlive the tissue it is on. A broken arm is still broken after
+ * the arm is regrown into a new instance, and is still the same injury when the
+ * character is a wolf and that identity is a foreleg.
  *
- * Most Injuries use one BodyPart ID. Multiple hosts are permitted for
- * anatomical targets that span more than one BodyPart, such as the Spine.
+ * That split gives an Injury two separate states, and conflating them is the
+ * mistake this shape exists to prevent:
  *
- * `specialPointDefinitionId` is optional because ordinary BodyPart Injuries do
- * not require a Special Point. When present, it preserves the precise
- * anatomical site that the Injury concerns.
+ *   VALID        the identity exists in this character's body at all
+ *   MANIFESTED   the current form has anatomy for it, and the Injury's own
+ *                applicability fits that anatomy
+ *
+ * An Injury whose identity the current form does not express is DORMANT — not
+ * invalid, not healed, and not deleted. It returns when a form that expresses
+ * that identity does.
+ *
+ * Most Injuries name one identity. Several are permitted for anatomical
+ * targets that span more than one, such as the Spine.
+ *
+ * `specialPointDefinitionId` is optional because ordinary Injuries do not
+ * concern a Special Point. When present it names the precise site, and is one
+ * of the things that can keep an Injury dormant: a form whose corresponding
+ * anatomy hosts no such point cannot express it.
  */
 export interface InjuryLocation {
-  readonly bodyPartIds: NonEmptyArray<BodyPartId>;
+  readonly continuityKeys: NonEmptyArray<ContinuityKey>;
 
   readonly specialPointDefinitionId?: SpecialPointDefinitionId;
 }
@@ -573,7 +588,7 @@ export function findInjuryValidationIssues(
     /* ---------------------------------------------------------------------- */
 
     const bodyPartIds =
-      injury.location.bodyPartIds as readonly BodyPartId[];
+      injury.location.continuityKeys as readonly string[];
 
     if (bodyPartIds.length === 0) {
       issues.push({

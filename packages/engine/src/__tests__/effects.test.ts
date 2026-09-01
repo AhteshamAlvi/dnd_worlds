@@ -18,8 +18,10 @@ import { clearCustomDefinitions, registerDefinition } from "../character/catalog
 import { resolveRuleEffects } from "../character/rules/resolution";
 import type { Effect } from "../character/rules/effects";
 
-import { resolveCharacter } from "../character/resolution";
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -107,7 +109,7 @@ describe("effects are independent of their source", () => {
 
 describe("effects reaching a character", () => {
   it("applies a Trait's Base modifier without touching the stored score", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { dex: 16 },
         traits: [{ traitId: "one-armed" }],
@@ -133,7 +135,7 @@ describe("effects reaching a character", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { con: 12 },
         conditions: [{ conditionId: "weakened" }],
@@ -145,13 +147,13 @@ describe("effects reaching a character", () => {
   });
 
   it("applies an equipped Item and ignores it once unequipped", () => {
-    const equipped = resolveCharacter(
+    const equipped = resolveTestCharacter(
       createTestCharacter({
         items: [{ itemId: "gauntlets", quantity: 1, equipped: true }],
       }),
     );
 
-    const carried = resolveCharacter(
+    const carried = resolveTestCharacter(
       createTestCharacter({
         items: [{ itemId: "gauntlets", quantity: 1, equipped: false }],
       }),
@@ -173,7 +175,7 @@ describe("effects reaching a character", () => {
   });
 
   it("applies a possessed Item's effect without it being worn", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         items: [{ itemId: "cursed-idol", quantity: 1, equipped: false }],
       }),
@@ -210,7 +212,7 @@ describe("effects reaching a character", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { dex: 16 },
         traits: [{ traitId: "one-armed" }, { traitId: "quickened" }],
@@ -244,7 +246,7 @@ describe("grant effects", () => {
       effects: [{ type: "grantSkill", skillId: "wall-sticking" }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "spider-mutation" }] }),
     );
 
@@ -285,7 +287,7 @@ describe("grant effects", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "spider-mutation" }] }),
     );
 
@@ -302,7 +304,7 @@ describe("grant effects", () => {
   });
 
   it("grants a Trait from a Sub-species through its ancestry", () => {
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         species: [{ speciesId: "firebender", percentage: 100 }],
       }),
@@ -330,7 +332,7 @@ describe("grant effects", () => {
       effects: [{ type: "grantTrait", traitId: "yin" }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "yin" }] }),
     );
 
@@ -345,7 +347,7 @@ describe("grant effects", () => {
       effects: [{ type: "grantTrait", traitId: "recursion" }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "recursion" }] }),
     );
 
@@ -360,7 +362,7 @@ describe("grant effects", () => {
       effects: [{ type: "grantSkill", skillId: "not-real" }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "broken-grant" }] }),
     );
 

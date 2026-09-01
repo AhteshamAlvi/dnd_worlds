@@ -26,6 +26,7 @@ import type {
   Anatomy,
   BodyPartDefinition,
   BodyPartId,
+  ReferenceAnatomySlotId,
   ReferenceForm,
 } from "../anatomy/types";
 
@@ -33,14 +34,37 @@ import type {
 /*
  * The physical context one resolution mode sees.
  *
- * Split out from the rest of the input because Base and Resolved will
- * eventually see DIFFERENT contexts — a transformation that doubles a
- * character's Scale for a minute changes the resolved body and not the base
- * one. Until the Body Effect vocabulary exists both Effect sets are empty, so
- * the two contexts are the same body and `resolved` may simply be omitted.
+ * Split out from the rest of the input because Base and Resolved see DIFFERENT
+ * contexts — a transformation that doubles a character's Scale for a minute
+ * changes the resolved body and not the base one. A caller with no
+ * resolved-only Effects may still omit `resolved`, and the two contexts are
+ * then the same body.
  */
 export interface StrengthPhysicalContext {
-  readonly morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>;
+  /*
+   * Morphology for the intact Reference Form, keyed by SLOT id.
+   *
+   * This is the one that drives STR, in BOTH modes. The form's part list is
+   * slot ids, so a map keyed by anything else silently misses and every slot
+   * falls back to neutral morphology — which is a wrong Strength rather than
+   * an error, and was exactly the bug this split exists to make impossible.
+   */
+  readonly morphologyBySlotId: Readonly<
+    Record<ReferenceAnatomySlotId, BodyMorphology>
+  >;
+
+  /*
+   * Morphology for the anatomy actually present, keyed by INSTANCE id.
+   *
+   * Required in resolved mode and unread in base mode, where the present set
+   * IS the form. Optional for that reason: a base-mode caller has no instance
+   * morphology to give and should not be made to invent one.
+   *
+   * Instance ids and slot ids are different namespaces even where they happen
+   * to coincide — a regenerated limb occupies its old slot under a new id — so
+   * these are two maps and never one.
+   */
+  readonly morphologyByPartId?: Readonly<Record<BodyPartId, BodyMorphology>>;
 
   readonly effectiveScale: number;
 
@@ -57,6 +81,9 @@ export interface StrengthPhysicalContext {
    *
    * Absent entries are 1.
    */
+  readonly intrinsicForceModifierBySlotId?: Readonly<
+    Record<ReferenceAnatomySlotId, number>
+  >;
   readonly intrinsicForceModifierByPartId?: Readonly<Record<BodyPartId, number>>;
 }
 

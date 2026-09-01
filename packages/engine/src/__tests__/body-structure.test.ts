@@ -61,6 +61,7 @@ function morphologyAt(
       species: NEUTRAL_SOURCE,
       age: NEUTRAL_SOURCE,
       character: { global, local: {} },
+      individual: {},
       strengthDevelopmentMuscularity: muscularity,
       effectLayers: [],
     },

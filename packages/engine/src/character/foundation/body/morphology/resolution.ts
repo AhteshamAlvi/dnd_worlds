@@ -12,6 +12,7 @@ import { anatomySlotKey } from "../anatomy/types";
 import type {
   Anatomy,
   AnatomySlotKey,
+  ContinuityKey,
   ReferenceForm,
 } from "../anatomy/types";
 import type { MorphologyResolutionInput, MorphologySource } from "./types";
@@ -109,16 +110,28 @@ function sourceMorphologyFor(
 export function resolvePartMorphology(
   input: MorphologyResolutionInput,
   slotKey: AnatomySlotKey,
+  continuityKey: ContinuityKey,
 ): BodyMorphology {
   const strengthDevelopment: BodyMorphology = {
     ...NEUTRAL_MORPHOLOGY,
     muscularity: input.strengthDevelopmentMuscularity,
   };
 
+  /*
+   * The individual layer is looked up by CONTINUITY identity while every other
+   * layer is looked up by slot. Two keyings on purpose: what a Species does to
+   * a position belongs to the form, and what is unusual about this person's
+   * own anatomy belongs to them and travels with it.
+   */
+  const individual = combineWithinLayer([
+    input.individual[continuityKey] ?? {},
+  ]);
+
   return multiplyLayers([
     sourceMorphologyFor(input.species, slotKey),
     sourceMorphologyFor(input.age, slotKey),
     sourceMorphologyFor(input.character, slotKey),
+    individual,
     strengthDevelopment,
     ...input.effectLayers.map(
       (layer) => sourceMorphologyFor(layer, slotKey),
@@ -143,6 +156,13 @@ export function resolvePartMorphology(
 export interface MorphologyTarget {
   readonly id: string;
   readonly slotKey: AnatomySlotKey;
+
+  /*
+   * The persistent identity standing in this position, so the individual layer
+   * can be found. Carried on the target rather than looked up here because
+   * only the caller knows which anatomy or form slot produced it.
+   */
+  readonly continuityKey: ContinuityKey;
 }
 
 
@@ -155,6 +175,7 @@ export function morphologyTargetsForAnatomy(
   return anatomy.parts.map((part) => ({
     id: part.id,
     slotKey: anatomySlotKey(part.referenceFormId, part.referenceSlotId),
+    continuityKey: part.continuityKey,
   }));
 }
 
@@ -168,6 +189,7 @@ export function morphologyTargetsForReferenceForm(
   return referenceForm.parts.map((part) => ({
     id: part.slotId,
     slotKey: anatomySlotKey(referenceForm.id, part.slotId),
+    continuityKey: part.continuityKey,
   }));
 }
 
@@ -182,7 +204,11 @@ export function resolveMorphology(
   const resolved: Record<string, BodyMorphology> = {};
 
   for (const target of targets) {
-    resolved[target.id] = resolvePartMorphology(input, target.slotKey);
+    resolved[target.id] = resolvePartMorphology(
+      input,
+      target.slotKey,
+      target.continuityKey,
+    );
   }
 
   return resolved;

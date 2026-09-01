@@ -16,11 +16,13 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
-import { resolveCharacter } from "../character/resolution";
 import { DERIVED_ATTRIBUTE_SOURCES } from "../character/foundation/attributes/derived/resolution";
 import { DERIVED_ATTRIBUTE_NAMES } from "../character/foundation/attributes/derived/types";
 
-import { createTestCharacter } from "./fixtures/character";
+import {
+  createTestCharacter,
+  resolveTestCharacter,
+} from "./fixtures/character";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -35,11 +37,11 @@ describe("a permanent score change reaches the Derived Attributes", () => {
       effects: [{ type: "modifyBaseAttribute", attribute: "agi", amount: 2 }],
     });
 
-    const before = resolveCharacter(
+    const before = resolveTestCharacter(
       createTestCharacter({ attributes: { agi: 17 } }),
     );
 
-    const after = resolveCharacter(
+    const after = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 17 },
         traits: [{ traitId: "flexible" }],
@@ -72,8 +74,8 @@ describe("a permanent score change reaches the Derived Attributes", () => {
       effects: [{ type: "modifyBaseAttribute", attribute: "agi", amount: 2 }],
     });
 
-    const before = resolveCharacter(createTestCharacter());
-    const after = resolveCharacter(
+    const before = resolveTestCharacter(createTestCharacter());
+    const after = resolveTestCharacter(
       createTestCharacter({ traits: [{ traitId: "flexible" }] }),
     );
 
@@ -98,7 +100,7 @@ describe("a permanent score change reaches the Derived Attributes", () => {
       effects: [{ type: "modifyBaseAttribute", attribute: "wis", amount: 6 }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { per: 16, wis: 10 },
         traits: [{ traitId: "gifted" }],
@@ -125,7 +127,7 @@ describe("a temporary score change propagates the same way", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 18, dex: 18 },
         conditions: [{ conditionId: "hobbled" }],
@@ -162,7 +164,7 @@ describe("a temporary score change propagates the same way", () => {
       ],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 17, dex: 17 },
         traits: [{ traitId: "flexible" }],
@@ -188,7 +190,7 @@ describe("derived state is never stale", () => {
       effects: [{ type: "modifyBaseAttribute", attribute: "agi", amount: 2 }],
     });
 
-    const resolved = resolveCharacter(
+    const resolved = resolveTestCharacter(
       createTestCharacter({
         attributes: { agi: 17 },
         traits: [{ traitId: "flexible" }],
@@ -205,8 +207,8 @@ describe("derived state is never stale", () => {
   it("is stable across repeated resolutions of the same character", () => {
     const character = createTestCharacter({ attributes: { agi: 17, dex: 13 } });
 
-    expect(resolveCharacter(character).derivedAttributes).toEqual(
-      resolveCharacter(character).derivedAttributes,
+    expect(resolveTestCharacter(character).derivedAttributes).toEqual(
+      resolveTestCharacter(character).derivedAttributes,
     );
   });
 });

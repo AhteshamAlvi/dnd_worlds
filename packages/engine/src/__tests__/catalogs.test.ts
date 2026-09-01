@@ -453,6 +453,7 @@ describe("registering custom Body content", () => {
         species: neutral,
         age: neutral,
         character: neutral,
+        individual: {},
         strengthDevelopmentMuscularity: 1,
         effectLayers: [],
       },

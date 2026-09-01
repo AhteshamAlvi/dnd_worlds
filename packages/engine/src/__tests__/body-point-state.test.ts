@@ -17,7 +17,9 @@ import { describe, expect, it } from "vitest";
 import { listDefinitions } from "../character/catalogs";
 import { createAnatomy } from "../character/foundation/body/anatomy/creation";
 import { setBodyPartState } from "../character/foundation/body/anatomy/modification";
-import { STANDARD_BODY } from "../character/foundation/body/defaults";
+import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
+import { continuityKey } from "../character/foundation/body/anatomy/types";
+import type { Anatomy } from "../character/foundation/body/anatomy/types";
 import { applyBodyDamage } from "../character/foundation/body/damage";
 import type { BodyDamageInput } from "../character/foundation/body/damage";
 import { resolveBodyCapability } from "../character/foundation/body/capability";
@@ -45,15 +47,18 @@ const MORPHOLOGY = resolveMorphology(
     species: NEUTRAL_SOURCE,
     age: NEUTRAL_SOURCE,
     character: NEUTRAL_SOURCE,
+    individual: {},
     strengthDevelopmentMuscularity: 1,
     effectLayers: [],
   },
-  morphologyTargetsForAnatomy(STANDARD_BODY.anatomy),
+  morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY),
 );
 
 function baseInput(overrides: Partial<BodyDamageInput> = {}): BodyDamageInput {
   return {
-    body: STANDARD_BODY,
+    anatomy: STANDARD_HUMANOID_ANATOMY,
+    continuity: {},
+    anatomicalPoints: {},
     constitution: 10,
     morphologyByPartId: MORPHOLOGY,
     effectiveScale: 1,
@@ -83,7 +88,7 @@ describe("the state map", () => {
   it("treats an absent entry as active", () => {
     expect(getAnatomicalPointState({}, "brain:head-1")).toBe("active");
     expect(isAnatomicalPointActive({}, "brain:head-1")).toBe(true);
-    expect(STANDARD_BODY.anatomicalPoints).toEqual({});
+    expect({ anatomy: STANDARD_HUMANOID_ANATOMY, anatomicalPoints: {} }.anatomicalPoints).toEqual({});
   });
 
   it("records what happened to a point", () => {
@@ -210,16 +215,12 @@ describe("damage writes it", () => {
       ),
     );
 
-    const between: Body = {
-      ...STANDARD_BODY,
-      anatomy: first.anatomy,
-      anatomicalPoints: first.anatomicalPoints,
-    };
-
     const second = requireSuccess(
       applyBodyDamage(
         baseInput({
-          body: between,
+          anatomy: first.anatomy,
+          continuity: first.continuity,
+          anatomicalPoints: first.anatomicalPoints,
           target: { kind: "special-point", pointId: "shoulder:arm-2" },
           penetratingDamage: 5,
         }),
@@ -235,7 +236,10 @@ describe("damage writes it", () => {
 
 
 describe("capability reads it", () => {
-  function capabilityOf(body: Body) {
+  function capabilityOf(body: {
+    readonly anatomy: Anatomy;
+    readonly anatomicalPoints: AnatomicalPointStates;
+  }) {
     const points = resolveCriticalPoints(
       body.anatomy,
       listDefinitions("body-part"),
@@ -271,8 +275,7 @@ describe("capability reads it", () => {
       ),
     );
 
-    const after: Body = {
-      ...STANDARD_BODY,
+    const after = {
       anatomy: outcome.anatomy,
       anatomicalPoints: outcome.anatomicalPoints,
     };
@@ -288,7 +291,7 @@ describe("capability reads it", () => {
   });
 
   it("reports an undamaged body as wholly usable", () => {
-    const capability = capabilityOf(STANDARD_BODY);
+    const capability = capabilityOf({ anatomy: STANDARD_HUMANOID_ANATOMY, anatomicalPoints: {} });
 
     for (const part of capability.parts) {
       expect(part.accessible).toBe(true);
@@ -372,7 +375,7 @@ describe("archived records and anatomy that changed", () => {
 
   it("selects destroyed points of every category, not only Joints", () => {
     const points = resolveCriticalPoints(
-      STANDARD_BODY.anatomy,
+      STANDARD_HUMANOID_ANATOMY,
       listDefinitions("body-part"),
       listDefinitions("special-point"),
     );
