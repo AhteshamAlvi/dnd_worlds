@@ -770,7 +770,7 @@ describe("Injury validation follows the resolved anatomy", () => {
     if (result.success) return;
 
     expect(result.errors.map((error) => error.code)).toContain(
-      "character.injury.body_part_unknown",
+      "character.injury.continuity_unknown",
     );
   });
 

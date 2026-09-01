@@ -54,15 +54,21 @@ import {
 
 export type RecoveryLocationValidationIssue =
   | {
-      readonly type: "injury-body-part-unknown";
+      /*
+       * Named for the identity rather than for a BodyPart, because that is
+       * what an Injury actually references. "Unknown" means this character's
+       * body has never had such anatomy — NOT that it is currently missing,
+       * which is dormancy and is not an error at all.
+       *
+       * Its sibling below is still body-part-shaped on purpose: applicability
+       * is judged against the concrete BodyPart standing in the identity right
+       * now, and a form can legitimately manifest one identity as an Arm and
+       * another as a wing.
+       */
+      readonly type: "injury-continuity-unknown";
       readonly id: CharacterInjuryId;
       readonly injuryId: InjuryId;
 
-      /*
-       * The identity, not an instance. An Injury names anatomy that outlives
-       * the tissue standing in it, so "unknown" means this character's body has
-       * never had such anatomy — not that it is currently missing.
-       */
       readonly continuityKey: ContinuityKey;
     }
   | {
@@ -294,7 +300,7 @@ export function findRecoveryLocationIssues(
        */
       if (!knownContinuityKeys.has(key)) {
         issues.push({
-          type: "injury-body-part-unknown",
+          type: "injury-continuity-unknown",
           id: injury.id,
           injuryId: injury.injuryId,
           continuityKey: key,

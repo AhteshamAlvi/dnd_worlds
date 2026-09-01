@@ -304,7 +304,7 @@ describe("Body-aware location validation", () => {
       ),
     ).toEqual([
       {
-        type: "injury-body-part-unknown",
+        type: "injury-continuity-unknown",
         id: "injury-1",
         injuryId: "sprain",
         continuityKey: continuityKey("limb-99"),

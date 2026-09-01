@@ -668,7 +668,7 @@ describe("Injuries are valid while dormant", () => {
     if (nowhere.success) return;
 
     expect(nowhere.errors.map((error) => error.code)).toContain(
-      "character.injury.body_part_unknown",
+      "character.injury.continuity_unknown",
     );
   });
 });

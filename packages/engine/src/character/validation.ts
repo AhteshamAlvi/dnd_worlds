@@ -250,8 +250,8 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     resolution: "Set the injury's treatment status to match its definition.",
   },
 
-  "injury-body-part-unknown": {
-    code: "character.injury.body_part_unknown",
+  "injury-continuity-unknown": {
+    code: "character.injury.continuity_unknown",
     describe: (issue) =>
       `Injury "${issue.id}" references anatomy "${issue.continuityKey}", which this character's body has never had.`,
     resolution:

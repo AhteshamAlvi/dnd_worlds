@@ -722,7 +722,7 @@ character.technique.{unknown,duplicate,mastery_invalid,requirements_unsatisfied}
 character.condition.{unknown,duplicate,lifecycle_invalid}
 character.item.{unknown,duplicate,quantity_invalid}
 character.injury.{unknown,instance_id_invalid,instance_id_duplicate,location_invalid,
-                  body_part_unknown,body_part_not_applicable,special_point_unknown,
+                  continuity_unknown,body_part_not_applicable,special_point_unknown,
                   special_point_missing,special_point_not_hosted,special_point_not_applicable,
                   treatment_status_invalid}
 ```
@@ -742,6 +742,11 @@ Effect added is legal. That check separates two questions the engine had been co
 IS THIS INJURY VALID?        does this anatomical position exist, and does the Injury belong on it
 IS IT CURRENTLY MANIFESTED?  is that position present and usable right now
 ```
+
+`continuity_unknown` is the only injury-location code named for the identity, and deliberately:
+it fires when this character's body has never had such anatomy. `body_part_not_applicable` stays
+body-part-shaped because applicability is judged against the concrete part standing in the
+identity right now, which a different form may express as something else entirely.
 
 Only the first is validation's. Injuries are located by **continuity identity**, and an identity
 the current form cannot express is dormant — valid, unhealed, and expressible again the moment a
