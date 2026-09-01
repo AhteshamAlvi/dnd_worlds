@@ -26,7 +26,10 @@ import { describe, expect, it } from "vitest";
 import { applyBodyPartRecovery } from "../character/foundation/body/body-points/recovery";
 import type { Anatomy } from "../character/foundation/body/anatomy/types";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
@@ -63,7 +66,7 @@ function bodyWithParts(anatomy: Anatomy): Body {
 function singleTorso(integrity: number): Body {
   return bodyWithParts({
     parts: [
-      { id: "torso-1", type: "torso", attachment: null, state: "active", integrity },
+      { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity },
     ],
   });
 }
@@ -77,7 +80,7 @@ function morphologyFor(body: Body) {
       strengthDevelopmentMuscularity: body.strengthDevelopmentMuscularity,
       effectLayers: [],
     },
-    body.anatomy.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(body.anatomy),
   );
 }
 
@@ -212,8 +215,8 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
   it("leaves undamaged BodyParts untouched", () => {
     const body = bodyWithParts({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.5 },
-        { id: "torso-2", type: "torso", attachment: null, state: "active", integrity: 1 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.5 },
+        { id: "torso-2", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-2", state: "active", integrity: 1 },
       ],
     });
 
@@ -235,7 +238,7 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
     (state) => {
       const body = bodyWithParts({
         parts: [
-          { id: "torso-1", type: "torso", attachment: null, state, integrity: 0 },
+          { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state, integrity: 0 },
         ],
       });
 

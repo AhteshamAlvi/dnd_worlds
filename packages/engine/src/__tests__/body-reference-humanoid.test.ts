@@ -21,7 +21,10 @@ import { listDefinitions } from "../character/catalogs";
 import { validateAnatomyData } from "../character/foundation/body/anatomy/validation";
 import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
 import { STANDARD_BODY } from "../character/foundation/body/defaults";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import { resolveBodyPoints } from "../character/foundation/body/body-points/resolution";
 import {
@@ -151,7 +154,7 @@ describe("reference humanoid Body Points", () => {
         STANDARD_BODY.strengthDevelopmentMuscularity,
       effectLayers: [],
     },
-    STANDARD_BODY.anatomy.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(STANDARD_BODY.anatomy),
   );
 
   const bodyPoints = resolveBodyPoints({

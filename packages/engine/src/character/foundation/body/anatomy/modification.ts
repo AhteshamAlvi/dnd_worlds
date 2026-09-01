@@ -15,13 +15,18 @@
  * Structural validation belongs to anatomy/validation.ts.
  */
 
-import { createBodyPart, createBodyPartAttachment } from "./creation";
+import {
+  DEFAULT_REFERENCE_FORM_ID,
+  createBodyPart,
+  createBodyPartAttachment,
+} from "./creation";
 import type {
   BodyPartCreationAttachment,
   BodyPartCreationSpec,
 } from "./creation";
 import type {
   Anatomy,
+  ReferenceFormId,
   BodyPart,
   BodyPartId,
   BodyPartState,
@@ -174,11 +179,12 @@ export function getDescendantBodyPartIds(
 export function addBodyPart(
   anatomy: Anatomy,
   spec: BodyPartCreationSpec,
+  referenceFormId: ReferenceFormId = DEFAULT_REFERENCE_FORM_ID,
 ): Anatomy {
   return {
     parts: [
       ...anatomy.parts,
-      createBodyPart(spec),
+      createBodyPart(spec, referenceFormId),
     ],
   };
 }
@@ -229,22 +235,24 @@ export function replaceBodyPart(
     return anatomy;
   }
 
-  const replacementPart: BodyPart = createBodyPart({
-    id: replacement.id,
-    type: replacement.type,
+  const replacementPart: BodyPart = createBodyPart(
+      {
+      slotId: existing.referenceSlotId,
+      id: replacement.id,
+      type: replacement.type,
 
-    ...(replacement.name !== undefined
+      ...(replacement.name !== undefined
       ? { name: replacement.name }
       : {}),
 
-    /*
-     * The replacement inherits the old part's structural position wholesale,
-     * connection geometry included. A prosthetic arm bolts onto the same
-     * shoulder at the same point along the torso the original grew from;
-     * re-deriving those coordinates from the replacement's own type would
-     * quietly move the joint.
-     */
-    attachment:
+      /*
+       * The replacement inherits the old part's structural position wholesale,
+       * connection geometry included. A prosthetic arm bolts onto the same
+       * shoulder at the same point along the torso the original grew from;
+       * re-deriving those coordinates from the replacement's own type would
+       * quietly move the joint.
+       */
+      attachment:
       existing.attachment === null
         ? null
         : {
@@ -257,7 +265,9 @@ export function replaceBodyPart(
             parentPosition: existing.attachment.parentPosition,
             childPosition: existing.attachment.childPosition,
           },
-  });
+    },
+    existing.referenceFormId,
+  );
 
   return {
     parts: anatomy.parts.map((part) => {

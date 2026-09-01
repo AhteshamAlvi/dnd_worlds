@@ -47,6 +47,18 @@ export { STANDARD_BODY } from "./defaults";
 export type { SpeciesBodyProfile } from "./species-profile";
 
 export type {
+  ArchivedBodyPart,
+  ResolvedSlotOccupancy,
+  SlotOccupancy,
+} from "./archive";
+export {
+  canOrdinaryRegenerationRestore,
+  resolveSlotOccupancy,
+  selectArchivedBodyParts,
+  selectOrphanedArchives,
+} from "./archive";
+
+export type {
   BodyResolutionMode,
   BodyResolutionOptions,
 } from "./resolution-mode";
@@ -70,17 +82,21 @@ export type {
   BodyPartState,
   BodyPartTag,
   BodyPartTypeId,
+  AnatomySlotKey,
   HeightAxisSign,
+  ReferenceAnatomySlotId,
+  ReferenceFormId,
   ReferenceForm,
   ReferenceFormPart,
 } from "./anatomy/types";
-export { BODY_PART_STATES } from "./anatomy/types";
+export { BODY_PART_STATES, anatomySlotKey } from "./anatomy/types";
 
 export type {
   BodyPartCreationAttachment,
   BodyPartCreationSpec,
 } from "./anatomy/creation";
 export {
+  DEFAULT_REFERENCE_FORM_ID,
   DEFAULT_ATTACHMENT_CHILD_POSITION,
   DEFAULT_ATTACHMENT_PARENT_POSITION,
   createAnatomy,
@@ -185,8 +201,11 @@ export type {
   MorphologyResolutionInput,
   MorphologySource,
 } from "./morphology/types";
+export type { MorphologyTarget } from "./morphology/resolution";
 export {
   combineWithinLayer,
+  morphologyTargetsForAnatomy,
+  morphologyTargetsForReferenceForm,
   multiplyLayers,
   resolveMorphology,
   resolvePartMorphology,

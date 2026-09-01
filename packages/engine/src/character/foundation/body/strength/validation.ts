@@ -94,16 +94,16 @@ export function findStrengthMonotonicityIssues(
       issues.push({
         code: "unknown-reference-form-type",
         message:
-          `Reference Form part "${part.id}" references unknown type ` +
+          `Reference Form part "${part.slotId}" references unknown type ` +
           `"${part.type}", so its Strength contribution cannot be resolved.`,
-        partId: part.id,
+        partId: part.slotId,
         definitionId: part.type,
       });
 
       continue;
     }
 
-    const morphology = morphologyByPartId[part.id] ?? NEUTRAL_MORPHOLOGY;
+    const morphology = morphologyByPartId[part.slotId] ?? NEUTRAL_MORPHOLOGY;
 
     if (
       !Number.isFinite(morphology.muscularity) ||
@@ -112,10 +112,10 @@ export function findStrengthMonotonicityIssues(
       issues.push({
         code: "non-positive-muscularity",
         message:
-          `BodyPart "${part.id}" resolves Muscularity ` +
+          `BodyPart "${part.slotId}" resolves Muscularity ` +
           `${morphology.muscularity}. Muscularity is a multiplier around 1 ` +
           "and must stay above zero.",
-        partId: part.id,
+        partId: part.slotId,
       });
     }
 
@@ -132,7 +132,7 @@ export function findStrengthMonotonicityIssues(
           `BodyPartDefinition "${definition.id}" has ` +
           `muscularityStructural ${structural}, outside [0, 1]. Above 1 the ` +
           "structural factor turns negative at legal low Muscularity.",
-        partId: part.id,
+        partId: part.slotId,
         definitionId: definition.id,
       });
     }
@@ -146,7 +146,7 @@ export function findStrengthMonotonicityIssues(
           `BodyPartDefinition "${definition.id}" has muscularityForce ` +
           `${force}. A negative force sensitivity makes Strength fall as ` +
           "Muscularity rises, which the advancement solver cannot search.",
-        partId: part.id,
+        partId: part.slotId,
         definitionId: definition.id,
       });
     }
@@ -160,7 +160,7 @@ export function findStrengthMonotonicityIssues(
           `BodyPartDefinition "${definition.id}" has intrinsicPhysicalForce ` +
           `${intrinsic}. Zero is legal and means inert structure; negative ` +
           "means the part produces force in reverse.",
-        partId: part.id,
+        partId: part.slotId,
         definitionId: definition.id,
       });
     }

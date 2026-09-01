@@ -52,7 +52,11 @@ import {
   findStrengthAdvancementCapabilityIssues,
   findStrengthMonotonicityIssues,
 } from "../character/foundation/body/strength/validation";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  morphologyTargetsForReferenceForm,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { MorphologyResolutionInput } from "../character/foundation/body/morphology/types";
 import type { BodyPartCreationSpec } from "../character/foundation/body/anatomy/creation";
@@ -91,10 +95,8 @@ function strengthOf(
   definitions: readonly BodyPartDefinition[] = DEFINITIONS,
 ) {
   const partIds = [
-    ...new Set([
-      ...anatomy.parts.map((part) => part.id),
-      ...referenceForm.parts.map((part) => part.id),
-    ]),
+    ...morphologyTargetsForAnatomy(anatomy),
+    ...morphologyTargetsForReferenceForm(referenceForm),
   ];
 
   return resolveBodyStrength(
@@ -496,7 +498,7 @@ describe("the zero-Strength rule", () => {
   it("gives a body with no anatomy left a Strength of 0 rather than NaN", () => {
     const resolved = strengthOf(
       { parts: [] },
-      { parts: [] },
+      { id: "default", parts: [] },
       "resolved",
     );
 
@@ -900,7 +902,7 @@ describe("the solver", () => {
 describe("monotonicity preconditions", () => {
   const neutralByPart = resolveMorphology(
     morphologyInput(1),
-    STANDARD_HUMANOID_REFERENCE_FORM.parts.map((part) => part.id),
+    morphologyTargetsForReferenceForm(STANDARD_HUMANOID_REFERENCE_FORM),
   );
 
   it("accepts the standard humanoid", () => {
@@ -1043,7 +1045,7 @@ describe("the Human age curve's Strength", () => {
     (age, expectedSP, expectedStrength) => {
       const resolved = resolveAge(HUMAN_AGE_PROFILE, age);
 
-      const partIds = STANDARD_HUMANOID_ANATOMY.parts.map((part) => part.id);
+      const partIds = morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY);
 
       const strength = resolveBodyStrength(
         {

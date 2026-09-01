@@ -18,7 +18,7 @@
  */
 
 import type { BodyMorphology } from "../types";
-import type { BodyPartId } from "../anatomy/types";
+import type { AnatomySlotKey, BodyPartId } from "../anatomy/types";
 
 
 /*
@@ -32,7 +32,19 @@ import type { BodyPartId } from "../anatomy/types";
 export interface MorphologySource {
   readonly global: BodyMorphology;
 
-  readonly local: Readonly<Record<BodyPartId, Partial<BodyMorphology>>>;
+  /*
+   * Keyed by ANATOMY SLOT, not by instance.
+   *
+   * This is what makes regeneration restore the character's own arm rather
+   * than a species-default one. Local morphology is a fact about an
+   * anatomical position — "this character's left arm is 15% longer" — and
+   * positions outlive the tissue occupying them. Keyed by instance, every
+   * regrown limb would silently revert to neutral, because the new instance
+   * has a new id and would match nothing.
+   *
+   * Build keys with anatomySlotKey so the form namespace is never dropped.
+   */
+  readonly local: Readonly<Record<AnatomySlotKey, Partial<BodyMorphology>>>;
 }
 
 

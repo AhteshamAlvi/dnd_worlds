@@ -30,7 +30,10 @@ import { validateCharacter } from "../character/validation";
 import { createTestCharacter } from "./fixtures/character";
 
 import { createAnatomy } from "../character/foundation/body/anatomy/creation";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import { resolveBodyPoints } from "../character/foundation/body/body-points/resolution";
 import { resolveCriticalPoints } from "../character/foundation/body/critical-points/resolution";
@@ -453,7 +456,7 @@ describe("registering custom Body content", () => {
         strengthDevelopmentMuscularity: 1,
         effectLayers: [],
       },
-      anatomy.parts.map((part) => part.id),
+      morphologyTargetsForAnatomy(anatomy),
     );
 
     const bodyPoints = resolveBodyPoints({

@@ -8,7 +8,12 @@
 
 import { NEUTRAL_MORPHOLOGY } from "../types";
 import type { BodyMorphology } from "../types";
-import type { BodyPartId } from "../anatomy/types";
+import { anatomySlotKey } from "../anatomy/types";
+import type {
+  Anatomy,
+  AnatomySlotKey,
+  ReferenceForm,
+} from "../anatomy/types";
 import type { MorphologyResolutionInput, MorphologySource } from "./types";
 
 const MORPHOLOGY_DIMENSIONS = [
@@ -83,9 +88,9 @@ export function multiplyLayers(
  */
 function sourceMorphologyFor(
   source: MorphologySource,
-  partId: BodyPartId,
+  slotKey: AnatomySlotKey,
 ): BodyMorphology {
-  const local = source.local[partId];
+  const local = source.local[slotKey];
 
   if (local === undefined) return source.global;
 
@@ -103,7 +108,7 @@ function sourceMorphologyFor(
  */
 export function resolvePartMorphology(
   input: MorphologyResolutionInput,
-  partId: BodyPartId,
+  slotKey: AnatomySlotKey,
 ): BodyMorphology {
   const strengthDevelopment: BodyMorphology = {
     ...NEUTRAL_MORPHOLOGY,
@@ -111,28 +116,73 @@ export function resolvePartMorphology(
   };
 
   return multiplyLayers([
-    sourceMorphologyFor(input.species, partId),
-    sourceMorphologyFor(input.age, partId),
-    sourceMorphologyFor(input.character, partId),
+    sourceMorphologyFor(input.species, slotKey),
+    sourceMorphologyFor(input.age, slotKey),
+    sourceMorphologyFor(input.character, slotKey),
     strengthDevelopment,
     ...input.effectLayers.map(
-      (layer) => sourceMorphologyFor(layer, partId),
+      (layer) => sourceMorphologyFor(layer, slotKey),
     ),
   ]);
 }
 
 
 /*
- * Resolves morphology for every named BodyPart.
+ * One thing morphology has to be resolved FOR.
+ *
+ * `id` is whatever the caller wants the answer keyed by — a BodyPart instance
+ * id when resolving present anatomy, a slot id when resolving the intact
+ * Reference Form, which has no instances at all.
+ *
+ * `slotKey` is where the persistent local values are looked up.
+ *
+ * Keeping the two apart is the whole bridge: persistent morphology belongs to
+ * anatomical positions so it survives regeneration, while every physics
+ * resolver downstream wants its answers keyed by the thing it is iterating.
+ */
+export interface MorphologyTarget {
+  readonly id: string;
+  readonly slotKey: AnatomySlotKey;
+}
+
+
+/*
+ * Convenience for the common case: resolve for a body's own instances.
+ */
+export function morphologyTargetsForAnatomy(
+  anatomy: Anatomy,
+): readonly MorphologyTarget[] {
+  return anatomy.parts.map((part) => ({
+    id: part.id,
+    slotKey: anatomySlotKey(part.referenceFormId, part.referenceSlotId),
+  }));
+}
+
+
+/*
+ * Convenience for the intact Reference Form, which has no instances.
+ */
+export function morphologyTargetsForReferenceForm(
+  referenceForm: ReferenceForm,
+): readonly MorphologyTarget[] {
+  return referenceForm.parts.map((part) => ({
+    id: part.slotId,
+    slotKey: anatomySlotKey(referenceForm.id, part.slotId),
+  }));
+}
+
+
+/*
+ * Resolves morphology for every requested target.
  */
 export function resolveMorphology(
   input: MorphologyResolutionInput,
-  partIds: readonly BodyPartId[],
-): Readonly<Record<BodyPartId, BodyMorphology>> {
-  const resolved: Record<BodyPartId, BodyMorphology> = {};
+  targets: readonly MorphologyTarget[],
+): Readonly<Record<string, BodyMorphology>> {
+  const resolved: Record<string, BodyMorphology> = {};
 
-  for (const partId of partIds) {
-    resolved[partId] = resolvePartMorphology(input, partId);
+  for (const target of targets) {
+    resolved[target.id] = resolvePartMorphology(input, target.slotKey);
   }
 
   return resolved;

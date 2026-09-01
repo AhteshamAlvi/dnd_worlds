@@ -19,7 +19,10 @@ import { applyBodyDamage } from "../character/foundation/body/damage";
 import type { BodyDamageInput } from "../character/foundation/body/damage";
 import { listDefinitions } from "../character/catalogs";
 import { STANDARD_BODY } from "../character/foundation/body/defaults";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
@@ -40,7 +43,7 @@ const NEUTRAL_MORPHOLOGY_BY_PART = resolveMorphology(
     strengthDevelopmentMuscularity: 1,
     effectLayers: [],
   },
-  STANDARD_BODY.anatomy.parts.map((part) => part.id),
+  morphologyTargetsForAnatomy(STANDARD_BODY.anatomy),
 );
 
 function baseInput(overrides: Partial<BodyDamageInput> = {}): BodyDamageInput {

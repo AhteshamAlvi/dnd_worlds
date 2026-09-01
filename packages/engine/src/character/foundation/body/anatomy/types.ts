@@ -58,6 +58,54 @@ export type BodyPartTag = string;
 
 
 /*
+ * Which Reference Form a slot belongs to.
+ *
+ * Slots are namespaced by form because a destroyed Human Arm must never
+ * silently match a Dragon foreleg. Equivalence between forms is a
+ * transformation's business to declare explicitly, and generic Body resolution
+ * must never infer it from a shared BodyPart type or a similar name.
+ */
+export type ReferenceFormId = string;
+
+
+/*
+ * Which intended anatomical POSITION a part occupies — "left-arm", not "arm"
+ * and not "arm-1".
+ *
+ * This is the third identity, and it exists because the other two cannot do
+ * its job. A BodyPartTypeId says what KIND of thing a part is, and several
+ * parts share one: left-upper-arm, right-upper-arm, left-lower-arm and
+ * right-lower-arm may all be "arm". A BodyPartId says which physical INSTANCE
+ * is there right now, and instances die and are replaced.
+ *
+ * A slot is what survives both. It is the thing a Reference Form expects, the
+ * thing an archived record points back at, and the thing this character's own
+ * local morphology belongs to — so a regenerated Arm comes back with THEIR
+ * arm's length and bulk rather than the species default.
+ *
+ * Unique within a Reference Form, and only within one.
+ */
+export type ReferenceAnatomySlotId = string;
+
+
+/*
+ * A slot identity that is unique across every form a character might take.
+ *
+ * "HumanForm:left-arm", "DragonForm:left-foreleg". Always built with
+ * anatomySlotKey rather than by hand, so the separator never drifts.
+ */
+export type AnatomySlotKey = string;
+
+
+export function anatomySlotKey(
+  referenceFormId: ReferenceFormId,
+  referenceSlotId: ReferenceAnatomySlotId,
+): AnatomySlotKey {
+  return `${referenceFormId}:${referenceSlotId}`;
+}
+
+
+/*
  * Optional identifier describing where a child is attached to its parent.
  *
  * Attachment sites are opaque data identifiers. The Body engine does not
@@ -290,6 +338,15 @@ export interface BodyPartAttachment {
  * `attachment`
  * → null for an anatomical root, otherwise identifies the structural parent.
  *
+ * `referenceFormId` / `referenceSlotId`
+ * → which intended anatomical position this instance occupies.
+ *
+ *   Carried by the INSTANCE rather than looked up, because an instance can
+ *   outlive its slot's presence in the current form: a severed Arm keeps
+ *   pointing at HumanForm:left-arm even after a mutation removes that slot
+ *   from the body plan, which is exactly what makes the archive restorable if
+ *   the slot ever returns.
+ *
  * `state`
  * → whether this part is currently physically present (see BodyPartState).
  *   Newly created anatomy is always "active".
@@ -332,6 +389,9 @@ export interface BodyPart {
   readonly name?: string;
 
   readonly attachment: BodyPartAttachment | null;
+
+  readonly referenceFormId: ReferenceFormId;
+  readonly referenceSlotId: ReferenceAnatomySlotId;
 
   readonly state: BodyPartState;
 
@@ -419,6 +479,8 @@ export const BODY_PART_STATES = [
  * active form-replacing transformation. It never changes because of damage.
  */
 export interface ReferenceForm {
+  readonly id: ReferenceFormId;
+
   readonly parts: readonly ReferenceFormPart[];
 }
 
@@ -428,6 +490,12 @@ export interface ReferenceForm {
  * character currently possesses it.
  */
 export interface ReferenceFormPart {
-  readonly id: BodyPartId;
+  /*
+   * The anatomical position, not an instance. A Reference Form describes
+   * intent, and intent has no instances — a form expects a left arm whether or
+   * not the character currently has one, has lost one, or has three.
+   */
+  readonly slotId: ReferenceAnatomySlotId;
+
   readonly type: BodyPartTypeId;
 }

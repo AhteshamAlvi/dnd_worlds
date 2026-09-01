@@ -56,8 +56,8 @@ const BODY_PART_DEFINITIONS: readonly BodyPartDefinition[] = [
 
 const ANATOMY: Anatomy = {
   parts: [
-    { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1 },
-    { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, state: "active", integrity: 1 },
+    { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1 },
+    { id: "limb-1", type: "limb", attachment: { parentId: "torso-1", parentPosition: 1, childPosition: 0 }, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 1 },
   ],
 };
 

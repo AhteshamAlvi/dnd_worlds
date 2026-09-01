@@ -14,6 +14,8 @@
 
 import type {
   Anatomy,
+  ReferenceAnatomySlotId,
+  ReferenceFormId,
   BodyAttachmentSiteId,
   BodyPart,
   BodyPartAttachment,
@@ -21,6 +23,16 @@ import type {
   BodyPartTypeId,
   ReferenceForm,
 } from "./types";
+
+
+/*
+ * The Reference Form id used when a body plan does not name one.
+ *
+ * Slots are namespaced by form so that a Human left-arm can never silently
+ * match a Dragon left-foreleg. A body plan built without a form still needs a
+ * namespace to live in, and this is it.
+ */
+export const DEFAULT_REFERENCE_FORM_ID = "default";
 
 
 /*
@@ -72,6 +84,12 @@ export interface BodyPartCreationAttachment {
  * simple and stable.
  */
 export interface BodyPartCreationSpec {
+  /*
+   * The anatomical position this part occupies. Defaults to the instance id,
+   * which is correct for a body plan where each entry is its own position.
+   */
+  readonly slotId?: ReferenceAnatomySlotId;
+
   readonly id: BodyPartId;
   readonly type: BodyPartTypeId;
 
@@ -117,10 +135,20 @@ export function createBodyPartAttachment(
  */
 export function createBodyPart(
   spec: BodyPartCreationSpec,
+  referenceFormId: ReferenceFormId,
 ): BodyPart {
   return {
     id: spec.id,
     type: spec.type,
+    referenceFormId,
+
+    /*
+     * A creation spec that names no slot uses its own instance id as one. That
+     * is right for a body plan authored as a flat list of parts, where each
+     * entry IS an anatomical position; anatomy that genuinely reuses a slot —
+     * a replacement limb occupying the same position — says so explicitly.
+     */
+    referenceSlotId: spec.slotId ?? spec.id,
     ...(spec.name !== undefined
       ? { name: spec.name }
       : {}),
@@ -145,9 +173,10 @@ export function createBodyPart(
  */
 export function createAnatomy(
   specs: readonly BodyPartCreationSpec[],
+  referenceFormId: ReferenceFormId = DEFAULT_REFERENCE_FORM_ID,
 ): Anatomy {
   return {
-    parts: specs.map(createBodyPart),
+    parts: specs.map((spec) => createBodyPart(spec, referenceFormId)),
   };
 }
 
@@ -168,10 +197,13 @@ export function createAnatomy(
  */
 export function createReferenceForm(
   specs: readonly BodyPartCreationSpec[],
+  referenceFormId: ReferenceFormId = DEFAULT_REFERENCE_FORM_ID,
 ): ReferenceForm {
   return {
+    id: referenceFormId,
+
     parts: specs.map((spec) => ({
-      id: spec.id,
+      slotId: spec.slotId ?? spec.id,
       type: spec.type,
     })),
   };

@@ -151,7 +151,7 @@ function formParts(
   input: StrengthResolutionInput,
 ): readonly { readonly id: BodyPartId; readonly type: BodyPartTypeId }[] {
   return input.referenceForm.parts.map((part) => ({
-    id: part.id,
+    id: part.slotId,
     type: part.type,
   }));
 }

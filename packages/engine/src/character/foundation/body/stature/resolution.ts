@@ -10,7 +10,10 @@
  */
 
 import { resolveBodyMeasurements } from "../measurements/resolution";
-import { resolveMorphology } from "../morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../morphology/resolution";
 import { resolveEffectiveScale } from "../scale";
 import type { BodyMorphology } from "../types";
 import type { Anatomy } from "../anatomy/types";
@@ -154,7 +157,7 @@ export function assessStature(
   input: StatureAssessmentInput,
 ): StatureAssessment {
   const anatomy = asIntact(input.anatomy);
-  const partIds = anatomy.parts.map((part) => part.id);
+  const targets = morphologyTargetsForAnatomy(anatomy);
 
   const actualScale = resolveEffectiveScale(
     input.speciesStandardScale,
@@ -175,7 +178,7 @@ export function assessStature(
     resolveBodyMeasurements(
       anatomy,
       input.definitions,
-      resolveMorphology(morphology, partIds),
+      resolveMorphology(morphology, targets),
       effectiveScale,
     );
 

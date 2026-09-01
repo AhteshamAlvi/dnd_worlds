@@ -18,7 +18,10 @@ import {
   resolveBodyCapability,
 } from "../character/foundation/body/capability";
 import { resolveCriticalPoints } from "../character/foundation/body/critical-points/resolution";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import type { SpecialPointDefinition } from "../character/foundation/body/critical-points/types";
@@ -88,7 +91,7 @@ function capability(
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
-    anatomy.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(anatomy),
   );
 
   const pointStates = Object.fromEntries(

@@ -38,7 +38,10 @@ import {
   findHeightRelevantCycleIssues,
   validateMeasurementInputs,
 } from "../character/foundation/body/measurements/validation";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { BodyMorphology } from "../character/foundation/body/types";
 import type {
@@ -71,7 +74,7 @@ function neutralMorphology(
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
-    anatomy.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(anatomy),
   );
 }
 
@@ -502,6 +505,8 @@ describe("measurement preconditions", () => {
           id: "a",
           type: "leg",
           attachment: { parentId: "b", parentPosition: 1, childPosition: 0 },
+          referenceFormId: "default",
+          referenceSlotId: "a",
           state: "active",
           integrity: 1,
         },
@@ -509,6 +514,8 @@ describe("measurement preconditions", () => {
           id: "b",
           type: "leg",
           attachment: { parentId: "a", parentPosition: 1, childPosition: 0 },
+          referenceFormId: "default",
+          referenceSlotId: "b",
           state: "active",
           integrity: 1,
         },
@@ -571,7 +578,7 @@ describe("the Human age curve, resolved end to end", () => {
           strengthDevelopmentMuscularity: 1,
           effectLayers: [],
         },
-        STANDARD_HUMANOID_ANATOMY.parts.map((part) => part.id),
+        morphologyTargetsForAnatomy(STANDARD_HUMANOID_ANATOMY),
       );
 
       const measurements = measure(

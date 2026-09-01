@@ -15,7 +15,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
@@ -79,14 +82,14 @@ function morphologyFor(body: Body) {
       strengthDevelopmentMuscularity: body.strengthDevelopmentMuscularity,
       effectLayers: [],
     },
-    body.anatomy.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(body.anatomy),
   );
 }
 
 // Maximum BP is 20, so integrity 0.25 is Current BP 5 — 15 points of damage.
 const DAMAGED_BODY: Body = bodyWithParts({
   parts: [
-    { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.25 },
+    { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.25 },
   ],
 });
 
@@ -302,7 +305,7 @@ describe("caps restrict restoration only", () => {
 
     // Current BP already 15 of 20, well above the cap's ceiling of 6.
     const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.75 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.75 }],
     });
 
     const outcome = resolveRecovery(baseInput({ body, injuries }));
@@ -326,7 +329,7 @@ describe("Injury removal", () => {
     ];
 
     const body = bodyWithParts({
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.95 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.95 }],
     });
 
     const outcome = resolveRecovery(baseInput({ body, injuries }));
@@ -356,8 +359,8 @@ describe("Injury removal", () => {
     // torso-1 will fully heal this pass (damage 1); limb-1 will not (damage 15).
     const body = bodyWithParts({
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.95 },
-        { id: "limb-1", type: "limb", attachment: null, state: "active", integrity: 0.25 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.95 },
+        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 0.25 },
       ],
     });
 
@@ -385,7 +388,7 @@ describe("Injury removal", () => {
 describe("overlapping Injuries", () => {
   it("flags a new Injury landing on a BodyPart that already carries one, preserving progress by default", () => {
     const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 0.85 }],
+      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 0.85 }],
     };
 
     const existing: readonly CharacterInjury[] = [
@@ -415,8 +418,8 @@ describe("overlapping Injuries", () => {
   it("does not flag Injuries on different BodyParts", () => {
     const anatomy: Anatomy = {
       parts: [
-        { id: "torso-1", type: "torso", attachment: null, state: "active", integrity: 1.0 },
-        { id: "limb-1", type: "limb", attachment: null, state: "active", integrity: 1.0 },
+        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity: 1.0 },
+        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", state: "active", integrity: 1.0 },
       ],
     };
 

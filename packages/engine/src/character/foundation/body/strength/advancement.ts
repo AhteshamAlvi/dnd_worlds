@@ -41,7 +41,10 @@
  */
 
 import { createTraceNode } from "../../../../infrastructure/trace";
-import { resolveMorphology } from "../morphology/resolution";
+import {
+  morphologyTargetsForReferenceForm,
+  resolveMorphology,
+} from "../morphology/resolution";
 import { resolveBodyStrength } from "./resolution";
 import { MAX_DISPLAYED_STRENGTH } from "./normalization";
 import { validateStrengthAdvancementInputs } from "./validation";
@@ -260,12 +263,12 @@ function baseStrengthAt(
   input: StrengthAdvancementInput,
   strengthDevelopmentMuscularity: number,
 ): ResolvedBodyStrength {
-  const partIds = input.referenceForm.parts.map((part) => part.id);
+  const targets = morphologyTargetsForReferenceForm(input.referenceForm);
 
   const context: StrengthPhysicalContext = {
     morphologyByPartId: resolveMorphology(
       { ...input.morphology, strengthDevelopmentMuscularity },
-      partIds,
+      targets,
     ),
 
     effectiveScale: input.effectiveScale,
@@ -353,7 +356,7 @@ export function advanceStrength(
     input.definitions,
     resolveMorphology(
       input.morphology,
-      input.referenceForm.parts.map((part) => part.id),
+      morphologyTargetsForReferenceForm(input.referenceForm),
     ),
   );
 

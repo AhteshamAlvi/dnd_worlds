@@ -27,7 +27,10 @@ import {
   findStructuralFactorIssues,
   validateStructuralCapacityInputs,
 } from "../character/foundation/body/structure/validation";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { BodyMorphology } from "../character/foundation/body/types";
 import type {
@@ -61,7 +64,7 @@ function morphologyAt(
       strengthDevelopmentMuscularity: muscularity,
       effectLayers: [],
     },
-    anatomy.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(anatomy),
   );
 }
 

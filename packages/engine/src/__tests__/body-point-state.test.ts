@@ -31,7 +31,10 @@ import {
   setAnatomicalPointState,
 } from "../character/foundation/body/critical-points/state";
 import type { AnatomicalPointStates } from "../character/foundation/body/critical-points/state";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
@@ -45,7 +48,7 @@ const MORPHOLOGY = resolveMorphology(
     strengthDevelopmentMuscularity: 1,
     effectLayers: [],
   },
-  STANDARD_BODY.anatomy.parts.map((part) => part.id),
+  morphologyTargetsForAnatomy(STANDARD_BODY.anatomy),
 );
 
 function baseInput(overrides: Partial<BodyDamageInput> = {}): BodyDamageInput {

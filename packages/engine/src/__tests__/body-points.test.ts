@@ -36,7 +36,10 @@ import {
   validateBodyPointModifier,
   validateBodyPointResolution,
 } from "../character/foundation/body/body-points/validation";
-import { resolveMorphology } from "../character/foundation/body/morphology/resolution";
+import {
+  morphologyTargetsForAnatomy,
+  resolveMorphology,
+} from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { BodyMorphology } from "../character/foundation/body/types";
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
@@ -62,7 +65,7 @@ const DEFINITIONS: readonly BodyPartDefinition[] = [
 function anatomy(integrity = 1): Anatomy {
   return {
     parts: [
-      { id: "torso-1", type: "torso", attachment: null, state: "active", integrity },
+      { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state: "active", integrity },
     ],
   };
 }
@@ -82,7 +85,7 @@ function morphologyFor(
       strengthDevelopmentMuscularity: 1,
       effectLayers: [],
     },
-    target.parts.map((part) => part.id),
+    morphologyTargetsForAnatomy(target),
   );
 }
 
@@ -338,7 +341,7 @@ describe("integrity", () => {
       const resolved = resolveBodyPoints({
         anatomy: {
           parts: [
-            { id: "torso-1", type: "torso", attachment: null, state, integrity: 0 },
+            { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", state, integrity: 0 },
           ],
         },
         definitions: DEFINITIONS,
@@ -456,6 +459,8 @@ describe("Body Point validation", () => {
             id: "torso-1",
             type: "torso",
             attachment: null,
+            referenceFormId: "default",
+            referenceSlotId: "torso-1",
             state: "archived-removed",
             integrity: 0.5,
           },

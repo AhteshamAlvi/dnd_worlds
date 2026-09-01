@@ -211,9 +211,14 @@ describe("what each band actually responds to", () => {
    */
   it("catches height bought through Length rather than Scale", () => {
     const longLegged = assess({
+      /*
+       * Slot keys, not instance ids. Local morphology belongs to an
+       * anatomical position so it survives regeneration — keyed by instance,
+       * this override would match nothing and silently do nothing.
+       */
       local: {
-        "leg-1": { length: 1.42 },
-        "leg-2": { length: 1.42 },
+        "default:leg-1": { length: 1.42 },
+        "default:leg-2": { length: 1.42 },
       },
     });
 
