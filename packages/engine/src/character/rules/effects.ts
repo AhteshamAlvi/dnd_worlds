@@ -81,6 +81,12 @@
  * source.
  */
 
+import type {
+  ReferenceAnatomySlotId,
+  ReferenceFormId,
+  BodyPartTypeId,
+} from "../foundation/body/anatomy/types";
+import type { BodyPartSelector } from "../foundation/body/selectors";
 import type { AttributeKey } from "../foundation/attributes/types";
 import type {
   DerivedAttributeName,
@@ -242,13 +248,241 @@ export interface GrantTechniqueEffect {
  * Creating a new Trait, Skill, Technique, Item, or Condition should normally
  * use these existing effects rather than require a new TypeScript type.
  */
+
+
+/* ========================================================================== */
+/* BODY EFFECTS                                                               */
+/* ========================================================================== */
+
+/*
+ * Body effects come in Base and Resolved flavours for the same reason
+ * Attribute effects do, and the distinction carries more weight here.
+ *
+ *   Base      permanent physical fact about this body
+ *   Resolved  what is true of it right now
+ *
+ * Strength advancement is priced against the BASE body, so a character does
+ * not get cheaper Strength for being temporarily enlarged, nor dearer for
+ * being temporarily shrunk. Base is also what a Reference Form change means:
+ * a permanent mutation genuinely alters what anatomy this body is supposed to
+ * contain, while a transformation only alters what it currently has.
+ *
+ * There is exactly one resolver behind both, taking a mode — never two
+ * implementations that could drift.
+ *
+ *
+ * TRAITS SHOULD MODIFY THE MOST FUNDAMENTAL PROPERTY AVAILABLE
+ *
+ * The vocabulary is deliberately physical rather than convenient. Reaching for
+ * the lowest applicable property is what makes consequences propagate on their
+ * own:
+ *
+ *   Powerful Build            -> Bulk
+ *   Highly Developed Muscles  -> Muscularity
+ *   Long Arms                 -> Arm Length
+ *   Stone Body                -> Destruction Resistance
+ *   Supernatural strength
+ *     without the muscle      -> Intrinsic Physical Force
+ *
+ * A Trait that "grants +2 STR" has no representation here, and that absence is
+ * the point: Strength is derived from physics, so something physical has to
+ * change for it to move.
+ */
+
+
+/*
+ * Which morphology dimension an effect changes.
+ */
+export type BodyMorphologyProperty =
+  | "length"
+  | "bulk"
+  | "muscularity"
+  | "adiposity";
+
+
+/*
+ * What a Body effect applies to.
+ *
+ * Absent means the whole body. A selector narrows it to matching BodyParts —
+ * "every Arm", "everything tagged limb" — which is how Long Arms says what it
+ * means without naming instances that may not exist yet.
+ */
+export type BodyEffectTarget = BodyPartSelector | undefined;
+
+
+/*
+ * How an anatomy effect changes a body.
+ *
+ * The four modes differ in TWO independent ways — what happens to the
+ * Reference Form, and what happens to the anatomy present — and the
+ * combinations are not interchangeable:
+ *
+ *   addToForm       form grows        anatomy gains the part
+ *   removeFromForm  form shrinks      instance retained, no longer expected
+ *   suppress        form UNCHANGED    instance hidden, damage preserved
+ *   replaceForm     form replaced     the new form's anatomy
+ *
+ * suppress is invalid on a BASE anatomy effect and the type says so. A
+ * permanent effect that hides a part without changing the body plan is a
+ * contradiction: the form would go on expecting anatomy that permanently is
+ * not there, with nothing ever able to resolve the disagreement.
+ *
+ * Note what is absent: damage-driven loss is NOT here and must never be
+ * expressed as one of these. Destruction sets anatomy instance state directly.
+ * Routing it through removeFromForm would shrink the Reference Form too, and a
+ * form that stops expecting the arm it just lost is a form that has healed.
+ */
+export type BodyAnatomyOperation =
+  | {
+      readonly mode: "addToForm";
+      readonly slotId: ReferenceAnatomySlotId;
+      readonly type: BodyPartTypeId;
+      readonly attachToSlotId?: ReferenceAnatomySlotId;
+    }
+  | {
+      readonly mode: "removeFromForm";
+      readonly slotId: ReferenceAnatomySlotId;
+    }
+  | {
+      readonly mode: "suppress";
+      readonly target: BodyPartSelector;
+    }
+  | {
+      readonly mode: "replaceForm";
+      readonly referenceFormId: ReferenceFormId;
+    };
+
+
+/** Every anatomy operation a permanent effect may perform. */
+export type BaseBodyAnatomyOperation = Exclude<
+  BodyAnatomyOperation,
+  { readonly mode: "suppress" }
+>;
+
+
+/*
+ * Scale — how large this body fundamentally is.
+ *
+ * Multiplicative, because Scale composes: a Species standard scale, an age
+ * curve and an enlargement effect are three independent claims about size and
+ * multiply rather than adding.
+ */
+export interface ModifyBaseBodyScaleEffect {
+  readonly type: "modifyBaseBodyScale";
+  readonly multiplier: number;
+}
+
+export interface ModifyResolvedBodyScaleEffect {
+  readonly type: "modifyResolvedBodyScale";
+  readonly multiplier: number;
+}
+
+
+/*
+ * Morphology — length, bulk, muscularity, adiposity.
+ *
+ * One property per effect rather than a bundle, so that a Trait making a
+ * character broad says only that, and two Traits touching different
+ * dimensions never have to be merged before they can be applied.
+ */
+export interface ModifyBaseBodyMorphologyEffect {
+  readonly type: "modifyBaseBodyMorphology";
+  readonly property: BodyMorphologyProperty;
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+export interface ModifyResolvedBodyMorphologyEffect {
+  readonly type: "modifyResolvedBodyMorphology";
+  readonly property: BodyMorphologyProperty;
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+
+/*
+ * Anatomy — what parts this body has, or is supposed to have.
+ */
+export interface ModifyBaseBodyAnatomyEffect {
+  readonly type: "modifyBaseBodyAnatomy";
+  readonly operation: BaseBodyAnatomyOperation;
+}
+
+export interface ModifyResolvedBodyAnatomyEffect {
+  readonly type: "modifyResolvedBodyAnatomy";
+  readonly operation: BodyAnatomyOperation;
+}
+
+
+/*
+ * Intrinsic physical force — force production beyond what Scale and
+ * Muscularity already explain.
+ *
+ * Reserved for genuine physiology: unusual Species biology, supernatural
+ * strength without the muscle to show for it, a permanent physical alteration.
+ * Situational Skills, Techniques, manoeuvres, equipment leverage and action
+ * bonuses do NOT belong here — they apply later, to action resolution, and
+ * folding them in would make a character permanently stronger for holding a
+ * lever.
+ */
+export interface ModifyBaseIntrinsicPhysicalForceEffect {
+  readonly type: "modifyBaseIntrinsicPhysicalForce";
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+export interface ModifyResolvedIntrinsicPhysicalForceEffect {
+  readonly type: "modifyResolvedIntrinsicPhysicalForce";
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+
+/*
+ * Destruction resistance — how hard existing structure is to break, WITHOUT
+ * changing the structure.
+ *
+ * The narrow exception in an otherwise physical vocabulary. If an effect is
+ * naturally a matter of being bigger, thicker or better muscled it should say
+ * that instead and let Structural Capacity carry it into Body Points,
+ * Strength, Mass and Size together. Stone skin is the case this exists for:
+ * the body is no larger and no stronger, it is simply harder to destroy.
+ */
+export interface ModifyBaseDestructionResistanceEffect {
+  readonly type: "modifyBaseDestructionResistance";
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+export interface ModifyResolvedDestructionResistanceEffect {
+  readonly type: "modifyResolvedDestructionResistance";
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+
+/** Every Body-facing effect, in either flavour. */
+export type BodyEffect =
+  | ModifyBaseBodyScaleEffect
+  | ModifyResolvedBodyScaleEffect
+  | ModifyBaseBodyMorphologyEffect
+  | ModifyResolvedBodyMorphologyEffect
+  | ModifyBaseBodyAnatomyEffect
+  | ModifyResolvedBodyAnatomyEffect
+  | ModifyBaseIntrinsicPhysicalForceEffect
+  | ModifyResolvedIntrinsicPhysicalForceEffect
+  | ModifyBaseDestructionResistanceEffect
+  | ModifyResolvedDestructionResistanceEffect;
+
+
 export type Effect =
   | ModifyBaseAttributeEffect
   | ModifyResolvedAttributeEffect
   | ModifyCheckEffect
   | GrantTraitEffect
   | GrantSkillEffect
-  | GrantTechniqueEffect;
+  | GrantTechniqueEffect
+  | BodyEffect;
 
 
 /**
@@ -264,6 +498,17 @@ export const EFFECT_TYPES = [
   "grantTrait",
   "grantSkill",
   "grantTechnique",
+
+  "modifyBaseBodyScale",
+  "modifyResolvedBodyScale",
+  "modifyBaseBodyMorphology",
+  "modifyResolvedBodyMorphology",
+  "modifyBaseBodyAnatomy",
+  "modifyResolvedBodyAnatomy",
+  "modifyBaseIntrinsicPhysicalForce",
+  "modifyResolvedIntrinsicPhysicalForce",
+  "modifyBaseDestructionResistance",
+  "modifyResolvedDestructionResistance",
 ] as const satisfies readonly Effect["type"][];
 
 

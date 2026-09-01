@@ -59,7 +59,53 @@ export type RuleValidationIssue =
   | InvalidRequirementMasteryIssue
   | MissingRequirementReferenceIssue
   | EmptyCompoundRequirementIssue
-  | RequirementDepthExceededIssue;
+  | RequirementDepthExceededIssue
+  | InvalidBodyMultiplierIssue
+  | SuppressOnBaseAnatomyIssue
+  | MissingAnatomyReferenceIssue;
+
+
+/*
+ * A Body effect whose multiplier is not a usable one.
+ *
+ * Body multipliers are all around 1 and must stay finite and above zero. Zero
+ * is rejected rather than treated as an extreme: a Scale of 0 is a body with
+ * no size, a Muscularity of 0 drives Structural Capacity negative through the
+ * structural factor, and a destruction resistance of 0 would be quietly
+ * rescued to 1 by the Maximum BP floor — turning an authoring mistake into a
+ * part that silently ignores the effect placed on it.
+ */
+export interface InvalidBodyMultiplierIssue {
+  readonly type: "invalid-body-multiplier";
+  readonly path: string;
+  readonly effectType: string;
+  readonly multiplier: number;
+}
+
+
+/*
+ * A permanent anatomy effect trying to suppress.
+ *
+ * Suppression hides a part WITHOUT changing what the body plan expects, which
+ * is coherent only while it is temporary. Permanently, the Reference Form
+ * would go on expecting anatomy that is permanently not there, with nothing
+ * ever able to resolve the disagreement — the form says one thing, the body
+ * says another, and neither is wrong. A permanent removal is removeFromForm.
+ */
+export interface SuppressOnBaseAnatomyIssue {
+  readonly type: "suppress-on-base-anatomy";
+  readonly path: string;
+}
+
+
+/*
+ * An anatomy operation missing the identifier it needs.
+ */
+export interface MissingAnatomyReferenceIssue {
+  readonly type: "missing-anatomy-reference";
+  readonly path: string;
+  readonly field: string;
+}
 
 
 export interface InvalidEffectAmountIssue {
@@ -289,6 +335,96 @@ export function findEffectValidationIssues(
           effectType: effect.type,
           field: "techniqueId",
         });
+      }
+
+      break;
+    }
+
+
+    case "modifyBaseBodyScale":
+    case "modifyResolvedBodyScale":
+    case "modifyBaseBodyMorphology":
+    case "modifyResolvedBodyMorphology":
+    case "modifyBaseIntrinsicPhysicalForce":
+    case "modifyResolvedIntrinsicPhysicalForce":
+    case "modifyBaseDestructionResistance":
+    case "modifyResolvedDestructionResistance": {
+      if (!isFiniteNumber(effect.multiplier) || effect.multiplier <= 0) {
+        issues.push({
+          type: "invalid-body-multiplier",
+          path: `${path}.multiplier`,
+          effectType: effect.type,
+          multiplier: effect.multiplier,
+        });
+      }
+
+      break;
+    }
+
+
+    case "modifyBaseBodyAnatomy":
+    case "modifyResolvedBodyAnatomy": {
+      const operation = effect.operation;
+
+      if (
+        effect.type === "modifyBaseBodyAnatomy" &&
+        (operation as { readonly mode: string }).mode === "suppress"
+      ) {
+        issues.push({
+          type: "suppress-on-base-anatomy",
+          path: `${path}.operation.mode`,
+        });
+
+        break;
+      }
+
+      switch (operation.mode) {
+        case "addToForm": {
+          if (!isNonEmptyId(operation.slotId)) {
+            issues.push({
+              type: "missing-anatomy-reference",
+              path: `${path}.operation.slotId`,
+              field: "slotId",
+            });
+          }
+
+          if (!isNonEmptyId(operation.type)) {
+            issues.push({
+              type: "missing-anatomy-reference",
+              path: `${path}.operation.type`,
+              field: "type",
+            });
+          }
+
+          break;
+        }
+
+        case "removeFromForm": {
+          if (!isNonEmptyId(operation.slotId)) {
+            issues.push({
+              type: "missing-anatomy-reference",
+              path: `${path}.operation.slotId`,
+              field: "slotId",
+            });
+          }
+
+          break;
+        }
+
+        case "replaceForm": {
+          if (!isNonEmptyId(operation.referenceFormId)) {
+            issues.push({
+              type: "missing-anatomy-reference",
+              path: `${path}.operation.referenceFormId`,
+              field: "referenceFormId",
+            });
+          }
+
+          break;
+        }
+
+        case "suppress":
+          break;
       }
 
       break;

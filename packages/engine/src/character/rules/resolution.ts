@@ -87,7 +87,13 @@ import {
   type TraceNode,
 } from "../../infrastructure/trace";
 
-import type { CheckScope, Effect } from "./effects";
+import type {
+  BodyAnatomyOperation,
+  BodyMorphologyProperty,
+  CheckScope,
+  Effect,
+} from "./effects";
+import type { BodyPartSelector } from "../foundation/body/selectors";
 import type {
   AttributeRequirementLayer,
   Requirement,
@@ -207,6 +213,60 @@ export interface TechniqueGrant {
  * Capability resolution can then determine that the character has Wall
  * Sticking while still remembering both sources.
  */
+/*
+ * One Body-facing modifier, with provenance.
+ *
+ * `target` absent means the whole body; a selector narrows it to matching
+ * BodyParts. Expanding a selector into actual parts needs anatomy, which this
+ * layer does not have and should not — the rules layer says what was declared,
+ * and Body resolution decides who it lands on.
+ */
+export interface SourcedBodyModifier {
+  readonly source: RuleSourceRef;
+  readonly multiplier: number;
+  readonly target?: BodyPartSelector;
+}
+
+export interface SourcedBodyMorphologyModifier extends SourcedBodyModifier {
+  readonly property: BodyMorphologyProperty;
+}
+
+export interface SourcedBodyAnatomyModifier {
+  readonly source: RuleSourceRef;
+  readonly operation: BodyAnatomyOperation;
+}
+
+
+/*
+ * Everything Body-facing one mode declared.
+ *
+ * Typed buckets rather than a flat effect list, so Body never has to
+ * re-discriminate a union somebody else already discriminated, and so a new
+ * physical property cannot be smuggled in through a generic Attribute effect.
+ */
+export interface BodyEffectLayer {
+  readonly scale: readonly SourcedBodyModifier[];
+  readonly morphology: readonly SourcedBodyMorphologyModifier[];
+  readonly anatomy: readonly SourcedBodyAnatomyModifier[];
+  readonly intrinsicPhysicalForce: readonly SourcedBodyModifier[];
+  readonly destructionResistance: readonly SourcedBodyModifier[];
+}
+
+
+/*
+ * The two modes, kept apart all the way through.
+ *
+ * Base is what is permanently true of this body and is what Strength
+ * advancement is priced against; resolved is what is true right now. Merging
+ * them at any point would make a temporary enlargement cheapen permanent
+ * development.
+ */
+export interface ResolvedBodyEffects {
+  readonly base: BodyEffectLayer;
+  readonly resolved: BodyEffectLayer;
+}
+
+
 export interface ResolvedRuleEffects {
   readonly effects: readonly SourcedEffect[];
 
@@ -225,6 +285,8 @@ export interface ResolvedRuleEffects {
   readonly traitGrants: readonly TraitGrant[];
   readonly skillGrants: readonly SkillGrant[];
   readonly techniqueGrants: readonly TechniqueGrant[];
+
+  readonly body: ResolvedBodyEffects;
 }
 
 
@@ -273,6 +335,17 @@ export function resolveRuleEffects(
   const skillGrants: SkillGrant[] = [];
   const techniqueGrants: TechniqueGrant[] = [];
 
+  const createBodyLayer = () => ({
+    scale: [] as SourcedBodyModifier[],
+    morphology: [] as SourcedBodyMorphologyModifier[],
+    anatomy: [] as SourcedBodyAnatomyModifier[],
+    intrinsicPhysicalForce: [] as SourcedBodyModifier[],
+    destructionResistance: [] as SourcedBodyModifier[],
+  });
+
+  const bodyBase = createBodyLayer();
+  const bodyResolved = createBodyLayer();
+
   for (const { source, effect } of sourcedEffects) {
     switch (effect.type) {
       case "modifyBaseAttribute":
@@ -319,6 +392,87 @@ export function resolveRuleEffects(
           techniqueId: effect.techniqueId,
         });
         break;
+
+      case "modifyBaseBodyScale":
+        bodyBase.scale.push({ source, multiplier: effect.multiplier });
+        break;
+
+      case "modifyResolvedBodyScale":
+        bodyResolved.scale.push({ source, multiplier: effect.multiplier });
+        break;
+
+      case "modifyBaseBodyMorphology":
+        bodyBase.morphology.push({
+          source,
+          property: effect.property,
+          multiplier: effect.multiplier,
+          ...(effect.target !== undefined ? { target: effect.target } : {}),
+        });
+        break;
+
+      case "modifyResolvedBodyMorphology":
+        bodyResolved.morphology.push({
+          source,
+          property: effect.property,
+          multiplier: effect.multiplier,
+          ...(effect.target !== undefined ? { target: effect.target } : {}),
+        });
+        break;
+
+      case "modifyBaseBodyAnatomy":
+        bodyBase.anatomy.push({ source, operation: effect.operation });
+        break;
+
+      case "modifyResolvedBodyAnatomy":
+        bodyResolved.anatomy.push({ source, operation: effect.operation });
+        break;
+
+      case "modifyBaseIntrinsicPhysicalForce":
+        bodyBase.intrinsicPhysicalForce.push({
+          source,
+          multiplier: effect.multiplier,
+          ...(effect.target !== undefined ? { target: effect.target } : {}),
+        });
+        break;
+
+      case "modifyResolvedIntrinsicPhysicalForce":
+        bodyResolved.intrinsicPhysicalForce.push({
+          source,
+          multiplier: effect.multiplier,
+          ...(effect.target !== undefined ? { target: effect.target } : {}),
+        });
+        break;
+
+      case "modifyBaseDestructionResistance":
+        bodyBase.destructionResistance.push({
+          source,
+          multiplier: effect.multiplier,
+          ...(effect.target !== undefined ? { target: effect.target } : {}),
+        });
+        break;
+
+      case "modifyResolvedDestructionResistance":
+        bodyResolved.destructionResistance.push({
+          source,
+          multiplier: effect.multiplier,
+          ...(effect.target !== undefined ? { target: effect.target } : {}),
+        });
+        break;
+
+      default: {
+        /*
+         * Exhaustiveness guard, added because its absence was a real bug: ten
+         * Body effect variants were introduced and this switch compiled
+         * cleanly while silently dropping every one of them. An unhandled
+         * effect is now a type error at the point of adding it rather than
+         * missing behaviour discovered later.
+         */
+        const unhandled: never = effect;
+
+        throw new Error(
+          `Unhandled Effect type "${(unhandled as Effect).type}".`,
+        );
+      }
     }
   }
 
@@ -333,6 +487,8 @@ export function resolveRuleEffects(
     traitGrants,
     skillGrants,
     techniqueGrants,
+
+    body: { base: bodyBase, resolved: bodyResolved },
   };
 }
 
