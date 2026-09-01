@@ -140,6 +140,7 @@ export type { KnownBodyPartTypeId } from "./anatomy/body-parts";
 
 export {
   STANDARD_HUMANOID_ANATOMY,
+  STANDARD_HUMANOID_FORM_ID,
   STANDARD_HUMANOID_BODY_PART_SPECS,
   STANDARD_HUMANOID_REFERENCE_FORM,
 } from "./anatomy/standard-humanoid";

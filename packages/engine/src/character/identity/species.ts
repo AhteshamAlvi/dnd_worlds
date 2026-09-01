@@ -37,6 +37,12 @@ import {
 } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
+import { STANDARD_HUMANOID_REFERENCE_FORM } from "../foundation/body/anatomy/standard-humanoid";
+import { HUMAN_AGE_PROFILE } from "../foundation/body/age/human-age-profile";
+import { DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L } from "../foundation/body/measurements/resolution";
+import { HUMAN_STATURE_BANDS } from "../foundation/body/stature/human-stature-bands";
+import { NEUTRAL_MORPHOLOGY } from "../foundation/body/types";
+import type { SpeciesBodyProfile } from "../foundation/body/species-profile";
 
 /**
  * Stable semantic identifier for a Species definition.
@@ -55,6 +61,20 @@ export interface SpeciesDefinition extends EffectfulDefinition {
    * Present makes this a Sub-species. Absent makes it a root Species.
    */
   readonly parentSpeciesId?: SpeciesId;
+
+  /**
+   * What kind of body this Species has.
+   *
+   * Optional, and inherited from the parent Species when absent — which is
+   * what makes the six Bender lineages cost nothing to declare. They are
+   * physically Human; only their capabilities differ, and a Sub-species that
+   * repeated its parent's whole body profile would be six copies of one fact
+   * waiting to disagree.
+   *
+   * A Sub-species that IS physically different says so and overrides it
+   * outright rather than patching: half a body profile is not a body.
+   */
+  readonly body?: SpeciesBodyProfile;
 }
 
 /**
@@ -69,10 +89,30 @@ export interface CharacterSpecies {
 }
 
 export const SPECIES_DEFINITIONS = {
+  /*
+   * The Basic Human Standard, and the calibration every other Species is
+   * authored against. Standard Scale 1 is what "Scale" means; a Giant is 10
+   * because it is ten times this.
+   *
+   * Nothing physical is authored here beyond that anchor and the stature
+   * bands. Height, Mass, Size, Structural Capacity and Strength all resolve
+   * from the anatomy and the reference table in body/anatomy/body-parts.ts —
+   * 165 cm, 62.00 kg, 60.00 L, 100 SC, STR 10 — and a Species that restated
+   * any of them would be a second source waiting to drift.
+   */
   human: {
     id: "human",
     name: "Human",
     description: "A member of the human species.",
+    body: {
+      standardScale: 1,
+      referenceForm: STANDARD_HUMANOID_REFERENCE_FORM,
+      globalMorphology: NEUTRAL_MORPHOLOGY,
+      localMorphology: {},
+      stature: HUMAN_STATURE_BANDS,
+      adiposeTissueDensityKgPerL: DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
+      ageProfile: HUMAN_AGE_PROFILE,
+    },
   },
 
   /*

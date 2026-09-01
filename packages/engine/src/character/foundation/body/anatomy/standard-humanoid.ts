@@ -215,8 +215,20 @@ export const STANDARD_HUMANOID_BODY_PART_SPECS = [
   },
 ] as const satisfies readonly BodyPartCreationSpec[];
 
+/*
+ * The Reference Form this body plan belongs to.
+ *
+ * Named rather than left as the default namespace, because slot keys are
+ * form-scoped: "standard-humanoid:left-arm" cannot collide with a Dragon's
+ * "dragon:left-foreleg" even though both forms have a slot called left
+ * something. The anatomy and the Reference Form MUST share this id, or every
+ * slot lookup silently misses.
+ */
+export const STANDARD_HUMANOID_FORM_ID = "standard-humanoid";
+
 export const STANDARD_HUMANOID_ANATOMY: Anatomy = createAnatomy(
   STANDARD_HUMANOID_BODY_PART_SPECS,
+  STANDARD_HUMANOID_FORM_ID,
 );
 
 /*
@@ -227,4 +239,7 @@ export const STANDARD_HUMANOID_ANATOMY: Anatomy = createAnatomy(
  * on expecting one.
  */
 export const STANDARD_HUMANOID_REFERENCE_FORM: ReferenceForm =
-  createReferenceForm(STANDARD_HUMANOID_BODY_PART_SPECS);
+  createReferenceForm(
+    STANDARD_HUMANOID_BODY_PART_SPECS,
+    STANDARD_HUMANOID_FORM_ID,
+  );

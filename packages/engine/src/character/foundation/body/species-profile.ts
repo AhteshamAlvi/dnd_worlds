@@ -16,6 +16,7 @@
 import type { BodyMorphology } from "./types";
 import type { BodyPartId, ReferenceForm } from "./anatomy/types";
 import type { SpeciesStatureBands } from "./stature/types";
+import type { SpeciesAgeProfile } from "./age/types";
 
 
 /*
@@ -97,4 +98,14 @@ export interface SpeciesBodyProfile {
    * today.
    */
   readonly adiposeTissueDensityKgPerL: number;
+
+  /*
+   * How this Species develops with age.
+   *
+   * Optional because age has no universal meaning and a Species may simply not
+   * have an opinion: a construct that is built rather than born has no
+   * developmental curve, and absent is the honest way to say so. Absent
+   * resolves as a mature adult at every age.
+   */
+  readonly ageProfile?: SpeciesAgeProfile;
 }

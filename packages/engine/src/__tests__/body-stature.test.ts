@@ -217,8 +217,8 @@ describe("what each band actually responds to", () => {
        * this override would match nothing and silently do nothing.
        */
       local: {
-        "default:leg-1": { length: 1.42 },
-        "default:leg-2": { length: 1.42 },
+        "standard-humanoid:leg-1": { length: 1.42 },
+        "standard-humanoid:leg-2": { length: 1.42 },
       },
     });
 

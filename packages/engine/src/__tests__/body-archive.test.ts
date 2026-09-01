@@ -25,6 +25,10 @@ import {
   selectOrphanedArchives,
 } from "../character/foundation/body/archive";
 import type { Anatomy, ReferenceForm } from "../character/foundation/body/anatomy/types";
+import { getSpeciesDefinition } from "../character/identity/species";
+import { HUMAN_AGE_PROFILE } from "../character/foundation/body/age/human-age-profile";
+import { HUMAN_STATURE_BANDS } from "../character/foundation/body/stature/human-stature-bands";
+import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 
 const SPECS = [
   { id: "torso-1", slotId: "torso", type: "upper-body", attachment: null },
@@ -236,5 +240,50 @@ describe("ordinary regeneration", () => {
     expect(canOrdinaryRegenerationRestore(ANATOMY, HUMAN_FORM, "left-arm")).toBe(
       false,
     );
+  });
+});
+
+
+describe("Species body profiles", () => {
+  /*
+   * The Human profile anchors everything. Standard Scale 1 is what "Scale"
+   * means, and a Giant is 10 because it is ten times this.
+   */
+  it("gives the Human the Basic Human Standard", () => {
+    const human = getSpeciesDefinition("human");
+
+    expect(human?.body?.standardScale).toBe(1);
+    expect(human?.body?.referenceForm.id).toBe("standard-humanoid");
+    expect(human?.body?.stature).toBe(HUMAN_STATURE_BANDS);
+    expect(human?.body?.ageProfile).toBe(HUMAN_AGE_PROFILE);
+  });
+
+  /*
+   * Nothing physical is restated. Height, Mass, Size, SC and STR all resolve
+   * from the anatomy and the reference table; a Species that authored any of
+   * them would be a second source waiting to drift.
+   */
+  it("authors no physical measurement directly", () => {
+    const body = getSpeciesDefinition("human")?.body;
+
+    expect(body).not.toHaveProperty("heightCm");
+    expect(body).not.toHaveProperty("massKg");
+    expect(body).not.toHaveProperty("structuralCapacity");
+    expect(body?.globalMorphology).toEqual(NEUTRAL_MORPHOLOGY);
+  });
+
+  /*
+   * The six Bender lineages are physically Human and say nothing about bodies.
+   * Repeating the parent's profile would be six copies of one fact waiting to
+   * disagree; inheritance is what makes "physically Human, differently
+   * capable" free to express.
+   */
+  it("lets physically-identical Sub-species inherit rather than repeat", () => {
+    for (const id of ["firebender", "waterbender"]) {
+      const sub = getSpeciesDefinition(id);
+
+      expect(sub?.parentSpeciesId).toBe("human");
+      expect(sub?.body).toBeUndefined();
+    }
   });
 });
