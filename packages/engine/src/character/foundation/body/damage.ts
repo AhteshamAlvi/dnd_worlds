@@ -3,7 +3,7 @@
  * much penetrating damage" into updated persistent Anatomy.
  *
  * This is the seam between Body and the future Combat layer. Combat's own
- * header comment (combat/index.ts) says it "consumes a resolved character
+ * header comment (gameplay/combat/index.ts) says it "consumes a resolved character
  * rather than owning any part of one" — this pipeline *produces* new
  * persistent Body state, so it belongs here, not there. Combat's only
  * contribution is two primitives, passed in as plain parameters: which

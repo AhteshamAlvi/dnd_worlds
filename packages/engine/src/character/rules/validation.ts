@@ -28,6 +28,8 @@
  * relevant character issues into EngineError diagnostics.
  */
 
+import { isValidCheckScopeSelector } from "../checks/validation";
+import type { CheckScopeSelector } from "../checks/scopes";
 import type { Effect } from "./effects";
 import type { Requirement } from "./requirements";
 
@@ -130,7 +132,7 @@ export interface InvalidEffectAmountIssue {
 export interface InvalidCheckScopeIssue {
   readonly type: "invalid-check-scope";
   readonly path: string;
-  readonly kind: "attribute" | "derivedAttribute";
+  readonly kind: CheckScopeSelector["kind"];
 }
 
 
@@ -282,16 +284,24 @@ export function findEffectValidationIssues(
         });
       }
 
-      const scopeName =
-        effect.check.kind === "attribute"
-          ? effect.check.attribute
-          : effect.check.derivedAttribute;
+      /*
+       * Delegated to the vocabulary's own rule rather than re-derived here.
+       * The closed sense, mode and subject lists live beside the scopes, and a
+       * second membership check against a second copy of them is exactly the
+       * drift this consolidation removed.
+       */
+      /*
+       * The kind is read BEFORE the guard. isValidCheckScopeSelector narrows,
+       * so inside the failure branch the value is `never` — and a malformed
+       * scope still has to be able to say which variant it was claiming to be.
+       */
+      const checkKind: CheckScopeSelector["kind"] = effect.check.kind;
 
-      if (!isNonEmptyId(scopeName)) {
+      if (!isValidCheckScopeSelector(effect.check)) {
         issues.push({
           type: "invalid-check-scope",
           path: `${path}.check`,
-          kind: effect.check.kind,
+          kind: checkKind,
         });
       }
 

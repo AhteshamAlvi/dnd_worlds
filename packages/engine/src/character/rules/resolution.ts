@@ -93,6 +93,8 @@ import type {
   CheckScope,
   Effect,
 } from "./effects";
+import { matchesCheckScope } from "../checks/matching";
+import type { CheckScopeSelector } from "../checks/scopes";
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type {
   StatureAllowance,
@@ -178,7 +180,8 @@ export interface SourcedAttributeModifier extends AttributeModifier {
  */
 export interface SourcedCheckModifier {
   readonly source: RuleSourceRef;
-  readonly check: CheckScope;
+  /* The set this modifier applies to; see ModifyCheckEffect.check. */
+  readonly check: CheckScopeSelector;
   readonly amount: number;
 }
 
@@ -537,33 +540,12 @@ export function resolveRuleEffects(
  * content and a scope constructed by a mechanic resolving a check are always
  * different objects.
  */
-export function isSameCheckScope(
-  left: CheckScope,
-  right: CheckScope,
-): boolean {
-  if (left.kind !== right.kind) return false;
-
-  if (left.kind === "attribute" && right.kind === "attribute") {
-    return left.attribute === right.attribute;
-  }
-
-  if (left.kind === "derivedAttribute" && right.kind === "derivedAttribute") {
-    return left.derivedAttribute === right.derivedAttribute;
-  }
-
-  return false;
-}
-
-
-/**
- * The subset of a character's check modifiers that apply to one scope.
- */
 export function collectApplicableCheckModifiers(
   checkModifiers: readonly SourcedCheckModifier[],
   scope: CheckScope,
 ): readonly SourcedCheckModifier[] {
   return checkModifiers.filter((modifier) =>
-    isSameCheckScope(modifier.check, scope),
+    matchesCheckScope(modifier.check, scope),
   );
 }
 
@@ -630,10 +612,24 @@ export function resolveCheckModifier(
 export function createCheckModifierTraceNode(
   resolution: CheckModifierResolution,
 ): TraceNode {
+  /*
+   * Every scope variant gets a label, because the union is open-ended in
+   * practice: a check can be sensory as well as attribute-shaped, and a trace
+   * that fell back to "[object Object]" for the new ones would be worse than
+   * useless exactly where the reasoning is least obvious.
+   */
+  const scope = resolution.scope;
+
   const scopeLabel =
-    resolution.scope.kind === "attribute"
-      ? resolution.scope.attribute.toUpperCase()
-      : resolution.scope.derivedAttribute;
+    scope.kind === "attribute"
+      ? scope.attribute.toUpperCase()
+      : scope.kind === "derivedAttribute"
+        ? scope.derivedAttribute
+        : scope.kind === "investigation"
+          ? `investigation:${scope.subject}`
+          : scope.kind === "perception"
+            ? `perception:${scope.sense}/${scope.phenomenon}`
+            : `${scope.kind}:${scope.mode}/${scope.sense}`;
 
   const inputs: Record<string, { value: number }> = {
     standard: { value: resolution.standardModifier },

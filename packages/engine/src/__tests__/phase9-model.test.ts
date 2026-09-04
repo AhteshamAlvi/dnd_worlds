@@ -36,7 +36,7 @@ import {
 } from "../character/foundation/attributes/speed";
 import { resolveDerivedAttributes } from "../character/foundation/attributes/derived/resolution";
 import { deriveBaseRoundActionCapacity } from "../character/mechanics/actions/resolution";
-import { COMBAT_ROUND_DURATION_SECONDS } from "../combat/round";
+import { COMBAT_ROUND_DURATION_SECONDS } from "../gameplay/combat/round";
 import type { Anatomy } from "../character/foundation/body/anatomy/types";
 
 const NEUTRAL_SOURCE = { global: NEUTRAL_MORPHOLOGY, local: {} };

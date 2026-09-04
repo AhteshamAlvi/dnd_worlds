@@ -352,6 +352,7 @@ export type {
 
   // A situational bonus to one kind of check, which never touches a score.
   CheckScope,
+  CheckScopeSelector,
   ModifyCheckEffect,
 
   GrantTraitEffect,
@@ -421,7 +422,6 @@ export {
    * apply to a check are added together. Every mechanic resolving a check
    * comes through here rather than summing modifiers its own way.
    */
-  isSameCheckScope,
   collectApplicableCheckModifiers,
   resolveCheckModifier,
   createCheckModifierTraceNode,

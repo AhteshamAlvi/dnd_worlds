@@ -3,8 +3,8 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `newbranch-refactor` @ `910a089`
 **Snapshot:** 2026-09-01 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **41 files, 1,023 tests, all passing** (~1.8 s). `tsc --noEmit` → **clean**.
-**Size:** 143 source files / ~45,800 LOC + 43 test files / ~16,800 LOC.
+**Health:** `vitest run` → **42 files, 1,031 tests, all passing** (~1.9 s). `tsc --noEmit` → **clean**.
+**Size:** 151 source files / ~47,200 LOC + 44 test files / ~17,000 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
 The Body refactor (12 phases) is **through Phase 10**, plus the post-refactor integration
@@ -30,6 +30,7 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       ├── character/capabilities/  mastery · skills · techniques · resolution · attempts
       ├── character/status/        stage · conditions · injuries · resolution
       ├── character/equipment/     items
+      ├── character/checks/       the check scope vocabulary: scopes · matching · validation
       ├── character/foundation/
       │      ├── attributes/       base · derived · physical · speed · strength · stats · modifiers
       │      ├── body/             ~15,000 LOC — the largest subsystem (§5)
@@ -46,7 +47,10 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       │
       ├── time/                    timestamp · duration · calendar · clock · validation
       ├── decisions/log.ts         where the engine knowingly diverges from the frozen Rulebook
-      ├── combat/                  ~5,470 LOC of encounter structure (NOT exported, NO tests)
+      ├── gameplay/                the runtime layer, sitting ON TOP of character/
+      │      ├── checks/           universal d20 checks: scopes · matching · modifiers ·
+      │      │                     resolution · validation  (NOT exported)
+      │      └── combat/           ~5,470 LOC of encounter structure (NOT exported, NO tests)
       └── index.ts                 the public barrel (800 lines)
 ```
 
@@ -127,6 +131,10 @@ view that vanishes with its Effect and never writes to the sheet.
 destruction is recorded against continuity state, so the normalization denominator can't shrink
 and cancel the loss out. Routing it through `removeFromForm` would take the Reference Form with
 it, and a form that stops expecting the arm it just lost is a form that has healed.
+
+`ModifyCheckEffect.check` is a `CheckScopeSelector` from `character/checks/`, shared with the
+gameplay check resolver — one vocabulary, one matcher, so an authored modifier and the check it
+applies to cannot drift apart.
 
 ### Requirements — 16 types
 
@@ -761,7 +769,9 @@ with its source, and `checkStatureJustified` checks coverage per dimension AND p
 
 ---
 
-## 12 · Combat (`combat/`, ~5,470 LOC) — structure only, **unexported, untested**
+## 12 · Gameplay (`gameplay/`) — the runtime layer, **unexported**
+
+### Combat (`gameplay/combat/`, ~5,470 LOC) — structure only, untested
 
 Owns Combat Actions, Round runtime state, Turn state, Reaction opportunities/gates, Initiative
 ordering and rotation, Action expenditure, state transitions, structural validation.
@@ -777,6 +787,22 @@ Combat Ability 5–7   → 1
 Combat Ability ≥ 8   → 2 + floor((CA − 10) × 0.4), capped at 10 from stats alone
 Turn capacity        = 2 (min 2) · Reaction capacity min 1
 ```
+
+### Checks (`gameplay/checks/`, ~1,150 LOC) — universal d20 resolution
+
+Deterministic: the caller supplies the dice, so nothing here is random. `resolveCheckDice` takes
+a signed advantage pool (`1 + abs(advantage)` rolls, validated) and keeps highest or lowest, ties
+going to the earliest die. Resolution emits `TraceNode`s like every other explained calculation.
+
+`CheckScope` names ONE concrete check; `CheckScopeSelector` names the SET a modifier applies to.
+Six variants each: attribute · derivedAttribute · perception · detection · concealment ·
+investigation, over closed sense/mode/subject lists.
+
+Both live in **`character/checks/`**, not here, along with the matcher and their validity rules.
+The layer that owns the subject matter owns the vocabulary and the runtime layer imports it —
+the same rule Body Effects follow — so `character/` never depends on `gameplay/`. A `modifyCheck`
+Effect authors a **selector**, which is what lets a Trait say "+2 to hearing Detection" rather
+than only naming one exact check.
 
 ---
 
@@ -815,7 +841,7 @@ equipment beyond the two demo items.
 | Gap | State |
 |---|---|
 | **Damage → BP model** | Nothing defines how Strength Points become BP damage. This is the **highest-leverage hole**: it is what would validate `CONSTITUTION_DOUBLING_INTERVAL = 2` and the STR/CON durability parity the whole BP calibration rests on. |
-| **Combat check resolution** | No Guard, Strike, Evasion, attack rolls, death saves. `combat/` is turn/round/initiative/action *structure* only and references no Body, STR, BP or damage. |
+| **Combat check resolution** | No Guard, Strike, Evasion, attack rolls, death saves. `gameplay/combat/` is turn/round/initiative/action *structure* only and references no Body, STR, BP or damage. |
 | **Nen: 11 of 15 principles** | shu, en, gyo, ken, chu, in, ko, ryu, yu, ju, fu — graph nodes only, no principle files. |
 | **Nen Abilities (Hatsu abilities)** | No subsystem. `HATSU_EFFECT_MINIMUM_MASTERY = 3` is the only hook. |
 | **Injury content** | `INJURY_DEFINITIONS = {}`. Machinery, validation and recovery integration are done and tested against an empty catalog. |
@@ -834,7 +860,7 @@ equipment beyond the two demo items.
 
 ### Built but unexported from `@nenworld/engine`
 
-`combat/*` (~5,470 LOC) · `character/mechanics/actions/*` · the whole `foundation/nen/` tree
+`gameplay/*` (~6,600 LOC, combat + checks) · `character/mechanics/actions/*` · the whole `foundation/nen/` tree
 (~3,970 LOC) · `foundation/aura/control.ts` · `character/details.ts` ·
 `time/{validation,calendar,clock}` · `infrastructure/{rounding,id}` · `character/progression/index`.
 

@@ -23,12 +23,13 @@ import { clearCustomDefinitions, registerDefinition } from "../character/catalog
 import {
   collectApplicableCheckModifiers,
   createCheckModifierTraceNode,
-  isSameCheckScope,
   resolveCheckModifier,
   resolveRuleEffects,
   type SourcedCheckModifier,
 } from "../character/rules/resolution";
 import { findEffectValidationIssues } from "../character/rules/validation";
+import { isSameCheckScope } from "../character/checks/matching";
+import { resolveCheck } from "../gameplay/checks";
 import type { CheckScope } from "../character/rules/effects";
 
 import { validateCharacter } from "../character/validation";
@@ -42,11 +43,11 @@ afterEach(() => {
   clearCustomDefinitions();
 });
 
-const AGI_CHECK: CheckScope = { kind: "attribute", attribute: "agi" };
-const ACROBATICS_CHECK: CheckScope = {
+const AGI_CHECK = { kind: "attribute", attribute: "agi" } as const;
+const ACROBATICS_CHECK = {
   kind: "derivedAttribute",
   derivedAttribute: "acrobatics",
-};
+} as const;
 
 function registerFlexible(): void {
   registerDefinition("trait", {
@@ -413,5 +414,95 @@ describe("validation", () => {
         createTestCharacter({ skills: [{ skillId: "contort" }] }),
       ).success,
     ).toBe(true);
+  });
+});
+
+
+describe("authored modifiers reach the gameplay check resolver", () => {
+  /*
+   * The gap this closes. character/rules/ and gameplay/checks/ each had their
+   * own CheckScope and their own modifier matcher, so a Trait's "+3 to
+   * applicable AGI checks" could not be handed to the thing that resolves an
+   * AGI check. One vocabulary, owned by character/checks/, is what makes the
+   * two halves the same conversation.
+   */
+  afterEach(() => {
+    clearCustomDefinitions();
+  });
+
+  it("hands a Skill's modifyCheck straight to resolveCheck", () => {
+    registerContort();
+
+    const resolved = resolveRuleEffects([
+      {
+        source: { type: "skill", id: "contort" },
+        effects: [{ type: "modifyCheck", check: AGI_CHECK, amount: 3 }],
+      },
+    ]);
+
+    const result = resolveCheck({
+      scope: { kind: "attribute", attribute: "agi" },
+      dice: { advantage: 0, rolls: [11] },
+      baseContributions: [{ id: "standard", amount: 4 }],
+
+      /* No translation layer: the authored modifier IS a check contribution. */
+      modifiers: resolved.checkModifiers.map((modifier) => ({
+        source: modifier.source,
+        scope: modifier.check,
+        amount: modifier.amount,
+        channel: "persistent" as const,
+      })),
+    });
+
+    // 11 rolled + 4 standard + 3 from Contort.
+    expect(result.total).toBe(18);
+    expect(result.applicableModifiers).toHaveLength(1);
+  });
+
+  it("lets content author a scope the old two-variant union could not express", () => {
+    registerDefinition("trait", {
+      id: "keen-ears",
+      name: "Keen Ears",
+      description: "A test Trait scoped to one sense.",
+      effects: [
+        {
+          type: "modifyCheck",
+          check: { kind: "detection", sense: { kind: "specific", sense: "hearing" } },
+          amount: 2,
+        },
+      ],
+    });
+
+    const resolved = resolveRuleEffects([
+      {
+        source: { type: "trait", id: "keen-ears" },
+        effects: [
+          {
+            type: "modifyCheck",
+            check: { kind: "detection", sense: { kind: "specific", sense: "hearing" } },
+            amount: 2,
+          },
+        ],
+      },
+    ]);
+
+    const heard = collectApplicableCheckModifiers(resolved.checkModifiers, {
+      kind: "detection",
+      mode: "active",
+      sense: "hearing",
+      phenomenon: "physical",
+      subject: "entity",
+    });
+
+    const seen = collectApplicableCheckModifiers(resolved.checkModifiers, {
+      kind: "detection",
+      mode: "active",
+      sense: "sight",
+      phenomenon: "physical",
+      subject: "entity",
+    });
+
+    expect(heard).toHaveLength(1);
+    expect(seen).toHaveLength(0);
   });
 });

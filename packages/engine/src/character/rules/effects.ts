@@ -82,6 +82,7 @@
  */
 
 import type { BodyPartSelector } from "../foundation/body/selectors";
+import type { CheckScopeSelector } from "../checks/scopes";
 import type { AttributeKey } from "../foundation/attributes/types";
 import type {
   DerivedAttributeName,
@@ -152,15 +153,18 @@ export interface ModifyResolvedAttributeEffect {
  * against an already-closed list. Adding a variant later is easy; removing
  * an escape hatch that content has started depending on is not.
  */
-export type CheckScope =
-  | {
-      readonly kind: "attribute";
-      readonly attribute: AttributeKey;
-    }
-  | {
-      readonly kind: "derivedAttribute";
-      readonly derivedAttribute: DerivedAttributeName;
-    };
+/*
+ * The scope vocabulary is owned by character/checks/ and re-exported here.
+ *
+ * One definition rather than a second copy: an authored modifier and the check
+ * it eventually applies to have to be talking about the same thing, and two
+ * unions that merely look alike are two things that will drift. Same reasoning
+ * as the Body-facing vocabulary in foundation/body/effects.ts.
+ */
+export type {
+  CheckScope,
+  CheckScopeSelector,
+} from "../checks/scopes";
 
 
 /**
@@ -190,7 +194,16 @@ export type CheckScope =
  */
 export interface ModifyCheckEffect {
   readonly type: "modifyCheck";
-  readonly check: CheckScope;
+  /*
+   * A SELECTOR, not one concrete check.
+   *
+   * Content says which SET of checks it touches — "applicable AGI checks",
+   * "all hearing Detection" — and the set is matched against the concrete
+   * scope at the moment a check is resolved. Authoring a concrete scope would
+   * mean a Trait could only ever modify one exact combination of sense,
+   * phenomenon and subject.
+   */
+  readonly check: CheckScopeSelector;
   readonly amount: number;
 }
 
