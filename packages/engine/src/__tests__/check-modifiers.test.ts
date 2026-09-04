@@ -28,8 +28,8 @@ import {
   type SourcedCheckModifier,
 } from "../character/rules/resolution";
 import { findEffectValidationIssues } from "../character/rules/validation";
-import { isSameCheckScope } from "../character/checks/matching";
-import { resolveCheck } from "../gameplay/checks";
+import { isSameCheckScope } from "../checks/matching";
+import { resolveCheck } from "../checks";
 import type { CheckScope } from "../character/rules/effects";
 
 import { validateCharacter } from "../character/validation";
@@ -420,10 +420,10 @@ describe("validation", () => {
 
 describe("authored modifiers reach the gameplay check resolver", () => {
   /*
-   * The gap this closes. character/rules/ and gameplay/checks/ each had their
+   * The gap this closes. character/rules/ and the check module each had their
    * own CheckScope and their own modifier matcher, so a Trait's "+3 to
    * applicable AGI checks" could not be handed to the thing that resolves an
-   * AGI check. One vocabulary, owned by character/checks/, is what makes the
+   * AGI check. One vocabulary, in the top-level checks/ module, is what makes the
    * two halves the same conversation.
    */
   afterEach(() => {

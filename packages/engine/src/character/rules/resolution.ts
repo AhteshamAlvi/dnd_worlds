@@ -93,8 +93,8 @@ import type {
   CheckScope,
   Effect,
 } from "./effects";
-import { matchesCheckScope } from "../checks/matching";
-import type { CheckScopeSelector } from "../checks/scopes";
+import { matchesCheckScope } from "../../checks/matching";
+import type { CheckScopeSelector } from "../../checks/scopes";
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type {
   StatureAllowance,

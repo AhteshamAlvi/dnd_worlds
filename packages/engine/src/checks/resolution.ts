@@ -1,6 +1,6 @@
 /* Deterministic resolution for universal d20 checks. Randomness is supplied. */
 
-import { createTraceNode, type TraceInput, type TraceNode } from "../../infrastructure/trace";
+import { createTraceNode, type TraceInput, type TraceNode } from "../infrastructure/trace";
 import {
   collectApplicableCheckModifiers,
   sumCheckBaseContributions,

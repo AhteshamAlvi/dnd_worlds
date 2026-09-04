@@ -1,7 +1,7 @@
 /* Universal d20 check request and result types. */
 
-import type { TraceNode } from "../../infrastructure/trace";
-import type { CheckScope, CheckScopeSelector } from "../../character/checks/scopes";
+import type { TraceNode } from "../infrastructure/trace";
+import type { CheckScope, CheckScopeSelector } from "./scopes";
 
 export interface CheckSourceRef {
   readonly type: string;

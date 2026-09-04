@@ -1,3 +1,25 @@
+/*
+ * Checks — the universal resolution mechanic, and a peer of nobody's subsystem.
+ *
+ * Top level rather than under character/ or gameplay/, because it is genuinely
+ * neither. A check is not a property of a character, so it does not belong in
+ * the character model; and it is not an encounter mechanic, so it does not
+ * belong under the runtime layer beside combat. Attributes exist in order to be
+ * checked against, and a GM asking for a Perception roll outside an encounter
+ * is asking for the same thing combat asks for.
+ *
+ * The dependency direction is what settles it. Content authors modifiers
+ * against this vocabulary (character/rules/effects.ts), and the runtime resolves
+ * checks with it (gameplay/), so putting it inside either one would make the
+ * other depend upward. As a peer, both simply import it:
+ *
+ *   checks/      ->  character/foundation/attributes, infrastructure/trace
+ *   character/rules/  ->  checks/
+ *   gameplay/         ->  checks/
+ *
+ * Same shape as time/, which recovery and combat both need and neither owns.
+ */
+
 export type {
   AttributeCheckScope,
   DerivedAttributeCheckScope,
@@ -23,7 +45,7 @@ export type {
   ConcealmentCheckScopeSelector,
   InvestigationCheckScopeSelector,
   CheckScopeSelector,
-} from "../../character/checks/scopes";
+} from "./scopes";
 
 export {
   SENSE_IDS,
@@ -33,7 +55,7 @@ export {
   CONCEALMENT_MODES,
   DETECTION_SUBJECTS,
   INVESTIGATION_SUBJECTS,
-} from "../../character/checks/scopes";
+} from "./scopes";
 
 export type {
   CheckSourceRef,
@@ -60,7 +82,7 @@ export {
   matchesPhenomenonSelector,
   matchesCheckScope,
   isSameCheckScope,
-} from "../../character/checks/matching";
+} from "./matching";
 
 export {
   collectApplicableCheckModifiers,
@@ -83,13 +105,7 @@ export {
   findOpposedCheckRequestIssues,
 } from "./validation";
 
-/*
- * The scope vocabulary and its validity rules live under character/checks/,
- * because content authors modifiers against them and the character layer must
- * not depend on this one. Re-exported here so a consumer of gameplay/checks
- * still gets one coherent surface.
- */
 export {
   isValidCheckScope,
   isValidCheckScopeSelector,
-} from "../../character/checks/validation";
+} from "./validation";

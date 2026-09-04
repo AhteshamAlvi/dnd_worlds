@@ -30,7 +30,6 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       ├── character/capabilities/  mastery · skills · techniques · resolution · attempts
       ├── character/status/        stage · conditions · injuries · resolution
       ├── character/equipment/     items
-      ├── character/checks/       the check scope vocabulary: scopes · matching · validation
       ├── character/foundation/
       │      ├── attributes/       base · derived · physical · speed · strength · stats · modifiers
       │      ├── body/             ~15,000 LOC — the largest subsystem (§5)
@@ -45,11 +44,13 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       ├── character/resolution.ts  THE ORCHESTRATOR: authored character → ResolvedCharacter
       ├── character/validation.ts  THE VALIDATOR: domain issues → EngineErrors
       │
+      ├── checks/                  THE UNIVERSAL RESOLUTION MECHANIC — a peer, not a
+      │                            subsystem: scopes · matching · modifiers · resolution ·
+      │                            validation. character/rules/ authors against it and
+      │                            gameplay/ resolves with it, so it belongs to neither
       ├── time/                    timestamp · duration · calendar · clock · validation
       ├── decisions/log.ts         where the engine knowingly diverges from the frozen Rulebook
-      ├── gameplay/                the runtime layer, sitting ON TOP of character/
-      │      ├── checks/           universal d20 checks: scopes · matching · modifiers ·
-      │      │                     resolution · validation  (NOT exported)
+      ├── gameplay/                the runtime encounter layer, ON TOP of character/
       │      └── combat/           ~5,470 LOC of encounter structure (NOT exported, NO tests)
       └── index.ts                 the public barrel (800 lines)
 ```
@@ -132,7 +133,7 @@ destruction is recorded against continuity state, so the normalization denominat
 and cancel the loss out. Routing it through `removeFromForm` would take the Reference Form with
 it, and a form that stops expecting the arm it just lost is a form that has healed.
 
-`ModifyCheckEffect.check` is a `CheckScopeSelector` from `character/checks/`, shared with the
+`ModifyCheckEffect.check` is a `CheckScopeSelector` from the top-level `checks/` module, shared with the
 gameplay check resolver — one vocabulary, one matcher, so an authored modifier and the check it
 applies to cannot drift apart.
 
@@ -788,7 +789,9 @@ Combat Ability ≥ 8   → 2 + floor((CA − 10) × 0.4), capped at 10 from stat
 Turn capacity        = 2 (min 2) · Reaction capacity min 1
 ```
 
-### Checks (`gameplay/checks/`, ~1,150 LOC) — universal d20 resolution
+---
+
+## 12b · Checks (`checks/`, ~1,150 LOC) — universal d20 resolution
 
 Deterministic: the caller supplies the dice, so nothing here is random. `resolveCheckDice` takes
 a signed advantage pool (`1 + abs(advantage)` rolls, validated) and keeps highest or lowest, ties
@@ -798,11 +801,21 @@ going to the earliest die. Resolution emits `TraceNode`s like every other explai
 Six variants each: attribute · derivedAttribute · perception · detection · concealment ·
 investigation, over closed sense/mode/subject lists.
 
-Both live in **`character/checks/`**, not here, along with the matcher and their validity rules.
-The layer that owns the subject matter owns the vocabulary and the runtime layer imports it —
-the same rule Body Effects follow — so `character/` never depends on `gameplay/`. A `modifyCheck`
-Effect authors a **selector**, which is what lets a Trait say "+2 to hearing Detection" rather
-than only naming one exact check.
+The module is a **top-level peer**, under neither `character/` nor `gameplay/`. A check is not a
+property of a character and not an encounter mechanic; attributes exist in order to be checked
+against, and a Perception roll outside an encounter is the same thing combat asks for. The
+dependency direction settles it: content authors modifiers against this vocabulary and the
+runtime resolves checks with it, so putting it inside either would make the other depend upward.
+Same shape as `time/`, which recovery and combat both need and neither owns.
+
+```
+checks/          →  character/foundation/attributes · infrastructure/trace
+character/rules/ →  checks/
+gameplay/        →  checks/
+```
+
+A `modifyCheck` Effect authors a **selector**, which is what lets a Trait say "+2 to hearing
+Detection" rather than only naming one exact check.
 
 ---
 
@@ -860,7 +873,7 @@ equipment beyond the two demo items.
 
 ### Built but unexported from `@nenworld/engine`
 
-`gameplay/*` (~6,600 LOC, combat + checks) · `character/mechanics/actions/*` · the whole `foundation/nen/` tree
+`gameplay/combat/*` (~5,470 LOC) · `checks/*` (~1,150 LOC) · `character/mechanics/actions/*` · the whole `foundation/nen/` tree
 (~3,970 LOC) · `foundation/aura/control.ts` · `character/details.ts` ·
 `time/{validation,calendar,clock}` · `infrastructure/{rounding,id}` · `character/progression/index`.
 

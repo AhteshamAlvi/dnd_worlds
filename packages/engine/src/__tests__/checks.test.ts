@@ -8,7 +8,7 @@ import {
   resolveOpposedCheck,
   type CheckRequest,
   type CheckScope,
-} from "../gameplay/checks";
+} from "../checks";
 
 const ACTIVE_SIGHT_DETECTION: CheckScope = {
   kind: "detection",
@@ -34,7 +34,7 @@ function detectionCheck(
   };
 }
 
-describe("gameplay checks", () => {
+describe("checks", () => {
   it("resolves signed advantage pools", () => {
     const result = resolveCheck({
       ...detectionCheck(7, 2, 1),

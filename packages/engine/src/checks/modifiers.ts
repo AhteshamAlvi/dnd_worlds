@@ -1,7 +1,7 @@
 /* Modifier collection and arithmetic for one concrete check scope. */
 
-import { matchesCheckScope } from "../../character/checks/matching";
-import type { CheckScope } from "../../character/checks/scopes";
+import { matchesCheckScope } from "./matching";
+import type { CheckScope } from "./scopes";
 import type {
   CheckBaseContribution,
   CheckModifierContribution,

@@ -7,8 +7,8 @@
  * from being mistaken for a concrete runtime check.
  */
 
-import type { AttributeKey } from "../foundation/attributes/types";
-import type { DerivedAttributeName } from "../foundation/attributes/derived/types";
+import type { AttributeKey } from "../character/foundation/attributes/types";
+import type { DerivedAttributeName } from "../character/foundation/attributes/derived/types";
 
 export const SENSE_IDS = [
   "sight",

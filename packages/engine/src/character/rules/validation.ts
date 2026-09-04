@@ -28,8 +28,8 @@
  * relevant character issues into EngineError diagnostics.
  */
 
-import { isValidCheckScopeSelector } from "../checks/validation";
-import type { CheckScopeSelector } from "../checks/scopes";
+import { isValidCheckScopeSelector } from "../../checks/validation";
+import type { CheckScopeSelector } from "../../checks/scopes";
 import type { Effect } from "./effects";
 import type { Requirement } from "./requirements";
 

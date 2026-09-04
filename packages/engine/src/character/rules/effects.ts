@@ -82,7 +82,7 @@
  */
 
 import type { BodyPartSelector } from "../foundation/body/selectors";
-import type { CheckScopeSelector } from "../checks/scopes";
+import type { CheckScopeSelector } from "../../checks/scopes";
 import type { AttributeKey } from "../foundation/attributes/types";
 import type {
   DerivedAttributeName,
@@ -154,7 +154,8 @@ export interface ModifyResolvedAttributeEffect {
  * an escape hatch that content has started depending on is not.
  */
 /*
- * The scope vocabulary is owned by character/checks/ and re-exported here.
+ * The scope vocabulary is owned by the top-level checks/ module and re-exported
+ * here.
  *
  * One definition rather than a second copy: an authored modifier and the check
  * it eventually applies to have to be talking about the same thing, and two
@@ -164,7 +165,7 @@ export interface ModifyResolvedAttributeEffect {
 export type {
   CheckScope,
   CheckScopeSelector,
-} from "../checks/scopes";
+} from "../../checks/scopes";
 
 
 /**
