@@ -6,7 +6,7 @@
  * This file owns the base formulas only. It does not apply situational,
  * sense-specific, skill, technique, equipment, or other contextual modifiers —
  * those are modifyCheck Effects resolved at check time (see
- * rules/resolution.ts's resolveCheckModifier) and never fold into the value
+ * checks/modifiers.ts's resolveCheckModifier) and never fold into the value
  * calculated here.
  *
  * All Derived Attributes are rounded to the nearest whole number after their

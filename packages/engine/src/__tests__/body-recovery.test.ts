@@ -1,6 +1,6 @@
 /*
  * Natural BP recovery: the primitive (body-points/recovery.ts) and the
- * VIT-driven pass that drives it (mechanics/recovery/resolution.ts).
+ * VIT-driven pass that drives it (foundation/body/recovery/resolution.ts).
  *
  * Injury treatment caps, overlap detection and Injury removal are covered in
  * injury-recovery.test.ts; this file is plain natural recovery with nothing
@@ -26,6 +26,7 @@ import { describe, expect, it } from "vitest";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 
 import { applyBodyPartRecovery } from "../character/foundation/body/body-points/recovery";
+import { continuityIntegrity } from "../character/foundation/body/continuity";
 import type { Anatomy } from "../character/foundation/body/anatomy/types";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import {
@@ -38,8 +39,8 @@ import type { Body } from "../character/foundation/body/types";
 import {
   deriveDailyRecoveryFraction,
   resolveRecovery,
-} from "../character/mechanics/recovery/resolution";
-import type { ResolveRecoveryInput } from "../character/mechanics/recovery/resolution";
+} from "../character/foundation/body/recovery/resolution";
+import type { ResolveRecoveryInput } from "../character/foundation/body/recovery/types";
 
 import { days, hours } from "../time/duration";
 import { TEST_BODY_STATE, TEST_PART_PHYSICALS } from "./fixtures/body";
@@ -97,7 +98,7 @@ function baseInput(
     effectiveScale: 1,
     injuries: [],
     elapsed: days(1),
-    vit: 10,
+    vitality: 10,
     ...overrides,
   };
 }
@@ -203,9 +204,9 @@ describe("deriveDailyRecoveryFraction", () => {
 
 describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
   it("recovers more BP over the same elapsed time at higher VIT", () => {
-    const low = resolveRecovery(baseInput({ vit: 5 }));
-    const reference = resolveRecovery(baseInput({ vit: 10 }));
-    const high = resolveRecovery(baseInput({ vit: 15 }));
+    const low = resolveRecovery(baseInput({ vitality: 5 }));
+    const reference = resolveRecovery(baseInput({ vitality: 10 }));
+    const high = resolveRecovery(baseInput({ vitality: 15 }));
 
     expect(low.parts[0]?.bpRestored).toBeCloseTo(1, 10); // 5% of 20
     expect(reference.parts[0]?.bpRestored).toBeCloseTo(2, 10); // 10% of 20
@@ -274,7 +275,7 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
 
   it("stops exactly at full health rather than overshooting", () => {
     // integrity 0.95 leaves room for 1 BP; VIT 25 offers 16.
-    const outcome = resolveRecovery(baseInput({ anatomy: singleTorso(0.95), vit: 25 }));
+    const outcome = resolveRecovery(baseInput({ anatomy: singleTorso(0.95), vitality: 25 }));
 
     expect(outcome.parts[0]?.bpRestored).toBeCloseTo(1, 10);
     expect(outcome.parts[0]?.integrityAfter).toBe(1);
@@ -298,5 +299,25 @@ describe("resolveRecovery — VIT scaling and per-BodyPart processing", () => {
 
     expect(atCon10.parts[0]?.integrityAfter).toBeCloseTo(0.6, 10);
     expect(atCon12.parts[0]?.integrityAfter).toBeCloseTo(0.6, 10);
+  });
+
+  /*
+   * Recovery reads the current manifestation and writes the persistent
+   * identity — see resolution.ts's file header. The returned `continuity` is
+   * what the caller stores back onto Body.continuity, so it has to actually
+   * carry the healed value forward, not just the returned Anatomy snapshot.
+   */
+  it("writes the healed integrity onto the returned continuity state", () => {
+    const torsoKey = continuityKey("torso-1");
+
+    const outcome = resolveRecovery(baseInput({ anatomy: singleTorso(0.5) }));
+
+    expect(continuityIntegrity(outcome.continuity, torsoKey)).toBeCloseTo(
+      outcome.parts[0]!.integrityAfter,
+      10,
+    );
+    expect(continuityIntegrity(outcome.continuity, torsoKey)).toBeGreaterThan(
+      0.5,
+    );
   });
 });

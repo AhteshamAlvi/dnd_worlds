@@ -410,10 +410,10 @@ export interface BodyPartAttachment {
  *   result from ever destroying a limb, and what stops a later Maximum BP
  *   increase from resurrecting one.
  *
- *   There is deliberately no `recoveryProgress` companion any more. Absolute
- *   damage needed one because BP was whole-numbered and a recovery tick could
- *   restore less than a whole point, which had to be banked somewhere.
- *   Integrity is continuous, so the remainder already has somewhere to live.
+ *   There is deliberately no separate banked-progress companion field. A
+ *   whole-numbered BP model needs one because a recovery tick can restore
+ *   less than a whole point; continuous integrity has nowhere for a leftover
+ *   fraction to go missing to, so there is nothing left to bank.
  */
 export interface BodyPart {
   readonly id: BodyPartId;

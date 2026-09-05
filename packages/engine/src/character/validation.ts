@@ -45,7 +45,7 @@ import {
   type ConditionValidationIssue,
 } from "./status/conditions";
 
-import type { InjuryValidationIssue } from "./status/injuries";
+import type { InjuryValidationIssue } from "./foundation/body/injuries";
 
 import type { StagedEntryValidationIssue } from "./status/stage";
 
@@ -66,17 +66,17 @@ import { assessStature } from "./foundation/body/stature/resolution";
 import { checkStatureJustified } from "./foundation/body/stature/justification";
 
 import {
-  findRecoveryValidationIssues,
-  type RecoveryValidationIssue,
-} from "./mechanics/recovery/validation";
+  findBodyInjuryValidationIssues,
+  type BodyInjuryValidationIssue,
+} from "./foundation/body/injuries";
 
 import type { Character } from "./types";
 
 // Everything a character can get wrong by referencing an authored catalog.
 //
-// RecoveryValidationIssue already covers Injuries end to end — both the
-// intrinsic checks status/injuries.ts owns and the Body-aware location
-// checks mechanics/recovery/validation.ts adds — so this union does not list
+// BodyInjuryValidationIssue already covers Injuries end to end — both the
+// intrinsic checks foundation/body/injuries/validation.ts owns and the
+// Body-aware location checks it adds — so this union does not list
 // InjuryValidationIssue separately; that would report the same intrinsic
 // problem twice.
 type CharacterReferenceIssue =
@@ -85,7 +85,7 @@ type CharacterReferenceIssue =
   | TraitValidationIssue
   | CapabilityValidationIssue
   | ConditionValidationIssue
-  | RecoveryValidationIssue
+  | BodyInjuryValidationIssue
   | ItemValidationIssue;
 
 /*
@@ -419,7 +419,7 @@ function findCharacterReferenceIssues(
      * sheet would reject an Injury on anatomy the character demonstrably has,
      * and accept one on anatomy an Effect replaced out from under it.
      */
-    ...findRecoveryValidationIssues(
+    ...findBodyInjuryValidationIssues(
       resolved.body.anatomy,
       resolved.knownContinuityKeys,
       resolved.bodyInput.definitions,

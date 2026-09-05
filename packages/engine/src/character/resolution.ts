@@ -58,6 +58,9 @@ import type {
   DerivedAttributes,
 } from "./foundation/attributes/derived/types";
 
+import { resolveActionCapacity } from "./foundation/actions/resolution";
+import type { ResolvedActionCapacity } from "./foundation/actions/types";
+
 import {
   collectSpeciesAncestry,
   getSpeciesDefinition,
@@ -215,6 +218,13 @@ export interface ResolvedCharacter {
     Record<DerivedAttributeName, ResolvedScore>
   >;
 
+  /**
+   * The character's resolved normal-Action capacities — Actions per Round,
+   * Turn, and Reaction. Derived from Combat Ability and applicable
+   * Action-capacity Effects; see foundation/actions/.
+   */
+  readonly actionCapacity: ResolvedActionCapacity;
+
   readonly traits: ResolvedTraits;
   readonly capabilities: ResolvedCapabilities;
 
@@ -237,8 +247,8 @@ export interface ResolvedCharacter {
   /*
    * Every anatomical identity this body knows, whether or not the current form
    * expresses it. What Injury VALIDITY is judged against — see
-   * mechanics/recovery/validation.ts for why that is a different question from
-   * whether an Injury currently applies.
+   * foundation/body/injuries/validation.ts for why that is a different
+   * question from whether an Injury currently applies.
    */
   readonly knownContinuityKeys: ReadonlySet<ContinuityKey>;
 
@@ -420,6 +430,7 @@ function characterTrace(
   character: Character,
   bodyRoot: TraceNode,
   resolved: boolean,
+  extraChildren: readonly TraceNode[] = [],
 ): EngineTrace {
   return {
     root: createTraceNode({
@@ -430,7 +441,7 @@ function characterTrace(
         name: { value: character.details.name },
       },
       output: resolved,
-      children: [bodyRoot],
+      children: [bodyRoot, ...extraChildren],
     }),
   };
 }
@@ -745,6 +756,15 @@ export function resolveCharacter(
    */
   const derivedAttributes = resolveDerivedAttributes(stats);
 
+  /*
+   * Resolved after Derived Attributes because Round Action capacity is
+   * derived from Combat Ability, which Derived Attributes just produced.
+   */
+  const actionCapacity = resolveActionCapacity(
+    derivedAttributes.combatAbility,
+    resolved.actionCapacity,
+  );
+
   const movement = resolveMovement(
     (stats.str + stats.agi) / 2,
     resolvedBody.locomotion.fraction,
@@ -779,6 +799,7 @@ export function resolveCharacter(
 
     derivedAttributes,
     derivedScores: resolveDerivedScores(derivedAttributes),
+    actionCapacity,
 
     traits,
     capabilities,
@@ -802,7 +823,9 @@ export function resolveCharacter(
   return {
     success: true,
     payload,
-    trace: characterTrace(character, body.trace.root, true),
+    trace: characterTrace(character, body.trace.root, true, [
+      actionCapacity.trace,
+    ]),
     warnings: body.warnings,
   };
 }

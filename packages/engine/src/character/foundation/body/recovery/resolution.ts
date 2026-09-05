@@ -4,8 +4,8 @@
  * fully healed.
  *
  * Mirrors foundation/body/damage.ts's relationship to the rest of Body: this
- * is the seam between Body and Status, and it is the only file in the engine
- * that is allowed to know about both a BodyPart's recoveryProgress and an
+ * is the seam between Body and Injuries, and it is the only file in the
+ * engine that is allowed to know about both a BodyPart's integrity and an
  * Injury's treatment state at the same time.
  *
  * Pipeline, per Recovery pass:
@@ -30,52 +30,42 @@
  *
  * A treatment-required Injury with no recorded treatmentStatus is treated as
  * untreated for cap purposes — the same conservative default
- * status/resolution.ts uses for its Effects, and the state every
+ * injuries/resolution.ts uses for its Effects, and the state every
  * treatment-required Injury starts in.
  */
 
 import {
   toDays,
-} from "../../../time/duration";
-import type {
-  GameDuration,
-} from "../../../time/types";
+} from "../../../../time/duration";
 
 import {
   applyBodyPartRecovery,
-} from "../../foundation/body/body-points/recovery";
-import { setContinuityIntegrity } from "../../foundation/body/continuity";
-import type { ContinuityStates } from "../../foundation/body/continuity";
-import type { ContinuityKey } from "../../foundation/body/anatomy/types";
+} from "../body-points/recovery";
+import { setContinuityIntegrity } from "../continuity";
+import type { ContinuityKey } from "../anatomy/types";
 import {
   resolveBodyPoints,
-} from "../../foundation/body/body-points/resolution";
-import type {
-  BodyPointModifier,
-  ResolvedBodyPoints,
-} from "../../foundation/body/body-points/types";
+} from "../body-points/resolution";
 import type {
   Anatomy,
   BodyPart,
-  BodyPartDefinition,
   BodyPartId,
-} from "../../foundation/body/anatomy/types";
-import type {
-  Body,
-} from "../../foundation/body/types";
-import type { BodyMorphology } from "../../foundation/body/types";
+} from "../anatomy/types";
 
 import {
   getInjuryDefinition,
-  type CharacterInjury,
-} from "../../status/injuries";
+} from "../injuries/definitions";
+import type {
+  CharacterInjury,
+} from "../injuries/types";
 
 import type {
   ActiveRecoveryCap,
   BodyPartRecoveryCeiling,
   BodyPartRecoveryOutcome,
-  InjuryOverlapFlag,
   RecoveredInjuryRemoval,
+  ResolveRecoveryInput,
+  ResolveRecoveryOutcome,
 } from "./types";
 
 
@@ -101,6 +91,9 @@ import type {
  * reads its own attribute against its own reference with its own doubling
  * interval, chosen for what that mechanic is calibrated against. Durability
  * and healing rate are different questions and are allowed different answers.
+ *
+ * Not touched by this ticket — a later balance-review item, not mixed into
+ * this structural relocation.
  */
 /* One of four independent baseline-10 anchors; see
  * attributes/resolution.ts's STANDARD_MODIFIER_REFERENCE_SCORE. */
@@ -116,12 +109,12 @@ export const REFERENCE_DAILY_RECOVERY_FRACTION = 0.10;
  *
  * 0.10 × 2 ^ ((VIT - 10) / 5)
  */
-export function deriveDailyRecoveryFraction(vit: number): number {
+export function deriveDailyRecoveryFraction(vitality: number): number {
   return (
     REFERENCE_DAILY_RECOVERY_FRACTION *
     Math.pow(
       2,
-      (vit - VIT_RECOVERY_REFERENCE) / VIT_RECOVERY_DOUBLING_INTERVAL,
+      (vitality - VIT_RECOVERY_REFERENCE) / VIT_RECOVERY_DOUBLING_INTERVAL,
     )
   );
 }
@@ -198,60 +191,13 @@ export function resolveBodyPartRecoveryCeiling(
 /* Recovery pass                                                             */
 /* -------------------------------------------------------------------------- */
 
-export interface ResolveRecoveryInput {
-  /** The current manifestation — what is there to heal. */
-  readonly anatomy: Anatomy;
-
-  /** The persistent state healing is recorded against. */
-  readonly continuity: ContinuityStates;
-
-  readonly constitution: number;
-
-  readonly bodyPartDefinitions: readonly BodyPartDefinition[];
-  readonly bodyPointModifiers?: readonly BodyPointModifier[];
-
-  /*
-   * The resolved physical context Body Points need, supplied rather than
-   * derived — same reason and same shape as body/damage.ts. Body owns Character
-   * Scale and the character's own morphology; Species and Age own the rest, and
-   * Body must never ask what Species a character is.
-   */
-  readonly morphologyByPartId: Readonly<Record<BodyPartId, BodyMorphology>>;
-  readonly effectiveScale: number;
-
-  readonly injuries: readonly CharacterInjury[];
-
-  readonly elapsed: GameDuration;
-  readonly vit: number;
-}
-
-export interface ResolveRecoveryOutcome {
-  /*
-   * New persistent state — the caller stores this back onto Body.continuity.
-   *
-   * Recovery reads a manifestation and writes an identity, so a limb that
-   * heals stays healed through regeneration and through a change of form.
-   */
-  readonly continuity: ContinuityStates;
-
-  /** The healed anatomy, for a caller that wants to show it. */
-  readonly anatomy: Anatomy;
-
-  readonly parts: readonly BodyPartRecoveryOutcome[];
-
-  // The caller removes these from character.injuries; see the file header.
-  readonly removedInjuries: readonly RecoveredInjuryRemoval[];
-
-  readonly bodyPointsAfterRecovery: ResolvedBodyPoints;
-}
-
 /*
  * Runs one Recovery pass over a character's damaged Anatomy.
  *
- * This function assumes its inputs have already passed validation (see
- * validation.ts) — it does not itself check that Injury locations exist or
- * that treatment state matches each Injury's definition, matching
- * body-points/resolution.ts's own "assumes valid input" convention.
+ * This function assumes its inputs have already passed validation — it does
+ * not itself check that Injury locations exist or that treatment state
+ * matches each Injury's definition, matching body-points/resolution.ts's own
+ * "assumes valid input" convention.
  */
 export function resolveRecovery(
   input: ResolveRecoveryInput,
@@ -275,7 +221,7 @@ export function resolveRecovery(
     bodyPoints.parts.map((part) => [part.partId, part.maximumBP]),
   );
 
-  const dailyFraction = deriveDailyRecoveryFraction(input.vit);
+  const dailyFraction = deriveDailyRecoveryFraction(input.vitality);
   const elapsedDays = toDays(input.elapsed);
 
   const injuriesByContinuity = groupInjuriesByContinuity(input.injuries);
@@ -372,51 +318,4 @@ export function resolveRecovery(
     removedInjuries,
     bodyPointsAfterRecovery,
   };
-}
-
-
-/* -------------------------------------------------------------------------- */
-/* Overlapping Injuries                                                      */
-/* -------------------------------------------------------------------------- */
-
-/*
- * Detects a new Injury landing on a BodyPart that already carries one.
- *
- * This never blocks recording the new Injury — it only surfaces a decision
- * opportunity, defaulting to "preserve" the BodyPart's existing
- * recoveryProgress (see decisions/log.ts's
- * "injury.overlap.recovery-progress-default" entry for why). One flag is
- * produced per (already-carried Injury, shared BodyPart) pair; a location
- * spanning several BodyParts, or several prior Injuries on the same part,
- * can therefore produce more than one flag.
- */
-export function detectInjuryOverlap(
-  anatomy: Anatomy,
-  existingInjuries: readonly CharacterInjury[],
-  newInjury: CharacterInjury,
-): readonly InjuryOverlapFlag[] {
-  const partsByContinuity = new Map(
-    anatomy.parts.map((part) => [part.continuityKey, part]),
-  );
-
-  const flags: InjuryOverlapFlag[] = [];
-
-  for (const bodyPartId of newInjury.location.continuityKeys) {
-    for (const existing of existingInjuries) {
-      if (existing.id === newInjury.id) continue;
-      if (!existing.location.continuityKeys.includes(bodyPartId)) continue;
-
-      flags.push({
-        bodyPartId,
-        existingCharacterInjuryId: existing.id,
-        newCharacterInjuryId: newInjury.id,
-        integrityAtOverlap:
-          partsByContinuity.get(bodyPartId)?.integrity ?? 1,
-        recommendedDecision: "preserve",
-        decisionId: "injury.overlap.recovery-progress-default",
-      });
-    }
-  }
-
-  return flags;
 }

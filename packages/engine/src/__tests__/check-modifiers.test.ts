@@ -14,23 +14,28 @@
  *   Stored AGI 17 + Flexible (+2 AGI)  -> Base/Resolved AGI 19
  *   AGI standard modifier              -> +4
  *   Contort (+3 to applicable AGI)     -> final check modifier +7
+ *
+ * Check-modifier resolution itself lives in the top-level checks/ module —
+ * character/rules/resolution.ts only collects the sourced declarations (see
+ * ResolvedRuleEffects.checkModifiers) using the canonical
+ * CheckModifierContribution shape, so an authored modifier and the check it
+ * eventually applies to are always talking about the same thing.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
+import { resolveRuleEffects } from "../character/rules/resolution";
+import { findEffectValidationIssues } from "../character/rules/validation";
 import {
   collectApplicableCheckModifiers,
   createCheckModifierTraceNode,
+  isSameCheckScope,
+  resolveCheck,
   resolveCheckModifier,
-  resolveRuleEffects,
-  type SourcedCheckModifier,
-} from "../character/rules/resolution";
-import { findEffectValidationIssues } from "../character/rules/validation";
-import { isSameCheckScope } from "../checks/matching";
-import { resolveCheck } from "../checks";
-import type { CheckScope } from "../character/rules/effects";
+} from "../checks";
+import type { CheckModifierContribution } from "../checks";
 
 import { validateCharacter } from "../character/validation";
 
@@ -104,14 +109,25 @@ describe("scope matching", () => {
 });
 
 describe("collecting and resolving", () => {
-  const modifiers: readonly SourcedCheckModifier[] = [
-    { source: { type: "skill", id: "contort" }, check: AGI_CHECK, amount: 3 },
+  const modifiers: readonly CheckModifierContribution[] = [
+    {
+      source: { type: "skill", id: "contort" },
+      scope: AGI_CHECK,
+      amount: 3,
+      channel: "persistent",
+    },
     {
       source: { type: "technique", id: "tumbling" },
-      check: ACROBATICS_CHECK,
+      scope: ACROBATICS_CHECK,
       amount: 2,
+      channel: "persistent",
     },
-    { source: { type: "item", id: "grease" }, check: AGI_CHECK, amount: 1 },
+    {
+      source: { type: "item", id: "grease" },
+      scope: AGI_CHECK,
+      amount: 1,
+      channel: "persistent",
+    },
   ];
 
   it("collects only the modifiers matching the scope", () => {
@@ -122,64 +138,86 @@ describe("collecting and resolving", () => {
     ).toEqual(["contort", "grease"]);
   });
 
-  it("sums the standard modifier with every applicable one", () => {
-    const resolution = resolveCheckModifier(4, modifiers, AGI_CHECK);
+  it("sums the base modifier with every applicable one", () => {
+    const resolution = resolveCheckModifier(
+      [{ id: "standard", amount: 4 }],
+      modifiers,
+      AGI_CHECK,
+    );
 
-    expect(resolution.standardModifier).toBe(4);
+    expect(resolution.baseModifierTotal).toBe(4);
     expect(resolution.applicableModifiers).toHaveLength(2);
     expect(resolution.finalModifier).toBe(8); // 4 + 3 + 1
   });
 
-  it("returns the standard modifier alone when nothing applies", () => {
-    const resolution = resolveCheckModifier(4, modifiers, {
-      kind: "attribute",
-      attribute: "cha",
-    });
+  it("returns the base modifier alone when nothing applies", () => {
+    const resolution = resolveCheckModifier(
+      [{ id: "standard", amount: 4 }],
+      modifiers,
+      { kind: "attribute", attribute: "cha" },
+    );
 
     expect(resolution.applicableModifiers).toEqual([]);
     expect(resolution.finalModifier).toBe(4);
   });
 
   it("handles a negative situational modifier", () => {
-    const penalty: readonly SourcedCheckModifier[] = [
+    const penalty: readonly CheckModifierContribution[] = [
       {
         source: { type: "condition", id: "restrained" },
-        check: AGI_CHECK,
+        scope: AGI_CHECK,
         amount: -2,
+        channel: "persistent",
       },
     ];
 
-    expect(resolveCheckModifier(4, penalty, AGI_CHECK).finalModifier).toBe(2);
+    expect(
+      resolveCheckModifier(
+        [{ id: "standard", amount: 4 }],
+        penalty,
+        AGI_CHECK,
+      ).finalModifier,
+    ).toBe(2);
   });
 
   it("names every contributing source in its trace", () => {
     const node = createCheckModifierTraceNode(
-      resolveCheckModifier(4, modifiers, AGI_CHECK),
+      resolveCheckModifier([{ id: "standard", amount: 4 }], modifiers, AGI_CHECK),
     );
 
     expect(Object.keys(node.inputs)).toEqual([
-      "standard",
-      "skill:contort",
-      "item:grease",
+      "base.standard",
+      "persistent.skill:contort",
+      "persistent.item:grease",
     ]);
     expect(node.output).toBe(8);
   });
 
   it("keeps two contributions from one source distinct in its trace", () => {
     // A trace must never show a total its own inputs do not add up to.
-    const doubled: readonly SourcedCheckModifier[] = [
-      { source: { type: "skill", id: "contort" }, check: AGI_CHECK, amount: 3 },
-      { source: { type: "skill", id: "contort" }, check: AGI_CHECK, amount: 2 },
+    const doubled: readonly CheckModifierContribution[] = [
+      {
+        source: { type: "skill", id: "contort" },
+        scope: AGI_CHECK,
+        amount: 3,
+        channel: "persistent",
+      },
+      {
+        source: { type: "skill", id: "contort" },
+        scope: AGI_CHECK,
+        amount: 2,
+        channel: "persistent",
+      },
     ];
 
     const node = createCheckModifierTraceNode(
-      resolveCheckModifier(4, doubled, AGI_CHECK),
+      resolveCheckModifier([{ id: "standard", amount: 4 }], doubled, AGI_CHECK),
     );
 
     expect(Object.keys(node.inputs)).toEqual([
-      "standard",
-      "skill:contort",
-      "skill:contort (2)",
+      "base.standard",
+      "persistent.skill:contort",
+      "persistent.skill:contort (2)",
     ]);
     expect(node.output).toBe(9);
   });
@@ -195,7 +233,12 @@ describe("modifyCheck flows through effect resolution", () => {
     ]);
 
     expect(resolved.checkModifiers).toEqual([
-      { source: { type: "skill", id: "contort" }, check: AGI_CHECK, amount: 3 },
+      {
+        source: { type: "skill", id: "contort" },
+        scope: AGI_CHECK,
+        amount: 3,
+        channel: "persistent",
+      },
     ]);
   });
 
@@ -232,8 +275,9 @@ describe("modifyCheck flows through effect resolution", () => {
     expect(resolved.effects.checkModifiers).toEqual([
       {
         source: { type: "trait", id: "keen-eyes" },
-        check: { kind: "derivedAttribute", derivedAttribute: "detection" },
+        scope: { kind: "derivedAttribute", derivedAttribute: "detection" },
         amount: 4,
+        channel: "persistent",
       },
     ]);
   });
@@ -246,7 +290,12 @@ describe("modifyCheck flows through effect resolution", () => {
     );
 
     expect(resolved.effects.checkModifiers).toEqual([
-      { source: { type: "skill", id: "contort" }, check: AGI_CHECK, amount: 3 },
+      {
+        source: { type: "skill", id: "contort" },
+        scope: AGI_CHECK,
+        amount: 3,
+        channel: "persistent",
+      },
     ]);
   });
 });
@@ -320,7 +369,7 @@ describe("the ticket's worked example, end to end", () => {
 
     // The check: +4 from the score, +3 from Contort.
     const check = resolveCheckModifier(
-      resolved.attributeScores.agi.standardModifier,
+      [{ id: "standard", amount: resolved.attributeScores.agi.standardModifier }],
       resolved.effects.checkModifiers,
       AGI_CHECK,
     );
@@ -354,7 +403,12 @@ describe("the ticket's worked example, end to end", () => {
     });
 
     const check = resolveCheckModifier(
-      resolved.derivedScores.acrobatics.standardModifier,
+      [
+        {
+          id: "standard",
+          amount: resolved.derivedScores.acrobatics.standardModifier,
+        },
+      ],
       resolved.effects.checkModifiers,
       ACROBATICS_CHECK,
     );
@@ -420,11 +474,12 @@ describe("validation", () => {
 
 describe("authored modifiers reach the gameplay check resolver", () => {
   /*
-   * The gap this closes. character/rules/ and the check module each had their
-   * own CheckScope and their own modifier matcher, so a Trait's "+3 to
-   * applicable AGI checks" could not be handed to the thing that resolves an
-   * AGI check. One vocabulary, in the top-level checks/ module, is what makes the
-   * two halves the same conversation.
+   * The gap this closes. character/rules/ used to keep its own copy of check
+   * modifier resolution built on an incompatible structure, so a Trait's "+3
+   * to applicable AGI checks" needed a translation layer before it could be
+   * handed to the thing that resolves an AGI check. Now checkModifiers is
+   * already in the top-level checks/ module's own CheckModifierContribution
+   * shape — no translation, the authored modifier IS a check contribution.
    */
   afterEach(() => {
     clearCustomDefinitions();
@@ -444,14 +499,7 @@ describe("authored modifiers reach the gameplay check resolver", () => {
       scope: { kind: "attribute", attribute: "agi" },
       dice: { advantage: 0, rolls: [11] },
       baseContributions: [{ id: "standard", amount: 4 }],
-
-      /* No translation layer: the authored modifier IS a check contribution. */
-      modifiers: resolved.checkModifiers.map((modifier) => ({
-        source: modifier.source,
-        scope: modifier.check,
-        amount: modifier.amount,
-        channel: "persistent" as const,
-      })),
+      modifiers: resolved.checkModifiers,
     });
 
     // 11 rolled + 4 standard + 3 from Contort.

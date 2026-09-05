@@ -30,6 +30,10 @@
 
 import { isValidCheckScopeSelector } from "../../checks/validation";
 import type { CheckScopeSelector } from "../../checks/scopes";
+import {
+  ACTION_CAPACITY_KINDS,
+  type ActionCapacityKind,
+} from "../foundation/actions/types";
 import type { Effect } from "./effects";
 import type { Requirement } from "./requirements";
 
@@ -56,6 +60,7 @@ export const MAX_REQUIREMENT_DEPTH = 32;
 export type RuleValidationIssue =
   | InvalidEffectAmountIssue
   | InvalidCheckScopeIssue
+  | InvalidActionCapacityKindIssue
   | MissingEffectReferenceIssue
   | InvalidRequirementNumberIssue
   | InvalidRequirementMasteryIssue
@@ -116,8 +121,24 @@ export interface InvalidEffectAmountIssue {
   readonly effectType:
     | "modifyBaseAttribute"
     | "modifyResolvedAttribute"
-    | "modifyCheck";
+    | "modifyCheck"
+    | "modifyActionCapacity";
   readonly amount: number;
+}
+
+
+/**
+ * A modifyActionCapacity Effect naming a capacity kind that is not "round",
+ * "turn", or "reaction".
+ *
+ * The type system already closes this off for hand-authored TypeScript
+ * content, but homebrew or machine-generated JSON can still cross the engine
+ * boundary with a typo'd kind.
+ */
+export interface InvalidActionCapacityKindIssue {
+  readonly type: "invalid-action-capacity-kind";
+  readonly path: string;
+  readonly kind: unknown;
 }
 
 
@@ -244,6 +265,16 @@ function isPositiveInteger(
 }
 
 
+function isKnownActionCapacityKind(
+  value: unknown,
+): value is ActionCapacityKind {
+  return (
+    typeof value === "string" &&
+    (ACTION_CAPACITY_KINDS as readonly string[]).includes(value)
+  );
+}
+
+
 /* -------------------------------------------------------------------------- */
 /* Effect validation                                                          */
 /* -------------------------------------------------------------------------- */
@@ -302,6 +333,28 @@ export function findEffectValidationIssues(
           type: "invalid-check-scope",
           path: `${path}.check`,
           kind: checkKind,
+        });
+      }
+
+      break;
+    }
+
+
+    case "modifyActionCapacity": {
+      if (!isFiniteNumber(effect.amount)) {
+        issues.push({
+          type: "invalid-effect-amount",
+          path: `${path}.amount`,
+          effectType: effect.type,
+          amount: effect.amount,
+        });
+      }
+
+      if (!isKnownActionCapacityKind(effect.capacity)) {
+        issues.push({
+          type: "invalid-action-capacity-kind",
+          path: `${path}.capacity`,
+          kind: effect.capacity,
         });
       }
 

@@ -35,7 +35,7 @@ import {
   resolveMovementRateMps,
 } from "../character/foundation/attributes/speed";
 import { resolveDerivedAttributes } from "../character/foundation/attributes/derived/resolution";
-import { deriveBaseRoundActionCapacity } from "../character/mechanics/actions/resolution";
+import { deriveBaseRoundActionCapacity } from "../character/foundation/actions/resolution";
 import { COMBAT_ROUND_DURATION_SECONDS } from "../gameplay/combat/round";
 import type { Anatomy } from "../character/foundation/body/anatomy/types";
 

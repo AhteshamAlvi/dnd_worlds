@@ -39,6 +39,10 @@ import type {
   RuleSourceRef,
 } from "../../rules/resolution";
 
+import type {
+  TraceNode,
+} from "../../../infrastructure/trace";
+
 
 /* -------------------------------------------------------------------------- */
 /* Capacity kinds                                                             */
@@ -188,4 +192,11 @@ export interface ResolvedActionCapacity {
    * Combat.
    */
   readonly capacity: ActionCapacity;
+
+  /**
+   * Explains Combat Ability, every base capacity, every contribution, and
+   * every final capacity, so a sheet can show why a character has the
+   * Actions it has.
+   */
+  readonly trace: TraceNode;
 }

@@ -20,11 +20,12 @@
  *   Severity still is not a multiplier: what stacking does to the numbers is
  *   left to the content itself.
  *
- * - an Injury has no expiry or stage track at all (see status/injuries.ts's
- *   own header for why) — every Injury on the character is active until
- *   something removes it. What varies instead is treatment state: a
- *   treatment-required Injury adds its untreated/treated Effects on top of
- *   its always-on ones, per InjuryDefinition.treatmentEffects.
+ * - an Injury has no expiry or stage track at all (see
+ *   foundation/body/injuries/types.ts's own header for why) — every Injury
+ *   on the character is active until something removes it. What varies
+ *   instead is treatment state, which foundation/body/injuries/resolution.ts
+ *   owns: a treatment-required Injury adds its untreated/treated Effects on
+ *   top of its always-on ones, per InjuryDefinition.treatmentEffects.
  */
 
 import {
@@ -45,9 +46,11 @@ import {
 } from "./conditions";
 
 import {
-  getInjuryDefinition,
-  type CharacterInjury,
-} from "./injuries";
+  collectInjuryEffectSources,
+} from "../foundation/body/injuries/resolution";
+import type {
+  CharacterInjury,
+} from "../foundation/body/injuries/types";
 
 /**
  * The Effect sources contributed by a character's active Conditions.
@@ -80,57 +83,6 @@ export function collectConditionEffectSources(
 
     sources.push({
       source: { type: "condition", id: condition.conditionId },
-      effects,
-      ...sourceContributions(definition),
-    });
-  }
-
-  return sources;
-}
-
-/**
- * The Effect sources contributed by a character's current injuries.
- *
- * Every listed Injury is active — status/injuries.ts has no expiry field, so
- * "on the character" is "in force" — but a treatment-required Injury adds
- * its untreated or treated Effects on top of whatever it always contributes:
- *
- *   normal effects
- *   + untreated effects, while treatmentStatus is "untreated"
- *   + treated effects, while treatmentStatus is "treated"
- *
- * A treatment-required Injury with no treatmentStatus recorded (invalid
- * persistent state — see findInjuryValidationIssues) is treated as
- * untreated: that is the state every treatment-required Injury starts in,
- * and it is the more conservative reading for something that has not been
- * confirmed treated.
- *
- * An Injury that does not require treatment ignores treatmentEffects
- * entirely and contributes only its normal effects, per
- * InjuryDefinition.treatmentEffects's own doc comment.
- */
-export function collectInjuryEffectSources(
-  injuries: readonly CharacterInjury[] = [],
-): readonly RuleEffectSource[] {
-  const sources: RuleEffectSource[] = [];
-
-  for (const injury of injuries) {
-    const definition = getInjuryDefinition(injury.injuryId);
-
-    if (definition === undefined) continue;
-
-    const treatmentEffects = definition.recovery.treatmentRequired
-      ? (injury.treatmentStatus === "treated"
-          ? definition.treatmentEffects?.treated
-          : definition.treatmentEffects?.untreated) ?? []
-      : [];
-
-    const effects = [...(definition.effects ?? []), ...treatmentEffects];
-
-    if (contributesNothing(definition, effects)) continue;
-
-    sources.push({
-      source: { type: "injury", id: injury.injuryId },
       effects,
       ...sourceContributions(definition),
     });

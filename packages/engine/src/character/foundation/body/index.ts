@@ -532,6 +532,71 @@ export {
 } from "./critical-points/validation";
 
 /* -------------------------------------------------------------------------- */
+/* Injuries                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type {
+  CharacterInjury,
+  CharacterInjuryId,
+  InjuryApplicability,
+  InjuryDefinition,
+  InjuryId,
+  InjuryLocation,
+  InjuryRecovery,
+  InjuryTreatmentStatus,
+} from "./injuries/types";
+
+export {
+  INJURY_DEFINITIONS,
+  injuryRegistry,
+  getInjuryDefinition,
+  isKnownInjuryId,
+} from "./injuries/definitions";
+export type { KnownInjuryId } from "./injuries/definitions";
+
+export {
+  collectInjuryEffectSources,
+  resolveInjuryManifestation,
+} from "./injuries/resolution";
+
+export type {
+  BodyInjuryValidationIssue,
+  InjuryLocationValidationIssue,
+  InjuryValidationIssue,
+} from "./injuries/validation";
+export {
+  findInjuryCatalogIssues,
+  findInjuryLocationApplicabilityIssues,
+  findInjuryLocationIssues,
+  findInjuryValidationIssues,
+  findBodyInjuryValidationIssues,
+} from "./injuries/validation";
+
+
+/* -------------------------------------------------------------------------- */
+/* Recovery                                                                   */
+/* -------------------------------------------------------------------------- */
+
+export type {
+  ActiveRecoveryCap,
+  BodyPartRecoveryCeiling,
+  BodyPartRecoveryOutcome,
+  RecoveredInjuryRemoval,
+  ResolveRecoveryInput,
+  ResolveRecoveryOutcome,
+} from "./recovery/types";
+
+export {
+  VIT_RECOVERY_REFERENCE,
+  VIT_RECOVERY_DOUBLING_INTERVAL,
+  REFERENCE_DAILY_RECOVERY_FRACTION,
+  deriveDailyRecoveryFraction,
+  resolveBodyPartRecoveryCeiling,
+  resolveRecovery,
+} from "./recovery/resolution";
+
+
+/* -------------------------------------------------------------------------- */
 /* Accessibility, effectiveness and damage                                    */
 /* -------------------------------------------------------------------------- */
 

@@ -27,7 +27,7 @@
  * Technique, a sense-specific Trait such as Keen Eyes — are not score changes
  * at all. They are `modifyCheck` Effects scoped to a Derived Attribute (see
  * rules/effects.ts) and are applied at resolution time by
- * rules/resolution.ts's resolveCheckModifier, never folded into the stored
+ * checks/modifiers.ts's resolveCheckModifier, never folded into the stored
  * value here.
  */
 

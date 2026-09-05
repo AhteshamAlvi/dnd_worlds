@@ -71,7 +71,7 @@
  * + WIS) / 2), converted to a standard modifier the same way every other
  * score is — with Zetsu's Mastery-based value layered on top as a situational
  * modifier, the same shape a Trait's modifyCheck Effect produces. See
- * rules/resolution.ts's resolveCheckModifier for where the two are added.
+ * checks/modifiers.ts's resolveCheckModifier for where the two are added.
  *
  * The value is derived from Mastery rather than authored as an Effect, so it
  * is not currently wired through the Effect pipeline; a caller resolving an

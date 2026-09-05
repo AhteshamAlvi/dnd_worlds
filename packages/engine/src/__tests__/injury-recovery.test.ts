@@ -3,8 +3,14 @@
  * them, treated Injuries persisting until fully healed, no-treatment
  * Injuries, multiple caps and the order they clear in, caps never reducing
  * existing BP, Injury removal once every occupied BodyPart reaches Maximum
- * BP (single- and multi-BodyPart locations), direct removal by the host, and
- * the overlapping-Injury GM decision flag.
+ * BP (single- and multi-BodyPart locations), and direct removal by the host.
+ *
+ * A second Injury landing on a BodyPart that already carries one is not a
+ * special case any more — see foundation/body/recovery/resolution.ts's file
+ * header: the damage that produced it changes integrity through the damage
+ * system, and multiple Injuries may occupy the same identity with their
+ * active ceilings simply combining to the lowest one (covered under
+ * "multiple caps" below). There is no overlap decision left to flag.
  *
  * Plain natural recovery with no Injuries in play is covered separately in
  * body-recovery.test.ts.
@@ -13,6 +19,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
+import { getEngineDecision } from "../decisions/log";
 
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
@@ -23,14 +30,13 @@ import {
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { Body } from "../character/foundation/body/types";
 
-import type { CharacterInjury } from "../character/status/injuries";
+import type { CharacterInjury } from "../character/foundation/body/injuries";
 
 import {
-  detectInjuryOverlap,
   resolveBodyPartRecoveryCeiling,
   resolveRecovery,
-} from "../character/mechanics/recovery/resolution";
-import type { ResolveRecoveryInput } from "../character/mechanics/recovery/resolution";
+} from "../character/foundation/body/recovery/resolution";
+import type { ResolveRecoveryInput } from "../character/foundation/body/recovery/types";
 
 import { days } from "../time/duration";
 import { TEST_BODY_STATE, TEST_PART_PHYSICALS } from "./fixtures/body";
@@ -105,7 +111,7 @@ function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecove
     effectiveScale: 1,
     injuries: [],
     elapsed: days(1),
-    vit: 25, // 80% of Maximum BP/day — enough to slam into any cap in one pass
+    vitality: 25, // 80% of Maximum BP/day — enough to slam into any cap in one pass
     ...overrides,
   };
 }
@@ -192,7 +198,7 @@ describe("treatment clears the cap", () => {
     ];
 
     // A slow pass that does not fully heal the part this time.
-    const outcome = resolveRecovery(baseInput({ injuries, vit: 5 }));
+    const outcome = resolveRecovery(baseInput({ injuries, vitality: 5 }));
 
     expect(outcome.parts[0]?.integrityAfter).toBeLessThan(1);
     expect(outcome.removedInjuries).toEqual([]);
@@ -365,11 +371,11 @@ describe("Injury removal", () => {
       ],
     });
 
-    const partialOutcome = resolveRecovery(baseInput({ anatomy: body, injuries, vit: 10 }));
+    const partialOutcome = resolveRecovery(baseInput({ anatomy: body, injuries, vitality: 10 }));
     expect(partialOutcome.removedInjuries).toEqual([]);
 
     // Enough VIT to fully heal both parts in one pass.
-    const fullOutcome = resolveRecovery(baseInput({ anatomy: body, injuries, vit: 40 }));
+    const fullOutcome = resolveRecovery(baseInput({ anatomy: body, injuries, vitality: 40 }));
     expect(fullOutcome.removedInjuries).toEqual([
       { characterInjuryId: "injury-1", injuryId: "spinal-strain" },
     ]);
@@ -386,54 +392,37 @@ describe("Injury removal", () => {
   });
 });
 
-describe("overlapping Injuries", () => {
-  it("flags a new Injury landing on a BodyPart that already carries one, preserving progress by default", () => {
-    const anatomy: Anatomy = {
-      parts: [{ id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 0.85 }],
-    };
+describe("multiple Injuries on the same identity", () => {
+  it("combines active ceilings to the lowest, the same as any other multiple-cap case", () => {
+    registerTreatmentRequiredInjury("broken-rib", 0.3);
 
     const existing: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
+      {
+        id: "injury-1",
+        injuryId: "broken-rib",
+        location: { continuityKeys: [continuityKey("torso-1")] },
+        treatmentStatus: "untreated",
+      },
     ];
 
-    const newInjury: CharacterInjury = {
-      id: "injury-2",
-      injuryId: "broken-rib",
-      location: { continuityKeys: [continuityKey("torso-1")] },
-    };
+    // A second Injury lands on the same identity — no special-cased decision,
+    // just another active cap combining with the first by the ordinary rule.
+    registerTreatmentRequiredInjury("bruised-lung", 0.6);
 
-    const flags = detectInjuryOverlap(anatomy, existing, newInjury);
-
-    expect(flags).toEqual([
+    const both: readonly CharacterInjury[] = [
+      ...existing,
       {
-        bodyPartId: "torso-1",
-        existingCharacterInjuryId: "injury-1",
-        newCharacterInjuryId: "injury-2",
-        integrityAtOverlap: 0.85,
-        recommendedDecision: "preserve",
-        decisionId: "injury.overlap.recovery-progress-default",
+        id: "injury-2",
+        injuryId: "bruised-lung",
+        location: { continuityKeys: [continuityKey("torso-1")] },
+        treatmentStatus: "untreated",
       },
-    ]);
+    ];
+
+    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, both).ceiling).toBe(6);
   });
 
-  it("does not flag Injuries on different BodyParts", () => {
-    const anatomy: Anatomy = {
-      parts: [
-        { id: "torso-1", type: "torso", attachment: null, referenceFormId: "default", referenceSlotId: "torso-1", continuityKey: continuityKey("torso-1"), state: "active", integrity: 1.0 },
-        { id: "limb-1", type: "limb", attachment: null, referenceFormId: "default", referenceSlotId: "limb-1", continuityKey: continuityKey("limb-1"), state: "active", integrity: 1.0 },
-      ],
-    };
-
-    const existing: readonly CharacterInjury[] = [
-      { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
-    ];
-
-    const newInjury: CharacterInjury = {
-      id: "injury-2",
-      injuryId: "sprain",
-      location: { continuityKeys: [continuityKey("limb-1")] },
-    };
-
-    expect(detectInjuryOverlap(anatomy, existing, newInjury)).toEqual([]);
+  it("leaves no overlap-progress decision behind in the engine's decision log", () => {
+    expect(getEngineDecision("injury.overlap.recovery-progress-default")).toBeUndefined();
   });
 });

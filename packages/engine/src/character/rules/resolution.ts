@@ -82,20 +82,14 @@ import type { AttributeModifier } from "../foundation/attributes/modifiers";
 import type { AttributeLayers, Attributes } from "../foundation/attributes/types";
 import { resolveDerivedAttribute } from "../foundation/attributes/derived/resolution";
 
-import {
-  createTraceNode,
-  type TraceNode,
-} from "../../infrastructure/trace";
-
 import type {
   BodyAnatomyOperation,
   BodyMorphologyProperty,
-  CheckScope,
   Effect,
 } from "./effects";
-import { matchesCheckScope } from "../../checks/matching";
-import type { CheckScopeSelector } from "../../checks/scopes";
+import type { CheckModifierContribution } from "../../checks/types";
 import type { BodyPartSelector } from "../foundation/body/selectors";
+import type { ActionCapacityContribution } from "../foundation/actions/types";
 import type {
   StatureAllowance,
   StatureJustification,
@@ -168,21 +162,6 @@ export interface SourcedEffect {
  */
 export interface SourcedAttributeModifier extends AttributeModifier {
   readonly source: RuleSourceRef;
-}
-
-
-/**
- * A situational check modifier with provenance retained.
- *
- * Unlike SourcedAttributeModifier, this never reaches an Attribute. It sits
- * in the resolved character waiting for a check of the matching scope to be
- * resolved, and contributes nothing until one is — see resolveCheckModifier.
- */
-export interface SourcedCheckModifier {
-  readonly source: RuleSourceRef;
-  /* The set this modifier applies to; see ModifyCheckEffect.check. */
-  readonly check: CheckScopeSelector;
-  readonly amount: number;
 }
 
 
@@ -291,10 +270,26 @@ export interface ResolvedRuleEffects {
    * Situational modifiers awaiting an applicable check.
    *
    * Every one the character currently has, of every scope — filtering to the
-   * ones a particular check cares about is resolveCheckModifier's job, at
-   * the moment that check happens.
+   * ones a particular check cares about is checks/modifiers.ts's
+   * collectApplicableCheckModifiers's job, at the moment that check happens
+   * (or checks/modifiers.ts's resolveCheckModifier for a roll-free value).
+   *
+   * Uses the canonical top-level CheckModifierContribution shape rather than
+   * a second character-only structure, so an authored modifier and the check
+   * it eventually applies to are always talking about the same thing. Every
+   * character-authored modifier is a standing contribution, so it is always
+   * tagged "persistent" — the "invoked"/"contextual" channels exist for
+   * checks/'s own request-time callers.
    */
-  readonly checkModifiers: readonly SourcedCheckModifier[];
+  readonly checkModifiers: readonly CheckModifierContribution[];
+
+  /**
+   * Sourced contributions to the character's Action capacities — see
+   * foundation/actions/. Combining them into a final ActionCapacity is
+   * foundation/actions/resolution.ts's resolveActionCapacity, not this file's
+   * job: this layer only collects what applicable content declared.
+   */
+  readonly actionCapacity: readonly ActionCapacityContribution[];
 
   readonly traitGrants: readonly TraitGrant[];
   readonly skillGrants: readonly SkillGrant[];
@@ -352,7 +347,8 @@ export function resolveRuleEffects(
   const baseAttributeModifiers: SourcedAttributeModifier[] = [];
   const resolvedAttributeModifiers: SourcedAttributeModifier[] = [];
 
-  const checkModifiers: SourcedCheckModifier[] = [];
+  const checkModifiers: CheckModifierContribution[] = [];
+  const actionCapacity: ActionCapacityContribution[] = [];
 
   const statureJustifications: StatureJustification[] = [];
 
@@ -401,7 +397,16 @@ export function resolveRuleEffects(
       case "modifyCheck":
         checkModifiers.push({
           source,
-          check: effect.check,
+          scope: effect.check,
+          amount: effect.amount,
+          channel: "persistent",
+        });
+        break;
+
+      case "modifyActionCapacity":
+        actionCapacity.push({
+          source,
+          kind: effect.capacity,
           amount: effect.amount,
         });
         break;
@@ -517,6 +522,7 @@ export function resolveRuleEffects(
     resolvedAttributeModifiers,
 
     checkModifiers,
+    actionCapacity,
 
     traitGrants,
     skillGrants,
@@ -526,148 +532,6 @@ export function resolveRuleEffects(
 
     statureJustifications,
   };
-}
-
-
-/* -------------------------------------------------------------------------- */
-/* Check modifiers                                                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Whether two check scopes name the same thing.
- *
- * Structural rather than reference equality, because a scope authored in
- * content and a scope constructed by a mechanic resolving a check are always
- * different objects.
- */
-export function collectApplicableCheckModifiers(
-  checkModifiers: readonly SourcedCheckModifier[],
-  scope: CheckScope,
-): readonly SourcedCheckModifier[] {
-  return checkModifiers.filter((modifier) =>
-    matchesCheckScope(modifier.check, scope),
-  );
-}
-
-
-/**
- * The complete modifier for one check, and where each part of it came from.
- */
-export interface CheckModifierResolution {
-  readonly scope: CheckScope;
-
-  /** From the score being checked against — see deriveStandardModifier. */
-  readonly standardModifier: number;
-
-  readonly applicableModifiers: readonly SourcedCheckModifier[];
-
-  /** standardModifier plus every applicable situational modifier. */
-  readonly finalModifier: number;
-}
-
-
-/**
- * Resolve the final modifier for one check.
- *
- * This is the one place the standard modifier and situational modifiers are
- * added together. Detection, Investigation, a future Combat system, and any
- * ad-hoc GM call all arrive here rather than each summing modifiers their own
- * way — which is what keeps "+3 from Contort" meaning the same thing
- * everywhere it appears.
- *
- * The caller supplies the standard modifier rather than the score, because
- * whether a check reads an Attribute or a Derived Attribute is the caller's
- * business; by this point both are just a number from the same ladder.
- */
-export function resolveCheckModifier(
-  standardModifier: number,
-  checkModifiers: readonly SourcedCheckModifier[],
-  scope: CheckScope,
-): CheckModifierResolution {
-  const applicableModifiers = collectApplicableCheckModifiers(
-    checkModifiers,
-    scope,
-  );
-
-  const situationalTotal = applicableModifiers.reduce(
-    (total, modifier) => total + modifier.amount,
-    0,
-  );
-
-  return {
-    scope,
-    standardModifier,
-    applicableModifiers,
-    finalModifier: standardModifier + situationalTotal,
-  };
-}
-
-
-/**
- * A resolved check modifier as a trace node.
- *
- * Each contributing source becomes a named input, so a final +7 visibly
- * decomposes into the +4 the score was worth and the +3 a Skill supplied.
- */
-export function createCheckModifierTraceNode(
-  resolution: CheckModifierResolution,
-): TraceNode {
-  /*
-   * Every scope variant gets a label, because the union is open-ended in
-   * practice: a check can be sensory as well as attribute-shaped, and a trace
-   * that fell back to "[object Object]" for the new ones would be worse than
-   * useless exactly where the reasoning is least obvious.
-   */
-  const scope = resolution.scope;
-
-  const scopeLabel =
-    scope.kind === "attribute"
-      ? scope.attribute.toUpperCase()
-      : scope.kind === "derivedAttribute"
-        ? scope.derivedAttribute
-        : scope.kind === "investigation"
-          ? `investigation:${scope.subject}`
-          : scope.kind === "perception"
-            ? `perception:${scope.sense}/${scope.phenomenon}`
-            : `${scope.kind}:${scope.mode}/${scope.sense}`;
-
-  const inputs: Record<string, { value: number }> = {
-    standard: { value: resolution.standardModifier },
-  };
-
-  /*
-   * One source can contribute twice to the same check — two ranks of a Skill
-   * both granting a bonus — and a plain key would let the second silently
-   * replace the first, showing a total its own inputs do not produce. Same
-   * guard, and same reason, as createAttributeTraceNode.
-   */
-  const addInput = (key: string, amount: number): void => {
-    if (inputs[key] === undefined) {
-      inputs[key] = { value: amount };
-      return;
-    }
-
-    let suffix = 2;
-
-    while (inputs[`${key} (${suffix})`] !== undefined) suffix += 1;
-
-    inputs[`${key} (${suffix})`] = { value: amount };
-  };
-
-  for (const modifier of resolution.applicableModifiers) {
-    addInput(
-      `${modifier.source.type}:${modifier.source.id}`,
-      modifier.amount,
-    );
-  }
-
-  return createTraceNode({
-    id: `character.checks.${scopeLabel}.modifier`,
-    label: `Resolve ${scopeLabel} check modifier`,
-    formula: "final = standard modifier + applicable situational modifiers",
-    inputs,
-    output: resolution.finalModifier,
-  });
 }
 
 

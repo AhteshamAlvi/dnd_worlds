@@ -87,6 +87,7 @@ import type { AttributeKey } from "../foundation/attributes/types";
 import type {
   DerivedAttributeName,
 } from "../foundation/attributes/derived/types";
+import type { ActionCapacityKind } from "../foundation/actions/types";
 
 
 /**
@@ -205,6 +206,27 @@ export interface ModifyCheckEffect {
    * phenomenon and subject.
    */
   readonly check: CheckScopeSelector;
+  readonly amount: number;
+}
+
+
+/**
+ * Modifies one of the character's normal-Action capacities: Actions per
+ * Round, per Turn, or per Reaction.
+ *
+ * These are character capabilities (see foundation/actions/) rather than
+ * Combat's mutable remaining-Actions counters, so a Trait, Skill, Technique,
+ * piece of equipment, or Condition raising or lowering how many Actions a
+ * character can normally take uses this effect rather than reaching into
+ * Combat state.
+ *
+ * A `turn` contribution naturally propagates into the derived Reaction base
+ * before any `reaction` contribution is applied — see
+ * foundation/actions/resolution.ts's resolution order for why.
+ */
+export interface ModifyActionCapacityEffect {
+  readonly type: "modifyActionCapacity";
+  readonly capacity: ActionCapacityKind;
   readonly amount: number;
 }
 
@@ -442,6 +464,7 @@ export type Effect =
   | ModifyBaseAttributeEffect
   | ModifyResolvedAttributeEffect
   | ModifyCheckEffect
+  | ModifyActionCapacityEffect
   | GrantTraitEffect
   | GrantSkillEffect
   | GrantTechniqueEffect
@@ -458,6 +481,7 @@ export const EFFECT_TYPES = [
   "modifyBaseAttribute",
   "modifyResolvedAttribute",
   "modifyCheck",
+  "modifyActionCapacity",
   "grantTrait",
   "grantSkill",
   "grantTechnique",

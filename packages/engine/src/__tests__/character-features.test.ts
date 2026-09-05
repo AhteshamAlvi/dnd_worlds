@@ -40,7 +40,7 @@ import {
 import {
   findInjuryCatalogIssues,
   findInjuryValidationIssues,
-} from "../character/status/injuries";
+} from "../character/foundation/body/injuries";
 
 import {
   findItemCatalogIssues,

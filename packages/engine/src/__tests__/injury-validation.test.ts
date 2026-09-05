@@ -1,8 +1,8 @@
 /*
- * Tests Injury validation: the intrinsic checks status/injuries.ts owns
- * (treatment status matching a definition's recovery contract, recovery-cap
- * fraction sanity) and the Body-aware location checks
- * mechanics/recovery/validation.ts adds on top (BodyPart existence,
+ * Tests Injury validation: the intrinsic checks
+ * foundation/body/injuries/validation.ts owns (treatment status matching a
+ * definition's recovery contract, recovery-cap fraction sanity) and the
+ * Body-aware location checks it adds on top (BodyPart existence,
  * applicability, Special Point references).
  */
 
@@ -14,7 +14,7 @@ import {
   findInjuryCatalogIssues,
   findInjuryValidationIssues,
   type CharacterInjury,
-} from "../character/status/injuries";
+} from "../character/foundation/body/injuries";
 
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
@@ -22,9 +22,9 @@ import type { SpecialPointDefinition } from "../character/foundation/body/critic
 import { TEST_PART_PHYSICALS } from "./fixtures/body";
 
 import {
-  findRecoveryLocationIssues,
-  findRecoveryValidationIssues,
-} from "../character/mechanics/recovery/validation";
+  findInjuryLocationIssues,
+  findBodyInjuryValidationIssues,
+} from "../character/foundation/body/injuries";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -65,7 +65,7 @@ const ANATOMY: Anatomy = {
 /*
  * Every identity this test body knows. Validity is judged against what the
  * body HAS EVER had, not against what is currently manifested — see
- * mechanics/recovery/validation.ts.
+ * foundation/body/injuries/validation.ts.
  */
 const KNOWN_CONTINUITY = new Set(ANATOMY.parts.map((part) => part.continuityKey));
 
@@ -271,7 +271,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -295,7 +295,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -326,7 +326,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -357,7 +357,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -387,7 +387,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -422,7 +422,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -461,7 +461,7 @@ describe("Body-aware location validation", () => {
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -478,13 +478,13 @@ describe("Body-aware location validation", () => {
     ]);
   });
 
-  it("skips an unknown Injury — status/injuries.ts already reports that", () => {
+  it("skips an unknown Injury — findInjuryValidationIssues already reports that", () => {
     const injuries: readonly CharacterInjury[] = [
       { id: "injury-1", injuryId: "not-real", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
     expect(
-      findRecoveryLocationIssues(
+      findInjuryLocationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,
@@ -493,9 +493,50 @@ describe("Body-aware location validation", () => {
       ),
     ).toEqual([]);
   });
+
+  /*
+   * A known identity the current form does not express is DORMANT, not
+   * invalid — see types.ts's own header. Applicability is never judged
+   * against anatomy that is not there: a wing fracture is not wrong just
+   * because the current form is a Human with no wings.
+   */
+  it("does not report a dormant Injury as invalid, even against applicability it would otherwise fail", () => {
+    registerDefinition("injury", {
+      id: "wing-fracture",
+      name: "Wing Fracture",
+      description: "A test injury applicable only to wings.",
+      applicability: { bodyParts: { types: ["wing"] } },
+      recovery: { treatmentRequired: false },
+    });
+
+    // "wing-1" is a known identity (this character has had a Dragon form
+    // before) but the current form — ANATOMY — expresses no such part.
+    const knownWithDormantWing = new Set([
+      ...KNOWN_CONTINUITY,
+      continuityKey("wing-1"),
+    ]);
+
+    const injuries: readonly CharacterInjury[] = [
+      {
+        id: "injury-1",
+        injuryId: "wing-fracture",
+        location: { continuityKeys: [continuityKey("wing-1")] },
+      },
+    ];
+
+    expect(
+      findInjuryLocationIssues(
+        ANATOMY,
+        knownWithDormantWing,
+        BODY_PART_DEFINITIONS,
+        SPECIAL_POINT_DEFINITIONS,
+        injuries,
+      ),
+    ).toEqual([]);
+  });
 });
 
-describe("findRecoveryValidationIssues composes both layers without duplicating them", () => {
+describe("findBodyInjuryValidationIssues composes both layers without duplicating them", () => {
   it("reports both an intrinsic and a Body-aware issue for the same Injury", () => {
     registerDefinition("injury", {
       id: "broken-rib",
@@ -511,7 +552,7 @@ describe("findRecoveryValidationIssues composes both layers without duplicating 
       { id: "injury-1", injuryId: "broken-rib", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
-    const issues = findRecoveryValidationIssues(
+    const issues = findBodyInjuryValidationIssues(
       ANATOMY,
       KNOWN_CONTINUITY,
       BODY_PART_DEFINITIONS,
@@ -537,7 +578,7 @@ describe("findRecoveryValidationIssues composes both layers without duplicating 
 
   it("finds no issues for an empty Injury list", () => {
     expect(
-      findRecoveryValidationIssues(
+      findBodyInjuryValidationIssues(
         ANATOMY,
         KNOWN_CONTINUITY,
         BODY_PART_DEFINITIONS,

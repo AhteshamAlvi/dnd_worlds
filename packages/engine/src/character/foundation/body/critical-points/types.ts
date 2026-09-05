@@ -61,7 +61,7 @@ export type CriticalPointId = string;
 
 /*
  * Alias used by domains that talk about "the Special Point a location
- * concerns" (e.g. status/injuries.ts) rather than about point mechanics.
+ * concerns" (e.g. injuries/types.ts) rather than about point mechanics.
  * One id space, one registry.
  */
 export type SpecialPointDefinitionId = CriticalPointTypeId;

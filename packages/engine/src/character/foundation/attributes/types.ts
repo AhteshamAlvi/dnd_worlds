@@ -83,7 +83,7 @@ export interface AttributeLayers {
  *
  * Situational modifiers are deliberately absent. A Skill's "+3 to applicable
  * AGI checks" is not part of the character's AGI — it exists only for the
- * check it applies to, and is added by rules/resolution.ts's
+ * check it applies to, and is added by checks/modifiers.ts's
  * resolveCheckModifier at that moment.
  */
 export interface ResolvedScore {

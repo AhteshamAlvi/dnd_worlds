@@ -84,10 +84,14 @@ export {
   isSameCheckScope,
 } from "./matching";
 
+export type { CheckModifierResolution } from "./modifiers";
+
 export {
   collectApplicableCheckModifiers,
   sumCheckBaseContributions,
   sumCheckModifiers,
+  resolveCheckModifier,
+  createCheckModifierTraceNode,
 } from "./modifiers";
 
 export {

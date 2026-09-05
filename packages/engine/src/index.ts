@@ -355,6 +355,9 @@ export type {
   CheckScopeSelector,
   ModifyCheckEffect,
 
+  // A situational bonus to one of the character's normal-Action capacities.
+  ModifyActionCapacityEffect,
+
   GrantTraitEffect,
   GrantSkillEffect,
   GrantTechniqueEffect,
@@ -400,8 +403,6 @@ export type {
   RuleEffectSource,
   SourcedEffect,
   SourcedAttributeModifier,
-  SourcedCheckModifier,
-  CheckModifierResolution,
   TraitGrant,
   SkillGrant,
   TechniqueGrant,
@@ -416,16 +417,35 @@ export {
   resolveRuleEffects,
   meetsRequirement,
   meetsAllRequirements,
+} from "./character/rules/resolution";
 
-  /*
-   * The one place a standard modifier and the situational modifiers that
-   * apply to a check are added together. Every mechanic resolving a check
-   * comes through here rather than summing modifiers its own way.
-   */
+/*
+ * The universal d20 check vocabulary and resolution, including the one place
+ * a governing score and the situational modifiers that apply to a check are
+ * added together — either as part of an actual roll (resolveCheck) or, for a
+ * passive value, on their own (resolveCheckModifier). Character-authored
+ * checkModifiers (see ResolvedRuleEffects above) use this same
+ * CheckModifierContribution shape rather than a second structure, so an
+ * authored modifier and the check it eventually applies to are always
+ * talking about the same thing.
+ */
+export type {
+  CheckModifierResolution,
+} from "./checks";
+
+export {
   collectApplicableCheckModifiers,
   resolveCheckModifier,
   createCheckModifierTraceNode,
-} from "./character/rules/resolution";
+} from "./checks";
+
+export type {
+  CheckSourceRef,
+  CheckModifierChannel,
+  CheckModifierContribution,
+} from "./checks";
+
+export { CHECK_MODIFIER_CHANNELS } from "./checks";
 
 export type { RuleValidationIssue } from "./character/rules/validation";
 
@@ -437,6 +457,51 @@ export {
   findRequirementsValidationIssues,
   findRuleValidationIssues,
 } from "./character/rules/validation";
+
+/* ── Character: Action capacity ─────────────────────────────────────────── */
+
+/*
+ * Actions per Round/Turn/Reaction — a character capability derived from
+ * Combat Ability and applicable Action-capacity Effects, exposed on
+ * ResolvedCharacter.actionCapacity. Combat consumes these but keeps owning
+ * their runtime expenditure. See foundation/actions/.
+ */
+
+export type {
+  ActionCapacity,
+  ActionCapacityContribution,
+  ActionCapacityKind,
+  ResolvedActionCapacity,
+} from "./character/foundation/actions/types";
+
+export { ACTION_CAPACITY_KINDS } from "./character/foundation/actions/types";
+
+export {
+  BASE_TURN_ACTION_CAPACITY,
+  MAX_STAT_DERIVED_ROUND_ACTIONS,
+  MIN_REACTION_ACTION_CAPACITY,
+  MIN_TURN_ACTION_CAPACITY,
+  deriveBaseRoundActionCapacity,
+  resolveRoundActionCapacity,
+  deriveBaseTurnActionCapacity,
+  resolveTurnActionCapacity,
+  deriveBaseReactionActionCapacity,
+  resolveReactionActionCapacity,
+  createActionCapacityTraceNode,
+  resolveActionCapacity,
+} from "./character/foundation/actions/resolution";
+
+export type { ActionCapacityValidationIssue } from "./character/foundation/actions/validation";
+
+export {
+  findCombatAbilityActionIssues,
+  findActionCapacityContributionIssues,
+  findActionCapacityInputIssues,
+  findResolvedActionCapacityConsistencyIssues,
+  findResolvedActionCapacityValidationIssues,
+  isActionCapacityInputValid,
+  isResolvedActionCapacityValid,
+} from "./character/foundation/actions/validation";
 
 /* ── Character: capabilities ────────────────────────────────────────────── */
 
@@ -605,78 +670,20 @@ export {
   findConditionValidationIssues,
 } from "./character/status/conditions";
 
-export type {
-  CharacterInjury,
-  CharacterInjuryId,
-  InjuryApplicability,
-  InjuryDefinition,
-  InjuryId,
-  InjuryLocation,
-  InjuryRecovery,
-  InjuryTreatmentStatus,
-  InjuryValidationIssue,
-} from "./character/status/injuries";
-
-export {
-  INJURY_DEFINITIONS,
-  getInjuryDefinition,
-  isKnownInjuryId,
-  findInjuryValidationIssues,
-} from "./character/status/injuries";
+/*
+ * Injuries and Recovery are Body's subsystems now — see
+ * foundation/body/injuries/ and foundation/body/recovery/ — and are exported
+ * through the `export * from "./character/foundation/body"` barrel above,
+ * alongside every other Body export. Injury and Recovery validation-issue
+ * types are re-exported there too (BodyInjuryValidationIssue,
+ * InjuryValidationIssue, and friends).
+ */
 
 // Which Conditions and injuries are in force, as rule sources.
 export {
   collectConditionEffectSources,
-  collectInjuryEffectSources,
   collectStatusEffectSources,
 } from "./character/status/resolution";
-
-/* ── Character: recovery ────────────────────────────────────────────────── */
-
-/*
- * Natural BP recovery and its Injury-treatment integration.
- *
- * body-points/recovery.ts is the low-level whole-BP-vs-fractional-progress
- * primitive; mechanics/recovery/ is the orchestrator that drives it from
- * elapsed GameDuration and VIT, reduces a BodyPart's active Injury caps to
- * one ceiling, and reports which Injuries have fully healed. See
- * character/mechanics/recovery/resolution.ts for the full pipeline.
- */
-
-export type {
-  ActiveRecoveryCap,
-  BodyPartRecoveryCeiling,
-  BodyPartRecoveryOutcome,
-  InjuryOverlapDecision,
-  InjuryOverlapFlag,
-  RecoveredInjuryRemoval,
-  RecoveryInput,
-} from "./character/mechanics/recovery/types";
-
-export type {
-  ResolveRecoveryInput,
-  ResolveRecoveryOutcome,
-} from "./character/mechanics/recovery/resolution";
-
-export {
-  VIT_RECOVERY_REFERENCE,
-  VIT_RECOVERY_DOUBLING_INTERVAL,
-  REFERENCE_DAILY_RECOVERY_FRACTION,
-  deriveDailyRecoveryFraction,
-  resolveBodyPartRecoveryCeiling,
-  resolveRecovery,
-  detectInjuryOverlap,
-} from "./character/mechanics/recovery/resolution";
-
-export type {
-  RecoveryLocationValidationIssue,
-  RecoveryValidationIssue,
-} from "./character/mechanics/recovery/validation";
-
-export {
-  findRecoveryLocationIssues,
-  findRecoveryValidationIssues,
-} from "./character/mechanics/recovery/validation";
 
 /* ── Time ────────────────────────────────────────────────────────────────── */
 

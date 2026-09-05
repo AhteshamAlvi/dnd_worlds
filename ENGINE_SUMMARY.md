@@ -3,7 +3,7 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `newbranch-refactor` @ `910a089`
 **Snapshot:** 2026-09-01 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **42 files, 1,031 tests, all passing** (~1.9 s). `tsc --noEmit` → **clean**.
+**Health:** `vitest run` → **43 files, 1,040 tests, all passing** (~1.9 s). `tsc --noEmit` → **clean**.
 **Size:** 151 source files / ~47,200 LOC + 44 test files / ~17,000 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
@@ -28,18 +28,22 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       │
       ├── character/identity/      species · clans · traits
       ├── character/capabilities/  mastery · skills · techniques · resolution · attempts
-      ├── character/status/        stage · conditions · injuries · resolution
+      ├── character/status/        stage · conditions · resolution (injuries moved to Body, below)
       ├── character/equipment/     items
       ├── character/foundation/
+      │      ├── actions/          Action capacity: Actions per Round/Turn/Reaction,
+      │      │                     resolved from Combat Ability + Action-capacity Effects
       │      ├── attributes/       base · derived · physical · speed · strength · stats · modifiers
       │      ├── body/             ~15,000 LOC — the largest subsystem (§5)
       │      │                     continuity · effects · regeneration · validation ·
       │      │                     anatomy/reference-forms · measurements · structure ·
-      │      │                     strength · body-points · critical-points · stature
+      │      │                     strength · body-points · critical-points · stature ·
+      │      │                     injuries · recovery (moved here from status/ and
+      │      │                     character/mechanics/ — an Injury is anatomical, and Recovery
+      │      │                     is the Body↔Injury seam; see §10)
       │      ├── aura/             ~1,330 LOC
       │      └── nen/              ~3,970 LOC  (NOT exported)
       ├── character/progression/   levels · stats · growth
-      ├── character/mechanics/     recovery · actions (action capacity)
       ├── character/catalogs.ts    one generic surface over 11 catalog domains
       ├── character/resolution.ts  THE ORCHESTRATOR: authored character → ResolvedCharacter
       ├── character/validation.ts  THE VALIDATOR: domain issues → EngineErrors
@@ -86,16 +90,21 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
 
 ## 3 · The rules vocabulary (`character/rules/`)
 
-### Effects — 16 types
+### Effects — 17 types
 
 ```
 modifyBaseAttribute      modifyResolvedAttribute      modifyCheck
+modifyActionCapacity
 grantTrait               grantSkill                   grantTechnique
 
 modifyBase/ResolvedBodyScale                 modifyBase/ResolvedBodyMorphology
 modifyBase/ResolvedBodyAnatomy               modifyBase/ResolvedIntrinsicPhysicalForce
 modifyBase/ResolvedDestructionResistance
 ```
+
+`modifyActionCapacity {capacity: "round"|"turn"|"reaction", amount}` is a situational modifier
+in the same family as `modifyCheck` — it never touches a score, it adds to one of the
+character's resolved Action capacities (§10.5) at the moment `resolveActionCapacity()` runs.
 
 `CheckScope` is a closed 2-variant union: `{kind:"attribute"}` / `{kind:"derivedAttribute"}`.
 
@@ -150,10 +159,16 @@ checks `base`, so a temporary Condition can't revoke a trained capability.
 
 - `RuleSourceRef {type, id}` — provenance rides on every modifier and grant (`type` only ever *labels*).
 - `resolveRuleEffects()` → `{effects, baseAttributeModifiers, resolvedAttributeModifiers,
-  checkModifiers, traitGrants, skillGrants, techniqueGrants, body: {base, resolved}}`.
+  checkModifiers, actionCapacity, traitGrants, skillGrants, techniqueGrants, body: {base, resolved}}`.
 - **Grants are deliberately NOT deduplicated** — removing one source must not remove access another supplies.
-- `resolveCheckModifier(standardModifier, checkModifiers, scope)` — **the one place** a standard
-  modifier and situational modifiers are summed.
+- `checkModifiers` is the top-level `checks/` module's own `CheckModifierContribution` shape
+  (`{source, scope, amount, channel}`) rather than a second character-only structure — every
+  character-authored modifier is tagged `channel: "persistent"`. Check-modifier arithmetic
+  itself (`collectApplicableCheckModifiers`, `resolveCheckModifier`, `createCheckModifierTraceNode`)
+  now lives only in `checks/modifiers.ts` (§2.5); this file just collects the sourced
+  declarations.
+- `actionCapacity` is a plain `ActionCapacityContribution[]` bucket — combining it into a final
+  `ActionCapacity` is `foundation/actions/`'s job (§10.5), not this file's.
 - `meetsRequirement()` / `meetsAllRequirements()` against a `RequirementContext`.
 
 ---
@@ -649,10 +664,24 @@ Progression writes **stored** values only, which is why it sits outside `foundat
 
 ---
 
-## 10 · Recovery (`character/mechanics/recovery/`)
+## 10 · Injuries and Recovery (`foundation/body/injuries/`, `foundation/body/recovery/`)
 
-The Body↔Status seam — the only file allowed to know a part's `integrity` and an Injury's
-treatment state at once.
+Both moved under Body from `character/status/injuries.ts` and `character/mechanics/recovery/`
+respectively. An Injury is anatomical — BodyPart applicability, continuity locations, optional
+Special Point locations, BP recovery ceilings — so it belongs to Body, not to a generic
+Condition-like status layer; putting Recovery under Body too (rather than beside it) is what
+lets Recovery reduce a BodyPart's active Injury caps to one ceiling without `foundation/body/`
+reaching upward into `character/status/`.
+
+`foundation/body/injuries/` splits into `types.ts` (IDs, applicability, `CharacterInjury`,
+locations), `definitions.ts` (the authored catalog and registry access), `resolution.ts`
+(`collectInjuryEffectSources` — treatment-state Effect blending — and
+`resolveInjuryManifestation`), and `validation.ts` (intrinsic validity, catalog validity,
+anatomical-applicability validity, and the composed `findBodyInjuryValidationIssues` that
+`character/validation.ts` calls).
+
+`foundation/body/recovery/` is the seam allowed to know a part's `integrity` and an Injury's
+treatment state at once:
 
 ```
 daily fraction = 0.10 × 2^((VIT − 10) / 5)
@@ -669,9 +698,13 @@ it healed — dormant anatomy is not there to heal.
 
 Recovery works in exact-integrity space; destroyed parts are never restored by ordinary healing —
 that is `regenerateAnatomy`'s job, and it grows a limb back whole rather than merely present.
-It **reports** healed ids and never mutates `character.injuries`. `detectInjuryOverlap()` raises a
-non-blocking GM decision when a second Injury lands on anatomy carrying banked progress
-(default: preserve).
+It **reports** healed ids and never mutates `character.injuries`. A second Injury landing on
+anatomy that already carries one is not a special case — the damage that produced it changes
+integrity through the damage system, and multiple Injuries on the same identity simply combine
+their active ceilings to the lowest one, the same as any other multiple-cap case. (There used to
+be a `detectInjuryOverlap()` GM-decision flag and a companion `BodyPart.recoveryProgress` field;
+both are gone. Integrity is stored continuously now, so there is no banked fractional-BP progress
+left to preserve, reset, or flag a decision about.)
 
 ---
 
@@ -704,6 +737,7 @@ attribute modifiers: stored → base → resolved
                          morphology → measurements → SC → strength → BP → capability → locomotion
   ↓ STR from normalized SP; Size/Mass burden on AGI and DEX (once, from the FORM measurements)
   ↓ CharacterStats → Derived Attributes → movement
+  ↓ resolveActionCapacity(combatAbility, resolvedRuleEffects.actionCapacity)
 ```
 
 Grant expansion is a **fixpoint, not a pass**; expanded **ids**, not sources; seeded from the
@@ -712,8 +746,11 @@ It deliberately **does not check whether the character was allowed to have any o
 workbench must be able to show a character halfway to legal.
 
 `ResolvedCharacter` = `{character, attributes, attributeScores, stats, body, bodyTrace,
-physicalScaleBurden, strengthPosition, movement, derivedAttributes, derivedScores, traits,
-capabilities, effects, baseAttributeModifiers, resolvedAttributeModifiers, requirementContext}`.
+physicalScaleBurden, strengthPosition, movement, derivedAttributes, derivedScores,
+actionCapacity, traits, capabilities, effects, baseAttributeModifiers,
+resolvedAttributeModifiers, requirementContext}`. `actionCapacity` is the first thing this
+ticket integrated end to end: previously `foundation/actions/` (then `character/mechanics/`)
+was tested in isolation but never resolved or exposed here.
 
 **`validateCharacter()`** — the single place domain issues become `EngineError`s. Runs the
 sheet-only checks first (id, name, attributes), then resolution, then the catalog-reference,
@@ -777,17 +814,27 @@ with its source, and `checkStatureJustified` checks coverage per dimension AND p
 Owns Combat Actions, Round runtime state, Turn state, Reaction opportunities/gates, Initiative
 ordering and rotation, Action expenditure, state transitions, structural validation.
 
-It explicitly does **not** own: a character's Action capacities (supplied by Character mechanics),
-Skill classification (attack/defense/movement), or any check resolution.
+It explicitly does **not** own: a character's Action capacities (`foundation/actions/`, resolved
+onto `ResolvedCharacter.actionCapacity` — see §11), Skill classification (attack/defense/movement),
+or any check resolution. Combat will consume the resolved capacity when it lands but keeps owning
+its own remaining-Actions/Turns/Reactions runtime state and its separate `CombatActionCapacity`
+type; the two are not wired together yet.
 
-`character/mechanics/actions/` resolves capacity:
+`foundation/actions/` resolves capacity:
 
 ```
 Combat Ability < 5   → 0 stat-derived Round Actions
 Combat Ability 5–7   → 1
 Combat Ability ≥ 8   → 2 + floor((CA − 10) × 0.4), capped at 10 from stats alone
-Turn capacity        = 2 (min 2) · Reaction capacity min 1
+Turn capacity        = 2 (min 2) · Reaction capacity min 1, derived from RESOLVED Turn
 ```
+
+`modifyActionCapacity {capacity, amount}` Effects (Traits, Skills, Techniques, equipment,
+Conditions) add to `round`/`turn`/`reaction` on top of those bases through the ordinary
+`ResolvedRuleEffects.actionCapacity` bucket — a Turn contribution changes the derived Reaction
+base *before* any Reaction-specific contribution applies, so raising Turn capacity alone can
+raise Reaction capacity too. The full explanation is a `TraceNode` on
+`ResolvedActionCapacity.trace`, with one child each for Round, Turn, and Reaction.
 
 ---
 
@@ -817,6 +864,18 @@ gameplay/        →  checks/
 A `modifyCheck` Effect authors a **selector**, which is what lets a Trait say "+2 to hearing
 Detection" rather than only naming one exact check.
 
+`modifiers.ts` also has a roll-free sibling to `resolveCheck`: `resolveCheckModifier(baseContributions,
+modifiers, scope)` → `CheckModifierResolution {scope, baseContributions, baseModifierTotal,
+applicableModifiers, situationalModifierTotal, finalModifier}`, plus
+`createCheckModifierTraceNode()`. This is what a passive value — a sensory DC, a static defense,
+a sheet display — reads when nothing is actually being rolled; it shares
+`collectApplicableCheckModifiers`/`sumCheckBaseContributions`/`sumCheckModifiers` with the
+dice-based path, so the two can never disagree about what a modifier is worth. `character/rules/`
+no longer keeps its own copy of this arithmetic (it used to, against an incompatible
+`SourcedCheckModifier` shape keyed by `check` rather than `scope` and with no `channel`) —
+`ResolvedRuleEffects.checkModifiers` is now the canonical `CheckModifierContribution[]` directly,
+every character-authored modifier tagged `channel: "persistent"`.
+
 ---
 
 ## 13 · Recorded decisions (`decisions/log.ts`)
@@ -826,21 +885,25 @@ rather than an edit to the book.
 
 1. **`body.surface-units.total`** — the regional SU table sums to 101, the text divides by 100; the engine uses 100.
 2. **`attributes.derived.rounding-direction`** — Derived Attribute ties round up; asymmetric across zero, and derived values *can* go negative.
-3. **`injury.overlap.recovery-progress-default`** — a second Injury on anatomy with banked recovery progress preserves it by default; surfaced to the GM as non-blocking.
+
+`injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
+decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
+with the `recoveryProgress` field it was about: integrity is stored continuously now, so there is
+nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (41 files, 1,023 tests)
+## 14 · Test coverage (43 files, 1,040 tests)
 
 | Area | Files (tests) |
 |---|---|
-| Body | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · effects-integration 29 · damage 25 · **continuity 24** · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · effects 19 · recovery 19 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **528** |
+| Body | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · effects-integration 29 · damage 25 · **continuity 24** · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · effects 19 · recovery 20 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **529** |
 | Attributes | standard-modifier 39 · derived 35 · phase9-model 34 · physical 15 · propagation 7 — **130** |
 | Progression | 58 |
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
-| Rules | requirements 25 · check-modifiers 22 · effects 16 — **63** |
-| Catalogs | 28 · **Aura** 22 · **Injuries** validation 18 + recovery 13 · **Infra** trace 8 + id 7 |
+| Rules | requirements 25 · check-modifiers 24 · effects 16 — **65** |
+| Catalogs | 28 · **Aura** 22 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Infra** trace 8 + id 7 |
 
 **Zero tests:** Nen (~3,970 LOC), Combat (~5,470 LOC), Aura Control, time clock/calendar,
 equipment beyond the two demo items.
@@ -873,9 +936,17 @@ equipment beyond the two demo items.
 
 ### Built but unexported from `@nenworld/engine`
 
-`gameplay/combat/*` (~5,470 LOC) · `checks/*` (~1,150 LOC) · `character/mechanics/actions/*` · the whole `foundation/nen/` tree
-(~3,970 LOC) · `foundation/aura/control.ts` · `character/details.ts` ·
+`gameplay/combat/*` (~5,470 LOC) · most of `checks/*` (~1,150 LOC — `resolveCheck`,
+`resolveFixedCheck`, `resolveOpposedCheck`, `CheckRequest` and friends are not exported; only the
+scope vocabulary, `CheckModifierContribution`/`CheckSourceRef`/`CheckModifierChannel`, and the
+roll-free `resolveCheckModifier`/`createCheckModifierTraceNode`/`collectApplicableCheckModifiers`
+are, via `character/rules/effects.ts`'s re-export and the "Checks" barrel block) · the whole
+`foundation/nen/` tree (~3,970 LOC) · `foundation/aura/control.ts` · `character/details.ts` ·
 `time/{validation,calendar,clock}` · `infrastructure/{rounding,id}` · `character/progression/index`.
+
+`foundation/actions/*` (Action capacity) is exported now — it moved out of `character/mechanics/`
+in the Body-ownership pass and was integrated into `ResolvedCharacter.actionCapacity` at the same
+time (§11), closing what used to be a "tested but never resolved" gap.
 
 **~9,400 LOC of finished code is unreachable from the public barrel**, most of it also untested.
 

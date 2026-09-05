@@ -40,7 +40,7 @@ import type { CharacterSkill } from "./capabilities/skills";
 import type { CharacterTechnique } from "./capabilities/techniques";
 
 import type { CharacterCondition } from "./status/conditions";
-import type { CharacterInjury } from "./status/injuries";
+import type { CharacterInjury } from "./foundation/body/injuries";
 
 import type { CharacterItem } from "./equipment/types";
 

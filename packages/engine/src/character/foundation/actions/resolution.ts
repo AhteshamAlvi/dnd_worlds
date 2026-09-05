@@ -101,6 +101,12 @@
  * This file assumes its inputs have already passed actions/validation.ts.
  */
 
+import {
+  createTraceNode,
+  type TraceInput,
+  type TraceNode,
+} from "../../../infrastructure/trace";
+
 import type {
   ActionCapacity,
   ActionCapacityContribution,
@@ -437,6 +443,108 @@ export function resolveReactionActionCapacity(
 
 
 /* -------------------------------------------------------------------------- */
+/* Trace                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * One source can contribute twice to the same capacity — two ranks of a
+ * Skill both granting +1 Round Action — and a plain key would let the second
+ * silently replace the first in the trace, showing a total its own inputs do
+ * not produce.
+ */
+function addActionContributionInputs(
+  inputs: Record<string, TraceInput>,
+  contributions: readonly ActionCapacityContribution[],
+): void {
+  for (const contribution of contributions) {
+    const desiredKey = `${contribution.source.type}:${contribution.source.id}`;
+
+    let key = desiredKey;
+    let suffix = 2;
+
+    while (inputs[key] !== undefined) {
+      key = `${desiredKey} (${suffix})`;
+      suffix += 1;
+    }
+
+    inputs[key] = { value: contribution.amount };
+  }
+}
+
+/**
+ * Explains one resolved Action-capacity profile: Combat Ability, each base
+ * capacity, every sourced contribution, and the three final capacities.
+ *
+ * Reaction is deliberately traced from the RESOLVED Turn capacity rather than
+ * baseTurn, matching resolveActionCapacity's own ordering.
+ */
+export function createActionCapacityTraceNode(
+  resolved: Omit<ResolvedActionCapacity, "trace">,
+): TraceNode {
+  const roundInputs: Record<string, TraceInput> = {
+    combatAbility: { value: resolved.combatAbility },
+    baseRound: { value: resolved.baseRound },
+  };
+  addActionContributionInputs(
+    roundInputs,
+    filterActionCapacityContributions(resolved.contributions, "round"),
+  );
+
+  const roundNode = createTraceNode({
+    id: "character.actions.round",
+    label: "Resolve Round Action capacity",
+    formula: "max(0, baseRound + round contributions)",
+    inputs: roundInputs,
+    output: resolved.capacity.round,
+  });
+
+  const turnInputs: Record<string, TraceInput> = {
+    baseTurn: { value: resolved.baseTurn },
+  };
+  addActionContributionInputs(
+    turnInputs,
+    filterActionCapacityContributions(resolved.contributions, "turn"),
+  );
+
+  const turnNode = createTraceNode({
+    id: "character.actions.turn",
+    label: "Resolve Turn Action capacity",
+    formula: `max(${MIN_TURN_ACTION_CAPACITY}, baseTurn + turn contributions)`,
+    inputs: turnInputs,
+    output: resolved.capacity.turn,
+  });
+
+  const reactionInputs: Record<string, TraceInput> = {
+    resolvedTurn: { value: resolved.capacity.turn },
+    baseReaction: { value: resolved.baseReaction },
+  };
+  addActionContributionInputs(
+    reactionInputs,
+    filterActionCapacityContributions(resolved.contributions, "reaction"),
+  );
+
+  const reactionNode = createTraceNode({
+    id: "character.actions.reaction",
+    label: "Resolve Reaction Action capacity",
+    formula: `max(${MIN_REACTION_ACTION_CAPACITY}, floor(resolved Turn / 2) + reaction contributions)`,
+    inputs: reactionInputs,
+    output: resolved.capacity.reaction,
+  });
+
+  return createTraceNode({
+    id: "character.actions",
+    label: "Resolve Action capacity",
+    formula: "Combat Ability -> Round / Turn / Reaction Action capacities",
+    inputs: {
+      combatAbility: { value: resolved.combatAbility },
+    },
+    output: resolved.capacity.round,
+    children: [roundNode, turnNode, reactionNode],
+  });
+}
+
+
+/* -------------------------------------------------------------------------- */
 /* Full Action-capacity resolution                                            */
 /* -------------------------------------------------------------------------- */
 
@@ -517,8 +625,7 @@ export function resolveActionCapacity(
     reaction: resolvedReaction,
   };
 
-
-  return {
+  const withoutTrace = {
     combatAbility,
 
     baseRound,
@@ -528,5 +635,10 @@ export function resolveActionCapacity(
     contributions,
 
     capacity,
+  };
+
+  return {
+    ...withoutTrace,
+    trace: createActionCapacityTraceNode(withoutTrace),
   };
 }

@@ -6,21 +6,12 @@
  * resolveBodyPartBP is. It knows nothing about Injuries and their caps (it
  * only ever sees the single ceiling those caps were reduced to), treatment,
  * Constitution, Vitality, Conditions, or the clock. All of that belongs to
- * mechanics/recovery/.
+ * foundation/body/recovery/.
  *
- *
- * WHY THIS FILE GOT SMALLER
- *
- * The previous version carried a `recoveryProgress` companion field: BP was a
- * whole number, a recovery tick could contribute less than a whole point, and
- * the leftover fraction had to be banked somewhere until it added up. That
- * brought its own rule — progress must never be retained when there is nowhere
- * for it to go — and its own failure mode, a part sitting at full health with
- * banked healing it could never spend.
- *
- * Integrity is continuous, so all of that disappears. Recovery happens in
- * exact BP, the result is divided back into a fraction, and the remainder is
- * simply part of the fraction. There is nothing left to bank.
+ * Integrity is continuous, so recovery needs no companion field to bank a
+ * leftover fraction between ticks: it happens in exact BP, the result is
+ * divided back into a fraction, and the remainder is simply part of the
+ * fraction. There is nothing left to bank.
  */
 
 

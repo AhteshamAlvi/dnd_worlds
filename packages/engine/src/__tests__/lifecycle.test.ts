@@ -1,8 +1,9 @@
 /*
  * Tests the shared stage/severity/expiry vocabulary Conditions use — see
  * character/status/stage.ts. Injuries do NOT use this vocabulary (see
- * status/injuries.ts's own header for why); their treatment-state effect
- * resolution is covered separately in injury-recovery.test.ts.
+ * foundation/body/injuries/types.ts's own header for why); their
+ * treatment-state effect resolution is covered separately in
+ * injury-recovery.test.ts.
  *
  * The property under test throughout is that these are generic hooks, not
  * authored behavior: nothing here bakes in what a "worsening" Condition
@@ -26,13 +27,11 @@ import {
   resolveStage,
 } from "../character/status/stage";
 
-import {
-  collectConditionEffectSources,
-  collectInjuryEffectSources,
-} from "../character/status/resolution";
+import { collectConditionEffectSources } from "../character/status/resolution";
+import { collectInjuryEffectSources } from "../character/foundation/body/injuries/resolution";
 
 import { findConditionValidationIssues } from "../character/status/conditions";
-import { findInjuryValidationIssues } from "../character/status/injuries";
+import { findInjuryValidationIssues } from "../character/foundation/body/injuries";
 
 import { validateCharacter } from "../character/validation";
 import {
