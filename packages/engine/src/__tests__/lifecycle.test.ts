@@ -13,6 +13,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 
@@ -486,6 +487,6 @@ describe("domain-level lifecycle validation", () => {
   });
 
   it("finds no injury issues for an empty list", () => {
-    expect(findInjuryValidationIssues([])).toEqual([]);
+    expect(findInjuryValidationIssues([], listAnatomicalInjuryDefinitions())).toEqual([]);
   });
 });

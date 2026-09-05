@@ -7,11 +7,29 @@
  * locations, optional Special Point locations, BP recovery ceilings, and
  * treatment rules — exactly Body's subject matter.
  *
- * Injuries are mechanically EffectfulDefinitions, so they participate in the
- * same universal Effect system as other authored character content. Unlike a
- * general Condition, however, every Injury is anatomical:
+ * An Injury is anatomical AND authored content, and those two halves live in
+ * two places on purpose:
  *
- *   InjuryDefinition
+ *   foundation/body/injuries/   ANATOMY. Locations, applicability, treatment
+ *                               state, recovery ceilings, manifestation, and
+ *                               the anatomical validation of all of it.
+ *                               AnatomicalInjuryDefinition is declared here.
+ *
+ *   character/status/injuries/  CONTENT. The Effects an Injury contributes,
+ *                               the extra ones treatment state adds, and the
+ *                               authored catalog. InjuryDefinition extends
+ *                               AnatomicalInjuryDefinition there and adds
+ *                               them.
+ *
+ * Foundation must not name `Effect` or `EffectfulDefinition`: the Effect union
+ * spans every domain, so a Foundation type mentioning it makes Foundation
+ * depend on the rules layer sitting on top of it. Splitting the interface is
+ * what keeps Recovery and manifestation down here — they are anatomical — while
+ * the Effects go up where they belong.
+ *
+ * Unlike a general Condition, every Injury is anatomical:
+ *
+ *   AnatomicalInjuryDefinition
  *   -> declares what anatomy the Injury may affect
  *
  *   CharacterInjury
@@ -50,13 +68,18 @@
  * ANATOMICAL LOCATION
  * -------------------
  *
- * BodyPart IDs are local to the character that owns the Injury.
+ * An Injury is located by CONTINUITY KEY — the persistent anatomical identity
+ * — and never by BodyPart instance id. That is what lets an Injury outlive the
+ * tissue it is on: a broken arm is still broken after the arm is regrown into
+ * a new instance, and is still the same Injury when the character is a wolf
+ * and that identity is a foreleg. See InjuryLocation below.
  *
- * "arm-1" therefore means the arm-1 contained by this character's Body
- * Anatomy. It does not need to be globally unique across every character.
+ * Continuity keys are local to the character that owns the Injury.
+ * "upper-limb:left" therefore means that identity within this character's
+ * Body; it does not need to be globally unique across every character.
  *
- * Most Injuries affect one BodyPart, but a location may contain multiple
- * BodyPart IDs because some anatomical targets span multiple hosts.
+ * Most Injuries name one identity, but a location may name several because
+ * some anatomical targets span more than one.
  *
  * Example:
  *
@@ -72,8 +95,12 @@
  *   face
  *   spine
  *
- * The BodyPart IDs remain the concrete physical hosts. The optional Special
- * Point definition ID preserves the more precise anatomical context.
+ * The continuity keys remain the anatomical hosts. The optional Special Point
+ * definition ID preserves the more precise anatomical context.
+ *
+ * BodyPart instances still appear one step later, in APPLICABILITY: whether an
+ * Injury fits is judged against the concrete BodyPart currently manifesting
+ * the identity, which is a different question from where the Injury is.
  *
  *
  * NO STAGES OR SEVERITY
@@ -97,14 +124,22 @@
  * This file owns:
  *
  * - Injury IDs;
- * - InjuryDefinition;
+ * - AnatomicalInjuryDefinition;
  * - anatomical applicability;
+ * - recovery requirements and ceilings;
+ * - treatment state;
  * - CharacterInjury;
  * - concrete Injury locations.
  *
- * definitions.ts owns the authored catalog and registry access.
- * resolution.ts owns Injury effect collection and manifestation behavior.
+ * resolution.ts owns MANIFESTATION — whether the current form expresses an
+ * Injury's anatomy at all.
  * validation.ts owns intrinsic and anatomical-applicability validation.
+ *
+ * Injury EFFECT COLLECTION and the authored CATALOG are neither here nor in
+ * resolution.ts. Both are content questions, and both live in
+ * character/status/injuries/ — effects.ts and definitions.ts respectively.
+ * Foundation receives the anatomical definitions it needs through its inputs
+ * and never looks a definition up for itself.
  *
  * This file does NOT determine:
  *
@@ -121,15 +156,10 @@ import {
 } from "../../../../infrastructure/result";
 
 import type {
-  EffectfulDefinition,
-} from "../../../rules/content";
+  Definition,
+} from "../../../../infrastructure/registry";
 
 import type {
-  Effect,
-} from "../../../rules/effects";
-
-import type {
-  BodyPartId,
   ContinuityKey,
 } from "../anatomy/types";
 
@@ -276,39 +306,47 @@ export type InjuryRecovery =
 /* -------------------------------------------------------------------------- */
 
 /**
- * Reusable authored Injury content.
+ * The ANATOMICAL half of an authored Injury — everything Body needs, and
+ * nothing Body may not see.
  *
- * Effects describe what the Injury mechanically does WHILE IT IS MANIFESTED,
- * regardless of treatment state.
+ * An Injury is two things at once, and this is the half that is physics:
  *
- * Manifested, not merely recorded. An Injury applies only while the current
- * form expresses every anatomical identity its location names and the anatomy
- * standing there can host it — see resolution.ts's resolveInjuryManifestation.
- * A dormant Injury contributes nothing at all: not its `effects`, not its
- * `treatmentEffects`, and no recovery. It is still stored, still valid, and
- * resumes contributing the moment compatible anatomy returns.
+ *   ANATOMICAL   where the Injury may sit, whether it needs treatment, and
+ *                what ceiling it puts on natural recovery. Body reads all of
+ *                it, and none of it is content-system vocabulary.
  *
- * Applicability describes what anatomy the Injury is allowed to affect.
+ *   CONTENT      what the Injury DOES — its Effects, and the extra Effects
+ *                treatment state adds. That is the rules vocabulary, and it
+ *                lives above Foundation in character/status/injuries/, where
+ *                InjuryDefinition extends this interface and adds them.
  *
- * Recovery describes whether the Injury needs treatment and, if so, the
- * recovery ceiling it imposes until treated.
+ * The split is what removed the last foundation/ -> character/rules/ import.
+ * `Effect` is a union over every domain — Body selectors, check scopes,
+ * Attribute keys, Action capacities — so a Foundation type that named it
+ * forced Foundation to depend on the layer sitting on top of it. Splitting the
+ * interface rather than moving the Injury domain keeps Recovery and
+ * manifestation where they belong (they are anatomical) while the Effects go
+ * where they belong (they are content).
  *
- * `treatmentEffects` adds Effects on top of the base `effects` depending on
- * treatment state — see character/status/resolution.ts for how the two
- * combine. Meaningful only for a treatment-required Injury: one that recovers
- * without treatment has no treatment state to key off, and normally authors
- * only its plain `effects`. Treatment state only ever changes what a
- * MANIFESTED Injury contributes.
+ * Nothing in Body ever holds the full InjuryDefinition. Callers above
+ * Foundation look one up in the registry and pass it down as an
+ * AnatomicalInjuryDefinition, which it structurally is — so there is no
+ * conversion, no second lookup, and no way for Body to read an Effect it was
+ * handed.
+ *
+ * The SERIALIZED shape is unchanged. An authored definition still carries
+ * applicability, recovery, effects and treatmentEffects in one object; only
+ * the type that describes it is split, so no stored content needs migrating.
  */
-export interface InjuryDefinition extends EffectfulDefinition {
+export interface AnatomicalInjuryDefinition extends Definition {
+  /** What anatomy this Injury is allowed to affect. */
   readonly applicability: InjuryApplicability;
 
+  /**
+   * Whether the Injury needs treatment and, if so, the ceiling it puts on
+   * natural recovery until it is treated.
+   */
   readonly recovery: InjuryRecovery;
-
-  readonly treatmentEffects?: {
-    readonly untreated?: readonly Effect[];
-    readonly treated?: readonly Effect[];
-  };
 }
 
 
@@ -388,4 +426,30 @@ export interface CharacterInjury {
   readonly location: InjuryLocation;
 
   readonly treatmentStatus?: InjuryTreatmentStatus;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Definition lookup                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Indexes the anatomical Injury definitions a caller supplied, by id.
+ *
+ * Foundation is HANDED its definitions; it never looks one up in a catalog,
+ * because the catalog is content and lives above it. This is the shared way to
+ * turn the supplied array into the lookup every Body function actually wants,
+ * so manifestation, validation and Recovery cannot disagree about what "the
+ * definition for this Injury" means.
+ *
+ * Mirrors createBodyPartDefinitionMap, for the same reason and with the same
+ * shape. A later duplicate id wins, matching that function; a catalog with
+ * duplicate ids is a registry problem and is reported there.
+ */
+export function createInjuryDefinitionMap(
+  definitions: readonly AnatomicalInjuryDefinition[],
+): ReadonlyMap<InjuryId, AnatomicalInjuryDefinition> {
+  return new Map(
+    definitions.map((definition) => [definition.id, definition] as const),
+  );
 }

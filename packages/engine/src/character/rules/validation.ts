@@ -31,6 +31,10 @@
 import { isValidCheckScopeSelector } from "../../checks/validation";
 import type { CheckScopeSelector } from "../../checks/scopes";
 import {
+  CHECK_MODIFIER_ACTIVATIONS,
+  type CheckModifierActivation,
+} from "../../checks/types";
+import {
   ACTION_CAPACITY_KINDS,
   type ActionCapacityKind,
 } from "../foundation/actions/types";
@@ -61,6 +65,7 @@ export const MAX_REQUIREMENT_DEPTH = 32;
 export type RuleValidationIssue =
   | InvalidEffectAmountIssue
   | InvalidCheckScopeIssue
+  | InvalidCheckActivationIssue
   | InvalidActionCapacityKindIssue
   | MissingEffectReferenceIssue
   | InvalidRequirementNumberIssue
@@ -155,6 +160,29 @@ export interface InvalidCheckScopeIssue {
   readonly type: "invalid-check-scope";
   readonly path: string;
   readonly kind: CheckScopeSelector["kind"];
+}
+
+
+/**
+ * A modifyCheck Effect whose `activation` is not one the engine recognizes.
+ *
+ * The field is optional and its type is a closed union, so hand-authored
+ * TypeScript cannot get this wrong — but homebrew or machine-generated JSON
+ * can, and this is the one Effect field where a typo is silently CATASTROPHIC
+ * rather than merely wrong. `"invoke"`, `"Invoked"` or `"always"` all fail the
+ * `?? default` fallback in rules/resolution.ts and land in the channel
+ * verbatim, where nothing matches them: `collectPersistentCheckModifiers`
+ * skips them, `collectInvokedCheckModifiers` skips them, and the modifier
+ * quietly never applies to anything, ever.
+ *
+ * A scope typo at least produces a modifier that visibly applies to the wrong
+ * checks. An activation typo produces a modifier that applies to none, and
+ * looks exactly like content that was never written.
+ */
+export interface InvalidCheckActivationIssue {
+  readonly type: "invalid-check-activation";
+  readonly path: string;
+  readonly activation: unknown;
 }
 
 
@@ -266,6 +294,24 @@ function isPositiveInteger(
 }
 
 
+/*
+ * Membership against the authoritative activation vocabulary.
+ *
+ * CHECK_MODIFIER_ACTIVATIONS lives beside the channel it feeds, in
+ * checks/types.ts, for the same reason the scope lists do: a second copy here
+ * is a second thing to keep in step, and the one that drifts is always the
+ * copy.
+ */
+function isKnownCheckModifierActivation(
+  value: unknown,
+): value is CheckModifierActivation {
+  return (
+    typeof value === "string" &&
+    (CHECK_MODIFIER_ACTIVATIONS as readonly string[]).includes(value)
+  );
+}
+
+
 function isKnownActionCapacityKind(
   value: unknown,
 ): value is ActionCapacityKind {
@@ -334,6 +380,23 @@ export function findEffectValidationIssues(
           type: "invalid-check-scope",
           path: `${path}.check`,
           kind: checkKind,
+        });
+      }
+
+      /*
+       * Absent is legal and means "let the source kind decide" — see
+       * rules/resolution.ts's defaultCheckModifierActivation. Anything present
+       * must be a member of the authoritative list rather than of a second
+       * copy of it spelled out here.
+       */
+      if (
+        effect.activation !== undefined &&
+        !isKnownCheckModifierActivation(effect.activation)
+      ) {
+        issues.push({
+          type: "invalid-check-activation",
+          path: `${path}.activation`,
+          activation: effect.activation,
         });
       }
 

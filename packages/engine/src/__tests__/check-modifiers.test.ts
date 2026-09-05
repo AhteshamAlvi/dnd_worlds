@@ -17,18 +17,23 @@
  *
  * Check-modifier resolution itself lives in the top-level checks/ module —
  * character/rules/resolution.ts only collects the sourced declarations (see
- * ResolvedRuleEffects.checkModifiers) using the canonical
+ * ResolvedRuleEffects.availableCheckModifiers) using the canonical
  * CheckModifierContribution shape, so an authored modifier and the check it
  * eventually applies to are always talking about the same thing.
  */
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
+import {
+  clearCustomDefinitions,
+  findCatalogReferenceIssues,
+  registerDefinition,
+} from "../character/catalogs";
 
 import { resolveRuleEffects } from "../character/rules/resolution";
 import { findEffectValidationIssues } from "../character/rules/validation";
 import {
+  CHECK_MODIFIER_ACTIVATIONS,
   collectApplicableCheckModifiers,
   createCheckModifierTraceNode,
   isSameCheckScope,
@@ -110,6 +115,16 @@ describe("scope matching", () => {
 });
 
 describe("collecting and resolving", () => {
+  /*
+   * Hand-built contributions, every one tagged "persistent" on purpose.
+   *
+   * This suite is about SCOPE matching and arithmetic, so the modifiers are
+   * constructed rather than resolved from content, and they are all live. The
+   * source labels are incidental — a "skill" source is written here because a
+   * Skill is what such a modifier usually comes from, NOT because a Skill's
+   * declared modifiers default to persistent. They default to invoked; see
+   * the activation suite below.
+   */
   const modifiers: readonly CheckModifierContribution[] = [
     {
       source: { type: "skill", id: "contort" },
@@ -225,7 +240,7 @@ describe("collecting and resolving", () => {
 });
 
 describe("modifyCheck flows through effect resolution", () => {
-  it("reaches checkModifiers with its source attached", () => {
+  it("reaches availableCheckModifiers with its source attached", () => {
     const resolved = resolveRuleEffects([
       {
         source: { type: "skill", id: "contort" },
@@ -235,7 +250,7 @@ describe("modifyCheck flows through effect resolution", () => {
 
     // A Skill's bonus is what the Skill is worth WHEN USED, so it lands in
     // the invoked channel rather than the persistent one.
-    expect(resolved.checkModifiers).toEqual([
+    expect(resolved.availableCheckModifiers).toEqual([
       {
         source: { type: "skill", id: "contort" },
         scope: AGI_CHECK,
@@ -275,7 +290,7 @@ describe("modifyCheck flows through effect resolution", () => {
       createTestCharacter({ traits: [{ traitId: "keen-eyes" }] }),
     );
 
-    expect(resolved.effects.checkModifiers).toEqual([
+    expect(resolved.effects.availableCheckModifiers).toEqual([
       {
         source: { type: "trait", id: "keen-eyes" },
         scope: { kind: "derivedAttribute", derivedAttribute: "detection" },
@@ -292,7 +307,7 @@ describe("modifyCheck flows through effect resolution", () => {
       createTestCharacter({ skills: [{ skillId: "contort" }] }),
     );
 
-    expect(resolved.effects.checkModifiers).toEqual([
+    expect(resolved.effects.availableCheckModifiers).toEqual([
       {
         source: { type: "skill", id: "contort" },
         scope: AGI_CHECK,
@@ -469,6 +484,107 @@ describe("validation", () => {
     ]);
   });
 
+  it("accepts both authored activations, and an absent one", () => {
+    for (const activation of [...CHECK_MODIFIER_ACTIVATIONS, undefined]) {
+      expect(
+        findEffectValidationIssues({
+          type: "modifyCheck",
+          check: AGI_CHECK,
+          amount: 3,
+          ...(activation === undefined ? {} : { activation }),
+        }),
+      ).toEqual([]);
+    }
+  });
+
+  it("rejects an activation the engine does not recognize", () => {
+    /*
+     * Homebrew and machine-generated JSON cross the engine boundary where the
+     * closed union cannot reach, and this is the one modifyCheck field where a
+     * typo is silently catastrophic rather than merely wrong: an unrecognized
+     * channel matches NOTHING, so the modifier applies to no check at all and
+     * looks exactly like content that was never written. A scope typo at least
+     * produces a modifier that visibly applies to the wrong checks.
+     */
+    for (const activation of ["invoke", "Invoked", "always", "contextual", ""]) {
+      expect(
+        findEffectValidationIssues({
+          type: "modifyCheck",
+          check: AGI_CHECK,
+          amount: 3,
+          activation: activation as never,
+        }),
+      ).toEqual([
+        {
+          type: "invalid-check-activation",
+          path: "effect.activation",
+          activation,
+        },
+      ]);
+    }
+  });
+
+  it("rejects a non-string activation", () => {
+    expect(
+      findEffectValidationIssues({
+        type: "modifyCheck",
+        check: AGI_CHECK,
+        amount: 3,
+        activation: 1 as never,
+      }),
+    ).toEqual([
+      { type: "invalid-check-activation", path: "effect.activation", activation: 1 },
+    ]);
+  });
+
+  it("rejects \"contextual\" specifically, though it is a real channel", () => {
+    /*
+     * The near-miss worth naming. "contextual" is a legitimate
+     * CheckModifierChannel, but it is not an ACTIVATION: a modifier the GM or
+     * the environment supplied is by definition not something a Trait
+     * authored. Accepting it here would let content mint request-local
+     * modifiers that nothing ever supplies.
+     */
+    expect(
+      (CHECK_MODIFIER_ACTIVATIONS as readonly string[]).includes("contextual"),
+    ).toBe(false);
+
+    expect(
+      findEffectValidationIssues({
+        type: "modifyCheck",
+        check: AGI_CHECK,
+        amount: 3,
+        activation: "contextual" as never,
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("catches a malformed activation on registered catalog content", () => {
+    // The path that actually matters: authored content, checked at catalog
+    // time, rather than an Effect handed straight to the validator.
+    registerDefinition("trait", {
+      id: "typo-activation",
+      name: "Typo Activation",
+      description: "A test Trait whose activation is misspelled.",
+      effects: [
+        {
+          type: "modifyCheck",
+          check: AGI_CHECK,
+          amount: 3,
+          activation: "persistant" as never,
+        },
+      ],
+    });
+
+    expect(
+      findCatalogReferenceIssues().some(
+        (issue) =>
+          issue.includes("typo-activation") &&
+          issue.includes("invalid-check-activation"),
+      ),
+    ).toBe(true);
+  });
+
   it("accepts a character carrying one", () => {
     registerContort();
 
@@ -486,7 +602,7 @@ describe("authored modifiers reach the gameplay check resolver", () => {
    * The gap this closes. character/rules/ used to keep its own copy of check
    * modifier resolution built on an incompatible structure, so a Trait's "+3
    * to applicable AGI checks" needed a translation layer before it could be
-   * handed to the thing that resolves an AGI check. Now checkModifiers is
+   * handed to the thing that resolves an AGI check. Now availableCheckModifiers is
    * already in the top-level checks/ module's own CheckModifierContribution
    * shape — no translation, the authored modifier IS a check contribution.
    */
@@ -494,26 +610,49 @@ describe("authored modifiers reach the gameplay check resolver", () => {
     clearCustomDefinitions();
   });
 
-  it("hands a Skill's modifyCheck straight to resolveCheck", () => {
+  it("hands an invoked Skill's modifyCheck to resolveCheck once it is selected", () => {
     registerContort();
 
-    const resolved = resolveRuleEffects([
-      {
-        source: { type: "skill", id: "contort" },
-        effects: [{ type: "modifyCheck", check: AGI_CHECK, amount: 3 }],
-      },
-    ]);
+    const resolved = resolveTestCharacter(
+      createTestCharacter({ skills: [{ skillId: "contort" }] }),
+    );
 
+    /*
+     * Through the canonical assembler, not through availableCheckModifiers.
+     *
+     * This test used to pass resolveRuleEffects' combined list straight into
+     * resolveCheck and assert the +3 landed — which is precisely the usage the
+     * activation split exists to prevent. Contort is a Skill, so its bonus is
+     * worth nothing until the player says they are using it; the point being
+     * proved here is that no translation layer stands between an authored
+     * modifyCheck and the check resolver, not that knowing a Skill is enough.
+     */
     const result = resolveCheck({
       scope: { kind: "attribute", attribute: "agi" },
       dice: { advantage: 0, rolls: [11] },
       baseContributions: [{ id: "standard", amount: 4 }],
-      modifiers: resolved.checkModifiers,
+      modifiers: collectCharacterCheckModifiers(resolved, {
+        sources: [{ type: "skill", id: "contort" }],
+      }),
     });
 
-    // 11 rolled + 4 standard + 3 from Contort.
+    // 11 rolled + 4 standard + 3 from the Contort the player invoked.
     expect(result.total).toBe(18);
     expect(result.applicableModifiers).toHaveLength(1);
+    expect(result.applicableModifiers[0]?.source).toEqual({
+      type: "skill",
+      id: "contort",
+    });
+
+    // And the same character, having invoked nothing, rolls 11 + 4.
+    expect(
+      resolveCheck({
+        scope: { kind: "attribute", attribute: "agi" },
+        dice: { advantage: 0, rolls: [11] },
+        baseContributions: [{ id: "standard", amount: 4 }],
+        modifiers: collectCharacterCheckModifiers(resolved),
+      }).total,
+    ).toBe(15);
   });
 
   it("lets content author a scope the old two-variant union could not express", () => {
@@ -543,7 +682,7 @@ describe("authored modifiers reach the gameplay check resolver", () => {
       },
     ]);
 
-    const heard = collectApplicableCheckModifiers(resolved.checkModifiers, {
+    const heard = collectApplicableCheckModifiers(resolved.persistentCheckModifiers, {
       kind: "detection",
       mode: "active",
       sense: "hearing",
@@ -551,7 +690,7 @@ describe("authored modifiers reach the gameplay check resolver", () => {
       subject: "entity",
     });
 
-    const seen = collectApplicableCheckModifiers(resolved.checkModifiers, {
+    const seen = collectApplicableCheckModifiers(resolved.persistentCheckModifiers, {
       kind: "detection",
       mode: "active",
       sense: "sight",

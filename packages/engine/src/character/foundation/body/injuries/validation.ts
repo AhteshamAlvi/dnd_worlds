@@ -9,9 +9,11 @@
  *   referenced InjuryDefinition exists, and whether treatmentStatus matches
  *   what that definition requires.
  *
- * - CATALOG (findInjuryCatalogIssues). Whether the authored Injury catalog
- *   itself is well-formed — applicability declared, recovery fractions in
- *   range.
+ * - CATALOG, ANATOMICAL HALF (findAnatomicalInjuryCatalogIssues). Whether the
+ *   supplied definitions are well-formed as ANATOMY — applicability declared,
+ *   recovery fractions in range. Registry well-formedness and Effect validity
+ *   are the catalog's own business and live in
+ *   character/status/injuries/validation.ts, which calls this and adds them.
  *
  * - ANATOMICAL APPLICABILITY (findInjuryLocationIssues). Needs Body
  *   alongside the Injury: every continuity identity an Injury's location
@@ -26,8 +28,14 @@
  * BodyPart currently standing in one of those identities, so the issues it
  * raises are legitimately body-part-shaped.
  *
- * findBodyInjuryValidationIssues composes all three into the one function a
- * caller judging a character's Injuries actually wants.
+ * findBodyInjuryValidationIssues composes the character-facing layers into the
+ * one function a caller judging a character's Injuries actually wants.
+ *
+ * Every function here is HANDED its AnatomicalInjuryDefinitions. Nothing in
+ * this file looks a definition up: the authored catalog is content, it lives
+ * above Foundation, and reaching for it is what used to make Foundation
+ * import the rules layer. Callers above pass the full InjuryDefinitions down,
+ * which structurally are anatomical ones.
  */
 
 import {
@@ -49,8 +57,9 @@ import type {
   SpecialPointDefinitionId,
 } from "../critical-points/types";
 
-import { getInjuryDefinition, injuryRegistry } from "./definitions";
+import { createInjuryDefinitionMap } from "./types";
 import type {
+  AnatomicalInjuryDefinition,
   CharacterInjury,
   CharacterInjuryId,
   InjuryApplicability,
@@ -138,8 +147,11 @@ export type InjuryValidationIssue =
  */
 export function findInjuryValidationIssues(
   injuries: readonly CharacterInjury[],
+  injuryDefinitions: readonly AnatomicalInjuryDefinition[],
 ): readonly InjuryValidationIssue[] {
   const issues: InjuryValidationIssue[] = [];
+
+  const injuryDefinitionsById = createInjuryDefinitionMap(injuryDefinitions);
 
   const seenInstanceIds =
     new Set<CharacterInjuryId>();
@@ -171,7 +183,7 @@ export function findInjuryValidationIssues(
     /* Definition reference                                                   */
     /* ---------------------------------------------------------------------- */
 
-    const definition = getInjuryDefinition(injury.injuryId);
+    const definition = injuryDefinitionsById.get(injury.injuryId);
 
     if (definition === undefined) {
       issues.push({
@@ -396,22 +408,29 @@ function findInjuryRecoveryIssues(
 
 
 /**
- * Validate the authored Injury catalog.
+ * Validate the ANATOMICAL half of authored Injury definitions.
  *
- * Registry/content issues are checked first, followed by Injury-specific
- * anatomical applicability and recovery-contract rules.
+ * Applicability must name something, and a treatment-required Injury's
+ * recovery ceiling must be a usable fraction. Both are Body's rules, so both
+ * are checked here — over the definitions the caller supplies rather than over
+ * a catalog this layer reaches for.
+ *
+ * Registry well-formedness (ids, duplicates) and Effect validity are the
+ * catalog's own business and belong to character/status/injuries/validation.ts,
+ * which calls this and adds them.
  *
  * Whether selectors or Special Point references are compatible with a
- * particular character cannot be determined here because anatomy and
- * BodyPartDefinitions are character/body-plan dependent.
+ * particular character cannot be determined here either, because anatomy and
+ * BodyPartDefinitions are character/body-plan dependent — that is
+ * findInjuryLocationIssues.
  */
-export function findInjuryCatalogIssues(): readonly string[] {
-  const issues = [
-    ...injuryRegistry.findCatalogIssues(),
-  ];
+export function findAnatomicalInjuryCatalogIssues(
+  injuryDefinitions: readonly AnatomicalInjuryDefinition[],
+): readonly string[] {
+  const issues: string[] = [];
 
 
-  for (const injury of injuryRegistry.all()) {
+  for (const injury of injuryDefinitions) {
     issues.push(
       ...findInjuryApplicabilityIssues(
         injury.id,
@@ -678,10 +697,12 @@ export function findInjuryLocationIssues(
   bodyPartDefinitions: readonly BodyPartDefinition[],
   specialPointDefinitions: readonly SpecialPointDefinition[],
   injuries: readonly CharacterInjury[],
+  injuryDefinitions: readonly AnatomicalInjuryDefinition[],
 ): readonly InjuryLocationValidationIssue[] {
   const issues: InjuryLocationValidationIssue[] = [];
 
   const definitionsByType = createBodyPartDefinitionMap(bodyPartDefinitions);
+  const injuryDefinitionsById = createInjuryDefinitionMap(injuryDefinitions);
 
   /*
    * The manifestation, by identity. An identity absent from this map is one
@@ -700,7 +721,7 @@ export function findInjuryLocationIssues(
   );
 
   for (const injury of injuries) {
-    const definition = getInjuryDefinition(injury.injuryId);
+    const definition = injuryDefinitionsById.get(injury.injuryId);
 
     if (definition === undefined) continue;
 
@@ -802,15 +823,17 @@ export function findBodyInjuryValidationIssues(
   bodyPartDefinitions: readonly BodyPartDefinition[],
   specialPointDefinitions: readonly SpecialPointDefinition[],
   injuries: readonly CharacterInjury[],
+  injuryDefinitions: readonly AnatomicalInjuryDefinition[],
 ): readonly BodyInjuryValidationIssue[] {
   return [
-    ...findInjuryValidationIssues(injuries),
+    ...findInjuryValidationIssues(injuries, injuryDefinitions),
     ...findInjuryLocationIssues(
       anatomy,
       knownContinuityKeys,
       bodyPartDefinitions,
       specialPointDefinitions,
       injuries,
+      injuryDefinitions,
     ),
   ];
 }

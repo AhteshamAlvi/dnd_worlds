@@ -31,6 +31,58 @@
  * and foundation/body/damage.ts: a malformed elapsed duration is an
  * integration problem for whoever wired up the clock, not something a player
  * can fix on their sheet.
+ *
+ *
+ * ── THE VALIDATION BOUNDARY ─────────────────────────────────────────────
+ *
+ * "Validated" here means VALIDATED RECOVERY INPUT. It does not mean validated
+ * character, and the difference is a precondition the caller owns. Spelling it
+ * out because `resolveValidatedRecovery` is a name that can be read as the
+ * stronger promise, and a caller who reads it that way will skip the check
+ * that actually matters.
+ *
+ * WHAT IS CHECKED — everything one Recovery pass consumes:
+ *
+ *   elapsed duration        finite and non-negative
+ *   Constitution            finite
+ *   Vitality                finite
+ *   Effective Scale         finite and > 0
+ *   Body Point modifiers    delegated to body-points/validation.ts
+ *   morphology coverage     an entry for every ACTIVE BodyPart
+ *   Injury ceilings         finite, within [0, 1]
+ *   Injury shape            delegated to findInjuryValidationIssues —
+ *                           instance ids, known definitions, location keys
+ *                           present and unique, treatment state matching the
+ *                           definition
+ *
+ * WHAT IS NOT CHECKED — and deliberately not:
+ *
+ *   anatomical Injury APPLICABILITY. Whether the BodyPart currently
+ *   manifesting an Injury's continuity identity satisfies the
+ *   InjuryDefinition's authored BodyPartSelector, and whether a location's
+ *   Special Point is real, allowed and actually hosted. That is
+ *   findInjuryLocationIssues / findBodyInjuryValidationIssues, reached
+ *   through character/validation.ts.
+ *
+ *   Two reasons, and the first is the load-bearing one. Recovery does not
+ *   CONSUME applicability: an Injury caps recovery on the identities its
+ *   location names whether or not its definition should have been allowed
+ *   there, so checking it here would be validating a field this module never
+ *   reads — in a second place, differently, from the place that owns it.
+ *   Second, the check needs SpecialPointDefinitions and the character's
+ *   knownContinuityKeys, neither of which is a Recovery input; adding them
+ *   would widen ResolveRecoveryInput to carry data only a validator wanted.
+ *
+ * SO THE PRECONDITION IS: **Injuries passed to Recovery must come from a
+ * character validateCharacter() has already accepted.** Recovery confirms they
+ * are well-formed enough to compute a pass from; it does not confirm they
+ * belong on the anatomy they name. A host running Recovery on Injuries it
+ * never validated gets an arithmetically sound outcome for an Injury that
+ * should not exist.
+ *
+ * Both halves are pinned by the "Recovery's validation boundary" tests in
+ * __tests__/character-foundation-stability.test.ts, so this is a checked
+ * contract rather than a comment that can quietly stop being true.
  */
 
 import type {
@@ -47,11 +99,11 @@ import {
 
 import type { BodyPartId } from "../anatomy/types";
 import { validateBodyPointModifiers } from "../body-points/validation";
-import { getInjuryDefinition } from "../injuries/definitions";
 import {
   findInjuryValidationIssues,
   type InjuryValidationIssue,
 } from "../injuries/validation";
+import { createInjuryDefinitionMap } from "../injuries/types";
 import type { CharacterInjuryId, InjuryId } from "../injuries/types";
 
 import { resolveRecovery } from "./resolution";
@@ -112,6 +164,10 @@ export type RecoveryValidationIssue =
  *
  * Returns issues rather than throwing, so a host can report all of them at
  * once instead of discovering them one failed tick at a time.
+ *
+ * Scoped to what a Recovery pass CONSUMES. Anatomical Injury applicability is
+ * out of scope and belongs to character validation — see this file's header
+ * for the full boundary and the precondition it puts on the caller.
  */
 export function findRecoveryInputIssues(
   input: ResolveRecoveryInput,
@@ -215,7 +271,10 @@ export function findRecoveryInputIssues(
    * and a second implementation of it is how the two start disagreeing about
    * whether an Injury is well-formed.
    */
-  for (const issue of findInjuryValidationIssues(input.injuries)) {
+  for (const issue of findInjuryValidationIssues(
+    input.injuries,
+    input.injuryDefinitions,
+  )) {
     issues.push({ type: "invalid-injury", issue });
   }
 
@@ -226,8 +285,12 @@ export function findRecoveryInputIssues(
    * above 1 is not a cap at all — it silently permits recovery past Maximum
    * BP, which is the exact opposite of what an untreated Injury means.
    */
+  const injuryDefinitionsById = createInjuryDefinitionMap(
+    input.injuryDefinitions,
+  );
+
   for (const injury of input.injuries) {
-    const definition = getInjuryDefinition(injury.injuryId);
+    const definition = injuryDefinitionsById.get(injury.injuryId);
 
     if (definition === undefined) continue;
     if (!definition.recovery.treatmentRequired) continue;
@@ -439,7 +502,7 @@ export function validateRecoveryInput(
 }
 
 /**
- * One Recovery pass, or the reasons it could not be run.
+ * One Recovery pass, or the reasons its INPUT could not be run on.
  *
  * The guarded entry point, and the one a host should call. On failure NO
  * outcome is produced — no continuity map, no anatomy, no removal list — so
@@ -447,6 +510,13 @@ export function validateRecoveryInput(
  * That is the whole point: a Recovery outcome computed from a negative
  * elapsed span or a NaN Vitality looks entirely ordinary, and the corruption
  * is only discovered much later and far from its cause.
+ *
+ * PRECONDITION: the Injuries in `input` come from a character
+ * validateCharacter() has already accepted. "Validated" in this function's
+ * name means its Recovery INPUTS are sound — not that the Injuries belong on
+ * the anatomy they name. Anatomical applicability is character validation's
+ * job and is not rechecked here; see this file's header for exactly where the
+ * line sits and why it sits there.
  */
 export function resolveValidatedRecovery(
   input: ResolveRecoveryInput,

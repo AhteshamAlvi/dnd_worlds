@@ -11,6 +11,13 @@
  *
  * So the rule is checked here, against the source text, the way import
  * boundaries have to be checked to stay true.
+ *
+ * It is now absolute. The last exception — the Injury definition, which
+ * carried Effects — was removed by splitting the interface: Foundation owns
+ * AnatomicalInjuryDefinition, character/status/injuries/ owns the
+ * Effect-bearing InjuryDefinition built on top of it, and Body is handed the
+ * definitions it needs. There is no whitelist left, which is the only state a
+ * layering rule reliably survives in.
  */
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -88,34 +95,65 @@ describe("Foundation does not depend on Rules", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("imports nothing from character/rules/ except the authored-content vocabulary", () => {
+  it("imports nothing from character/rules/, with NO exceptions", () => {
     /*
-     * The one remaining edge, and why it is allowed to remain.
+     * There used to be one: foundation/body/injuries/types.ts, because
+     * InjuryDefinition extended EffectfulDefinition and carried Effects. It is
+     * gone, and the whitelist that permitted it is gone with it.
      *
-     * An Injury is authored CONTENT as well as anatomy: InjuryDefinition
-     * extends EffectfulDefinition and carries Effects. The Effect union is a
-     * union over every domain — it names Body selectors, check scopes,
-     * Attribute keys and Action capacities — so it cannot be pushed below
-     * Foundation without dragging all of them with it, and the Injury catalog
-     * cannot be pushed above Foundation without taking Recovery (which reads
-     * it every pass) along.
+     * The fix was to split the INTERFACE rather than move the domain.
+     * AnatomicalInjuryDefinition stays under Body with the applicability,
+     * treatment and recovery-ceiling fields Body actually reads;
+     * character/status/injuries/ declares InjuryDefinition on top of it and
+     * adds the Effects. Manifestation and Recovery stay where they belong
+     * because they are anatomical, and Body is handed the definitions it needs
+     * through its inputs rather than reaching for a catalog.
      *
-     * What matters is that the edge is one-directional and confined. Rules
-     * never imports Injuries, so there is no Rules <-> Foundation cycle; and
-     * pinning the exception here means a NEW upward import fails this test
-     * rather than quietly joining an existing exception.
+     * So this is now an absolute rule with nothing to except, which is the
+     * only kind of layering rule that stays true. A new upward import fails
+     * here rather than joining a list.
      */
-    const allowed = new Set([
-      join(SRC, "character", "foundation", "body", "injuries", "types.ts"),
-    ]);
+    const offenders = foundationFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("character", "rules")),
+      ),
+    );
 
-    const offenders = foundationFiles
-      .filter((path) => !allowed.has(path))
-      .filter((path) =>
-        moduleSpecifiers(path).some((specifier) =>
-          resolvesInto(path, specifier, join("character", "rules")),
-        ),
-      );
+    expect(offenders).toEqual([]);
+  });
+
+  it("imports nothing from character/status/ either", () => {
+    /*
+     * The other direction the Injury split could have leaked.
+     *
+     * Status sits above Foundation and owns the Injury CATALOG. Body reaching
+     * for it — to look up a definition instead of being handed one — would
+     * reintroduce exactly the dependency the split removed, just one hop
+     * further round: status/injuries/types.ts imports the rules vocabulary, so
+     * a Foundation -> Status edge is a Foundation -> Rules edge wearing a hat.
+     */
+    const offenders = foundationFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("character", "status")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("is not depended on in reverse — Rules never imports Injuries", () => {
+    /*
+     * Rules may import the Foundation contracts its Effects target, and does.
+     * What it must not do is import the Injury domain back, which would make
+     * the split circular in the other direction.
+     */
+    const ruleFiles = sourceFilesUnder(join(SRC, "character", "rules"));
+
+    const offenders = ruleFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("body", "injuries")),
+      ),
+    );
 
     expect(offenders).toEqual([]);
   });

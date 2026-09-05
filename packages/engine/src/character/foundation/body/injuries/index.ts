@@ -1,35 +1,39 @@
 /*
- * Injuries — anatomical status entries, owned by Body.
+ * Injuries — the ANATOMICAL half, owned by Body.
  *
- * See types.ts for the domain model and why Injuries live here rather than
- * under status/: an Injury is fundamentally anatomical, and this is what
- * keeps foundation/body/recovery/ from having to reach upward into
- * character/status/ to reduce a BodyPart's active Injury caps to one
- * ceiling.
+ * An Injury is two things at once, and they live in two places:
  *
- * What a manifested Injury CONTRIBUTES is a content question rather than an
- * anatomical one, so collectInjuryEffectSources lives in
- * character/status/resolution.ts alongside the Condition collector.
+ *   here                        anatomy — where an Injury may sit, whether it
+ *                               manifests, what ceiling it puts on recovery,
+ *                               and the anatomical validation of all of it
+ *
+ *   character/status/injuries/  content — the Effects it contributes, the
+ *                               extra ones treatment state adds, and the
+ *                               authored catalog
+ *
+ * The anatomical half stays under Body because it IS Body's subject matter,
+ * and because it is what lets foundation/body/recovery/ reduce a BodyPart's
+ * active Injury caps to one ceiling without reaching upward.
+ *
+ * Nothing here imports the rules layer or the catalog. Every function that
+ * needs a definition is handed AnatomicalInjuryDefinitions by its caller —
+ * see types.ts for why the interface is split rather than the domain moved.
  */
 
 export type {
+  AnatomicalInjuryDefinition,
   CharacterInjury,
   CharacterInjuryId,
   InjuryApplicability,
-  InjuryDefinition,
   InjuryId,
   InjuryLocation,
   InjuryRecovery,
   InjuryTreatmentStatus,
 } from "./types";
 
-export {
-  INJURY_DEFINITIONS,
-  injuryRegistry,
-  getInjuryDefinition,
-  isKnownInjuryId,
-} from "./definitions";
-export type { KnownInjuryId } from "./definitions";
+export { createInjuryDefinitionMap } from "./types";
+
+export type { InjuryManifestation } from "./resolution";
 
 export {
   resolveInjuryManifestation,
@@ -42,7 +46,7 @@ export type {
 } from "./validation";
 
 export {
-  findInjuryCatalogIssues,
+  findAnatomicalInjuryCatalogIssues,
   findInjuryLocationApplicabilityIssues,
   findInjuryLocationIssues,
   findInjuryValidationIssues,

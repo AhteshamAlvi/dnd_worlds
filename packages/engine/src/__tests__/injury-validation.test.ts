@@ -11,10 +11,20 @@ import { afterEach, describe, expect, it } from "vitest";
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
-  findInjuryCatalogIssues,
   findInjuryValidationIssues,
   type CharacterInjury,
 } from "../character/foundation/body/injuries";
+
+/*
+ * The catalog is CONTENT and lives above Body now, so its lookup comes from
+ * status/injuries/ — and Body's validators are HANDED the definitions rather
+ * than reaching for them. Passing listAnatomicalInjuryDefinitions() at each
+ * call site exercises the registry end to end as well as the validator.
+ */
+import {
+  findInjuryCatalogIssues,
+  listAnatomicalInjuryDefinitions,
+} from "../character/status/injuries";
 
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
@@ -109,7 +119,7 @@ describe("treatment status validation", () => {
       },
     ];
 
-    expect(findInjuryValidationIssues(injuries)).toEqual([]);
+    expect(findInjuryValidationIssues(injuries, listAnatomicalInjuryDefinitions())).toEqual([]);
   });
 
   it("accepts a no-treatment Injury with no treatment status", () => {
@@ -125,7 +135,7 @@ describe("treatment status validation", () => {
       { id: "injury-1", injuryId: "bruise", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
-    expect(findInjuryValidationIssues(injuries)).toEqual([]);
+    expect(findInjuryValidationIssues(injuries, listAnatomicalInjuryDefinitions())).toEqual([]);
   });
 
   it("rejects a treatment-required Injury missing its treatment status", () => {
@@ -141,7 +151,7 @@ describe("treatment status validation", () => {
       { id: "injury-1", injuryId: "broken-rib", location: { continuityKeys: [continuityKey("torso-1")] } },
     ];
 
-    expect(findInjuryValidationIssues(injuries)).toEqual([
+    expect(findInjuryValidationIssues(injuries, listAnatomicalInjuryDefinitions())).toEqual([
       {
         type: "invalid-injury-treatment-status",
         id: "injury-1",
@@ -169,7 +179,7 @@ describe("treatment status validation", () => {
       },
     ];
 
-    expect(findInjuryValidationIssues(injuries)).toEqual([
+    expect(findInjuryValidationIssues(injuries, listAnatomicalInjuryDefinitions())).toEqual([
       {
         type: "invalid-injury-treatment-status",
         id: "injury-1",
@@ -197,7 +207,7 @@ describe("treatment status validation", () => {
       },
     ] as unknown as readonly CharacterInjury[];
 
-    expect(findInjuryValidationIssues(injuries)).toEqual([
+    expect(findInjuryValidationIssues(injuries, listAnatomicalInjuryDefinitions())).toEqual([
       {
         type: "invalid-injury-treatment-status",
         id: "injury-1",
@@ -277,6 +287,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([]);
   });
@@ -301,6 +312,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([
       {
@@ -332,6 +344,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([
       {
@@ -363,6 +376,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([
       { type: "injury-special-point-missing", id: "injury-1", injuryId: "elbow-dislocation" },
@@ -393,6 +407,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([
       {
@@ -428,6 +443,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([
       {
@@ -467,6 +483,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([
       {
@@ -490,6 +507,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([]);
   });
@@ -531,6 +549,7 @@ describe("Body-aware location validation", () => {
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         injuries,
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([]);
   });
@@ -558,6 +577,7 @@ describe("findBodyInjuryValidationIssues composes both layers without duplicatin
       BODY_PART_DEFINITIONS,
       SPECIAL_POINT_DEFINITIONS,
       injuries,
+      listAnatomicalInjuryDefinitions(),
     );
 
     expect(issues).toEqual([
@@ -584,6 +604,7 @@ describe("findBodyInjuryValidationIssues composes both layers without duplicatin
         BODY_PART_DEFINITIONS,
         SPECIAL_POINT_DEFINITIONS,
         [],
+        listAnatomicalInjuryDefinitions(),
       ),
     ).toEqual([]);
   });

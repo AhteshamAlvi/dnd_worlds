@@ -537,22 +537,25 @@ export {
 
 export type {
   CharacterInjury,
+  AnatomicalInjuryDefinition,
   CharacterInjuryId,
   InjuryApplicability,
-  InjuryDefinition,
   InjuryId,
   InjuryLocation,
   InjuryRecovery,
   InjuryTreatmentStatus,
 } from "./injuries/types";
 
-export {
-  INJURY_DEFINITIONS,
-  injuryRegistry,
-  getInjuryDefinition,
-  isKnownInjuryId,
-} from "./injuries/definitions";
-export type { KnownInjuryId } from "./injuries/definitions";
+export { createInjuryDefinitionMap } from "./injuries/types";
+
+/*
+ * The authored Injury CATALOG is not here. Its definitions carry Effects, so
+ * it is content and lives in character/status/injuries/ — see that module and
+ * injuries/types.ts for the split. Body is handed the anatomical definitions
+ * it needs through its inputs.
+ */
+
+export type { InjuryManifestation } from "./injuries/resolution";
 
 export {
   resolveInjuryManifestation,
@@ -564,7 +567,7 @@ export type {
   InjuryValidationIssue,
 } from "./injuries/validation";
 export {
-  findInjuryCatalogIssues,
+  findAnatomicalInjuryCatalogIssues,
   findInjuryLocationApplicabilityIssues,
   findInjuryLocationIssues,
   findInjuryValidationIssues,

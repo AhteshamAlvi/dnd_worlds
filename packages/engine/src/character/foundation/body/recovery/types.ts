@@ -27,6 +27,7 @@ import type {
 } from "../body-points/types";
 
 import type {
+  AnatomicalInjuryDefinition,
   CharacterInjury,
   CharacterInjuryId,
   InjuryId,
@@ -130,6 +131,22 @@ export interface ResolveRecoveryInput {
   readonly effectiveScale: number;
 
   readonly injuries: readonly CharacterInjury[];
+
+  /*
+   * The anatomical definitions for those Injuries, supplied rather than
+   * looked up.
+   *
+   * Recovery needs `recovery.treatmentRequired` and
+   * `bpRecoveryCeilingFraction` off each Injury's definition, and the authored
+   * catalog holding them is CONTENT — it lives above Foundation, and reaching
+   * for it is what used to make Body import the rules layer. The caller
+   * already holds the full InjuryDefinitions and passes them straight in;
+   * they structurally are AnatomicalInjuryDefinitions, so nothing converts.
+   *
+   * Same reason and same shape as morphologyByPartId and effectiveScale above:
+   * resolved context Body consumes but must not go and fetch.
+   */
+  readonly injuryDefinitions: readonly AnatomicalInjuryDefinition[];
 
   readonly elapsed: GameDuration;
 }

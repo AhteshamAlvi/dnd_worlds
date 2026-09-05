@@ -14,6 +14,10 @@
  */
 
 import { describe, expect, it } from "vitest";
+import {
+  findInjuryCatalogIssues,
+  listAnatomicalInjuryDefinitions,
+} from "../character/status/injuries";
 
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 
@@ -38,7 +42,6 @@ import {
 } from "../character/status/conditions";
 
 import {
-  findInjuryCatalogIssues,
   findInjuryValidationIssues,
 } from "../character/foundation/body/injuries";
 
@@ -295,7 +298,7 @@ describe("conditions", () => {
 
 describe("injuries", () => {
   it("allows no injuries", () => {
-    expect(findInjuryValidationIssues([])).toEqual([]);
+    expect(findInjuryValidationIssues([], listAnatomicalInjuryDefinitions())).toEqual([]);
   });
 
   // The catalog is empty until the d10 table is authored, so every id is
@@ -308,7 +311,9 @@ describe("injuries", () => {
           injuryId: "battered",
           location: { continuityKeys: [continuityKey("upper-limb:left")] },
         },
-      ]),
+      ],
+        listAnatomicalInjuryDefinitions(),
+      ),
     ).toEqual([
       {
         type: "unknown-injury",

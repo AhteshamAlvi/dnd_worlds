@@ -15,9 +15,13 @@
  *
  * What an Injury contributes ONCE it manifests is a question about authored
  * content rather than about anatomy, so it lives with the other content
- * collectors in character/status/resolution.ts. That is also what keeps this
- * file — and everything else under foundation/ — from importing the rules
+ * collectors in character/status/injuries/effects.ts. That is also what keeps
+ * this file — and everything else under foundation/ — from importing the rules
  * layer that sits on top of it.
+ *
+ * The definitions arrive as a PARAMETER for the same reason. Looking one up
+ * would mean importing the authored catalog, which is content; the caller
+ * already holds it and passes the anatomical view of each definition down.
  */
 
 import {
@@ -35,14 +39,51 @@ import type {
   SpecialPointDefinition,
 } from "../critical-points/types";
 
-import { getInjuryDefinition } from "./definitions";
-import type { CharacterInjury, CharacterInjuryId } from "./types";
+import { createInjuryDefinitionMap } from "./types";
+import type {
+  AnatomicalInjuryDefinition,
+  CharacterInjury,
+  CharacterInjuryId,
+} from "./types";
 import { findInjuryLocationApplicabilityIssues } from "./validation";
 
 
 /* -------------------------------------------------------------------------- */
 /* Manifestation                                                             */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Which of a character's stored Injuries the current form expresses.
+ *
+ * Reported three ways, and the third is the one resolution actually runs on.
+ *
+ * `active` and `dormant` are CharacterInjuryIds, for display and diagnostics.
+ * They are lossy: a sheet with two entries sharing an id — a validation error,
+ * but resolution runs before and during validation and has to give one answer
+ * either way — cannot be told apart by id. Selecting Injuries with
+ * `active.includes(injury.id)` would then pull in a DORMANT entry that happens
+ * to share an id with a manifested one, and comparing two passes by id could
+ * call `["dup"]` and `["dup"]` equal while a different one of the two was
+ * manifested each time.
+ *
+ * `manifestedByIndex` is positional: one entry per supplied Injury, in the
+ * order supplied. It cannot conflate two entries whatever their ids, and it is
+ * what makes the manifestation fixpoint in character/resolution.ts
+ * deterministic on a sheet validation has not yet rejected.
+ */
+export interface InjuryManifestation {
+  readonly active: readonly CharacterInjuryId[];
+  readonly dormant: readonly CharacterInjuryId[];
+
+  /**
+   * Whether each supplied Injury manifests, positionally.
+   *
+   * Always the same length as the `injuries` argument. Index-aligned with it,
+   * so `injuries.filter((_, i) => manifestedByIndex[i])` is the exact
+   * manifested subset even when two entries share an id.
+   */
+  readonly manifestedByIndex: readonly boolean[];
+}
 
 /**
  * Which Injuries the current form actually expresses.
@@ -61,12 +102,13 @@ export function resolveInjuryManifestation(
   bodyPartDefinitions: readonly BodyPartDefinition[],
   specialPointDefinitions: readonly SpecialPointDefinition[],
   injuries: readonly CharacterInjury[],
-): {
-  readonly active: readonly CharacterInjuryId[];
-  readonly dormant: readonly CharacterInjuryId[];
-} {
+  injuryDefinitions: readonly AnatomicalInjuryDefinition[],
+): InjuryManifestation {
+  const injuryDefinitionsById = createInjuryDefinitionMap(injuryDefinitions);
+
   const active: CharacterInjuryId[] = [];
   const dormant: CharacterInjuryId[] = [];
+  const manifestedByIndex: boolean[] = [];
 
   const definitionsByType = createBodyPartDefinitionMap(bodyPartDefinitions);
 
@@ -85,10 +127,11 @@ export function resolveInjuryManifestation(
   );
 
   for (const injury of injuries) {
-    const definition = getInjuryDefinition(injury.injuryId);
+    const definition = injuryDefinitionsById.get(injury.injuryId);
 
     if (definition === undefined) {
       dormant.push(injury.id);
+      manifestedByIndex.push(false);
 
       continue;
     }
@@ -99,6 +142,7 @@ export function resolveInjuryManifestation(
 
     if (parts.some((part) => part === undefined)) {
       dormant.push(injury.id);
+      manifestedByIndex.push(false);
 
       continue;
     }
@@ -130,7 +174,9 @@ export function resolveInjuryManifestation(
 
     if (fits) active.push(injury.id);
     else dormant.push(injury.id);
+
+    manifestedByIndex.push(fits);
   }
 
-  return { active, dormant };
+  return { active, dormant, manifestedByIndex };
 }

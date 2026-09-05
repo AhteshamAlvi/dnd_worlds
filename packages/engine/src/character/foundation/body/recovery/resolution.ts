@@ -40,8 +40,12 @@
  *
  * A treatment-required Injury with no recorded treatmentStatus is treated as
  * untreated for cap purposes — the same conservative default
- * character/status/resolution.ts uses for its Effects, and the state every
- * treatment-required Injury starts in.
+ * character/status/injuries/effects.ts uses for its Effects, and the state
+ * every treatment-required Injury starts in.
+ *
+ * Injury definitions arrive through ResolveRecoveryInput rather than being
+ * looked up. The authored catalog is content and lives above Foundation; the
+ * caller passes the anatomical view of each definition down.
  *
  * ── Inputs are assumed valid ────────────────────────────────────────────
  *
@@ -70,10 +74,9 @@ import type {
   BodyPartId,
 } from "../anatomy/types";
 
-import {
-  getInjuryDefinition,
-} from "../injuries/definitions";
+import { createInjuryDefinitionMap } from "../injuries/types";
 import type {
+  AnatomicalInjuryDefinition,
   CharacterInjury,
 } from "../injuries/types";
 
@@ -175,13 +178,16 @@ export function resolveBodyPartRecoveryCeiling(
   partId: BodyPartId,
   maximumBP: number,
   injuriesOnPart: readonly CharacterInjury[],
+  injuryDefinitions: readonly AnatomicalInjuryDefinition[],
 ): BodyPartRecoveryCeiling {
   const activeCaps: ActiveRecoveryCap[] = [];
+
+  const injuryDefinitionsById = createInjuryDefinitionMap(injuryDefinitions);
 
   for (const injury of injuriesOnPart) {
     if (injury.treatmentStatus === "treated") continue;
 
-    const definition = getInjuryDefinition(injury.injuryId);
+    const definition = injuryDefinitionsById.get(injury.injuryId);
 
     if (definition === undefined || !definition.recovery.treatmentRequired) {
       continue;
@@ -280,6 +286,7 @@ export function resolveRecovery(
       part.id,
       maximumBP,
       injuriesByContinuity.get(part.continuityKey) ?? [],
+      input.injuryDefinitions,
     );
 
     const recoveryAmountBP = dailyFraction * maximumBP * elapsedDays;

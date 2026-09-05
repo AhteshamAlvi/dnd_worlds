@@ -2,3 +2,10 @@ node_modules/
 dist/
 .DS_Store
 *.local
+
+# Obsidian per-machine UI state: open panes, tabs, sidebar widths.
+# Pure local churn — it changes every time the vault is opened and means
+# nothing to another machine. The rest of .obsidian/ (app, appearance,
+# plugins) is shared config and stays tracked.
+worldbuilding/.obsidian/workspace.json
+worldbuilding/.obsidian/workspace-mobile.json

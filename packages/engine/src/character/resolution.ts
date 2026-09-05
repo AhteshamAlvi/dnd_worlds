@@ -95,10 +95,9 @@ import { NO_MASTERY, type MasteryRank } from "./capabilities/mastery";
 
 import { deriveCharacterLevelFromLifetimeXp } from "./progression/levels";
 
-import {
-  collectConditionEffectSources,
-  collectInjuryEffectSources,
-} from "./status/resolution";
+import { collectConditionEffectSources } from "./status/resolution";
+import { collectInjuryEffectSources } from "./status/injuries/effects";
+import { listAnatomicalInjuryDefinitions } from "./status/injuries/definitions";
 import { collectItemEffectSources, collectItemState } from "./equipment/index";
 
 import {
@@ -800,16 +799,25 @@ function failedPass(
   };
 }
 
-/* Set equality over Injury instance ids, order-independent. */
-function isSameInjurySet(
-  left: readonly CharacterInjuryId[],
-  right: readonly CharacterInjuryId[],
+/*
+ * Whether two passes manifested exactly the same Injuries.
+ *
+ * Both masks are index-aligned with the character's stored Injury list, so
+ * this is a per-ENTRY comparison: independent of the order manifestation
+ * reported its ids in, and unaffected by two entries sharing an id.
+ *
+ * The id-set version this replaced got both wrong. `["dup", "dup"]` and
+ * `["dup", "other"]` compared EQUAL — same length, and every left id present
+ * in the right — so the fixpoint could stop on a set that was still moving.
+ */
+function isSameManifestation(
+  left: readonly boolean[],
+  right: readonly boolean[],
 ): boolean {
-  if (left.length !== right.length) return false;
-
-  const seen = new Set(right);
-
-  return left.every((id) => seen.has(id));
+  return (
+    left.length === right.length &&
+    left.every((manifested, index) => manifested === right[index])
+  );
 }
 
 
@@ -870,6 +878,18 @@ export function resolveCharacter(
    * that falls out of it. No Injury has contributed anything yet, so the
    * manifested set this pass was resolved from is empty.
    */
+  /*
+   * The manifested set is tracked POSITIONALLY, not by id.
+   *
+   * Ids are what a sheet displays, but they are not reliably unique before
+   * validation has run — and resolution runs first, so it has to be
+   * deterministic on a sheet that has two entries sharing an id. Comparing
+   * passes by id would call two genuinely different manifested sets equal, and
+   * selecting by id would apply a DORMANT entry's Effects because a manifested
+   * entry happened to share its id. A mask over the stored order cannot do
+   * either.
+   */
+  let manifestedMask: readonly boolean[] = injuries.map(() => false);
   let manifestedIds: readonly CharacterInjuryId[] = [];
   let dormantIds: readonly CharacterInjuryId[] = injuries.map(
     (injury) => injury.id,
@@ -892,31 +912,38 @@ export function resolveCharacter(
       pass.bodyInput.definitions,
       pass.bodyInput.specialPointDefinitions,
       injuries,
+
+      /*
+       * Body is HANDED the definitions. The authored catalog is content and
+       * lives above Foundation, so this layer — which may read it — looks them
+       * up once and passes the anatomical view down. InjuryDefinition extends
+       * AnatomicalInjuryDefinition, so nothing converts.
+       */
+      listAnatomicalInjuryDefinitions(),
     );
 
     /*
      * Phase 7: settle as soon as the answer stops moving.
      *
-     * Compared as a SET, not as a sequence. Manifestation walks the stored
-     * Injuries in order, so the order cannot differ between passes — but an
-     * ordering assumption is not what this loop's termination should rest on.
+     * Compared entry by entry over the stored order rather than as a bag of
+     * ids. Nothing here depends on the order manifestation happens to REPORT
+     * in, and two entries sharing an id stay distinguishable.
      */
-    if (isSameInjurySet(manifestation.active, manifestedIds)) {
+    if (isSameManifestation(manifestation.manifestedByIndex, manifestedMask)) {
       dormantIds = manifestation.dormant;
       stabilized = true;
 
       break;
     }
 
+    manifestedMask = manifestation.manifestedByIndex;
     manifestedIds = manifestation.active;
     dormantIds = manifestation.dormant;
 
     /* Phases 4-5: re-resolve with the manifested Injuries' Effects included. */
-    const manifestedSet = new Set(manifestedIds);
-
     pass = resolveCharacterPass(
       character,
-      injuries.filter((injury) => manifestedSet.has(injury.id)),
+      injuries.filter((_, index) => manifestedMask[index] === true),
     );
 
     if (!pass.body.success) return failedPass(character, pass.body);

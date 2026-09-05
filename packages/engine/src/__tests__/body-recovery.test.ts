@@ -22,6 +22,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 
@@ -97,6 +98,10 @@ function baseInput(
     morphologyByPartId: morphologyFor(anatomy),
     effectiveScale: 1,
     injuries: [],
+
+    // Body is handed its definitions now; the catalog lives above it.
+    injuryDefinitions: listAnatomicalInjuryDefinitions(),
+
     elapsed: days(1),
     vitality: 10,
     ...overrides,

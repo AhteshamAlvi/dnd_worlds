@@ -54,7 +54,7 @@ import {
 import {
   injuryRegistry,
   type InjuryDefinition,
-} from "./foundation/body/injuries";
+} from "./status/injuries";
 
 import { itemRegistry } from "./equipment/index";
 import type { ItemDefinition } from "./equipment/types";
@@ -299,7 +299,7 @@ function rulesOf(
       readonly requirements?: readonly Requirement[];
     }[];
     // Injuries key their extra Effects off treatment state instead — see
-    // foundation/body/injuries/types.ts's InjuryDefinition.treatmentEffects.
+    // status/injuries/types.ts's InjuryDefinition.treatmentEffects.
     readonly treatmentEffects?: {
       readonly untreated?: readonly Effect[];
       readonly treated?: readonly Effect[];
