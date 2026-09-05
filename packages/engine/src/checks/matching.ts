@@ -1,7 +1,18 @@
-/* Directional matching from an authored modifier selector to a concrete check. */
+/*
+ * Directional matching from an authored modifier selector to a concrete check.
+ *
+ * Sense and phenomenon matching are NOT implemented here. They belong to the
+ * sensory vocabulary that defines those selectors, so they are imported from
+ * character/foundation/senses/scopes.ts and re-exported for callers that reach
+ * for them through checks/. The mode and subject matchers below are local
+ * because nothing outside this file needs them.
+ */
 
 import {
-  PHYSICAL_SENSE_IDS,
+  matchesPhenomenonSelector,
+  matchesSenseSelector,
+} from "../character/foundation/senses/scopes";
+import {
   type CheckScope,
   type CheckScopeSelector,
   type ConcealmentMode,
@@ -12,32 +23,9 @@ import {
   type DetectionSubjectSelector,
   type InvestigationSubject,
   type InvestigationSubjectSelector,
-  type PerceptionPhenomenon,
-  type PhenomenonSelector,
-  type SenseId,
-  type SenseSelector,
 } from "./scopes";
 
-export function matchesSenseSelector(
-  selector: SenseSelector,
-  sense: SenseId,
-): boolean {
-  switch (selector.kind) {
-    case "all":
-      return true;
-    case "all-physical":
-      return (PHYSICAL_SENSE_IDS as readonly SenseId[]).includes(sense);
-    case "specific":
-      return selector.sense === sense;
-  }
-}
-
-export function matchesPhenomenonSelector(
-  selector: PhenomenonSelector,
-  phenomenon: PerceptionPhenomenon,
-): boolean {
-  return selector.kind === "all" || selector.phenomenon === phenomenon;
-}
+export { matchesSenseSelector, matchesPhenomenonSelector };
 
 function matchesDetectionModeSelector(
   selector: DetectionModeSelector,

@@ -39,6 +39,8 @@ import {
   type ActionCapacityKind,
 } from "../foundation/actions/types";
 import { isValidActionCapacityAmount } from "../foundation/actions/validation";
+import { isSenseId } from "../foundation/senses/scopes";
+import { isValidSenseSelector } from "../foundation/senses/validation";
 import type { Effect } from "./effects";
 import type { Requirement } from "./requirements";
 
@@ -75,7 +77,13 @@ export type RuleValidationIssue =
   | RequirementDepthExceededIssue
   | InvalidBodyMultiplierIssue
   | SuppressOnBaseAnatomyIssue
-  | MissingAnatomyReferenceIssue;
+  | MissingAnatomyReferenceIssue
+  | InvalidSenseEffectIssue;
+
+export interface InvalidSenseEffectIssue {
+  readonly type: "invalid-sense-effect";
+  readonly path: string;
+}
 
 
 /*
@@ -128,7 +136,8 @@ export interface InvalidEffectAmountIssue {
     | "modifyBaseAttribute"
     | "modifyResolvedAttribute"
     | "modifyCheck"
-    | "modifyActionCapacity";
+    | "modifyActionCapacity"
+    | "modifySense";
   readonly amount: number;
 }
 
@@ -434,6 +443,39 @@ export function findEffectValidationIssues(
 
       break;
     }
+
+    case "modifySense": {
+      if (!isFiniteNumber(effect.amount)) {
+        issues.push({
+          type: "invalid-effect-amount",
+          path: `${path}.amount`,
+          effectType: effect.type,
+          amount: effect.amount,
+        });
+      }
+      if (!isValidSenseSelector(effect.sense)) {
+        issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      break;
+    }
+
+    case "grantSense": {
+      if (!isSenseId(effect.sense)) {
+        issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      break;
+    }
+
+    case "suppressSense": {
+      if (!isValidSenseSelector(effect.sense)) {
+        issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      break;
+    }
+
+    case "grantNenPerception":
+    case "suppressNenPerception":
+      break;
 
 
     case "grantTrait": {

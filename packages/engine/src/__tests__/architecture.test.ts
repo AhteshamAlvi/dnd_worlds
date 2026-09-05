@@ -205,3 +205,120 @@ describe("provenance has exactly one structural definition", () => {
     expect(structural).toEqual([]);
   });
 });
+
+
+/*
+ * The closed sensory vocabulary is closed only if it is declared once.
+ *
+ * It was briefly declared twice: checks/scopes.ts and
+ * character/foundation/senses/scopes.ts each had a full copy of the sense
+ * list, the phenomena, the modes, the subjects, the four sensory scopes and
+ * every selector. Because the two copies were structurally identical
+ * TypeScript accepted assignment in both directions, so nothing failed — and
+ * nothing would have failed if a seventh sense had been added to one and not
+ * the other. Modifier matching would simply have stopped agreeing with profile
+ * resolution, at runtime, silently.
+ *
+ * Foundation owns them now and checks/ re-exports. A re-export creates no
+ * second declaration, so this counts DECLARATIONS specifically.
+ */
+describe("the sensory vocabulary has exactly one declaration", () => {
+  const SENSES = join("character", "foundation", "senses", "scopes.ts");
+
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  /* `export const SENSE_IDS = [...]`, not `export { SENSE_IDS } from ...`. */
+  const CLOSED_LISTS = [
+    "SENSE_IDS",
+    "PHYSICAL_SENSE_IDS",
+    "PERCEPTION_PHENOMENA",
+    "DETECTION_MODES",
+    "CONCEALMENT_MODES",
+    "DETECTION_SUBJECTS",
+    "INVESTIGATION_SUBJECTS",
+  ] as const;
+
+  const SENSORY_TYPES = [
+    "SenseId",
+    "PerceptionPhenomenon",
+    "DetectionMode",
+    "ConcealmentMode",
+    "DetectionSubject",
+    "InvestigationSubject",
+    "SenseSelector",
+    "PhenomenonSelector",
+    "DetectionModeSelector",
+    "ConcealmentModeSelector",
+    "DetectionSubjectSelector",
+    "InvestigationSubjectSelector",
+    "PerceptionCheckScope",
+    "DetectionCheckScope",
+    "ConcealmentCheckScope",
+    "InvestigationCheckScope",
+    "PerceptionCheckScopeSelector",
+    "DetectionCheckScopeSelector",
+    "ConcealmentCheckScopeSelector",
+    "InvestigationCheckScopeSelector",
+  ] as const;
+
+  /* Matching the selectors is part of the vocabulary, not a second opinion. */
+  const SENSORY_MATCHERS = ["matchesSenseSelector", "matchesPhenomenonSelector"] as const;
+
+  function declaringFiles(pattern: RegExp): readonly string[] {
+    return everySource.filter((path) => pattern.test(readFileSync(path, "utf8")));
+  }
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.length).toBeGreaterThan(50);
+    expect(everySource.some((path) => path.endsWith(SENSES))).toBe(true);
+  });
+
+  it.each(CLOSED_LISTS)("declares %s exactly once, under foundation/senses/", (name) => {
+    const declarers = declaringFiles(new RegExp(`\\bconst\\s+${name}\\b\\s*=`));
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(SENSES)).toBe(true);
+  });
+
+  it.each(SENSORY_TYPES)("declares %s exactly once, under foundation/senses/", (name) => {
+    /*
+     * Declarations only. `export type { SenseId }` re-export lists cannot
+     * match because the word after `type` there is `{`; requiring `=` after a
+     * type alias also excludes the inline `import { type SenseId }` specifier
+     * form, which is how checks/ now names these without declaring them.
+     */
+    const declarers = declaringFiles(
+      new RegExp(`\\binterface\\s+${name}\\b|\\btype\\s+${name}\\s*=`),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(SENSES)).toBe(true);
+  });
+
+  it.each(SENSORY_MATCHERS)("implements %s exactly once, under foundation/senses/", (name) => {
+    const declarers = declaringFiles(new RegExp(`\\bfunction\\s+${name}\\b`));
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(SENSES)).toBe(true);
+  });
+
+  it("leaves no second sense-selector guard behind either", () => {
+    /*
+     * checks/validation.ts had its own isSenseSelector / isPhenomenonSelector.
+     * They are foundation/senses/validation.ts's isValidSenseSelector and
+     * isValidPhenomenonSelector now, imported rather than reimplemented.
+     */
+    const guards = ["isValidSenseSelector", "isValidPhenomenonSelector"] as const;
+
+    for (const guard of guards) {
+      const declarers = declaringFiles(new RegExp(`\\bfunction\\s+${guard}\\b`));
+
+      expect(declarers).toHaveLength(1);
+      expect(
+        declarers[0]!.endsWith(join("character", "foundation", "senses", "validation.ts")),
+      ).toBe(true);
+    }
+  });
+});

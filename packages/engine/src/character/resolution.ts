@@ -60,6 +60,8 @@ import type {
 
 import { resolveActionCapacity } from "./foundation/actions/resolution";
 import type { ResolvedActionCapacity } from "./foundation/actions/types";
+import { resolveSensoryProfile } from "./foundation/senses/profile";
+import type { ResolvedSensoryProfile } from "./foundation/senses/types";
 
 import {
   collectSpeciesAncestry,
@@ -232,6 +234,9 @@ export interface ResolvedCharacter {
    * Action-capacity Effects; see foundation/actions/.
    */
   readonly actionCapacity: ResolvedActionCapacity;
+
+  /** Permanent resolved senses and phenomenon access for sensory mechanics. */
+  readonly senses: ResolvedSensoryProfile;
 
   readonly traits: ResolvedTraits;
   readonly capabilities: ResolvedCapabilities;
@@ -1045,6 +1050,8 @@ export function resolveCharacter(
     resolved.actionCapacity,
   );
 
+  const senses = resolveSensoryProfile(stats, { effects: resolved.sensory });
+
   const movement = resolveMovement(
     (stats.str + stats.agi) / 2,
     resolvedBody.locomotion.fraction,
@@ -1080,6 +1087,7 @@ export function resolveCharacter(
     derivedAttributes,
     derivedScores: resolveDerivedScores(derivedAttributes),
     actionCapacity,
+    senses,
 
     traits,
     capabilities,

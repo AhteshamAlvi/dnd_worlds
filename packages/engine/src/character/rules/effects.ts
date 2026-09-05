@@ -89,6 +89,22 @@ import type {
   DerivedAttributeName,
 } from "../foundation/attributes/derived/types";
 import type { ActionCapacityKind } from "../foundation/actions/types";
+import type {
+  GrantNenPerceptionEffect,
+  GrantSenseEffect,
+  ModifySenseEffect,
+  SensoryEffect,
+  SuppressNenPerceptionEffect,
+  SuppressSenseEffect,
+} from "../foundation/senses/modifiers";
+
+export type {
+  GrantNenPerceptionEffect,
+  GrantSenseEffect,
+  ModifySenseEffect,
+  SuppressNenPerceptionEffect,
+  SuppressSenseEffect,
+} from "../foundation/senses/modifiers";
 
 
 /**
@@ -500,6 +516,7 @@ export type Effect =
   | GrantTraitEffect
   | GrantSkillEffect
   | GrantTechniqueEffect
+  | SensoryEffect
   | BodyEffect;
 
 
@@ -517,6 +534,11 @@ export const EFFECT_TYPES = [
   "grantTrait",
   "grantSkill",
   "grantTechnique",
+  "modifySense",
+  "grantSense",
+  "suppressSense",
+  "grantNenPerception",
+  "suppressNenPerception",
 
   "modifyBaseBodyScale",
   "modifyResolvedBodyScale",

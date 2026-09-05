@@ -95,6 +95,12 @@ import type {
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type { ActionCapacityContribution } from "../foundation/actions/types";
 import type {
+  ResolvedSensoryEffects,
+  SourcedSenseGrant,
+  SourcedSenseModifier,
+  SourcedSenseSuppression,
+} from "../foundation/senses/modifiers";
+import type {
   StatureAllowance,
   StatureJustification,
 } from "../foundation/body/stature/types";
@@ -331,6 +337,9 @@ export interface ResolvedRuleEffects {
    */
   readonly actionCapacity: readonly ActionCapacityContribution[];
 
+  /** Fundamental sense changes, kept separate from per-check modifiers. */
+  readonly sensory: ResolvedSensoryEffects;
+
   readonly traitGrants: readonly TraitGrant[];
   readonly skillGrants: readonly SkillGrant[];
   readonly techniqueGrants: readonly TechniqueGrant[];
@@ -431,6 +440,11 @@ export function resolveRuleEffects(
 
   const checkModifiers: CheckModifierContribution[] = [];
   const actionCapacity: ActionCapacityContribution[] = [];
+  const senseModifiers: SourcedSenseModifier[] = [];
+  const senseGrants: SourcedSenseGrant[] = [];
+  const senseSuppressions: SourcedSenseSuppression[] = [];
+  const nenPerceptionGrants: ContributionSourceRef[] = [];
+  const nenPerceptionSuppressions: ContributionSourceRef[] = [];
 
   const statureJustifications: StatureJustification[] = [];
 
@@ -499,6 +513,26 @@ export function resolveRuleEffects(
           kind: effect.capacity,
           amount: effect.amount,
         });
+        break;
+
+      case "modifySense":
+        senseModifiers.push({ source, sense: effect.sense, amount: effect.amount });
+        break;
+
+      case "grantSense":
+        senseGrants.push({ source, sense: effect.sense });
+        break;
+
+      case "suppressSense":
+        senseSuppressions.push({ source, sense: effect.sense });
+        break;
+
+      case "grantNenPerception":
+        nenPerceptionGrants.push(source);
+        break;
+
+      case "suppressNenPerception":
+        nenPerceptionSuppressions.push(source);
         break;
 
       case "grantTrait":
@@ -619,6 +653,13 @@ export function resolveRuleEffects(
       (modifier) => modifier.channel === "invoked",
     ),
     actionCapacity,
+    sensory: {
+      senseModifiers,
+      senseGrants,
+      senseSuppressions,
+      nenPerceptionGrants,
+      nenPerceptionSuppressions,
+    },
 
     traitGrants,
     skillGrants,

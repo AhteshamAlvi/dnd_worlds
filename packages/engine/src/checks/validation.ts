@@ -6,28 +6,35 @@
  * dimension open. "All hearing Detection" is a valid selector and not a check
  * anyone can roll.
  *
- * Both are decided against the closed lists in scopes.ts rather than against a
- * second copy of them, so content validation and runtime validation cannot
- * disagree about what a sense or a mode is.
+ * Both are decided against the closed lists rather than against a second copy
+ * of them, so content validation and runtime validation cannot disagree about
+ * what a sense or a mode is. The sensory guards — isSenseId,
+ * isPerceptionPhenomenon, isValidSenseSelector, isValidPhenomenonSelector —
+ * are imported from character/foundation/senses/, which owns that half of the
+ * vocabulary; this file used to declare its own and they are gone.
  */
 
 import { ATTRIBUTE_KEYS } from "../character/foundation/attributes/base";
 import { DERIVED_ATTRIBUTE_NAMES } from "../character/foundation/attributes/derived/types";
 import {
+  isPerceptionPhenomenon,
+  isSenseId,
+} from "../character/foundation/senses/scopes";
+import {
+  isValidPhenomenonSelector,
+  isValidSenseSelector,
+} from "../character/foundation/senses/validation";
+import {
   CONCEALMENT_MODES,
   DETECTION_MODES,
   DETECTION_SUBJECTS,
   INVESTIGATION_SUBJECTS,
-  PERCEPTION_PHENOMENA,
-  SENSE_IDS,
   type CheckScope,
   type CheckScopeSelector,
   type ConcealmentMode,
   type DetectionMode,
   type DetectionSubject,
   type InvestigationSubject,
-  type PerceptionPhenomenon,
-  type SenseId,
 } from "./scopes";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -36,14 +43,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function includes<T extends string>(values: readonly T[], value: unknown): value is T {
   return typeof value === "string" && (values as readonly string[]).includes(value);
-}
-
-function isSense(value: unknown): value is SenseId {
-  return includes(SENSE_IDS, value);
-}
-
-function isPhenomenon(value: unknown): value is PerceptionPhenomenon {
-  return includes(PERCEPTION_PHENOMENA, value);
 }
 
 function isDetectionMode(value: unknown): value is DetectionMode {
@@ -60,18 +59,6 @@ function isDetectionSubject(value: unknown): value is DetectionSubject {
 
 function isInvestigationSubject(value: unknown): value is InvestigationSubject {
   return includes(INVESTIGATION_SUBJECTS, value);
-}
-
-function isSenseSelector(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  if (value.kind === "all" || value.kind === "all-physical") return true;
-  return value.kind === "specific" && isSense(value.sense);
-}
-
-function isPhenomenonSelector(value: unknown): boolean {
-  if (!isRecord(value)) return false;
-  if (value.kind === "all") return true;
-  return value.kind === "specific" && isPhenomenon(value.phenomenon);
 }
 
 function isModeSelector(
@@ -101,17 +88,17 @@ export function isValidCheckScope(value: unknown): value is CheckScope {
     case "derivedAttribute":
       return includes(DERIVED_ATTRIBUTE_NAMES, value.derivedAttribute);
     case "perception":
-      return isSense(value.sense) && isPhenomenon(value.phenomenon);
+      return isSenseId(value.sense) && isPerceptionPhenomenon(value.phenomenon);
     case "detection":
-      return isDetectionMode(value.mode) && isSense(value.sense) &&
-        isPhenomenon(value.phenomenon) && isDetectionSubject(value.subject);
+      return isDetectionMode(value.mode) && isSenseId(value.sense) &&
+        isPerceptionPhenomenon(value.phenomenon) && isDetectionSubject(value.subject);
     case "concealment":
-      return isConcealmentMode(value.mode) && isSense(value.sense) &&
-        isPhenomenon(value.phenomenon) && isDetectionSubject(value.subject);
+      return isConcealmentMode(value.mode) && isSenseId(value.sense) &&
+        isPerceptionPhenomenon(value.phenomenon) && isDetectionSubject(value.subject);
     case "investigation":
       return isInvestigationSubject(value.subject) &&
-        (value.sense === undefined || isSense(value.sense)) &&
-        (value.phenomenon === undefined || isPhenomenon(value.phenomenon));
+        (value.sense === undefined || isSenseId(value.sense)) &&
+        (value.phenomenon === undefined || isPerceptionPhenomenon(value.phenomenon));
     default:
       return false;
   }
@@ -128,27 +115,27 @@ export function isValidCheckScopeSelector(
     case "derivedAttribute":
       return includes(DERIVED_ATTRIBUTE_NAMES, value.derivedAttribute);
     case "perception":
-      return (value.sense === undefined || isSenseSelector(value.sense)) &&
-        (value.phenomenon === undefined || isPhenomenonSelector(value.phenomenon));
+      return (value.sense === undefined || isValidSenseSelector(value.sense)) &&
+        (value.phenomenon === undefined || isValidPhenomenonSelector(value.phenomenon));
     case "detection":
       return (value.mode === undefined ||
           isModeSelector(value.mode, isDetectionMode)) &&
-        (value.sense === undefined || isSenseSelector(value.sense)) &&
-        (value.phenomenon === undefined || isPhenomenonSelector(value.phenomenon)) &&
+        (value.sense === undefined || isValidSenseSelector(value.sense)) &&
+        (value.phenomenon === undefined || isValidPhenomenonSelector(value.phenomenon)) &&
         (value.subject === undefined ||
           isSubjectSelector(value.subject, isDetectionSubject));
     case "concealment":
       return (value.mode === undefined ||
           isModeSelector(value.mode, isConcealmentMode)) &&
-        (value.sense === undefined || isSenseSelector(value.sense)) &&
-        (value.phenomenon === undefined || isPhenomenonSelector(value.phenomenon)) &&
+        (value.sense === undefined || isValidSenseSelector(value.sense)) &&
+        (value.phenomenon === undefined || isValidPhenomenonSelector(value.phenomenon)) &&
         (value.subject === undefined ||
           isSubjectSelector(value.subject, isDetectionSubject));
     case "investigation":
       return (value.subject === undefined ||
           isSubjectSelector(value.subject, isInvestigationSubject)) &&
-        (value.sense === undefined || isSenseSelector(value.sense)) &&
-        (value.phenomenon === undefined || isPhenomenonSelector(value.phenomenon));
+        (value.sense === undefined || isValidSenseSelector(value.sense)) &&
+        (value.phenomenon === undefined || isValidPhenomenonSelector(value.phenomenon));
     default:
       return false;
   }

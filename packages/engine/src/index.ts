@@ -562,6 +562,233 @@ export {
   isResolvedActionCapacityValid,
 } from "./character/foundation/actions/validation";
 
+/* ── Character: senses ──────────────────────────────────────────────────── */
+
+/*
+ * The sensory domain: what a character can sense, and the four mechanics that
+ * turn that into GM-facing results.
+ *
+ * Every name is listed explicitly rather than star-exported. The sensory
+ * vocabulary is re-exported by checks/ as well (it composes CheckScope out of
+ * it), so an `export *` from both would either collide or silently pick a
+ * winner. Listing the names is also what keeps this file honest about what the
+ * engine actually promises.
+ *
+ * The three mechanic resolvers are exported with a `Check` suffix. Detection,
+ * Concealment and Investigation are ALSO Derived Attributes, and
+ * resolveDetection / resolveConcealment / resolveInvestigation already mean
+ * "compute that Derived Attribute's score" above. resolveDetectionCheck() is
+ * the mechanic: it rolls, opposes Concealment, and returns an information
+ * band. Two different things, so two different names.
+ */
+
+/* The closed sensory vocabulary — declared once, in foundation/senses/. */
+export type {
+  SenseId,
+  PerceptionPhenomenon,
+  DetectionMode,
+  ConcealmentMode,
+  DetectionSubject,
+  InvestigationSubject,
+  SenseSelector,
+  PhenomenonSelector,
+  DetectionModeSelector,
+  ConcealmentModeSelector,
+  DetectionSubjectSelector,
+  InvestigationSubjectSelector,
+  PerceptionCheckScope,
+  DetectionCheckScope,
+  ConcealmentCheckScope,
+  InvestigationCheckScope,
+  PerceptionCheckScopeSelector,
+  DetectionCheckScopeSelector,
+  ConcealmentCheckScopeSelector,
+  InvestigationCheckScopeSelector,
+  SensoryCheckScope,
+  SensoryCheckScopeSelector,
+} from "./character/foundation/senses/scopes";
+
+export {
+  SENSE_IDS,
+  PHYSICAL_SENSE_IDS,
+  PERCEPTION_PHENOMENA,
+  DETECTION_MODES,
+  CONCEALMENT_MODES,
+  DETECTION_SUBJECTS,
+  INVESTIGATION_SUBJECTS,
+  isSenseId,
+  isPerceptionPhenomenon,
+  matchesSenseSelector,
+  matchesPhenomenonSelector,
+} from "./character/foundation/senses/scopes";
+
+/*
+ * The resolved profile, reachable on ResolvedCharacter.senses.
+ *
+ * passiveConcealmentBase and each sense's passiveDetectionBase are the stored
+ * permanent values the passive mechanics read; nothing recomputes them.
+ */
+export type {
+  ResolvedSense,
+  ResolvedSensoryProfile,
+  ResolvedNenPerception,
+  SenseAvailabilityReason,
+  SenseScoreContribution,
+} from "./character/foundation/senses/types";
+
+export { NATURAL_EXTRASENSORY_PERCEPTION_REQUIREMENTS } from "./character/foundation/senses/types";
+
+export type { ResolveSensoryProfileOptions } from "./character/foundation/senses/profile";
+export { resolveSensoryProfile } from "./character/foundation/senses/profile";
+
+/* One authored route through which a phenomenon may be sensed. */
+export type {
+  SensoryReception,
+  SensorySignature,
+  PerceivedCue,
+} from "./character/foundation/senses/signatures";
+
+/* Fundamental access, before any roll. */
+export type {
+  SensoryAccessFailureReason,
+  SensoryAccessResolution,
+} from "./character/foundation/senses/access";
+
+export { resolveSensoryAccess } from "./character/foundation/senses/access";
+
+/* How much a margin actually told you. */
+export type {
+  InformationBand,
+  InformationThresholds,
+  InformationBandOverride,
+} from "./character/foundation/senses/information";
+
+export {
+  INFORMATION_BANDS,
+  DEFAULT_INFORMATION_THRESHOLDS,
+  resolveInformationBand,
+  compareInformationBands,
+  highestInformationBand,
+} from "./character/foundation/senses/information";
+
+/* Perception — raw reception. Narrow on `status`, or on `perceived`. */
+export type {
+  PerceptionRequest,
+  PerceptionResolution,
+  PerceptionStatus,
+  InaccessiblePerception,
+  UnperceivedPerception,
+  PerceivedPerception,
+  PerceptionValidationIssue,
+} from "./character/foundation/senses/perception";
+
+export {
+  PERCEPTION_STATUSES,
+  resolvePerception,
+  findPerceptionRequestIssues,
+} from "./character/foundation/senses/perception";
+
+/* Concealment — the difficulty of acquiring information. */
+export type {
+  ConcealmentRoute,
+  ConcealmentBasis,
+  ConcealmentFactor,
+  ConcealmentRequest,
+  ConcealmentRating,
+  ConcealmentResolution,
+  ConcealmentValidationIssue,
+} from "./character/foundation/senses/concealment";
+
+export {
+  resolveConcealmentCheck,
+  resolvePassiveConcealment,
+  establishConcealment,
+  shouldRerollEstablishedConcealment,
+  findConcealmentRequestIssues,
+} from "./character/foundation/senses/concealment";
+
+/* Detection — turning a perceived cue into awareness. */
+export type {
+  DetectionRequest,
+  DetectionResolution,
+  DetectionImportance,
+  DetectionCandidate,
+  DetectionCandidateRoute,
+  DetectionNotification,
+  DetectionValidationIssue,
+} from "./character/foundation/senses/detection";
+
+export {
+  DETECTION_IMPORTANCE,
+  resolveDetectionCheck,
+  resolvePassiveDetection,
+  resolvePassiveDetectionCandidates,
+  findDetectionRequestIssues,
+} from "./character/foundation/senses/detection";
+
+/* Investigation — analysis of submitted evidence. */
+export type {
+  EvidenceDatum,
+  InvestigationFinding,
+  InvestigationDifficulty,
+  InvestigationRequest,
+  InvestigationResolution,
+  InvestigationValidationIssue,
+} from "./character/foundation/senses/investigation";
+
+export {
+  resolveInvestigationCheck,
+  eligibleInvestigationFindings,
+  findingsRevealedAtBand,
+  findInvestigationRequestIssues,
+} from "./character/foundation/senses/investigation";
+
+/* Shared sensory validation. */
+export type { SensoryValidationIssue } from "./character/foundation/senses/validation";
+
+export {
+  isValidSenseSelector,
+  isValidPhenomenonSelector,
+  isValidInformationThresholds,
+  findInformationOverrideIssues,
+  findSensorySignatureIssues,
+} from "./character/foundation/senses/validation";
+
+/*
+ * The five sensory Effect interfaces. Effect and EFFECT_TYPES above already
+ * include them; these are the individual shapes an effect editor needs in
+ * order to build a form for each variant.
+ */
+export type {
+  ModifySenseEffect,
+  GrantSenseEffect,
+  SuppressSenseEffect,
+  GrantNenPerceptionEffect,
+  SuppressNenPerceptionEffect,
+} from "./character/rules/effects";
+
+export type {
+  SensoryEffect,
+  SourcedSenseModifier,
+  SourcedSenseGrant,
+  SourcedSenseSuppression,
+  ResolvedSensoryEffects,
+} from "./character/foundation/senses/modifiers";
+
+export { EMPTY_SENSORY_EFFECTS } from "./character/foundation/senses/modifiers";
+
+/*
+ * Check plumbing the sensory requests and results are stated in. Without these
+ * a caller can hold a PerceptionRequest type but cannot construct one.
+ */
+export type {
+  CheckDiceInput,
+  CheckResolution,
+  FixedCheckResolution,
+} from "./checks";
+
+export type { CheckValidationIssue } from "./checks";
+
 /* ── Character: capabilities ────────────────────────────────────────────── */
 
 // The rank language Skills and Techniques share. Numeric internally, Roman
