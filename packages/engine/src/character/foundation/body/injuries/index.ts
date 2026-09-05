@@ -6,6 +6,10 @@
  * keeps foundation/body/recovery/ from having to reach upward into
  * character/status/ to reduce a BodyPart's active Injury caps to one
  * ceiling.
+ *
+ * What a manifested Injury CONTRIBUTES is a content question rather than an
+ * anatomical one, so collectInjuryEffectSources lives in
+ * character/status/resolution.ts alongside the Condition collector.
  */
 
 export type {
@@ -28,7 +32,6 @@ export {
 export type { KnownInjuryId } from "./definitions";
 
 export {
-  collectInjuryEffectSources,
   resolveInjuryManifestation,
 } from "./resolution";
 

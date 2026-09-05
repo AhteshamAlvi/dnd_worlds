@@ -28,7 +28,7 @@ import {
 } from "../character/status/stage";
 
 import { collectConditionEffectSources } from "../character/status/resolution";
-import { collectInjuryEffectSources } from "../character/foundation/body/injuries/resolution";
+import { collectInjuryEffectSources } from "../character/status/resolution";
 
 import { findConditionValidationIssues } from "../character/status/conditions";
 import { findInjuryValidationIssues } from "../character/foundation/body/injuries";

@@ -26,3 +26,19 @@ export {
   resolveBodyPartRecoveryCeiling,
   resolveRecovery,
 } from "./resolution";
+
+/*
+ * Input validation, and the guarded resolver a host should call. resolveRecovery
+ * keeps its "assumes valid input" contract; resolveValidatedRecovery is the one
+ * that refuses to produce an outcome at all from a negative elapsed span, a
+ * non-finite Vitality, or an Injury ceiling outside 0-1. See validation.ts.
+ */
+export type { RecoveryValidationIssue } from "./validation";
+
+export {
+  findRecoveryInputIssues,
+  isValidRecoveryInput,
+  toRecoveryEngineError,
+  validateRecoveryInput,
+  resolveValidatedRecovery,
+} from "./validation";

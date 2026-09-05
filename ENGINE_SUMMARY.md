@@ -3,8 +3,8 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `newbranch-refactor` @ `910a089`
 **Snapshot:** 2026-09-01 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **43 files, 1,040 tests, all passing** (~1.9 s). `tsc --noEmit` → **clean**.
-**Size:** 151 source files / ~47,200 LOC + 44 test files / ~17,000 LOC.
+**Health:** `vitest run` → **45 files, 1,083 tests, all passing** (~2.0 s). `tsc --noEmit` → **clean**.
+**Size:** 160 source files / ~49,200 LOC + 47 test files / ~18,700 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
 The Body refactor (12 phases) is **through Phase 10**, plus the post-refactor integration
@@ -12,6 +12,17 @@ cleanup and the **anatomical continuity refactor**: Reference Forms are complete
 a catalog domain, anatomy is derived rather than stored, and persistent physical state is keyed
 by cross-form identity so transformation and regeneration work. Phase 11 (downstream consumers)
 and Phase 12 (full regression) are outstanding — see §16.
+
+The **character-foundation stabilization** pass is complete on top of that, and it settled four
+contracts that `character/mechanics/`'s removal had left ambiguous or broken. Each was a silent
+wrong answer rather than a missing feature, so each now has a named owner and a regression test:
+
+| Contract | Owner | §  |
+|---|---|---|
+| **Check-modifier activation** — persistent vs invoked vs contextual | `checks/modifiers.ts` + `character/checks/` | §3, §12b |
+| **Injury manifestation gates Effects** — dormant contributes nothing | `character/resolution.ts` (phased fixpoint) | §10, §11 |
+| **Recovery reads active anatomy only**, and stays continuous | `foundation/body/recovery/` | §10 |
+| **Contribution provenance** is neutral infrastructure | `infrastructure/contribution-source.ts` | §2 |
 
 ---
 
@@ -71,6 +82,11 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
    JSON-serializable `TraceNode` tree, on success *and* failure.
 5. **One implementation per formula.** Base and Resolved are one resolver with a mode, never
    two algorithms.
+6. **Layers depend downward.** Rules sits on top of Foundation and may import the contracts its
+   Effects target; Foundation may not reach back up for them. Anything both layers need —
+   provenance, the check vocabulary — moves to neutral ground rather than being imported
+   upward. Enforced by `__tests__/architecture.test.ts`, because TypeScript resolves
+   type-only cycles perfectly happily and will never complain.
 
 ---
 
@@ -78,6 +94,7 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
 
 | File | Owns |
 |---|---|
+| `contribution-source.ts` | `ContributionSourceRef {type, id}` — the ONE structural definition of "who supplied this". Rule Effects, check modifiers, Action-capacity contributions, Attribute contributions and Body contributions all carry it. `RuleSourceRef` and `CheckSourceRef` are `type X = ContributionSourceRef` **aliases**, never second definitions. Plus `isSameContributionSource` / `contributionSourceKey`. |
 | `json.ts` | `JsonValue`/`JsonObject`/`JsonArray` — the serialization boundary; traces must survive `JSON.stringify`. |
 | `result.ts` | `EngineResult<T>` = success \| failure, discriminated on `success`; both carry `trace` + `warnings`. |
 | `diagnostics.ts` | `Warning` (non-blocking) / `EngineError` (blocking): `code`, `message`, `audience` (player\|gm\|developer), `subject`, `required`/`actual`/`resolution`. |
@@ -146,6 +163,23 @@ it, and a form that stops expecting the arm it just lost is a form that has heal
 gameplay check resolver — one vocabulary, one matcher, so an authored modifier and the check it
 applies to cannot drift apart.
 
+**`modifyCheck` also declares WHEN it applies, not only which checks it applies to.**
+`ModifyCheckEffect.activation` is `"persistent" | "invoked"` (`CheckModifierActivation`), and
+left unstated the default follows the **source kind**, not the effect:
+
+| Source | Default | Why |
+|---|---|---|
+| `skill` · `technique` | `invoked` | Something a character does on purpose. "I have Contort" and "I am contorting" are different claims, and only the second is worth +3. |
+| everything else | `persistent` | Something a character simply has. Keen Eyes does not need switching on. |
+
+`defaultCheckModifierActivation(sourceType)` is the single place that rule is written down. One
+definition may declare both — a Technique whose training permanently sharpens the senses *and*
+pays off while being performed writes two Effects, one of each activation.
+
+This was the ticket's central bug: every collected `modifyCheck` used to be tagged
+`channel: "persistent"`, so knowing a Skill silently converted its situational bonus into a
+permanent one on every check its scope matched.
+
 ### Requirements — 16 types
 
 `attributeMinimum` · `derivedAttributeMinimum` · `levelMinimum` · `hasSpecies` · `hasSubspecies` ·
@@ -157,16 +191,21 @@ checks `base`, so a temporary Condition can't revoke a trained capability.
 
 ### `resolution.ts` — the interpreter
 
-- `RuleSourceRef {type, id}` — provenance rides on every modifier and grant (`type` only ever *labels*).
+- `RuleSourceRef` — an **alias** for `infrastructure/contribution-source.ts`'s
+  `ContributionSourceRef {type, id}`; provenance rides on every modifier and grant (`type` only
+  ever *labels*). It used to be defined here, which meant `foundation/actions/types.ts` imported
+  it upward while `rules/effects.ts` imported Action and Body contracts downward — a
+  Rules ↔ Foundation type cycle. The shape now lives below both.
 - `resolveRuleEffects()` → `{effects, baseAttributeModifiers, resolvedAttributeModifiers,
   checkModifiers, actionCapacity, traitGrants, skillGrants, techniqueGrants, body: {base, resolved}}`.
 - **Grants are deliberately NOT deduplicated** — removing one source must not remove access another supplies.
 - `checkModifiers` is the top-level `checks/` module's own `CheckModifierContribution` shape
-  (`{source, scope, amount, channel}`) rather than a second character-only structure — every
-  character-authored modifier is tagged `channel: "persistent"`. Check-modifier arithmetic
-  itself (`collectApplicableCheckModifiers`, `resolveCheckModifier`, `createCheckModifierTraceNode`)
-  now lives only in `checks/modifiers.ts` (§2.5); this file just collects the sourced
-  declarations.
+  (`{source, scope, amount, channel}`) rather than a second character-only structure. Each is
+  tagged with its **activation** (below), and `persistentCheckModifiers` /
+  `invokedCheckModifiers` are the pre-split subsets — reading the combined list wholesale is
+  exactly what made a merely-known Skill permanently active. Check-modifier arithmetic itself
+  (`collectApplicableCheckModifiers`, `resolveCheckModifier`, `createCheckModifierTraceNode`)
+  lives only in `checks/modifiers.ts` (§12b); this file just collects the sourced declarations.
 - `actionCapacity` is a plain `ActionCapacityContribution[]` bucket — combining it into a final
   `ActionCapacity` is `foundation/actions/`'s job (§10.5), not this file's.
 - `meetsRequirement()` / `meetsAllRequirements()` against a `RequirementContext`.
@@ -675,10 +714,43 @@ reaching upward into `character/status/`.
 
 `foundation/body/injuries/` splits into `types.ts` (IDs, applicability, `CharacterInjury`,
 locations), `definitions.ts` (the authored catalog and registry access), `resolution.ts`
-(`collectInjuryEffectSources` — treatment-state Effect blending — and
-`resolveInjuryManifestation`), and `validation.ts` (intrinsic validity, catalog validity,
-anatomical-applicability validity, and the composed `findBodyInjuryValidationIssues` that
-`character/validation.ts` calls).
+(`resolveInjuryManifestation` — anatomy only), and `validation.ts` (intrinsic validity, catalog
+validity, anatomical-applicability validity, and the composed `findBodyInjuryValidationIssues`
+that `character/validation.ts` calls).
+
+**What an Injury CONTRIBUTES lives in `character/status/resolution.ts`**, beside the Condition
+collector: `collectInjuryEffectSources(manifestedInjuries)` does the treatment-state Effect
+blending. That is a question about authored content, not about anatomy — and reading the rules
+vocabulary is exactly what nothing under `foundation/` may do (§1 rule 6). It takes the
+**manifested subset**, never the whole stored list.
+
+### Manifestation gates Effects
+
+An Injury contributes **only while manifested** — while the current form expresses every
+continuity identity its location names *and* the anatomy standing there can host it. That is
+circular on its face (Injury Effects can change anatomy; anatomy decides manifestation), and the
+old code resolved the circle by ignoring it: every stored Injury was collected up front, so a
+Dragon's fractured wing went on penalising its owner while they were human.
+`character/resolution.ts` now drives a small fixpoint instead — see §11.
+
+```
+manifested   Effects apply, treatment state matters, natural Recovery applies
+dormant      contributes NOTHING — no Effects, no penalties, no recovery
+```
+
+A dormant Injury is **not** removed, **not** healed, and **not** invalid. It stays stored, stays
+valid against `knownContinuityKeys`, and resumes contributing the moment a form manifesting
+compatible anatomy returns. Treatment state only ever changes what a *manifested* Injury
+contributes. `ResolvedCharacter.injuries {manifested, dormant}` reports both, because a sheet
+showing only the active ones would make a transformation look like a cure.
+
+### Location vocabulary
+
+`CharacterInjury.location` holds **continuity keys**, not BodyPart ids, and the diagnostics say
+so: `no-continuity-keys` · `invalid-continuity-key` · `duplicate-continuity-key`, carrying
+`continuityKey`. The one deliberate exception is `injury-body-part-not-applicable`, which stays
+body-part-shaped because applicability is judged against the concrete BodyPart *currently
+manifesting* that identity.
 
 `foundation/body/recovery/` is the seam allowed to know a part's `integrity` and an Injury's
 treatment state at once:
@@ -695,6 +767,48 @@ It reads a manifestation and writes an **identity**: healing is recorded on cont
 limb that heals stays healed through regeneration and through a change of form. Injuries are
 grouped by continuity key, and an identity the current form does not express is not asked whether
 it healed — dormant anatomy is not there to heal.
+
+**Only `state === "active"` anatomy participates.** A suppressed, removed, destroyed or archived
+BodyPart receives no natural Recovery, does not count as manifested when an Injury is evaluated,
+and cannot make an Injury look healed. The post-Recovery integrity lookup is built from active
+parts alone, so "did not heal" and "does not count as manifested" cannot disagree. An Injury is
+removable only when **every** continuity identity in its location is both actively manifested and
+at Maximum BP — a fracture across two limbs is not healed because one of them was severed.
+
+**Ceilings stay continuous.** `ceilingBP = bpRecoveryCeilingFraction × maximumBP`, with no
+`Math.floor()`: a 0.33 ceiling on a 14 Maximum BP part is **4.62 BP**, not 4. Integrity is a
+fraction and `body-points/recovery.ts` already owns whatever whole-BP presentation a sheet wants,
+so flooring here only discarded part of an authored ceiling — worst on small parts, where the
+lost fraction is the largest share of the whole. (The VIT recovery curve itself is untouched and
+remains a separate balance item.)
+
+### `recovery/validation.ts` — the guarded entry point
+
+Recovery is one of the few places a **host** supplies the numbers rather than the pipeline above
+it, and its arithmetic accepts nonsense eagerly: `elapsed = -7 days` un-heals a limb,
+`vitality = NaN` stores NaN integrity, `effectiveScale = 0` collapses every Maximum BP. None
+throw — each produces an ordinary-looking `ResolveRecoveryOutcome` and a corrupt continuity map,
+discovered much later and far from its cause.
+
+So the rule is stronger than "report a problem": **invalid input produces no outcome at all.**
+
+| Function | Purpose |
+|---|---|
+| `findRecoveryInputIssues(input)` | every problem at once, as `RecoveryValidationIssue[]` |
+| `isValidRecoveryInput(input)` | predicate |
+| `toRecoveryEngineError(issue)` | `body.recovery.*` diagnostics, `audience: "developer"` |
+| `validateRecoveryInput(input)` | `EngineResult<ResolveRecoveryInput>` with trace |
+| **`resolveValidatedRecovery(input)`** | **what a host should call** — `EngineResult<ResolveRecoveryOutcome>` |
+
+Checked: elapsed duration finite and **non-negative** (Recovery advances time; `elapsedBetween`
+may legitimately return negative, so this is stricter than `validateGameDuration`) · CON finite ·
+VIT finite · Effective Scale finite and `> 0` · Body Point modifiers (delegated to
+`body-points/validation.ts`) · a morphology entry for every *active* BodyPart · recovery ceiling
+fractions finite and within `[0, 1]` · Injury shape (delegated to `findInjuryValidationIssues`).
+
+`resolveRecovery` itself keeps its "assumes valid input" contract, matching
+`body-points/resolution.ts` — callers already inside the engine's pipeline should not pay for a
+second full validation every tick.
 
 Recovery works in exact-integrity space; destroyed parts are never restored by ordinary healing —
 that is `regenerateAnatomy`'s job, and it grows a limb back whole rather than merely present.
@@ -727,9 +841,33 @@ the engine holds them for the session and never persists them.
 BodyPartDefinition, a zero Effective Scale) and every stat below it depends on that. An
 ineligible sheet is *not* a failure — it resolves, and validation judges it.
 
+Resolution is **phased**, because Injuries are the one kind of content whose applicability
+depends on the thing they help produce. One pass is `resolveCharacterPass(character,
+manifestedInjuries)` — pure in both arguments — and `resolveCharacter` drives it to a fixpoint:
+
+```
+1. resolveCharacterPass(character, [])      every applicable NON-Injury Effect
+2.                                          → a preliminary Body
+3. resolveInjuryManifestation(anatomy, …)   which Injuries that anatomy expresses
+4. collectInjuryEffectSources(manifested)   Effects from the manifested ones ALONE
+5. resolveCharacterPass(character, those)   the final character and Body
+6. resolveInjuryManifestation(…) again      recheck against the FINAL anatomy
+7. repeat only while the manifested set keeps changing
+```
+
+Bounded at `MAX_INJURY_MANIFESTATION_PASSES = 3` — the same treatment grant expansion gets. A set
+that will not settle means an authored cycle (manifesting an Injury changes what manifests), and
+returns `character.injuries.manifestation_unstable` rather than looping or silently returning
+whichever pass came last. **A character with no Injuries settles at step 3 and costs exactly one
+Body resolution**, which is what it cost before; a stable set is normally reached on the first
+recheck.
+
+Inside one pass:
+
 ```
 authored character
-  ↓ seedSources()        species (ancestry-expanded) + clans + conditions + injuries + items
+  ↓ seedSources()        species (ancestry-expanded) + clans + conditions + items
+  ↓                      + collectInjuryEffectSources(manifestedInjuries)
   ↓ fixpoint expansion   follow grants until nothing new appears (MAX_EXPANSION_PASSES 32)
   ↓ resolveRuleEffects()
 attribute modifiers: stored → base → resolved
@@ -748,14 +886,31 @@ workbench must be able to show a character halfway to legal.
 `ResolvedCharacter` = `{character, attributes, attributeScores, stats, body, bodyTrace,
 physicalScaleBurden, strengthPosition, movement, derivedAttributes, derivedScores,
 actionCapacity, traits, capabilities, effects, baseAttributeModifiers,
-resolvedAttributeModifiers, requirementContext}`. `actionCapacity` is the first thing this
-ticket integrated end to end: previously `foundation/actions/` (then `character/mechanics/`)
-was tested in isolation but never resolved or exposed here.
+resolvedAttributeModifiers, requirementContext, bodyInput, knownContinuityKeys,
+statureJustifications, **`injuries {manifested, dormant}`**}`. `actionCapacity` was integrated
+end to end by the mechanics-removal ticket; `injuries` by the stabilization ticket, and together
+they account for every entry in `character.injuries` — nothing is dropped.
 
 **`validateCharacter()`** — the single place domain issues become `EngineError`s. Runs the
 sheet-only checks first (id, name, attributes), then resolution, then the catalog-reference,
-Body and stature checks. Body is judged from the RESOLVED body, so an Effect that changed the
-body plan has its result validated rather than its declaration.
+**Action-capacity**, Body and stature checks. Body is judged from the RESOLVED body, so an
+Effect that changed the body plan has its result validated rather than its declaration.
+
+**Action-capacity validation ownership is settled.** `foundation/actions/validation.ts` used to
+expose a complete set of validators that nothing called, so "is this character's Action capacity
+sound?" was a question only a caller who knew about them could ask. `validateCharacter()` now
+runs `findResolvedActionCapacityValidationIssues(resolved.actionCapacity)` and maps what it
+reports through the domain's own `toActionCapacityEngineError` — so unknown capacity kinds,
+non-finite amounts, fractional Action contributions and resolved capacities that disagree with
+the mechanic's own formulas all fail ordinary character validation.
+
+The RESOLVED capacity is validated rather than the authored Effects, deliberately: it carries its
+own contributions, so the authored amounts are checked as part of it, and it is the only place
+the arithmetic can be checked at all. The authored half is still checked at catalog time by
+`rules/validation.ts` — but **with the same predicate**. `isValidActionCapacityAmount` is
+exported from the Action domain and used by both, because `rules/validation.ts` used to accept
+any *finite* amount while resolution demanded a *whole* one: an authored `2.5` validated cleanly
+as content and then failed as a character.
 
 **36 character codes:**
 
@@ -771,7 +926,17 @@ character.injury.{unknown,instance_id_invalid,instance_id_duplicate,location_inv
                   continuity_unknown,body_part_not_applicable,special_point_unknown,
                   special_point_missing,special_point_not_hosted,special_point_not_applicable,
                   treatment_status_invalid}
+character.injuries.manifestation_unstable
+character.actions.{combat_ability_invalid,contribution_kind_invalid,
+                   contribution_amount_invalid,
+                   action_capacity_*_invalid, action_capacity_*_mismatch}
 ```
+
+**Recovery codes** are `body.recovery.{elapsed_negative,elapsed_non_finite,constitution_invalid,
+vitality_invalid,effective_scale_invalid,body_point_modifier_invalid,morphology_missing,
+ceiling_fraction_invalid,injury_invalid}` — `audience: "developer"` throughout, matching
+`time/validation.ts` and `foundation/body/damage.ts`: a malformed elapsed duration is an
+integration problem for whoever wired up the clock, not something a player can fix on a sheet.
 
 **Body codes** are `body.<domain>.<the owning subsystem's own issue code>`, across the seven
 domains `anatomy` · `morphology` · `measurements` · `structure` · `strength` · `age` ·
@@ -873,8 +1038,40 @@ a sheet display — reads when nothing is actually being rolled; it shares
 dice-based path, so the two can never disagree about what a modifier is worth. `character/rules/`
 no longer keeps its own copy of this arithmetic (it used to, against an incompatible
 `SourcedCheckModifier` shape keyed by `check` rather than `scope` and with no `channel`) —
-`ResolvedRuleEffects.checkModifiers` is now the canonical `CheckModifierContribution[]` directly,
-every character-authored modifier tagged `channel: "persistent"`.
+`ResolvedRuleEffects.checkModifiers` is now the canonical `CheckModifierContribution[]` directly.
+
+### Activation — the three channels
+
+`CHECK_MODIFIER_CHANNELS = persistent · invoked · contextual`. Scope and activation are two
+**independent** filters, and conflating them is what the stabilization ticket fixed.
+
+| Channel | Applies when | Supplied by |
+|---|---|---|
+| `persistent` | the scope matches — automatically | resolved character (`persistentCheckModifiers`) |
+| `invoked` | the scope matches **and** its source was explicitly selected for this check | resolved character (`invokedCheckModifiers`), gated by the caller's selection |
+| `contextual` | the caller says so, for this resolution only | GM / environment / calling system — never collected from content, never stored |
+
+`CHECK_MODIFIER_ACTIVATIONS = persistent · invoked` is the authored subset: content has nothing
+to say about a modifier that came from the GM.
+
+**The shared collectors** — `collectPersistentCheckModifiers`, `collectInvokedCheckModifiers(modifiers,
+invokedSources)`, `assembleCheckModifiers({persistent, available, invokedSources, contextual})` —
+and their character-level wrappers in `character/checks/` (`collectCharacterCheckModifiers`,
+`collectCharacterInvokedCheckModifiers`, `canInvokeCheckSource`, `CheckInvocation {sources?,
+contextual?}`).
+
+`character/checks/invocation.ts` exists specifically so that **no future mechanic re-answers
+"was this Skill used?" by walking the catalogs itself**. Perception, Detection, Investigation
+and Concealment each growing a private answer is how they end up disagreeing about whether a
+Skill counted. Scope filtering is deliberately *not* done there — it stays in
+`checks/modifiers.ts` at the moment the concrete check resolves, so an invoked-but-inapplicable
+modifier is dropped by exactly the same rule that drops a persistent one.
+
+### Trace identifiers
+
+`checks.dice` · `checks.modifiers` · `checks.resolve` · `checks.fixed` · `checks.opposed` —
+top-level, matching the module. They were still `gameplay.checks.*` from before the promotion
+out of `gameplay/`.
 
 ---
 
@@ -893,7 +1090,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (43 files, 1,040 tests)
+## 14 · Test coverage (45 files, 1,083 tests)
 
 | Area | Files (tests) |
 |---|---|
@@ -904,6 +1101,22 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
 | Rules | requirements 25 · check-modifiers 24 · effects 16 — **65** |
 | Catalogs | 28 · **Aura** 22 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Infra** trace 8 + id 7 |
+| **Foundation stability** | character-foundation-stability 37 · architecture 6 — **43** |
+
+`character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
+purpose: every case in it corresponds to something that was silently **wrong** — it passed a
+compile and a full test run while producing a character the rules do not describe. Knowing a
+Skill invoked it · a dormant Injury still applying · an inactive BodyPart healing and clearing
+its Injury · a multi-location Injury cleared by absence · a floored recovery ceiling · Recovery
+run backwards or on `NaN` · continuity diagnostics speaking BodyPart · manifestation looping
+instead of failing.
+
+`architecture.test.ts` checks the §1 rule 6 layering against the source text, because a
+type-only import cycle compiles perfectly happily. It asserts Foundation imports no provenance
+type from Rules, Checks imports nothing from Rules, provenance has exactly one structural
+definition — and **pins the single allowed exception** (`foundation/body/injuries/types.ts`, see
+§15) so that a *new* upward import fails rather than quietly joining it. Its own detection was
+verified by reintroducing the removed import and watching it fail.
 
 **Zero tests:** Nen (~3,970 LOC), Combat (~5,470 LOC), Aura Control, time clock/calendar,
 equipment beyond the two demo items.
@@ -965,6 +1178,23 @@ time (§11), closing what used to be a "tested but never resolved" gap.
 2. Ages below ~4 resolve too light (1.8 kg at birth vs. a real 3.5) — mass goes as scale³, and the real fix is age *local* morphology, which the profile format supports but does not use. Ages 6+ land within 3%.
 3. Orphaned archive retention policy is implemented as "retain forever"; a deliberate purge operation does not exist.
 4. `details.heightCm` / `weightKg` were removed; the duplicate-source problem is resolved.
+5. **The one remaining `foundation/` → `character/rules/` import.**
+   `foundation/body/injuries/types.ts` imports `EffectfulDefinition` and `Effect`, because an
+   Injury is authored *content* as well as anatomy. It cannot currently be removed without
+   moving something the design deliberately placed:
+   - `Effect` is a union over every domain — it names Body selectors, check scopes, Attribute
+     keys and Action capacities — so it cannot be pushed *below* Foundation without dragging all
+     of them down with it;
+   - the Injury catalog cannot be pushed *above* Foundation without taking Recovery with it, and
+     Recovery is deliberately under `foundation/body/` so it can reduce a BodyPart's Injury caps
+     without reaching upward.
+
+   The edge is one-directional — Rules never imports Injuries — so there is **no Rules ↔
+   Foundation type cycle**, which is the property that actually mattered. It is pinned as the
+   single allowed exception in `architecture.test.ts`; a new upward import fails that test.
+   Resolving it properly means splitting `InjuryDefinition` into an anatomical half under
+   Foundation and a content half above it, which is a larger relocation than this ticket's
+   scope.
 
 ---
 

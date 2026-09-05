@@ -14,11 +14,17 @@
  *   range.
  *
  * - ANATOMICAL APPLICABILITY (findInjuryLocationIssues). Needs Body
- *   alongside the Injury: every BodyPart id an Injury's location names
- *   actually exists, the concrete location satisfies the InjuryDefinition's
- *   authored BodyPart applicability, and a location's Special Point
- *   reference is a real, allowed, and actually hosted Special Point for that
- *   location.
+ *   alongside the Injury: every continuity identity an Injury's location
+ *   names is anatomy this character's body has actually had, the concrete
+ *   BodyPart manifesting it satisfies the InjuryDefinition's authored
+ *   BodyPart applicability, and a location's Special Point reference is a
+ *   real, allowed, and actually hosted Special Point for that location.
+ *
+ * The vocabulary difference between the second and third layer is deliberate.
+ * A LOCATION is a set of continuity keys — persistent anatomical identities
+ * that outlive any one form. APPLICABILITY is judged against the concrete
+ * BodyPart currently standing in one of those identities, so the issues it
+ * raises are legitimately body-part-shaped.
  *
  * findBodyInjuryValidationIssues composes all three into the one function a
  * caller judging a character's Injuries actually wants.
@@ -72,14 +78,25 @@ export type InjuryValidationIssue =
       readonly injuryId: InjuryId;
     }
   | {
+      /*
+       * An Injury's location names CONTINUITY IDENTITIES, not BodyPart
+       * instances — see InjuryLocation. That is what lets a wing fracture
+       * survive a transformation: the identity persists while the instance
+       * standing in it does not. The vocabulary here says so, because calling
+       * these "BodyPart ids" is what made the two look interchangeable.
+       *
+       * Its sibling injury-body-part-not-applicable below is still
+       * body-part-shaped, and correctly so: applicability is judged against
+       * the concrete BodyPart currently manifesting the identity.
+       */
       readonly type: "invalid-injury-location";
       readonly id: CharacterInjuryId;
       readonly issue:
-        | "no-body-parts"
-        | "invalid-body-part-id"
-        | "duplicate-body-part-id"
+        | "no-continuity-keys"
+        | "invalid-continuity-key"
+        | "duplicate-continuity-key"
         | "invalid-special-point-definition-id";
-      readonly bodyPartId?: BodyPartId;
+      readonly continuityKey?: ContinuityKey;
       readonly specialPointDefinitionId?: SpecialPointDefinitionId;
     }
   | {
@@ -104,13 +121,14 @@ export type InjuryValidationIssue =
  * - referenced InjuryDefinitions are known;
  * - treatmentStatus is present exactly when the definition requires
  *   treatment, and is one of the two known values when present;
- * - locations contain at least one BodyPart ID;
- * - BodyPart IDs inside one location are non-empty and unique;
+ * - locations contain at least one continuity key;
+ * - continuity keys inside one location are non-empty and unique;
  * - an optional Special Point definition ID is non-empty.
  *
  * This function deliberately does NOT determine:
  *
- * - whether a BodyPartId currently exists;
+ * - whether a continuity key names anatomy this character has ever had;
+ * - whether the current form manifests it;
  * - whether a BodyPart matches the InjuryDefinition's BodyPartSelector;
  * - whether a Special Point exists on the selected BodyPart(s);
  * - whether the concrete location satisfies the definition's applicability.
@@ -206,40 +224,38 @@ export function findInjuryValidationIssues(
     /* Location                                                               */
     /* ---------------------------------------------------------------------- */
 
-    const bodyPartIds =
-      injury.location.continuityKeys as readonly string[];
+    const continuityKeys = injury.location.continuityKeys;
 
-    if (bodyPartIds.length === 0) {
+    if (continuityKeys.length === 0) {
       issues.push({
         type: "invalid-injury-location",
         id: injury.id,
-        issue: "no-body-parts",
+        issue: "no-continuity-keys",
       });
     }
 
 
-    const seenBodyPartIds =
-      new Set<BodyPartId>();
+    const seenContinuityKeys = new Set<ContinuityKey>();
 
-    for (const bodyPartId of bodyPartIds) {
-      if (bodyPartId.trim().length === 0) {
+    for (const continuityKey of continuityKeys) {
+      if (continuityKey.trim().length === 0) {
         issues.push({
           type: "invalid-injury-location",
           id: injury.id,
-          issue: "invalid-body-part-id",
-          bodyPartId,
+          issue: "invalid-continuity-key",
+          continuityKey,
         });
       }
 
-      if (seenBodyPartIds.has(bodyPartId)) {
+      if (seenContinuityKeys.has(continuityKey)) {
         issues.push({
           type: "invalid-injury-location",
           id: injury.id,
-          issue: "duplicate-body-part-id",
-          bodyPartId,
+          issue: "duplicate-continuity-key",
+          continuityKey,
         });
       } else {
-        seenBodyPartIds.add(bodyPartId);
+        seenContinuityKeys.add(continuityKey);
       }
     }
 

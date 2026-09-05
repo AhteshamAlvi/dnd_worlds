@@ -83,6 +83,7 @@
 
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type { CheckScopeSelector } from "../../checks/scopes";
+import type { CheckModifierActivation } from "../../checks/types";
 import type { AttributeKey } from "../foundation/attributes/types";
 import type {
   DerivedAttributeName,
@@ -168,6 +169,13 @@ export type {
   CheckScopeSelector,
 } from "../../checks/scopes";
 
+/*
+ * Re-exported for the same reason: activation is the checks module's
+ * vocabulary, and a modifyCheck Effect declaring it must mean exactly what
+ * check resolution means by it.
+ */
+export type { CheckModifierActivation } from "../../checks/types";
+
 
 /**
  * Adds to the modifier of one kind of check, without touching any score.
@@ -207,6 +215,30 @@ export interface ModifyCheckEffect {
    */
   readonly check: CheckScopeSelector;
   readonly amount: number;
+
+  /*
+   * WHEN this modifier applies, as opposed to which checks it applies to.
+   *
+   * "persistent" — the character simply has it, and it applies automatically
+   * whenever the scope matches. "invoked" — it applies only when this source
+   * is explicitly selected for the check being made.
+   *
+   * The two are not a stylistic choice. Contort's "+3 to applicable AGI
+   * checks" is what Contort is worth WHEN YOU USE IT; applying it to every
+   * AGI check merely because the character knows the Skill silently converts
+   * a situational bonus into a permanent one.
+   *
+   * Left unstated, the default follows the SOURCE rather than the effect:
+   * Skills and Techniques are things a character does on purpose and default
+   * to "invoked"; Species, Clans, Traits, Conditions, Injuries and equipment
+   * are things a character simply has and default to "persistent". See
+   * rules/resolution.ts's defaultCheckModifierActivation.
+   *
+   * One source may declare both. A Technique whose training permanently
+   * sharpens the senses AND grants a bonus while actively performed writes
+   * two Effects, one of each activation, rather than choosing between them.
+   */
+  readonly activation?: CheckModifierActivation;
 }
 
 

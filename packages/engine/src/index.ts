@@ -46,6 +46,22 @@ export type {
   EngineResult,
 } from "./infrastructure/result";
 
+/*
+ * Provenance — the one shape every contribution carries to say who supplied
+ * it. Rule Effects, check modifiers, Action-capacity contributions, Attribute
+ * contributions and Body contributions all use this; RuleSourceRef and
+ * CheckSourceRef are readability aliases over it rather than second
+ * definitions.
+ */
+export type {
+  ContributionSourceRef,
+} from "./infrastructure/contribution-source";
+
+export {
+  isSameContributionSource,
+  contributionSourceKey,
+} from "./infrastructure/contribution-source";
+
 // The shared shape behind every catalog, authored or registered at runtime.
 export type {
   Definition,
@@ -442,10 +458,42 @@ export {
 export type {
   CheckSourceRef,
   CheckModifierChannel,
+  CheckModifierActivation,
   CheckModifierContribution,
 } from "./checks";
 
-export { CHECK_MODIFIER_CHANNELS } from "./checks";
+export {
+  CHECK_MODIFIER_CHANNELS,
+  CHECK_MODIFIER_ACTIVATIONS,
+  isPersistentCheckModifier,
+  isInvokedCheckModifier,
+} from "./checks";
+
+/*
+ * Activation — which of a character's situational modifiers are live.
+ *
+ * A persistent modifier applies whenever its scope matches; an invoked one
+ * applies only when the Trait, Skill, Technique, ability or piece of
+ * equipment carrying it was explicitly selected for the check; a contextual
+ * one is supplied by the caller for that resolution alone. These are the
+ * shared collectors — a mechanic must never re-answer "was this Skill used"
+ * by walking the catalogs itself.
+ */
+export {
+  collectPersistentCheckModifiers,
+  collectInvokedCheckModifiers,
+  assembleCheckModifiers,
+} from "./checks";
+
+export type { CheckInvocation } from "./character/checks";
+
+export {
+  canInvokeCheckSource,
+  collectCharacterCheckModifiers,
+  collectCharacterInvokedCheckModifiers,
+} from "./character/checks";
+
+export { defaultCheckModifierActivation } from "./character/rules/resolution";
 
 export type { RuleValidationIssue } from "./character/rules/validation";
 
@@ -682,6 +730,7 @@ export {
 // Which Conditions and injuries are in force, as rule sources.
 export {
   collectConditionEffectSources,
+  collectInjuryEffectSources,
   collectStatusEffectSources,
 } from "./character/status/resolution";
 

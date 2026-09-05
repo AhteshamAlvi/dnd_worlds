@@ -1,32 +1,24 @@
 /*
- * Injury resolution — what an Injury currently contributes, and whether it
- * currently applies at all.
+ * Injury manifestation — whether an Injury currently applies at all.
  *
- * Two independent questions live here:
+ * An Injury manifests when the current form actually expresses every
+ * anatomical identity it occupies, and the anatomy standing there right now
+ * can host it. A Dragon's fractured wing is dormant as a Human and active
+ * again as an Angel, without the record ever changing.
  *
- * - EFFECTS. Every Injury on the character is "in force" the moment it is
- *   recorded — there is no expiry field (see types.ts) — but a
- *   treatment-required Injury adds its untreated/treated Effects on top of
- *   whatever it always contributes. collectInjuryEffectSources answers this,
- *   and runs BEFORE Body/Anatomy resolves: Injury Effects are part of what
- *   produces the resolved Body in the first place, so this function cannot
- *   ask whether the Injury is currently MANIFESTED without creating a cycle.
+ * Manifestation is the gate on an Injury's EFFECTS, not merely a report about
+ * them. character/resolution.ts resolves a preliminary Body from everything
+ * that is not an Injury, asks this function which Injuries that anatomy
+ * expresses, and only then collects Effects — from the manifested ones alone.
+ * A dormant Injury contributes nothing while it is dormant and resumes
+ * contributing the moment compatible anatomy returns.
  *
- * - MANIFESTATION. Once Anatomy has resolved, resolveInjuryManifestation asks
- *   the other question: does the current form actually express every
- *   anatomical identity this Injury occupies, and does the Injury's own
- *   applicability fit the anatomy standing there right now? A Dragon's
- *   fractured wing is dormant as a Human and active again as an Angel,
- *   without the record ever changing. This is a downstream question a
- *   caller asks about an already-resolved character, not a precondition for
- *   resolving one.
+ * What an Injury contributes ONCE it manifests is a question about authored
+ * content rather than about anatomy, so it lives with the other content
+ * collectors in character/status/resolution.ts. That is also what keeps this
+ * file — and everything else under foundation/ — from importing the rules
+ * layer that sits on top of it.
  */
-
-import {
-  contributesNothing,
-  sourceContributions,
-} from "../../../rules/content";
-import type { RuleEffectSource } from "../../../rules/resolution";
 
 import {
   createBodyPartDefinitionMap,
@@ -46,62 +38,6 @@ import type {
 import { getInjuryDefinition } from "./definitions";
 import type { CharacterInjury, CharacterInjuryId } from "./types";
 import { findInjuryLocationApplicabilityIssues } from "./validation";
-
-
-/* -------------------------------------------------------------------------- */
-/* Effect collection                                                         */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The Effect sources contributed by a character's current injuries.
- *
- * Every listed Injury is active — types.ts has no expiry field, so "on the
- * character" is "in force" — but a treatment-required Injury adds its
- * untreated or treated Effects on top of whatever it always contributes:
- *
- *   normal effects
- *   + untreated effects, while treatmentStatus is "untreated"
- *   + treated effects, while treatmentStatus is "treated"
- *
- * A treatment-required Injury with no treatmentStatus recorded (invalid
- * persistent state — see findInjuryValidationIssues) is treated as
- * untreated: that is the state every treatment-required Injury starts in,
- * and it is the more conservative reading for something that has not been
- * confirmed treated.
- *
- * An Injury that does not require treatment ignores treatmentEffects
- * entirely and contributes only its normal effects, per
- * InjuryDefinition.treatmentEffects's own doc comment.
- */
-export function collectInjuryEffectSources(
-  injuries: readonly CharacterInjury[] = [],
-): readonly RuleEffectSource[] {
-  const sources: RuleEffectSource[] = [];
-
-  for (const injury of injuries) {
-    const definition = getInjuryDefinition(injury.injuryId);
-
-    if (definition === undefined) continue;
-
-    const treatmentEffects = definition.recovery.treatmentRequired
-      ? (injury.treatmentStatus === "treated"
-          ? definition.treatmentEffects?.treated
-          : definition.treatmentEffects?.untreated) ?? []
-      : [];
-
-    const effects = [...(definition.effects ?? []), ...treatmentEffects];
-
-    if (contributesNothing(definition, effects)) continue;
-
-    sources.push({
-      source: { type: "injury", id: injury.injuryId },
-      effects,
-      ...sourceContributions(definition),
-    });
-  }
-
-  return sources;
-}
 
 
 /* -------------------------------------------------------------------------- */

@@ -95,7 +95,10 @@ import { NO_MASTERY, type MasteryRank } from "./capabilities/mastery";
 
 import { deriveCharacterLevelFromLifetimeXp } from "./progression/levels";
 
-import { collectStatusEffectSources } from "./status/resolution";
+import {
+  collectConditionEffectSources,
+  collectInjuryEffectSources,
+} from "./status/resolution";
 import { collectItemEffectSources, collectItemState } from "./equipment/index";
 
 import {
@@ -121,7 +124,13 @@ import { HUMAN_BODY_PROFILE } from "./foundation/body/human-profile";
 import {
   STANDARD_HUMANOID_FORM,
   getReferenceFormDefinition,
+  type ReferenceFormDefinition,
 } from "./foundation/body/anatomy/reference-forms";
+import { resolveInjuryManifestation } from "./foundation/body/injuries/resolution";
+import type {
+  CharacterInjury,
+  CharacterInjuryId,
+} from "./foundation/body/injuries/types";
 import type { SpeciesBodyProfile } from "./foundation/body/species-profile";
 import {
   applyPhysicalScaleSteps,
@@ -261,6 +270,25 @@ export interface ResolvedCharacter {
   readonly statureJustifications: readonly StatureJustification[];
 
   /**
+   * Which of the character's stored Injuries this form actually expresses.
+   *
+   * `manifested` is the set whose Effects are in the resolved values above;
+   * `dormant` is the rest. Together they account for every entry in
+   * `character.injuries` — nothing is dropped.
+   *
+   * A dormant Injury contributes NOTHING: no Effects, no penalties, no
+   * recovery. It is not healed and not removed, it is simply not currently
+   * anywhere. A Dragon's fractured wing sits dormant while its owner is human
+   * and resumes contributing the moment a winged form returns. This pair is
+   * what lets a sheet show that honestly rather than either hiding the entry
+   * or implying it is doing something.
+   */
+  readonly injuries: {
+    readonly manifested: readonly CharacterInjuryId[];
+    readonly dormant: readonly CharacterInjuryId[];
+  };
+
+  /**
    * The character as a Requirement asks about them.
    *
    * Built here because it needs the resolved view: a requirement for Wall
@@ -350,11 +378,13 @@ function seedSources(character: Character): readonly RuleEffectSource[] {
     });
   }
 
+  /*
+   * Conditions only. An Injury's applicability depends on the anatomy this
+   * seed helps produce, so Injury Effects are collected separately, per pass,
+   * from the manifested subset alone — see resolveCharacterPass.
+   */
   sources.push(
-    ...collectStatusEffectSources(
-      character.conditions ?? [],
-      character.injuries ?? [],
-    ),
+    ...collectConditionEffectSources(character.conditions ?? []),
   );
 
   sources.push(...collectItemEffectSources(character.items ?? []));
@@ -446,23 +476,69 @@ function characterTrace(
   };
 }
 
+/* -------------------------------------------------------------------------- */
+/* Phased resolution                                                          */
+/* -------------------------------------------------------------------------- */
 
 /**
- * Resolve a character.
+ * How many times the manifested-Injury set may change before the engine stops.
  *
- * Pure: nothing in the authored character is written to, and calling this
- * twice on the same character produces the same answer.
+ * Reaching this means a manifested Injury changes the anatomy in a way that
+ * changes which Injuries manifest, which changes the anatomy again — a cycle
+ * in authored content rather than a deep chain. The same reasoning, and the
+ * same response, as MAX_EXPANSION_PASSES above: stopping with an error beats
+ * hanging the workbench, and beats silently returning whichever pass happened
+ * to be last.
  *
- * Returns an EngineResult rather than a bare ResolvedCharacter because the
- * body can fail to resolve — anatomy referencing a BodyPartDefinition that
- * does not exist, an Effective Scale of zero — and every stat below the body
- * depends on it. Content the character is merely not ELIGIBLE for is not a
- * failure and never has been: an ineligible sheet resolves successfully and
- * validation is what judges it.
+ * Three is generous. A stable set is normally reached on the first recheck:
+ * pass 0 has no Injuries, pass 1 has the manifested ones, and pass 2 confirms
+ * that adding them did not change what manifests.
  */
-export function resolveCharacter(
+const MAX_INJURY_MANIFESTATION_PASSES = 3;
+
+/**
+ * Everything one resolution pass produces, before Injury manifestation is
+ * rechecked against it.
+ *
+ * A pass is a pure function of the character and ONE input the character does
+ * not itself determine: which of its Injuries are currently manifested. That
+ * is what makes the fixpoint below well-defined rather than a re-entrant
+ * resolve.
+ */
+interface CharacterResolutionPass {
+  readonly effects: ResolvedRuleEffects;
+  readonly attributes: AttributeLayers;
+  readonly speciesBody: SpeciesBodyProfile;
+  readonly speciesForm: ReferenceFormDefinition;
+  readonly bodyInput: BodyResolutionInput;
+  readonly body: EngineResult<ResolvedBody>;
+  readonly authoredSkills: Readonly<Record<string, MasteryRank>>;
+  readonly authoredTechniques: Readonly<Record<string, MasteryRank>>;
+}
+
+/**
+ * One resolution pass: every applicable Effect, the Attribute layers they
+ * produce, and the Body those layers resolve to.
+ *
+ * `manifestedInjuries` is the Injury subset whose Effects apply. It is an
+ * INPUT rather than something this function works out, and that is the whole
+ * point of the phasing:
+ *
+ *   Injury Effects can change the anatomy
+ *          ↓
+ *   the anatomy decides which Injuries manifest
+ *          ↓
+ *   manifestation decides which Injury Effects apply
+ *
+ * Reading every stored Injury here — which is what used to happen — resolves
+ * the circle by ignoring it, and a Dragon's fractured wing goes on penalising
+ * its owner while they are human. resolveCharacter drives this to a fixpoint
+ * instead; see its own header.
+ */
+function resolveCharacterPass(
   character: Character,
-): EngineResult<ResolvedCharacter> {
+  manifestedInjuries: readonly CharacterInjury[],
+): CharacterResolutionPass {
   const authoredSkills = toSkillMasteryRecord(character.skills);
   const authoredTechniques = toTechniqueMasteryRecord(character.techniques);
 
@@ -475,7 +551,10 @@ export function resolveCharacter(
   const expandedTechniques = new Set<string>();
   const expandedSkills = new Set<string>();
 
-  const sources: RuleEffectSource[] = [...seedSources(character)];
+  const sources: RuleEffectSource[] = [
+    ...seedSources(character),
+    ...collectInjuryEffectSources(manifestedInjuries),
+  ];
 
   const addTrait = (traitId: string): boolean => {
     if (expandedTraits.has(traitId)) return false;
@@ -689,25 +768,199 @@ export function resolveCharacter(
     anatomicalPoints: character.body.anatomicalPoints,
   };
 
-  const body = resolveBody(bodyInput);
+  return {
+    effects: resolved,
+    attributes,
+    speciesBody,
+    speciesForm,
+    bodyInput,
+    body: resolveBody(bodyInput),
+    authoredSkills,
+    authoredTechniques,
+  };
+}
+
+
+/*
+ * The failure envelope a body that could not resolve produces.
+ *
+ * Shared by every pass rather than written out at each early return, so a
+ * failure in the preliminary pass and one in a later pass are reported
+ * identically — the caller should not be able to tell which pass stopped.
+ */
+function failedPass(
+  character: Character,
+  body: Extract<EngineResult<ResolvedBody>, { success: false }>,
+): EngineResult<ResolvedCharacter> {
+  return {
+    success: false,
+    trace: characterTrace(character, body.trace.root, false),
+    warnings: body.warnings,
+    errors: body.errors,
+  };
+}
+
+/* Set equality over Injury instance ids, order-independent. */
+function isSameInjurySet(
+  left: readonly CharacterInjuryId[],
+  right: readonly CharacterInjuryId[],
+): boolean {
+  if (left.length !== right.length) return false;
+
+  const seen = new Set(right);
+
+  return left.every((id) => seen.has(id));
+}
+
+
+/**
+ * Resolve a character.
+ *
+ * Pure: nothing in the authored character is written to, and calling this
+ * twice on the same character produces the same answer.
+ *
+ * ── Why resolution is phased ────────────────────────────────────────────
+ *
+ * Injuries are the one kind of content whose applicability depends on the
+ * thing they help produce. An Injury applies only while the current form
+ * MANIFESTS the anatomy it occupies; the anatomy comes out of Body
+ * resolution; and Body resolution consumes Injury Effects. Collecting every
+ * stored Injury up front breaks that circle by pretending it is not there,
+ * and the cost is dormant Injuries staying mechanically active — a wing
+ * fracture penalising a character with no wings.
+ *
+ * So resolution runs as a small fixpoint instead:
+ *
+ *   1. every applicable NON-Injury Effect
+ *   2. a preliminary Body
+ *   3. which Injuries that anatomy manifests
+ *   4. Effects from the manifested Injuries alone
+ *   5. the final character and Body
+ *   6. recheck manifestation against the final anatomy
+ *   7. repeat only while the manifested set keeps changing
+ *
+ * A character with no Injuries settles at step 3 and costs exactly one Body
+ * resolution, which is what it cost before. A stable set is normally reached
+ * on the first recheck. A set that will not settle within
+ * MAX_INJURY_MANIFESTATION_PASSES is an authored cycle and returns an engine
+ * error rather than looping — the same bounded-resolution treatment grant
+ * expansion already gets.
+ *
+ * Dormant Injuries are NOT removed from the character. They stay stored, stay
+ * valid, and resume contributing the moment a form manifesting compatible
+ * anatomy returns. Treatment state only ever changes what a MANIFESTED Injury
+ * contributes.
+ *
+ * ── Why an EngineResult ────────────────────────────────────────────────
+ *
+ * Returns an EngineResult rather than a bare ResolvedCharacter because the
+ * body can fail to resolve — anatomy referencing a BodyPartDefinition that
+ * does not exist, an Effective Scale of zero — and every stat below the body
+ * depends on it. Content the character is merely not ELIGIBLE for is not a
+ * failure and never has been: an ineligible sheet resolves successfully and
+ * validation is what judges it.
+ */
+export function resolveCharacter(
+  character: Character,
+): EngineResult<ResolvedCharacter> {
+  const injuries = character.injuries ?? [];
 
   /*
-   * A body that cannot resolve stops the character.
-   *
-   * Every number below this point is derived from the body — Strength, the
-   * Size and Mass burden on AGI and DEX, and through those every Derived
-   * Attribute. There is no partially-resolved character to hand back, so the
-   * failure propagates with the body's own errors, trace and warnings intact
-   * rather than being turned into an exception the caller cannot inspect.
+   * Phase 1-2: nothing but the character themselves, and the preliminary Body
+   * that falls out of it. No Injury has contributed anything yet, so the
+   * manifested set this pass was resolved from is empty.
    */
-  if (!body.success) {
+  let manifestedIds: readonly CharacterInjuryId[] = [];
+  let dormantIds: readonly CharacterInjuryId[] = injuries.map(
+    (injury) => injury.id,
+  );
+
+  let pass = resolveCharacterPass(character, []);
+
+  if (!pass.body.success) return failedPass(character, pass.body);
+
+  let stabilized = false;
+
+  for (
+    let attempt = 0;
+    attempt < MAX_INJURY_MANIFESTATION_PASSES;
+    attempt += 1
+  ) {
+    /* Phase 3/6: which Injuries the anatomy just resolved actually expresses. */
+    const manifestation = resolveInjuryManifestation(
+      pass.body.payload.anatomy,
+      pass.bodyInput.definitions,
+      pass.bodyInput.specialPointDefinitions,
+      injuries,
+    );
+
+    /*
+     * Phase 7: settle as soon as the answer stops moving.
+     *
+     * Compared as a SET, not as a sequence. Manifestation walks the stored
+     * Injuries in order, so the order cannot differ between passes — but an
+     * ordering assumption is not what this loop's termination should rest on.
+     */
+    if (isSameInjurySet(manifestation.active, manifestedIds)) {
+      dormantIds = manifestation.dormant;
+      stabilized = true;
+
+      break;
+    }
+
+    manifestedIds = manifestation.active;
+    dormantIds = manifestation.dormant;
+
+    /* Phases 4-5: re-resolve with the manifested Injuries' Effects included. */
+    const manifestedSet = new Set(manifestedIds);
+
+    pass = resolveCharacterPass(
+      character,
+      injuries.filter((injury) => manifestedSet.has(injury.id)),
+    );
+
+    if (!pass.body.success) return failedPass(character, pass.body);
+  }
+
+  if (!stabilized) {
+    /*
+     * An authored cycle: manifesting an Injury changes the anatomy in a way
+     * that changes what manifests. Returning the last pass would be returning
+     * an arbitrary one of several equally-defensible answers, so this fails
+     * loudly instead.
+     */
     return {
       success: false,
-      trace: characterTrace(character, body.trace.root, false),
-      warnings: body.warnings,
-      errors: body.errors,
+      trace: characterTrace(character, pass.body.trace.root, false),
+      warnings: pass.body.warnings,
+      errors: [
+        {
+          code: "character.injuries.manifestation_unstable",
+          message:
+            `Injury manifestation did not settle within ${MAX_INJURY_MANIFESTATION_PASSES} passes.`,
+          audience: "developer",
+          subject: { kind: "character", id: character.id },
+          actual: [...manifestedIds],
+          resolution:
+            "An Injury's Effects are changing which Injuries manifest. Break the cycle in the authored content.",
+        },
+      ],
     };
   }
+
+  /*
+   * Narrowed by construction: every path out of the loop above has already
+   * returned on a failed body, so the settled pass carries a resolved one.
+   */
+  const body = pass.body;
+
+  const resolved = pass.effects;
+  const attributes = pass.attributes;
+  const speciesBody = pass.speciesBody;
+  const speciesForm = pass.speciesForm;
+  const bodyInput = pass.bodyInput;
+  const authoredSkills = pass.authoredSkills;
+  const authoredTechniques = pass.authoredTechniques;
 
   const resolvedBody = body.payload;
 
@@ -818,6 +1071,17 @@ export function resolveCharacter(
     bodyInput,
     knownContinuityKeys,
     statureJustifications: resolved.statureJustifications,
+
+    /*
+     * Which stored Injuries this form actually expresses, and which are
+     * dormant. Both are reported: a dormant Injury is still on the character
+     * and still valid, and a sheet that showed only the active ones would
+     * make a transformation look like a cure.
+     */
+    injuries: {
+      manifested: manifestedIds,
+      dormant: dormantIds,
+    },
   };
 
   return {

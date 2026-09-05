@@ -78,6 +78,7 @@
  * - other character state.
  */
 
+import type { ContributionSourceRef } from "../../infrastructure/contribution-source";
 import type { AttributeModifier } from "../foundation/attributes/modifiers";
 import type { AttributeLayers, Attributes } from "../foundation/attributes/types";
 import { resolveDerivedAttribute } from "../foundation/attributes/derived/resolution";
@@ -87,7 +88,10 @@ import type {
   BodyMorphologyProperty,
   Effect,
 } from "./effects";
-import type { CheckModifierContribution } from "../../checks/types";
+import type {
+  CheckModifierActivation,
+  CheckModifierContribution,
+} from "../../checks/types";
 import type { BodyPartSelector } from "../foundation/body/selectors";
 import type { ActionCapacityContribution } from "../foundation/actions/types";
 import type {
@@ -107,14 +111,12 @@ import type {
 /**
  * Identifies the piece of content that produced an Effect.
  *
- * `type` intentionally remains a string rather than a closed union so future
- * content systems may participate in the rule engine without requiring this
- * shared file to be edited merely to recognize a new source category.
+ * A readability alias, not a second definition. The structural shape lives in
+ * infrastructure/contribution-source.ts so that Foundation, Checks and Rules
+ * all carry provenance in exactly one shape and no layer has to import it
+ * upward from another — see that file for why the shape was moved out of here.
  */
-export interface RuleSourceRef {
-  readonly type: string;
-  readonly id: string;
-}
+export type RuleSourceRef = ContributionSourceRef;
 
 
 /**
@@ -267,21 +269,51 @@ export interface ResolvedRuleEffects {
   readonly resolvedAttributeModifiers: readonly SourcedAttributeModifier[];
 
   /**
-   * Situational modifiers awaiting an applicable check.
+   * Every situational modifier this character's applicable content declared,
+   * of every scope and BOTH authored activations.
    *
-   * Every one the character currently has, of every scope — filtering to the
-   * ones a particular check cares about is checks/modifiers.ts's
-   * collectApplicableCheckModifiers's job, at the moment that check happens
-   * (or checks/modifiers.ts's resolveCheckModifier for a roll-free value).
+   * Two independent filters stand between this list and an actual check, and
+   * conflating them is the bug this field used to have:
+   *
+   * - SCOPE. Which of these the check in question cares about —
+   *   checks/modifiers.ts's collectApplicableCheckModifiers, at the moment
+   *   the check happens (or resolveCheckModifier for a roll-free value).
+   *
+   * - ACTIVATION. Whether it applies at all right now. A "persistent"
+   *   contribution always does; an "invoked" one does only when its source
+   *   was explicitly selected for this check. This list holds both, so
+   *   reading it wholesale as if every entry were live is exactly what makes
+   *   a merely-known Skill improve every check its scope matches.
+   *
+   * persistentCheckModifiers below is the pre-filtered persistent subset, and
+   * checks/modifiers.ts's collectInvokedCheckModifiers is the shared
+   * collector for the invoked half.
    *
    * Uses the canonical top-level CheckModifierContribution shape rather than
    * a second character-only structure, so an authored modifier and the check
-   * it eventually applies to are always talking about the same thing. Every
-   * character-authored modifier is a standing contribution, so it is always
-   * tagged "persistent" — the "invoked"/"contextual" channels exist for
-   * checks/'s own request-time callers.
+   * it eventually applies to are always talking about the same thing. The
+   * third channel, "contextual", is never produced here: it belongs to the
+   * GM, the environment or the calling system and is supplied at check time.
    */
   readonly checkModifiers: readonly CheckModifierContribution[];
+
+  /**
+   * The subset of checkModifiers that applies with nothing selected.
+   *
+   * What a character simply HAS. Derived here rather than at each call site
+   * so that "which modifiers are automatically live" has exactly one answer.
+   */
+  readonly persistentCheckModifiers: readonly CheckModifierContribution[];
+
+  /**
+   * The subset of checkModifiers that applies only when its source is
+   * explicitly selected for a check.
+   *
+   * Available, not active. Pass these to
+   * checks/modifiers.ts's collectInvokedCheckModifiers along with the sources
+   * the caller actually selected.
+   */
+  readonly invokedCheckModifiers: readonly CheckModifierContribution[];
 
   /**
    * Sourced contributions to the character's Action capacities — see
@@ -305,6 +337,48 @@ export interface ResolvedRuleEffects {
    * carried for diagnostics only — see foundation/body/stature/justification.ts.
    */
   readonly statureJustifications: readonly StatureJustification[];
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Check-modifier activation                                                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The source kinds whose check modifiers are INVOKED unless stated otherwise.
+ *
+ * A Skill and a Technique are things a character does on purpose. "I have
+ * Contort" and "I am contorting" are different claims, and only the second one
+ * is worth +3 — so the bonus a Skill carries is what that Skill is worth while
+ * being used, not a standing improvement to every check its scope happens to
+ * match. Merely knowing something must never invoke it.
+ *
+ * Everything else — Species, Clan, Trait, Condition, Injury, equipment — is
+ * something a character simply HAS, and its modifiers are persistent. Keen
+ * Eyes does not need to be switched on.
+ *
+ * This is only the DEFAULT. A modifyCheck Effect that states its own
+ * activation gets it, which is what lets one Technique contribute a permanent
+ * sharpening and a use-time bonus as two Effects on the same definition.
+ */
+const INVOKED_BY_DEFAULT_SOURCE_TYPES: ReadonlySet<string> = new Set([
+  "skill",
+  "technique",
+]);
+
+/**
+ * How a modifyCheck Effect activates when it does not say.
+ *
+ * Exported because content tooling and tests should be able to ask the same
+ * question the resolver asks, rather than re-deriving the rule from the list
+ * above and getting a different answer when the list changes.
+ */
+export function defaultCheckModifierActivation(
+  sourceType: string,
+): CheckModifierActivation {
+  return INVOKED_BY_DEFAULT_SOURCE_TYPES.has(sourceType)
+    ? "invoked"
+    : "persistent";
 }
 
 
@@ -399,7 +473,15 @@ export function resolveRuleEffects(
           source,
           scope: effect.check,
           amount: effect.amount,
-          channel: "persistent",
+
+          /*
+           * The authored activation wins; otherwise the source kind decides.
+           * Tagging everything "persistent" here is what used to make a
+           * merely-known Skill permanently active.
+           */
+          channel:
+            effect.activation ??
+            defaultCheckModifierActivation(source.type),
         });
         break;
 
@@ -522,6 +604,12 @@ export function resolveRuleEffects(
     resolvedAttributeModifiers,
 
     checkModifiers,
+    persistentCheckModifiers: checkModifiers.filter(
+      (modifier) => modifier.channel === "persistent",
+    ),
+    invokedCheckModifiers: checkModifiers.filter(
+      (modifier) => modifier.channel === "invoked",
+    ),
     actionCapacity,
 
     traitGrants,

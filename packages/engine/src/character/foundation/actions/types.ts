@@ -36,8 +36,8 @@
  */
 
 import type {
-  RuleSourceRef,
-} from "../../rules/resolution";
+  ContributionSourceRef,
+} from "../../../infrastructure/contribution-source";
 
 import type {
   TraceNode,
@@ -105,7 +105,7 @@ export interface ActionCapacityContribution {
 
   readonly amount: number;
 
-  readonly source: RuleSourceRef;
+  readonly source: ContributionSourceRef;
 }
 
 

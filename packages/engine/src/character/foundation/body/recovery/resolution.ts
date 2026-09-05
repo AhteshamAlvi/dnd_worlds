@@ -20,8 +20,18 @@
  *    their currently-active untreated caps to one effective ceiling — the
  *    lowest one, since caps only ever restrict, never extend, recovery.
  * 4. Call body-points/recovery.ts once per damaged part with that ceiling.
- * 5. Detect any Injury whose full location (every BodyPart it occupies) has
- *    reached Maximum BP after this pass, and report it for removal.
+ * 5. Detect any Injury whose full location has reached Maximum BP after this
+ *    pass, and report it for removal.
+ *
+ * ── Only active anatomy participates ────────────────────────────────────
+ *
+ * Every step above reads the CURRENT manifestation, and only the parts of it
+ * that are actually there. A suppressed, removed, destroyed or archived
+ * BodyPart receives no natural Recovery, does not count as manifested when an
+ * Injury is evaluated, and cannot make an Injury look fully healed. An Injury
+ * is removable only when EVERY continuity identity in its location is both
+ * actively manifested and at Maximum BP — absence is not recovery, and a
+ * severed limb is not a healed one.
  *
  * This module does not mutate `character.injuries` — it reports which
  * CharacterInjuryIds are now fully healed and leaves removing them to the
@@ -30,8 +40,16 @@
  *
  * A treatment-required Injury with no recorded treatmentStatus is treated as
  * untreated for cap purposes — the same conservative default
- * injuries/resolution.ts uses for its Effects, and the state every
+ * character/status/resolution.ts uses for its Effects, and the state every
  * treatment-required Injury starts in.
+ *
+ * ── Inputs are assumed valid ────────────────────────────────────────────
+ *
+ * resolveRecovery does not check its own inputs, matching
+ * body-points/resolution.ts's convention. That is safe for callers inside the
+ * engine's pipeline and unsafe for a host supplying its own elapsed time and
+ * Vitality, so validation.ts owns the guarded entry point
+ * (resolveValidatedRecovery) and the reasons it refuses.
  */
 
 import {
@@ -172,9 +190,19 @@ export function resolveBodyPartRecoveryCeiling(
     activeCaps.push({
       characterInjuryId: injury.id,
       injuryId: injury.injuryId,
-      ceilingBP: Math.floor(
+
+      /*
+       * Not floored. Recovery and integrity are continuous values all the way
+       * through — integrity is a fraction, and body-points/recovery.ts already
+       * owns whatever whole-BP presentation a sheet wants. Flooring here threw
+       * away part of an authored ceiling before anything had a chance to use
+       * it: a 0.33 ceiling on a 14 Maximum BP part is 4.62 BP, and rounding it
+       * to 4 silently makes every Injury a little more crippling than it was
+       * written to be — worse on small parts, where the lost fraction is a
+       * larger share of the whole.
+       */
+      ceilingBP:
         definition.recovery.bpRecoveryCeilingFraction * maximumBP,
-      ),
     });
   }
 
@@ -195,9 +223,10 @@ export function resolveBodyPartRecoveryCeiling(
  * Runs one Recovery pass over a character's damaged Anatomy.
  *
  * This function assumes its inputs have already passed validation — it does
- * not itself check that Injury locations exist or that treatment state
- * matches each Injury's definition, matching body-points/resolution.ts's own
- * "assumes valid input" convention.
+ * not itself check elapsed time, Vitality, Effective Scale, Injury locations
+ * or treatment state, matching body-points/resolution.ts's own "assumes valid
+ * input" convention. recovery/validation.ts's resolveValidatedRecovery is the
+ * entry point for anything crossing a host boundary.
  */
 export function resolveRecovery(
   input: ResolveRecoveryInput,
@@ -281,17 +310,37 @@ export function resolveRecovery(
 
   const newAnatomy: Anatomy = { parts: updatedParts };
 
+  /*
+   * Only ACTIVE anatomy counts as manifested.
+   *
+   * A suppressed, removed, destroyed or archived BodyPart is not there to
+   * heal, and an identity standing in one of those states is not being
+   * expressed by this form at all. Building this lookup from every part —
+   * which is what used to happen — made an absent limb answer for its own
+   * integrity, so an Injury on it could be reported fully healed and
+   * removable while the anatomy it occupied was still gone.
+   *
+   * The same map is what the removal check below reads, so "did not heal" and
+   * "does not count as manifested" cannot disagree.
+   */
   const integrityByContinuityAfter = new Map(
-    updatedParts.map((part) => [part.continuityKey, part.integrity]),
+    updatedParts
+      .filter((part) => part.state === "active")
+      .map((part) => [part.continuityKey, part.integrity]),
   );
 
   const removedInjuries: RecoveredInjuryRemoval[] = [];
 
   for (const injury of input.injuries) {
     /*
-     * Only identities the current form actually manifests are asked. An Injury
-     * on anatomy this form does not express is dormant, and dormant anatomy
-     * does not heal — it is not there to heal.
+     * An Injury may only be REMOVED when every continuity identity in its
+     * location is actively manifested and fully healed.
+     *
+     * Both halves matter, and a multi-location Injury is where that shows. A
+     * fracture across an Upper and a Lower Arm is not healed because the
+     * Upper Arm reached Maximum BP; and it is certainly not healed because the
+     * Lower Arm was severed and stopped reporting damage. Absence is not
+     * recovery.
      */
     const manifested = injury.location.continuityKeys.filter((key) =>
       integrityByContinuityAfter.has(key),

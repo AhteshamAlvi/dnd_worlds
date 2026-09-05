@@ -98,7 +98,7 @@ function createDiceTraceNode(dice: CheckDiceResolution): TraceNode {
   });
 
   return createTraceNode({
-    id: "gameplay.checks.dice",
+    id: "checks.dice",
     label: "Resolve d20 Pool",
     formula: dice.mode === "highest"
       ? "retain highest supplied d20"
@@ -136,7 +136,7 @@ function createModifierTraceNode(
     sumCheckModifiers(modifiers);
 
   return createTraceNode({
-    id: "gameplay.checks.modifiers",
+    id: "checks.modifiers",
     label: "Resolve Check Modifier",
     formula: "sum governing contributions and applicable sourced modifiers",
     inputs,
@@ -159,7 +159,7 @@ export function resolveCheck(request: CheckRequest): CheckResolution {
   const total = dice.retainedRoll + finalModifier;
 
   const trace = createTraceNode({
-    id: "gameplay.checks.resolve",
+    id: "checks.resolve",
     label: "Resolve Check",
     formula: "retained d20 + final modifier",
     inputs: {
@@ -200,7 +200,7 @@ export function resolveFixedCheck(
   const success = margin > 0 || (tied && tiePolicy === "succeeds");
 
   const trace = createTraceNode({
-    id: "gameplay.checks.fixed",
+    id: "checks.fixed",
     label: "Resolve Fixed Check",
     formula: "check total - difficulty",
     inputs: {
@@ -237,7 +237,7 @@ export function resolveOpposedCheck(
       : request.tiesFavor;
 
   const trace = createTraceNode({
-    id: "gameplay.checks.opposed",
+    id: "checks.opposed",
     label: "Resolve Opposed Check",
     formula: "initiator total - opponent total",
     inputs: {

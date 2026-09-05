@@ -1,7 +1,7 @@
 /*
  * Status as rule sources.
  *
- * Conditions and injuries do not apply themselves. This file decides which of
+ * Conditions and Injuries do not apply themselves. This file decides which of
  * them are currently in force and hands their Effects to the shared rules
  * layer as ordinary sources, tagged so a resolved value can name what caused
  * it.
@@ -11,7 +11,7 @@
  * moment status grows its own application path they stop being able to be
  * reasoned about together.
  *
- * Conditions and injuries pick "currently in force" differently:
+ * Conditions and Injuries pick "currently in force" differently:
  *
  * - a Condition's "currently in force" accounts for expiry and stage — see
  *   status/stage.ts. An entry whose remainingDuration has run out
@@ -21,11 +21,28 @@
  *   left to the content itself.
  *
  * - an Injury has no expiry or stage track at all (see
- *   foundation/body/injuries/types.ts's own header for why) — every Injury
- *   on the character is active until something removes it. What varies
- *   instead is treatment state, which foundation/body/injuries/resolution.ts
- *   owns: a treatment-required Injury adds its untreated/treated Effects on
- *   top of its always-on ones, per InjuryDefinition.treatmentEffects.
+ *   foundation/body/injuries/types.ts's own header for why). What decides
+ *   whether it is in force is MANIFESTATION: an Injury applies while the
+ *   current form expresses every anatomical identity it occupies, and is
+ *   dormant otherwise. Manifestation is Body's question, so the caller
+ *   resolves it (foundation/body/injuries/resolution.ts's
+ *   resolveInjuryManifestation) and passes only the manifested Injuries in.
+ *   Passing every stored Injury is what used to make a Dragon's wing fracture
+ *   go on penalising its owner while they were human.
+ *
+ *   What varies on top of manifestation is treatment state: a
+ *   treatment-required Injury adds its untreated/treated Effects on top of
+ *   its always-on ones, per InjuryDefinition.treatmentEffects. Treatment only
+ *   ever changes the Effects of an Injury that is already manifested — a
+ *   dormant Injury contributes nothing whether or not it has been treated.
+ *
+ * ── Why Injury Effect collection lives here ─────────────────────────────
+ *
+ * Because it is a question about authored CONTENT, not about anatomy. An
+ * Injury's location, applicability and manifestation are anatomical and stay
+ * under foundation/body/injuries/; reading its Effects means reading the
+ * rules vocabulary, and nothing under foundation/ may import the rules layer
+ * that sits on top of it.
  */
 
 import {
@@ -45,9 +62,7 @@ import {
   type CharacterCondition,
 } from "./conditions";
 
-import {
-  collectInjuryEffectSources,
-} from "../foundation/body/injuries/resolution";
+import { getInjuryDefinition } from "../foundation/body/injuries/definitions";
 import type {
   CharacterInjury,
 } from "../foundation/body/injuries/types";
@@ -92,14 +107,74 @@ export function collectConditionEffectSources(
 }
 
 /**
+ * The Effect sources contributed by the Injuries that are CURRENTLY IN FORCE.
+ *
+ * The caller supplies the manifested Injuries, not every Injury on the sheet.
+ * This function does not — and structurally cannot — decide manifestation for
+ * itself: that needs a resolved Anatomy, and Injury Effects are part of what
+ * produces the resolved Body in the first place. character/resolution.ts
+ * breaks that circle by resolving a preliminary Body first; see its
+ * phased-resolution header.
+ *
+ * A manifested treatment-required Injury adds its untreated or treated
+ * Effects on top of whatever it always contributes:
+ *
+ *   normal effects
+ *   + untreated effects, while treatmentStatus is "untreated"
+ *   + treated effects, while treatmentStatus is "treated"
+ *
+ * A treatment-required Injury with no treatmentStatus recorded (invalid
+ * persistent state — see findInjuryValidationIssues) is treated as
+ * untreated: that is the state every treatment-required Injury starts in,
+ * and it is the more conservative reading for something that has not been
+ * confirmed treated.
+ *
+ * An Injury that does not require treatment ignores treatmentEffects
+ * entirely and contributes only its normal effects, per
+ * InjuryDefinition.treatmentEffects's own doc comment.
+ */
+export function collectInjuryEffectSources(
+  manifestedInjuries: readonly CharacterInjury[] = [],
+): readonly RuleEffectSource[] {
+  const sources: RuleEffectSource[] = [];
+
+  for (const injury of manifestedInjuries) {
+    const definition = getInjuryDefinition(injury.injuryId);
+
+    if (definition === undefined) continue;
+
+    const treatmentEffects = definition.recovery.treatmentRequired
+      ? (injury.treatmentStatus === "treated"
+          ? definition.treatmentEffects?.treated
+          : definition.treatmentEffects?.untreated) ?? []
+      : [];
+
+    const effects = [...(definition.effects ?? []), ...treatmentEffects];
+
+    if (contributesNothing(definition, effects)) continue;
+
+    sources.push({
+      source: { type: "injury", id: injury.injuryId },
+      effects,
+      ...sourceContributions(definition),
+    });
+  }
+
+  return sources;
+}
+
+/**
  * Everything status contributes, in the order a sheet reads it.
+ *
+ * `manifestedInjuries` is the manifested subset, never the whole stored list
+ * — see collectInjuryEffectSources.
  */
 export function collectStatusEffectSources(
   conditions: readonly CharacterCondition[] = [],
-  injuries: readonly CharacterInjury[] = [],
+  manifestedInjuries: readonly CharacterInjury[] = [],
 ): readonly RuleEffectSource[] {
   return [
     ...collectConditionEffectSources(conditions),
-    ...collectInjuryEffectSources(injuries),
+    ...collectInjuryEffectSources(manifestedInjuries),
   ];
 }

@@ -278,8 +278,15 @@ export type InjuryRecovery =
 /**
  * Reusable authored Injury content.
  *
- * Effects describe what the Injury mechanically does for as long as it is
- * active, regardless of treatment state.
+ * Effects describe what the Injury mechanically does WHILE IT IS MANIFESTED,
+ * regardless of treatment state.
+ *
+ * Manifested, not merely recorded. An Injury applies only while the current
+ * form expresses every anatomical identity its location names and the anatomy
+ * standing there can host it — see resolution.ts's resolveInjuryManifestation.
+ * A dormant Injury contributes nothing at all: not its `effects`, not its
+ * `treatmentEffects`, and no recovery. It is still stored, still valid, and
+ * resumes contributing the moment compatible anatomy returns.
  *
  * Applicability describes what anatomy the Injury is allowed to affect.
  *
@@ -287,10 +294,11 @@ export type InjuryRecovery =
  * recovery ceiling it imposes until treated.
  *
  * `treatmentEffects` adds Effects on top of the base `effects` depending on
- * treatment state — see resolution.ts for how the two combine. Meaningful
- * only for a treatment-required Injury: one that recovers without treatment
- * has no treatment state to key off, and normally authors only its plain
- * `effects`.
+ * treatment state — see character/status/resolution.ts for how the two
+ * combine. Meaningful only for a treatment-required Injury: one that recovers
+ * without treatment has no treatment state to key off, and normally authors
+ * only its plain `effects`. Treatment state only ever changes what a
+ * MANIFESTED Injury contributes.
  */
 export interface InjuryDefinition extends EffectfulDefinition {
   readonly applicability: InjuryApplicability;

@@ -555,7 +555,6 @@ export {
 export type { KnownInjuryId } from "./injuries/definitions";
 
 export {
-  collectInjuryEffectSources,
   resolveInjuryManifestation,
 } from "./injuries/resolution";
 
@@ -594,6 +593,16 @@ export {
   resolveBodyPartRecoveryCeiling,
   resolveRecovery,
 } from "./recovery/resolution";
+
+export type { RecoveryValidationIssue } from "./recovery/validation";
+
+export {
+  findRecoveryInputIssues,
+  isValidRecoveryInput,
+  toRecoveryEngineError,
+  validateRecoveryInput,
+  resolveValidatedRecovery,
+} from "./recovery/validation";
 
 
 /* -------------------------------------------------------------------------- */

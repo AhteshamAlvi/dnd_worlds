@@ -37,6 +37,7 @@ import {
 } from "../checks";
 import type { CheckModifierContribution } from "../checks";
 
+import { collectCharacterCheckModifiers } from "../character/checks";
 import { validateCharacter } from "../character/validation";
 
 import {
@@ -232,12 +233,14 @@ describe("modifyCheck flows through effect resolution", () => {
       },
     ]);
 
+    // A Skill's bonus is what the Skill is worth WHEN USED, so it lands in
+    // the invoked channel rather than the persistent one.
     expect(resolved.checkModifiers).toEqual([
       {
         source: { type: "skill", id: "contort" },
         scope: AGI_CHECK,
         amount: 3,
-        channel: "persistent",
+        channel: "invoked",
       },
     ]);
   });
@@ -294,7 +297,7 @@ describe("modifyCheck flows through effect resolution", () => {
         source: { type: "skill", id: "contort" },
         scope: AGI_CHECK,
         amount: 3,
-        channel: "persistent",
+        channel: "invoked",
       },
     ]);
   });
@@ -367,10 +370,14 @@ describe("the ticket's worked example, end to end", () => {
       standardModifier: 4,
     });
 
-    // The check: +4 from the score, +3 from Contort.
+    // The check: +4 from the score, +3 from Contort — and Contort counts
+    // because the player SAID they were using it. Merely knowing it is worth
+    // nothing; see the activation suite below.
     const check = resolveCheckModifier(
       [{ id: "standard", amount: resolved.attributeScores.agi.standardModifier }],
-      resolved.effects.checkModifiers,
+      collectCharacterCheckModifiers(resolved, {
+        sources: [{ type: "skill", id: "contort" }],
+      }),
       AGI_CHECK,
     );
 
@@ -409,7 +416,9 @@ describe("the ticket's worked example, end to end", () => {
           amount: resolved.derivedScores.acrobatics.standardModifier,
         },
       ],
-      resolved.effects.checkModifiers,
+      collectCharacterCheckModifiers(resolved, {
+        sources: [{ type: "technique", id: "tumbling" }],
+      }),
       ACROBATICS_CHECK,
     );
 

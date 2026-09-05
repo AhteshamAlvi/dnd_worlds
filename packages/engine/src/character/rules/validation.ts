@@ -34,6 +34,7 @@ import {
   ACTION_CAPACITY_KINDS,
   type ActionCapacityKind,
 } from "../foundation/actions/types";
+import { isValidActionCapacityAmount } from "../foundation/actions/validation";
 import type { Effect } from "./effects";
 import type { Requirement } from "./requirements";
 
@@ -341,7 +342,17 @@ export function findEffectValidationIssues(
 
 
     case "modifyActionCapacity": {
-      if (!isFiniteNumber(effect.amount)) {
+      /*
+       * Judged by the Action domain's own rule, not by a weaker local one.
+       *
+       * An Action-capacity amount must be a WHOLE number of Actions; finite
+       * was not enough. An authored 2.5 used to pass here and be rejected
+       * later by foundation/actions/validation.ts, which is the same value
+       * validated two different ways — content that authors cleanly and then
+       * fails as a character. isValidActionCapacityAmount also subsumes the
+       * finiteness check, since NaN and Infinity are not integers.
+       */
+      if (!isValidActionCapacityAmount(effect.amount)) {
         issues.push({
           type: "invalid-effect-amount",
           path: `${path}.amount`,

@@ -1,12 +1,16 @@
 /* Universal d20 check request and result types. */
 
+import type { ContributionSourceRef } from "../infrastructure/contribution-source";
 import type { TraceNode } from "../infrastructure/trace";
 import type { CheckScope, CheckScopeSelector } from "./scopes";
 
-export interface CheckSourceRef {
-  readonly type: string;
-  readonly id: string;
-}
+/**
+ * Identifies the content that supplied a base contribution or a modifier.
+ *
+ * A readability alias over the engine-wide provenance shape, not a second
+ * structural definition — see infrastructure/contribution-source.ts.
+ */
+export type CheckSourceRef = ContributionSourceRef;
 
 export interface CheckDiceInput {
   /* Signed advantage level: positive keeps highest, negative keeps lowest. */
@@ -34,6 +38,23 @@ export interface CheckBaseContribution {
   readonly source?: CheckSourceRef;
 }
 
+/*
+ * The three ways a situational modifier can reach a check.
+ *
+ * - "persistent": the character simply has it. A Trait's Keen Eyes, an
+ *   equipped Item's bonus, a Condition's penalty. Carried by
+ *   ResolvedCharacter and applied automatically whenever the scope matches.
+ *
+ * - "invoked": the character has it available, and it applies only when the
+ *   source is explicitly SELECTED for this check. A Skill's "+3 to applicable
+ *   AGI checks" is what that Skill is worth WHEN YOU USE IT; merely knowing
+ *   it must not silently improve every AGI check the character ever makes.
+ *
+ * - "contextual": nothing on the character supplied it at all. The GM, the
+ *   environment, or the calling system hands it in at check time — cover,
+ *   darkness, a favourable circumstance. Request-local by construction: it is
+ *   never collected from content and never stored on a character.
+ */
 export const CHECK_MODIFIER_CHANNELS = [
   "persistent",
   "invoked",
@@ -42,11 +63,45 @@ export const CHECK_MODIFIER_CHANNELS = [
 
 export type CheckModifierChannel = typeof CHECK_MODIFIER_CHANNELS[number];
 
+/*
+ * How an AUTHORED modifier activates.
+ *
+ * The two channels content is allowed to declare. "contextual" is deliberately
+ * absent: a modifier that came from the GM or the environment is by definition
+ * not something a Trait or a Skill authored, so there is nothing for authored
+ * content to say about it.
+ *
+ * Every authored modifier lands in the matching channel, so activation and
+ * channel are the same vocabulary seen from the two ends of resolution rather
+ * than two vocabularies that have to be kept in step.
+ */
+export const CHECK_MODIFIER_ACTIVATIONS = [
+  "persistent",
+  "invoked",
+] as const satisfies readonly CheckModifierChannel[];
+
+export type CheckModifierActivation =
+  typeof CHECK_MODIFIER_ACTIVATIONS[number];
+
 export interface CheckModifierContribution {
   readonly source: CheckSourceRef;
   readonly scope: CheckScopeSelector;
   readonly amount: number;
   readonly channel: CheckModifierChannel;
+}
+
+/** Whether a contribution applies without anything being selected for it. */
+export function isPersistentCheckModifier(
+  modifier: CheckModifierContribution,
+): boolean {
+  return modifier.channel === "persistent";
+}
+
+/** Whether a contribution applies only when its source is selected. */
+export function isInvokedCheckModifier(
+  modifier: CheckModifierContribution,
+): boolean {
+  return modifier.channel === "invoked";
 }
 
 export interface CheckRequest {

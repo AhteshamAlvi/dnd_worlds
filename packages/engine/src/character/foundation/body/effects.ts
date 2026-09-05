@@ -29,7 +29,7 @@
  *
  * `applyBodyEffects` takes plain `{multiplier, target}` shapes rather than the
  * rules layer's `SourcedBodyModifier`. The rules layer's types carry a
- * `RuleSourceRef` for provenance and satisfy these structurally, so
+ * `ContributionSourceRef` for provenance and satisfy these structurally, so
  * `ResolvedRuleEffects.body` passes straight in — while Body itself never
  * imports from rules and stays a subsystem the rules layer sits on top of,
  * not beside.

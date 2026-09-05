@@ -166,7 +166,7 @@ export function resolveAttributeScores(
  *
  * `source` is a label rather than a structured reference because this is the
  * display end of the pipeline; character/resolution.ts holds the typed
- * RuleSourceRef for anything that needs to act on the source rather than
+ * ContributionSourceRef for anything that needs to act on the source rather than
  * print it.
  */
 export interface AttributeContribution {

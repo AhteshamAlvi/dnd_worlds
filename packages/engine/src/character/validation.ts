@@ -59,6 +59,11 @@ import { resolveCharacter, type ResolvedCharacter } from "./resolution";
 import { validateDerivedAttributes } from "./foundation/attributes/derived/validation";
 
 import {
+  findResolvedActionCapacityValidationIssues,
+  toActionCapacityEngineError,
+} from "./foundation/actions/validation";
+
+import {
   findBodyValidationIssues,
   toBodyEngineError,
 } from "./foundation/body/validation";
@@ -241,7 +246,7 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     code: "character.injury.location_invalid",
     describe: (issue) =>
       `Injury "${issue.id}" ${describeInjuryLocationIssue(issue)}.`,
-    resolution: "Fix the injury's BodyPart or Special Point location.",
+    resolution: "Fix the injury's anatomy or Special Point location.",
   },
   "invalid-injury-treatment-status": {
     code: "character.injury.treatment_status_invalid",
@@ -325,19 +330,27 @@ function describeStagedEntryIssue(
   }
 }
 
-// Renders the one nested issue an injury's location can carry.
+/*
+ * Renders the one nested issue an injury's location can carry.
+ *
+ * Continuity vocabulary throughout: an Injury's location names anatomical
+ * IDENTITIES, not the BodyPart instances currently standing in them. The
+ * sibling injury-body-part-not-applicable descriptor above stays
+ * body-part-shaped on purpose — applicability is judged against the concrete
+ * BodyPart manifesting the identity.
+ */
 function describeInjuryLocationIssue(
   issue: Extract<InjuryValidationIssue, { type: "invalid-injury-location" }>,
 ): string {
   switch (issue.issue) {
-    case "no-body-parts":
-      return "has a location with no BodyPart ids";
+    case "no-continuity-keys":
+      return "has a location naming no anatomy";
 
-    case "invalid-body-part-id":
-      return "references an empty BodyPart id";
+    case "invalid-continuity-key":
+      return "references an empty anatomy identity";
 
-    case "duplicate-body-part-id":
-      return `references BodyPart "${issue.bodyPartId}" more than once`;
+    case "duplicate-continuity-key":
+      return `references anatomy "${issue.continuityKey}" more than once`;
 
     case "invalid-special-point-definition-id":
       return "has an empty Special Point definition id";
@@ -569,6 +582,29 @@ export function validateCharacter(
 
   for (const issue of referenceIssues) {
     errors.push(toEngineError(issue, subject));
+  }
+
+  /*
+   * Action capacity.
+   *
+   * foundation/actions/validation.ts owned a complete set of validators that
+   * nothing called, which made "is this character's Action capacity sound?"
+   * a question only a caller who happened to know about them could ask. It is
+   * now part of ordinary character validation, so an unknown capacity kind, a
+   * non-finite or fractional contribution, and a resolved capacity that
+   * disagrees with the mechanic's own formulas all fail here.
+   *
+   * The RESOLVED capacity is validated rather than the authored Effects,
+   * deliberately. The resolved value carries its own contributions, so the
+   * authored amounts are checked as part of it; and it is the only place the
+   * arithmetic can be checked at all. The authored half is also checked at
+   * catalog time by rules/validation.ts — with the same predicate, so one
+   * amount cannot be legal in one place and illegal in the other.
+   */
+  for (const issue of findResolvedActionCapacityValidationIssues(
+    resolved.actionCapacity,
+  )) {
+    errors.push(toActionCapacityEngineError(issue, subject));
   }
 
   /*

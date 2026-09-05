@@ -11,7 +11,7 @@
  * - Techniques
  * - Equipment
  * - Conditions
- * - generic RuleSourceRef provenance
+ * - generic contribution provenance (ContributionSourceRef)
  *
  * Those concerns belong to their own domains.
  *
@@ -32,7 +32,28 @@
  *
  * - values below 5 derive 0 Round Actions;
  * - values above 30 remain capped at 10 stat-derived Round Actions.
+ *
+ * ── Who calls this ──────────────────────────────────────────────────────
+ *
+ * These are not standalone debugging utilities. character/validation.ts runs
+ * findResolvedActionCapacityValidationIssues over every resolved character and
+ * turns what it reports into engine diagnostics, so an unknown capacity kind,
+ * a non-finite amount, a fractional Action contribution and a resolved
+ * capacity that disagrees with the formulas are all rejected by ordinary
+ * character validation rather than only by a caller who thought to ask.
+ *
+ * The AUTHORED half of the same question — a modifyActionCapacity Effect in a
+ * catalog — is checked by rules/validation.ts, and it checks it with the
+ * predicates below rather than with its own copy of the rule. One value must
+ * not be judged two ways: an amount of 2.5 that authoring accepts and
+ * resolution rejects is a character that validates as content and fails as a
+ * character.
  */
+
+import type {
+  DiagnosticSubject,
+  EngineError,
+} from "../../../infrastructure/diagnostics";
 
 import {
   ACTION_CAPACITY_KINDS,
@@ -136,6 +157,23 @@ function isWholeNumber(value: number): boolean {
 }
 
 
+/**
+ * Whether a number is a legal Action-capacity contribution amount.
+ *
+ * Normal Action capacity is counted in whole Actions, so half an Action is not
+ * a small bonus — it is a value the mechanic has no meaning for. Negative and
+ * zero are both legal (penalties, and contributions that happen to cancel).
+ *
+ * Exported so rules/validation.ts can judge an AUTHORED
+ * modifyActionCapacity amount by exactly this rule instead of its own weaker
+ * one. Number.isInteger already rejects NaN and Infinity, so this is the
+ * finiteness check too.
+ */
+export function isValidActionCapacityAmount(value: number): boolean {
+  return Number.isInteger(value);
+}
+
+
 function isNonNegativeWholeNumber(
   value: number,
 ): boolean {
@@ -194,8 +232,8 @@ export function findCombatAbilityActionIssues(
 /*
  * Checks the Action-specific portion of capacity contributions.
  *
- * `source` is deliberately not validated here. RuleSourceRef provenance is
- * owned by the generic rules layer.
+ * `source` is deliberately not validated here. ContributionSourceRef
+ * provenance is owned by infrastructure and stamped by the rules layer.
  *
  * Negative contributions are legal. They may represent penalties from
  * Conditions, Injuries, Traits, Equipment, or other effectful content.
@@ -241,7 +279,7 @@ export function findActionCapacityContributionIssues(
        * kind cannot safely be exposed as ActionCapacityKind below.
        */
       if (
-        !Number.isInteger(
+        !isValidActionCapacityAmount(
           contribution.amount,
         )
       ) {
@@ -262,7 +300,7 @@ export function findActionCapacityContributionIssues(
     }
 
     if (
-      !Number.isInteger(
+      !isValidActionCapacityAmount(
         contribution.amount,
       )
     ) {
@@ -630,4 +668,105 @@ export function isResolvedActionCapacityValid(
       resolved,
     ).length === 0
   );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Diagnostics                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One Action-capacity issue as an EngineError.
+ *
+ * The domain owns its own diagnostic wording, matching
+ * foundation/body/validation.ts's toBodyEngineError — character/validation.ts
+ * decides that a character has to satisfy these rules, not what they mean.
+ *
+ * Audience is "developer" throughout. Every one of these is either malformed
+ * content crossing the engine boundary or the engine's own arithmetic
+ * disagreeing with itself; neither is something a player can act on from a
+ * character sheet.
+ */
+export function toActionCapacityEngineError(
+  issue: ActionCapacityValidationIssue,
+  subject?: DiagnosticSubject,
+): EngineError {
+  const at = subject !== undefined ? { subject } : {};
+
+  switch (issue.type) {
+    case "combat-ability-invalid":
+      return {
+        code: "character.actions.combat_ability_invalid",
+        message:
+          `Combat Ability resolved to ${issue.combatAbility}, which cannot derive whole Actions.`,
+        audience: "developer",
+        ...at,
+        required: "finite whole number",
+        actual: String(issue.combatAbility),
+        resolution:
+          "Check the Attributes and Effects feeding Combat Ability.",
+      };
+
+    case "action-capacity-contribution-kind-invalid":
+      return {
+        code: "character.actions.contribution_kind_invalid",
+        message:
+          `Action-capacity contribution ${issue.index} names an unknown capacity kind.`,
+        audience: "developer",
+        ...at,
+        required: ACTION_CAPACITY_KINDS.join(", "),
+        actual: String(issue.kind),
+        resolution:
+          'Set the Effect\'s capacity to "round", "turn" or "reaction".',
+      };
+
+    case "action-capacity-contribution-amount-invalid":
+      return {
+        code: "character.actions.contribution_amount_invalid",
+        message:
+          `Action-capacity contribution ${issue.index} (${issue.kind}) is ` +
+          `${issue.amount}, which is not a whole number of Actions.`,
+        audience: "developer",
+        ...at,
+        required: "whole number of Actions",
+        actual: String(issue.amount),
+        resolution:
+          "Author modifyActionCapacity amounts as whole Actions.",
+      };
+
+    case "action-capacity-base-round-invalid":
+    case "action-capacity-base-turn-invalid":
+    case "action-capacity-base-reaction-invalid":
+    case "action-capacity-round-invalid":
+    case "action-capacity-turn-invalid":
+    case "action-capacity-reaction-invalid":
+      return {
+        code: `character.actions.${issue.type.replace(/-/g, "_")}`,
+        message:
+          `Resolved Action capacity is structurally invalid (${issue.type}): ${issue.actual}.`,
+        audience: "developer",
+        ...at,
+        actual: String(issue.actual),
+        resolution:
+          "Resolve Action capacity through resolveActionCapacity rather than constructing it by hand.",
+      };
+
+    case "action-capacity-base-round-mismatch":
+    case "action-capacity-base-turn-mismatch":
+    case "action-capacity-base-reaction-mismatch":
+    case "action-capacity-round-mismatch":
+    case "action-capacity-turn-mismatch":
+    case "action-capacity-reaction-mismatch":
+      return {
+        code: `character.actions.${issue.type.replace(/-/g, "_")}`,
+        message:
+          `Resolved Action capacity disagrees with the mechanic's own ` +
+          `formula (${issue.type}): expected ${issue.expected}, got ${issue.actual}.`,
+        audience: "developer",
+        ...at,
+        required: String(issue.expected),
+        actual: String(issue.actual),
+        resolution:
+          "Resolve Action capacity through resolveActionCapacity rather than constructing it by hand.",
+      };
+  }
 }

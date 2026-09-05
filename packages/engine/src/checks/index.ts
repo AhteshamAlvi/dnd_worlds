@@ -59,6 +59,7 @@ export {
 
 export type {
   CheckSourceRef,
+  CheckModifierActivation,
   CheckDiceInput,
   CheckRollMode,
   CheckDiceResolution,
@@ -75,7 +76,12 @@ export type {
   OpposedCheckResolution,
 } from "./types";
 
-export { CHECK_MODIFIER_CHANNELS } from "./types";
+export {
+  CHECK_MODIFIER_CHANNELS,
+  CHECK_MODIFIER_ACTIVATIONS,
+  isPersistentCheckModifier,
+  isInvokedCheckModifier,
+} from "./types";
 
 export {
   matchesSenseSelector,
@@ -88,6 +94,9 @@ export type { CheckModifierResolution } from "./modifiers";
 
 export {
   collectApplicableCheckModifiers,
+  collectPersistentCheckModifiers,
+  collectInvokedCheckModifiers,
+  assembleCheckModifiers,
   sumCheckBaseContributions,
   sumCheckModifiers,
   resolveCheckModifier,
