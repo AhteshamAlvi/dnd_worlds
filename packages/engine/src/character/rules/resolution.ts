@@ -269,11 +269,17 @@ export interface ResolvedRuleEffects {
   readonly resolvedAttributeModifiers: readonly SourcedAttributeModifier[];
 
   /**
-   * Every situational modifier this character's applicable content declared,
-   * of every scope and BOTH authored activations.
+   * Every situational modifier this character's applicable content declared —
+   * every scope, and BOTH authored activations.
    *
-   * Two independent filters stand between this list and an actual check, and
-   * conflating them is the bug this field used to have:
+   * AVAILABLE, NOT ACTIVE. The name is the warning. This list is what the
+   * character could bring to some check under some circumstances; it is never
+   * what applies to the check in front of you, and passing it whole to
+   * resolveCheck or resolveCheckModifier is the bug this field used to invite.
+   * It was called `checkModifiers`, which read like "the character's check
+   * modifiers" and was treated accordingly.
+   *
+   * Two independent filters stand between this list and an actual check:
    *
    * - SCOPE. Which of these the check in question cares about —
    *   checks/modifiers.ts's collectApplicableCheckModifiers, at the moment
@@ -285,9 +291,10 @@ export interface ResolvedRuleEffects {
    *   reading it wholesale as if every entry were live is exactly what makes
    *   a merely-known Skill improve every check its scope matches.
    *
-   * persistentCheckModifiers below is the pre-filtered persistent subset, and
-   * checks/modifiers.ts's collectInvokedCheckModifiers is the shared
-   * collector for the invoked half.
+   * Read the pre-split subsets below instead, or — better — call
+   * character/checks/'s collectCharacterCheckModifiers, which is the
+   * canonical assembly point and applies both filters for you. This field is
+   * here for provenance, diagnostics and UIs listing what a character has.
    *
    * Uses the canonical top-level CheckModifierContribution shape rather than
    * a second character-only structure, so an authored modifier and the check
@@ -295,10 +302,10 @@ export interface ResolvedRuleEffects {
    * third channel, "contextual", is never produced here: it belongs to the
    * GM, the environment or the calling system and is supplied at check time.
    */
-  readonly checkModifiers: readonly CheckModifierContribution[];
+  readonly availableCheckModifiers: readonly CheckModifierContribution[];
 
   /**
-   * The subset of checkModifiers that applies with nothing selected.
+   * The subset of availableCheckModifiers that applies with nothing selected.
    *
    * What a character simply HAS. Derived here rather than at each call site
    * so that "which modifiers are automatically live" has exactly one answer.
@@ -306,12 +313,13 @@ export interface ResolvedRuleEffects {
   readonly persistentCheckModifiers: readonly CheckModifierContribution[];
 
   /**
-   * The subset of checkModifiers that applies only when its source is
+   * The subset of availableCheckModifiers that applies only when its source is
    * explicitly selected for a check.
    *
    * Available, not active. Pass these to
    * checks/modifiers.ts's collectInvokedCheckModifiers along with the sources
-   * the caller actually selected.
+   * the caller actually selected — or let collectCharacterCheckModifiers do
+   * it, which is the canonical path.
    */
   readonly invokedCheckModifiers: readonly CheckModifierContribution[];
 
@@ -603,7 +611,7 @@ export function resolveRuleEffects(
     baseAttributeModifiers,
     resolvedAttributeModifiers,
 
-    checkModifiers,
+    availableCheckModifiers: checkModifiers,
     persistentCheckModifiers: checkModifiers.filter(
       (modifier) => modifier.channel === "persistent",
     ),

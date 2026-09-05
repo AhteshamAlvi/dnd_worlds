@@ -75,6 +75,8 @@ import {
   type BodyInjuryValidationIssue,
 } from "./foundation/body/injuries";
 
+import { listAnatomicalInjuryDefinitions } from "./status/injuries/definitions";
+
 import type { Character } from "./types";
 
 // Everything a character can get wrong by referencing an authored catalog.
@@ -438,6 +440,9 @@ function findCharacterReferenceIssues(
       resolved.bodyInput.definitions,
       resolved.bodyInput.specialPointDefinitions,
       character.injuries ?? [],
+
+      // Supplied, not looked up: the catalog is content and sits above Body.
+      listAnatomicalInjuryDefinitions(),
     ),
     ...findItemValidationIssues(character.items ?? []),
   ];

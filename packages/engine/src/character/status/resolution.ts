@@ -36,13 +36,14 @@
  *   ever changes the Effects of an Injury that is already manifested — a
  *   dormant Injury contributes nothing whether or not it has been treated.
  *
- * ── Why Injury Effect collection lives here ─────────────────────────────
+ * ── Where the Injury collector actually lives ───────────────────────────
  *
- * Because it is a question about authored CONTENT, not about anatomy. An
- * Injury's location, applicability and manifestation are anatomical and stay
- * under foundation/body/injuries/; reading its Effects means reading the
- * rules vocabulary, and nothing under foundation/ may import the rules layer
- * that sits on top of it.
+ * status/injuries/effects.ts, re-exported through here so a caller wanting
+ * "everything status contributes" still gets one function. It sits beside the
+ * authored Injury catalog because both are CONTENT: an Injury's location,
+ * applicability and manifestation are anatomical and stay under
+ * foundation/body/injuries/, while reading its Effects means reading the rules
+ * vocabulary — which nothing under foundation/ may do.
  */
 
 import {
@@ -62,7 +63,7 @@ import {
   type CharacterCondition,
 } from "./conditions";
 
-import { getInjuryDefinition } from "../foundation/body/injuries/definitions";
+import { collectInjuryEffectSources } from "./injuries/effects";
 import type {
   CharacterInjury,
 } from "../foundation/body/injuries/types";
@@ -106,62 +107,7 @@ export function collectConditionEffectSources(
   return sources;
 }
 
-/**
- * The Effect sources contributed by the Injuries that are CURRENTLY IN FORCE.
- *
- * The caller supplies the manifested Injuries, not every Injury on the sheet.
- * This function does not — and structurally cannot — decide manifestation for
- * itself: that needs a resolved Anatomy, and Injury Effects are part of what
- * produces the resolved Body in the first place. character/resolution.ts
- * breaks that circle by resolving a preliminary Body first; see its
- * phased-resolution header.
- *
- * A manifested treatment-required Injury adds its untreated or treated
- * Effects on top of whatever it always contributes:
- *
- *   normal effects
- *   + untreated effects, while treatmentStatus is "untreated"
- *   + treated effects, while treatmentStatus is "treated"
- *
- * A treatment-required Injury with no treatmentStatus recorded (invalid
- * persistent state — see findInjuryValidationIssues) is treated as
- * untreated: that is the state every treatment-required Injury starts in,
- * and it is the more conservative reading for something that has not been
- * confirmed treated.
- *
- * An Injury that does not require treatment ignores treatmentEffects
- * entirely and contributes only its normal effects, per
- * InjuryDefinition.treatmentEffects's own doc comment.
- */
-export function collectInjuryEffectSources(
-  manifestedInjuries: readonly CharacterInjury[] = [],
-): readonly RuleEffectSource[] {
-  const sources: RuleEffectSource[] = [];
-
-  for (const injury of manifestedInjuries) {
-    const definition = getInjuryDefinition(injury.injuryId);
-
-    if (definition === undefined) continue;
-
-    const treatmentEffects = definition.recovery.treatmentRequired
-      ? (injury.treatmentStatus === "treated"
-          ? definition.treatmentEffects?.treated
-          : definition.treatmentEffects?.untreated) ?? []
-      : [];
-
-    const effects = [...(definition.effects ?? []), ...treatmentEffects];
-
-    if (contributesNothing(definition, effects)) continue;
-
-    sources.push({
-      source: { type: "injury", id: injury.injuryId },
-      effects,
-      ...sourceContributions(definition),
-    });
-  }
-
-  return sources;
-}
+export { collectInjuryEffectSources } from "./injuries/effects";
 
 /**
  * Everything status contributes, in the order a sheet reads it.

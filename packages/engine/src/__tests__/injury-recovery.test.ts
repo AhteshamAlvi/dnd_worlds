@@ -17,6 +17,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 import { getEngineDecision } from "../decisions/log";
@@ -110,6 +111,10 @@ function baseInput(overrides: Partial<ResolveRecoveryInput> = {}): ResolveRecove
     morphologyByPartId: morphologyFor(anatomy),
     effectiveScale: 1,
     injuries: [],
+
+    // Body is handed its definitions now; the catalog lives above it.
+    injuryDefinitions: listAnatomicalInjuryDefinitions(),
+
     elapsed: days(1),
     vitality: 25, // 80% of Maximum BP/day — enough to slam into any cap in one pass
     ...overrides,
@@ -249,7 +254,7 @@ describe("multiple caps", () => {
       },
     ];
 
-    const ceiling = resolveBodyPartRecoveryCeiling("torso-1", 20, injuries);
+    const ceiling = resolveBodyPartRecoveryCeiling("torso-1", 20, injuries, listAnatomicalInjuryDefinitions());
 
     expect(ceiling.activeCaps).toHaveLength(2);
     expect(ceiling.ceiling).toBe(6); // floor(0.3 * 20)
@@ -279,21 +284,21 @@ describe("multiple caps", () => {
       { ...both[0]!, treatmentStatus: "treated" },
       both[1]!,
     ];
-    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, ribTreatedFirst).ceiling).toBe(12);
+    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, ribTreatedFirst, listAnatomicalInjuryDefinitions()).ceiling).toBe(12);
 
     // Order B: treat the higher cap (bruised-lung) first.
     const lungTreatedFirst: readonly CharacterInjury[] = [
       both[0]!,
       { ...both[1]!, treatmentStatus: "treated" },
     ];
-    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, lungTreatedFirst).ceiling).toBe(6);
+    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, lungTreatedFirst, listAnatomicalInjuryDefinitions()).ceiling).toBe(6);
 
     // Either order: once both are treated, no cap remains.
     const bothTreated: readonly CharacterInjury[] = [
       { ...both[0]!, treatmentStatus: "treated" },
       { ...both[1]!, treatmentStatus: "treated" },
     ];
-    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, bothTreated).ceiling).toBe(20);
+    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, bothTreated, listAnatomicalInjuryDefinitions()).ceiling).toBe(20);
   });
 });
 
@@ -386,7 +391,7 @@ describe("Injury removal", () => {
 
     // The Injury simply is not in the list any more — the same as a host
     // deleting it from character.injuries by hand.
-    const ceiling = resolveBodyPartRecoveryCeiling("torso-1", 20, []);
+    const ceiling = resolveBodyPartRecoveryCeiling("torso-1", 20, [], listAnatomicalInjuryDefinitions());
     expect(ceiling.activeCaps).toEqual([]);
     expect(ceiling.ceiling).toBe(20);
   });
@@ -419,7 +424,7 @@ describe("multiple Injuries on the same identity", () => {
       },
     ];
 
-    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, both).ceiling).toBe(6);
+    expect(resolveBodyPartRecoveryCeiling("torso-1", 20, both, listAnatomicalInjuryDefinitions()).ceiling).toBe(6);
   });
 
   it("leaves no overlap-progress decision behind in the engine's decision log", () => {

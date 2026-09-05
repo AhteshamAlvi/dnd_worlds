@@ -77,10 +77,20 @@ export function collectCharacterInvokedCheckModifiers(
 /**
  * Every modifier a character brings to one check, across all three channels.
  *
- * This is what a mechanic building a CheckRequest should call. The result is
- * still unfiltered by scope — checks/modifiers.ts applies that when the
- * concrete check is resolved, so a passive value and an actual roll go on
- * agreeing.
+ * THE canonical assembly function. Anything building a CheckRequest from a
+ * resolved character calls this and nothing else — it is the only place that
+ * applies the activation filter, so it is the only path on which an invoked
+ * modifier cannot leak in unselected.
+ *
+ * Reaching past it for `effects.availableCheckModifiers` gets a list that
+ * looks usable and is not: it holds the invoked half too, and resolveCheck
+ * will happily apply every entry whose scope matches. That is the defect the
+ * activation split exists to prevent, and this function is the reason no
+ * caller needs to reproduce it.
+ *
+ * The result is still unfiltered by SCOPE, deliberately. checks/modifiers.ts
+ * applies that when the concrete check is resolved, so a passive value and an
+ * actual roll go on agreeing about what a modifier is worth.
  *
  * Order is persistent, then invoked, then contextual: the order a sheet
  * explains a total in, which is what the trace ends up showing.

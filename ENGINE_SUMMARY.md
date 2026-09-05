@@ -1,10 +1,10 @@
 # Nenworld Rules Engine — Consolidated State
 
-**Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `newbranch-refactor` @ `910a089`
-**Snapshot:** 2026-09-01 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
+**Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
+**Snapshot:** 2026-09-05 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **45 files, 1,083 tests, all passing** (~2.0 s). `tsc --noEmit` → **clean**.
-**Size:** 160 source files / ~49,200 LOC + 47 test files / ~18,700 LOC.
+**Health:** `vitest run` → **46 files, 1,111 tests, all passing** (~2.1 s). `tsc --noEmit` → **clean**.
+**Size:** 164 source files / ~49,800 LOC + 48 test files / ~19,600 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
 The Body refactor (12 phases) is **through Phase 10**, plus the post-refactor integration
@@ -23,6 +23,7 @@ wrong answer rather than a missing feature, so each now has a named owner and a 
 | **Injury manifestation gates Effects** — dormant contributes nothing | `character/resolution.ts` (phased fixpoint) | §10, §11 |
 | **Recovery reads active anatomy only**, and stays continuous | `foundation/body/recovery/` | §10 |
 | **Contribution provenance** is neutral infrastructure | `infrastructure/contribution-source.ts` | §2 |
+| **Injury anatomy vs. Injury content** — the interface split that ended the last upward import | `foundation/body/injuries/` + `character/status/injuries/` | §10 |
 
 ---
 
@@ -82,11 +83,14 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
    JSON-serializable `TraceNode` tree, on success *and* failure.
 5. **One implementation per formula.** Base and Resolved are one resolver with a mode, never
    two algorithms.
-6. **Layers depend downward.** Rules sits on top of Foundation and may import the contracts its
-   Effects target; Foundation may not reach back up for them. Anything both layers need —
-   provenance, the check vocabulary — moves to neutral ground rather than being imported
-   upward. Enforced by `__tests__/architecture.test.ts`, because TypeScript resolves
-   type-only cycles perfectly happily and will never complain.
+6. **Layers depend downward, with no exceptions.** Rules sits on top of Foundation and may import
+   the contracts its Effects target; Foundation may not reach back up for them, nor for Status.
+   Anything both layers need — provenance, the check vocabulary — moves to neutral ground rather
+   than being imported upward; anything that is genuinely *two* things — an Injury, which is
+   anatomy and content at once — gets its interface split rather than its domain moved (§10).
+   Enforced by `__tests__/architecture.test.ts`, because TypeScript resolves type-only cycles
+   perfectly happily and will never complain. There is no whitelist, which is the only state a
+   layering rule reliably survives in.
 
 ---
 
@@ -180,6 +184,17 @@ This was the ticket's central bug: every collected `modifyCheck` used to be tagg
 `channel: "persistent"`, so knowing a Skill silently converted its situational bonus into a
 permanent one on every check its scope matched.
 
+`rules/validation.ts` rejects any `activation` outside `CHECK_MODIFIER_ACTIVATIONS`
+(`invalid-check-activation`), checked against that list rather than a second copy of it. The
+closed union stops hand-authored TypeScript from getting this wrong, but homebrew and
+machine-generated JSON cross the boundary — and this is the one `modifyCheck` field where a typo
+is silently *catastrophic* rather than merely wrong. `"invoke"` or `"Invoked"` survive the
+`?? default` fallback and land in the channel verbatim, where neither collector matches them: the
+modifier applies to **nothing, ever**, and looks exactly like content that was never written. A
+scope typo at least produces a modifier that visibly applies to the wrong checks. `"contextual"`
+is rejected too, though it is a real *channel* — a modifier the GM or environment supplied is by
+definition not something a Trait authored.
+
 ### Requirements — 16 types
 
 `attributeMinimum` · `derivedAttributeMinimum` · `levelMinimum` · `hasSpecies` · `hasSubspecies` ·
@@ -197,15 +212,20 @@ checks `base`, so a temporary Condition can't revoke a trained capability.
   it upward while `rules/effects.ts` imported Action and Body contracts downward — a
   Rules ↔ Foundation type cycle. The shape now lives below both.
 - `resolveRuleEffects()` → `{effects, baseAttributeModifiers, resolvedAttributeModifiers,
-  checkModifiers, actionCapacity, traitGrants, skillGrants, techniqueGrants, body: {base, resolved}}`.
+  availableCheckModifiers, persistentCheckModifiers, invokedCheckModifiers,
+  actionCapacity, traitGrants, skillGrants, techniqueGrants, body: {base, resolved}}`.
 - **Grants are deliberately NOT deduplicated** — removing one source must not remove access another supplies.
-- `checkModifiers` is the top-level `checks/` module's own `CheckModifierContribution` shape
-  (`{source, scope, amount, channel}`) rather than a second character-only structure. Each is
-  tagged with its **activation** (below), and `persistentCheckModifiers` /
-  `invokedCheckModifiers` are the pre-split subsets — reading the combined list wholesale is
-  exactly what made a merely-known Skill permanently active. Check-modifier arithmetic itself
-  (`collectApplicableCheckModifiers`, `resolveCheckModifier`, `createCheckModifierTraceNode`)
-  lives only in `checks/modifiers.ts` (§12b); this file just collects the sourced declarations.
+- `availableCheckModifiers` is the top-level `checks/` module's own `CheckModifierContribution`
+  shape (`{source, scope, amount, channel}`) rather than a second character-only structure. Each
+  is tagged with its **activation** (below), and `persistentCheckModifiers` /
+  `invokedCheckModifiers` are the pre-split subsets.
+  **Available, not active** — the name is the warning. It was called `checkModifiers`, which read
+  like "the character's check modifiers" and got passed whole into `resolveCheck`, which is
+  exactly what made a merely-known Skill permanently active. Read the subsets, or call
+  `collectCharacterCheckModifiers` (§12b), which is the canonical assembly point.
+  Check-modifier arithmetic itself (`collectApplicableCheckModifiers`, `resolveCheckModifier`,
+  `createCheckModifierTraceNode`) lives only in `checks/modifiers.ts` (§12b); this file just
+  collects the sourced declarations.
 - `actionCapacity` is a plain `ActionCapacityContribution[]` bucket — combining it into a final
   `ActionCapacity` is `foundation/actions/`'s job (§10.5), not this file's.
 - `meetsRequirement()` / `meetsAllRequirements()` against a `RequirementContext`.
@@ -703,26 +723,61 @@ Progression writes **stored** values only, which is why it sits outside `foundat
 
 ---
 
-## 10 · Injuries and Recovery (`foundation/body/injuries/`, `foundation/body/recovery/`)
+## 10 · Injuries and Recovery (`foundation/body/injuries/`, `character/status/injuries/`, `foundation/body/recovery/`)
 
-Both moved under Body from `character/status/injuries.ts` and `character/mechanics/recovery/`
-respectively. An Injury is anatomical — BodyPart applicability, continuity locations, optional
-Special Point locations, BP recovery ceilings — so it belongs to Body, not to a generic
-Condition-like status layer; putting Recovery under Body too (rather than beside it) is what
-lets Recovery reduce a BodyPart's active Injury caps to one ceiling without `foundation/body/`
-reaching upward into `character/status/`.
+Recovery moved under Body from `character/mechanics/recovery/`, and the Injury domain was split
+in two. The ANATOMY is Body's — BodyPart applicability, continuity locations, optional Special
+Point locations, BP recovery ceilings — so it belongs there rather than in a generic
+Condition-like status layer; putting Recovery under Body too (rather than beside it) is what lets
+Recovery reduce a BodyPart's active Injury caps to one ceiling without `foundation/body/`
+reaching upward. The CONTENT — the Effects an Injury carries — went up to
+`character/status/injuries/`, which is what ended the last Foundation → Rules import.
 
-`foundation/body/injuries/` splits into `types.ts` (IDs, applicability, `CharacterInjury`,
-locations), `definitions.ts` (the authored catalog and registry access), `resolution.ts`
-(`resolveInjuryManifestation` — anatomy only), and `validation.ts` (intrinsic validity, catalog
-validity, anatomical-applicability validity, and the composed `findBodyInjuryValidationIssues`
-that `character/validation.ts` calls).
+### The ownership boundary — one Injury, two layers
 
-**What an Injury CONTRIBUTES lives in `character/status/resolution.ts`**, beside the Condition
-collector: `collectInjuryEffectSources(manifestedInjuries)` does the treatment-state Effect
-blending. That is a question about authored content, not about anatomy — and reading the rules
-vocabulary is exactly what nothing under `foundation/` may do (§1 rule 6). It takes the
-**manifested subset**, never the whole stored list.
+An Injury is anatomical **and** authored content, and those halves are declared in two places.
+The split is what removed the engine's last `foundation/` → `character/rules/` import: `Effect` is
+a union over every domain (Body selectors, check scopes, Attribute keys, Action capacities), so a
+Foundation type that named it made Foundation depend on the layer sitting on top of it.
+
+| | `foundation/body/injuries/` | `character/status/injuries/` |
+|---|---|---|
+| **Owns** | ANATOMY | CONTENT |
+| Definition | `AnatomicalInjuryDefinition extends Definition` | `InjuryDefinition extends AnatomicalInjuryDefinition, EffectfulDefinition` |
+| Fields | `applicability`, `recovery` | `effects`, `requirements`, `treatmentEffects` |
+| Also | `CharacterInjury`, continuity locations, treatment state, manifestation, anatomical validation | the authored catalog/registry, Effect collection, content validation |
+| May name `Effect`? | **never** | yes |
+
+The **interface** was split, not the domain. Manifestation and Recovery stay under Body because
+they are anatomical; the catalog goes up because it is content. And the **serialized shape is
+unchanged** — an authored Injury is still one object carrying `applicability`, `recovery`,
+`effects` and `treatmentEffects` together — so no stored content needed migrating.
+
+**Definitions are injected, never fetched.** Body must not import the catalog, so every Foundation
+entry point that needs a definition takes `readonly AnatomicalInjuryDefinition[]`:
+`resolveInjuryManifestation`, `findInjuryValidationIssues`, `findInjuryLocationIssues`,
+`findBodyInjuryValidationIssues`, `findAnatomicalInjuryCatalogIssues`,
+`resolveBodyPartRecoveryCeiling`, and `ResolveRecoveryInput.injuryDefinitions`.
+`createInjuryDefinitionMap` is the shared way to index them, mirroring
+`createBodyPartDefinitionMap`. Callers above Foundation pass full `InjuryDefinition`s straight
+in — one structurally extends the other, so nothing converts and nothing is looked up twice.
+`listAnatomicalInjuryDefinitions()` is the call site that says so out loud.
+
+`foundation/body/injuries/` is `types.ts` (IDs, applicability, recovery contract,
+`CharacterInjury`, locations, `AnatomicalInjuryDefinition`), `resolution.ts`
+(`resolveInjuryManifestation` — anatomy only), and `validation.ts` (intrinsic validity,
+anatomical applicability, the anatomical half of catalog validation, and the composed
+`findBodyInjuryValidationIssues` that `character/validation.ts` calls).
+
+`character/status/injuries/` is `types.ts` (`InjuryDefinition`), `definitions.ts` (registry and
+lookups), `effects.ts` (`collectInjuryEffectSources`), and `validation.ts`
+(`findInjuryCatalogIssues`, which composes the registry's own checks with the anatomical half it
+**delegates** to Body rather than reimplementing).
+
+**What an Injury CONTRIBUTES is `character/status/injuries/effects.ts`**, beside the authored
+catalog and re-exported through `status/resolution.ts` next to the Condition collector.
+`collectInjuryEffectSources(manifestedInjuries)` does the treatment-state Effect blending, and
+takes the **manifested subset**, never the whole stored list.
 
 ### Manifestation gates Effects
 
@@ -743,6 +798,12 @@ valid against `knownContinuityKeys`, and resumes contributing the moment a form 
 compatible anatomy returns. Treatment state only ever changes what a *manifested* Injury
 contributes. `ResolvedCharacter.injuries {manifested, dormant}` reports both, because a sheet
 showing only the active ones would make a transformation look like a cure.
+
+`resolveInjuryManifestation` returns `InjuryManifestation {active, dormant, manifestedByIndex}`.
+The id lists are for display and are **lossy**: duplicate `CharacterInjury.id`s are a validation
+error, but resolution runs before *and during* validation and must answer either way, and two
+entries sharing an id are indistinguishable in `active`. `manifestedByIndex` is positional — one
+boolean per supplied Injury, index-aligned — and is what the fixpoint in §11 actually runs on.
 
 ### Location vocabulary
 
@@ -800,11 +861,29 @@ So the rule is stronger than "report a problem": **invalid input produces no out
 | `validateRecoveryInput(input)` | `EngineResult<ResolveRecoveryInput>` with trace |
 | **`resolveValidatedRecovery(input)`** | **what a host should call** — `EngineResult<ResolveRecoveryOutcome>` |
 
-Checked: elapsed duration finite and **non-negative** (Recovery advances time; `elapsedBetween`
-may legitimately return negative, so this is stricter than `validateGameDuration`) · CON finite ·
-VIT finite · Effective Scale finite and `> 0` · Body Point modifiers (delegated to
-`body-points/validation.ts`) · a morphology entry for every *active* BodyPart · recovery ceiling
-fractions finite and within `[0, 1]` · Injury shape (delegated to `findInjuryValidationIssues`).
+**The boundary is explicit, and it is narrower than the name suggests.** "Validated" means
+validated *Recovery input*, not validated *character*.
+
+CHECKED — everything a Recovery pass consumes: elapsed duration finite and **non-negative**
+(Recovery advances time; `elapsedBetween` may legitimately return negative, so this is stricter
+than `validateGameDuration`) · CON finite · VIT finite · Effective Scale finite and `> 0` · Body
+Point modifiers (delegated to `body-points/validation.ts`) · a morphology entry for every
+*active* BodyPart · recovery ceiling fractions finite and within `[0, 1]` · Injury shape
+(delegated to `findInjuryValidationIssues` — instance ids, known definitions, location keys
+present and unique, treatment state matching the definition).
+
+NOT CHECKED — anatomical Injury **applicability**: whether the BodyPart manifesting an Injury's
+identity satisfies the definition's `BodyPartSelector`, and whether a Special Point location is
+real, allowed and hosted. That is `findBodyInjuryValidationIssues`, reached through
+`character/validation.ts`. Recovery does not *consume* applicability — an Injury caps recovery on
+the identities its location names either way — so checking it here would validate a field this
+module never reads, in a second place, differently from the place that owns it. It would also
+need `SpecialPointDefinition`s and `knownContinuityKeys`, neither of which is a Recovery input.
+
+**So the precondition is the caller's: Injuries passed to Recovery must come from a character
+`validateCharacter()` has already accepted.** Both halves — what is checked, and that
+applicability specifically is *not* — are pinned by the "Recovery's validation boundary" tests,
+so this is a checked contract rather than a comment that can quietly stop being true.
 
 `resolveRecovery` itself keeps its "assumes valid input" contract, matching
 `body-points/resolution.ts` — callers already inside the engine's pipeline should not pay for a
@@ -830,7 +909,9 @@ timeScale, fractionalMs}`; modes `running` / `paused` / `combat`. Calendar: 12 m
 Only `time/types.ts` and `time/duration.ts` are exported.
 
 **Catalogs** — one generic surface over 11 domains: species · clan · trait · technique · skill ·
-condition · injury · item · body-part · special-point · **reference-form**. `listDefinitions` · `getDefinition` ·
+condition · injury · item · body-part · special-point · **reference-form**. The `injury` registry
+lives in `character/status/injuries/` rather than under Body, because its definitions carry
+Effects — see §10. `listDefinitions` · `getDefinition` ·
 `registerDefinition` · `unregisterDefinition` · `exportCustomDefinitions` · `createDefinitionId` ·
 **`findCatalogReferenceIssues()`** — the only place cross-catalog claims can be checked (a
 Technique granting a Skill, a Skill requiring a Trait). Custom definitions live in host storage;
@@ -861,6 +942,14 @@ returns `character.injuries.manifestation_unstable` rather than looping or silen
 whichever pass came last. **A character with no Injuries settles at step 3 and costs exactly one
 Body resolution**, which is what it cost before; a stable set is normally reached on the first
 recheck.
+
+The set is tracked **positionally** (`manifestedByIndex`), never by id — both for selecting which
+Injuries contribute and for deciding whether the loop has settled. Resolution runs before
+validation has rejected duplicate ids, so it has to be deterministic on a sheet carrying them.
+Selecting by id would apply a *dormant* entry's Effects because a manifested entry shared its id;
+and the id-set comparison this replaced called `["dup", "dup"]` and `["dup", "other"]` equal —
+same length, every left id present on the right — so the fixpoint could stop on a set that was
+still moving.
 
 Inside one pass:
 
@@ -1038,7 +1127,8 @@ a sheet display — reads when nothing is actually being rolled; it shares
 dice-based path, so the two can never disagree about what a modifier is worth. `character/rules/`
 no longer keeps its own copy of this arithmetic (it used to, against an incompatible
 `SourcedCheckModifier` shape keyed by `check` rather than `scope` and with no `channel`) —
-`ResolvedRuleEffects.checkModifiers` is now the canonical `CheckModifierContribution[]` directly.
+`ResolvedRuleEffects.availableCheckModifiers` is now the canonical `CheckModifierContribution[]`
+directly.
 
 ### Activation — the three channels
 
@@ -1054,11 +1144,18 @@ no longer keeps its own copy of this arithmetic (it used to, against an incompat
 `CHECK_MODIFIER_ACTIVATIONS = persistent · invoked` is the authored subset: content has nothing
 to say about a modifier that came from the GM.
 
-**The shared collectors** — `collectPersistentCheckModifiers`, `collectInvokedCheckModifiers(modifiers,
-invokedSources)`, `assembleCheckModifiers({persistent, available, invokedSources, contextual})` —
-and their character-level wrappers in `character/checks/` (`collectCharacterCheckModifiers`,
-`collectCharacterInvokedCheckModifiers`, `canInvokeCheckSource`, `CheckInvocation {sources?,
-contextual?}`).
+**`collectCharacterCheckModifiers(resolved, invocation)` is THE public assembly function.**
+Anything building a `CheckRequest` from a character calls it and nothing else. It is the only
+place the activation filter is applied, so it is the only path on which an invoked modifier
+cannot leak in unselected — reaching past it for `effects.availableCheckModifiers` gets a list
+that looks usable and is not.
+
+Around it: `collectCharacterInvokedCheckModifiers`, `canInvokeCheckSource`, and
+`CheckInvocation {sources?, contextual?}` in `character/checks/`; and the lower-level
+`collectPersistentCheckModifiers`, `collectInvokedCheckModifiers(modifiers, invokedSources)`,
+`assembleCheckModifiers({persistent, available, invokedSources, contextual})` in
+`checks/modifiers.ts`, for mechanics assembling from something other than a whole
+`ResolvedCharacter`.
 
 `character/checks/invocation.ts` exists specifically so that **no future mechanic re-answers
 "was this Skill used?" by walking the catalogs itself**. Perception, Detection, Investigation
@@ -1090,7 +1187,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (45 files, 1,083 tests)
+## 14 · Test coverage (46 files, 1,111 tests)
 
 | Area | Files (tests) |
 |---|---|
@@ -1099,9 +1196,9 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 | Progression | 58 |
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
-| Rules | requirements 25 · check-modifiers 24 · effects 16 — **65** |
-| Catalogs | 28 · **Aura** 22 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Infra** trace 8 + id 7 |
-| **Foundation stability** | character-foundation-stability 37 · architecture 6 — **43** |
+| Rules | check-modifiers 29 · requirements 25 · effects 16 — **70** |
+| Catalogs | 28 · **Aura** 22 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Checks** 6 · **Infra** trace 8 + id 7 — **110** |
+| **Foundation stability** | character-foundation-stability 41 · injury-ownership 17 · architecture 8 — **66** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1109,14 +1206,25 @@ compile and a full test run while producing a character the rules do not describ
 Skill invoked it · a dormant Injury still applying · an inactive BodyPart healing and clearing
 its Injury · a multi-location Injury cleared by absence · a floored recovery ceiling · Recovery
 run backwards or on `NaN` · continuity diagnostics speaking BodyPart · manifestation looping
-instead of failing.
+instead of failing · two Injury entries sharing an id collapsing into one. It also pins
+Recovery's validation boundary in both directions — what it checks, and that anatomical
+applicability specifically is *not* its job.
+
+`injury-ownership.test.ts` pins the §10 split as a contract, because an ownership refactor with
+no behavioural intent breaks quietly: that an authored definition carrying both halves in one
+object still registers and round-trips through JSON unchanged, that an `InjuryDefinition` stands
+in as an `AnatomicalInjuryDefinition` with no conversion, that the catalog still works from its
+new home and is the same map `registerDefinition("injury")` writes to, that Body manifests from
+definitions **passed in** rather than fetched (proved by supplying one that was never registered,
+and by supplying none), and that character validation still reports the anatomical and the
+content error each from its owning layer.
 
 `architecture.test.ts` checks the §1 rule 6 layering against the source text, because a
-type-only import cycle compiles perfectly happily. It asserts Foundation imports no provenance
-type from Rules, Checks imports nothing from Rules, provenance has exactly one structural
-definition — and **pins the single allowed exception** (`foundation/body/injuries/types.ts`, see
-§15) so that a *new* upward import fails rather than quietly joining it. Its own detection was
-verified by reintroducing the removed import and watching it fail.
+type-only import cycle compiles perfectly happily. It asserts Foundation imports **nothing** from
+Rules — no whitelist, no exceptions — nor from Status (which would be a Rules edge one hop
+round); that Rules never imports Injuries back; that Checks imports nothing from Rules; and that
+provenance has exactly one structural definition. Its own detection was verified twice, by
+reintroducing a removed import and watching it fail.
 
 **Zero tests:** Nen (~3,970 LOC), Combat (~5,470 LOC), Aura Control, time clock/calendar,
 equipment beyond the two demo items.
@@ -1178,23 +1286,10 @@ time (§11), closing what used to be a "tested but never resolved" gap.
 2. Ages below ~4 resolve too light (1.8 kg at birth vs. a real 3.5) — mass goes as scale³, and the real fix is age *local* morphology, which the profile format supports but does not use. Ages 6+ land within 3%.
 3. Orphaned archive retention policy is implemented as "retain forever"; a deliberate purge operation does not exist.
 4. `details.heightCm` / `weightKg` were removed; the duplicate-source problem is resolved.
-5. **The one remaining `foundation/` → `character/rules/` import.**
-   `foundation/body/injuries/types.ts` imports `EffectfulDefinition` and `Effect`, because an
-   Injury is authored *content* as well as anatomy. It cannot currently be removed without
-   moving something the design deliberately placed:
-   - `Effect` is a union over every domain — it names Body selectors, check scopes, Attribute
-     keys and Action capacities — so it cannot be pushed *below* Foundation without dragging all
-     of them down with it;
-   - the Injury catalog cannot be pushed *above* Foundation without taking Recovery with it, and
-     Recovery is deliberately under `foundation/body/` so it can reduce a BodyPart's Injury caps
-     without reaching upward.
-
-   The edge is one-directional — Rules never imports Injuries — so there is **no Rules ↔
-   Foundation type cycle**, which is the property that actually mattered. It is pinned as the
-   single allowed exception in `architecture.test.ts`; a new upward import fails that test.
-   Resolving it properly means splitting `InjuryDefinition` into an anatomical half under
-   Foundation and a content half above it, which is a larger relocation than this ticket's
-   scope.
+5. *(Resolved.)* The last `foundation/` → `character/rules/` import — the Injury definition —
+   is gone. `AnatomicalInjuryDefinition` stays under Body, `InjuryDefinition` was rebuilt on top
+   of it in `character/status/injuries/`, and Body is handed the definitions it needs. §1 rule 6
+   now holds with **no exceptions**, enforced by `architecture.test.ts`. See §10.
 
 ---
 

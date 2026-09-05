@@ -19,6 +19,7 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
@@ -31,7 +32,9 @@ import { defaultCheckModifierActivation } from "../character/rules/resolution";
 import { resolveCheck, resolveCheckModifier } from "../checks";
 import type { CheckModifierContribution } from "../checks";
 
+import { listDefinitions } from "../character/catalogs";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
+import { resolveInjuryManifestation } from "../character/foundation/body/injuries/resolution";
 import type { Anatomy, BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 import {
   morphologyTargetsForAnatomy,
@@ -39,7 +42,10 @@ import {
 } from "../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import type { CharacterInjury } from "../character/foundation/body/injuries";
-import { findInjuryValidationIssues } from "../character/foundation/body/injuries";
+import {
+  findInjuryLocationIssues,
+  findInjuryValidationIssues,
+} from "../character/foundation/body/injuries";
 import {
   resolveBodyPartRecoveryCeiling,
   resolveRecovery,
@@ -126,7 +132,7 @@ describe("activation: knowing is not using", () => {
      * The character HAS the modifier — it is on the resolved character and a
      * UI can offer it. What it is not is live.
      */
-    expect(resolved.effects.checkModifiers).toHaveLength(1);
+    expect(resolved.effects.availableCheckModifiers).toHaveLength(1);
     expect(resolved.effects.invokedCheckModifiers).toHaveLength(1);
     expect(resolved.effects.persistentCheckModifiers).toEqual([]);
 
@@ -311,7 +317,7 @@ describe("activation: contextual modifiers stay request-local", () => {
      * The point of the channel: nothing about the character changed. Resolving
      * the same character again produces no trace of the cover at all.
      */
-    expect(resolved.effects.checkModifiers).toEqual([]);
+    expect(resolved.effects.availableCheckModifiers).toEqual([]);
     expect(collectCharacterCheckModifiers(resolved)).toEqual([]);
   });
 });
@@ -560,6 +566,77 @@ describe("manifestation is driven to a fixpoint, not looped", () => {
     ).toContain("character.injuries.manifestation_unstable");
   });
 
+  it("stays deterministic when two Injury entries share an id", () => {
+    /*
+     * Duplicate CharacterInjury ids are a validation error — but resolution
+     * runs BEFORE and DURING validation, so it has to give one defensible
+     * answer on a sheet nothing has rejected yet.
+     *
+     * Two entries, same id, different anatomy: one Arm is expressed and the
+     * other is not. Tracked by id, this is unanswerable — `active` reads
+     * `["dup"]` either way, so selecting by id would apply the DORMANT entry's
+     * Effects too, and comparing passes by id could call two different
+     * manifested sets equal and stop the fixpoint early. Tracked positionally,
+     * it is exact.
+     */
+    registerArmInjury();
+    registerArmlessTrait();
+
+    const left = continuityKey("upper-limb:left");
+    const right = continuityKey("upper-limb:right");
+
+    const resolved = resolveTestCharacter(
+      createTestCharacter({
+        attributes: { con: 12 },
+        traits: [{ traitId: "armless-form" }], // removes arm-1 (the LEFT Arm)
+        injuries: [
+          { id: "dup", injuryId: "shattered-arm", location: { continuityKeys: [left] } },
+          { id: "dup", injuryId: "shattered-arm", location: { continuityKeys: [right] } },
+        ],
+      }),
+    );
+
+    // Exactly one of the two manifests, and both are accounted for.
+    expect(resolved.injuries.manifested).toEqual(["dup"]);
+    expect(resolved.injuries.dormant).toEqual(["dup"]);
+
+    // And only ONE -4 applied. Selecting by id would have applied both.
+    expect(resolved.attributes.base.con).toBe(8);
+  });
+
+  it("reports manifestation positionally, entry by entry", () => {
+    registerArmInjury();
+
+    const injuries: readonly CharacterInjury[] = [
+      {
+        id: "dup",
+        injuryId: "shattered-arm",
+        location: { continuityKeys: [continuityKey("upper-limb:left")] },
+      },
+      {
+        id: "dup",
+        injuryId: "shattered-arm",
+        // Anatomy no standard humanoid form has.
+        location: { continuityKeys: [continuityKey("wing:left")] },
+      },
+    ];
+
+    const body = resolveTestCharacter(createTestCharacter()).body;
+
+    const manifestation = resolveInjuryManifestation(
+      body.anatomy,
+      listDefinitions("body-part"),
+      listDefinitions("special-point"),
+      injuries,
+      listAnatomicalInjuryDefinitions(),
+    );
+
+    // The id lists cannot tell the two apart; the mask can.
+    expect(manifestation.active).toEqual(["dup"]);
+    expect(manifestation.dormant).toEqual(["dup"]);
+    expect(manifestation.manifestedByIndex).toEqual([true, false]);
+  });
+
   it("costs one Body resolution for a character with no Injuries", () => {
     // A guard on the phasing not becoming expensive for the common case: with
     // no Injuries the manifested set is empty on the first look and settles
@@ -643,6 +720,10 @@ function recoveryInput(
     morphologyByPartId: morphologyFor(anatomy),
     effectiveScale: 1,
     injuries: [],
+
+    // Body is handed its definitions now; the catalog lives above it.
+    injuryDefinitions: listAnatomicalInjuryDefinitions(),
+
     elapsed: days(1),
     vitality: 25,
     ...overrides,
@@ -782,14 +863,19 @@ describe("Recovery ceilings stay continuous", () => {
       recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 0.33 },
     });
 
-    const ceiling = resolveBodyPartRecoveryCeiling("torso-1", 14, [
-      {
-        id: "injury-1",
-        injuryId: "hairline-fracture",
-        location: { continuityKeys: [continuityKey("torso-1")] },
-        treatmentStatus: "untreated",
-      },
-    ]);
+    const ceiling = resolveBodyPartRecoveryCeiling(
+      "torso-1",
+      14,
+      [
+        {
+          id: "injury-1",
+          injuryId: "hairline-fracture",
+          location: { continuityKeys: [continuityKey("torso-1")] },
+          treatmentStatus: "untreated",
+        },
+      ],
+      listAnatomicalInjuryDefinitions(),
+    );
 
     expect(ceiling.activeCaps[0]?.ceilingBP).toBeCloseTo(4.62, 10);
     expect(ceiling.ceiling).toBeCloseTo(4.62, 10);
@@ -925,6 +1011,97 @@ describe("Recovery refuses invalid input", () => {
     ).toBe(true);
   });
 
+});
+
+
+describe("Recovery's validation boundary", () => {
+  /*
+   * The boundary is a documented precondition, so it is pinned as a contract:
+   * these two tests say exactly what resolveValidatedRecovery does and does
+   * not promise. See recovery/validation.ts's header.
+   */
+
+  it("checks everything a Recovery pass consumes", () => {
+    // One input from each checked category, all wrong at once.
+    const issues = findRecoveryInputIssues(
+      recoveryInput({
+        elapsed: days(-1),
+        constitution: Number.NaN,
+        vitality: Number.NaN,
+        effectiveScale: 0,
+        morphologyByPartId: {},
+      }),
+    );
+
+    expect(new Set(issues.map((issue) => issue.type))).toEqual(
+      new Set([
+        "invalid-elapsed-duration",
+        "invalid-constitution",
+        "invalid-vitality",
+        "invalid-effective-scale",
+        "missing-morphology",
+      ]),
+    );
+  });
+
+  it("does NOT recheck anatomical Injury applicability", () => {
+    /*
+     * The half the name could be read as promising and does not.
+     *
+     * This Injury applies only to "limb" and is sitting on a "torso" — which
+     * character validation rejects (injury-body-part-not-applicable) and
+     * Recovery deliberately accepts. Recovery never READS applicability: the
+     * Injury caps recovery on the identities its location names either way, so
+     * checking it here would be validating a field this module does not
+     * consume, in a second place, differently from the place that owns it.
+     *
+     * The precondition that follows is the caller's: Injuries handed to
+     * Recovery must come from an already-validated character.
+     */
+    registerDefinition("injury", {
+      id: "limb-only",
+      name: "Limb Only",
+      description: "A test Injury applicable to limbs alone.",
+      applicability: { bodyParts: { types: ["limb"] } },
+      recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 0.5 },
+    });
+
+    const misplaced: CharacterInjury = {
+      id: "injury-1",
+      injuryId: "limb-only",
+      // torso-1 is a "torso", which this Injury's definition does not allow.
+      location: { continuityKeys: [continuityKey("torso-1")] },
+      treatmentStatus: "untreated",
+    };
+
+    const input = recoveryInput({ injuries: [misplaced] });
+
+    expect(findRecoveryInputIssues(input)).toEqual([]);
+
+    const result = resolveValidatedRecovery(input);
+
+    // Accepted, and its ceiling applied — arithmetically sound for an Injury
+    // that character validation would have rejected.
+    expect(result.success).toBe(true);
+    expect(result.success && result.payload.parts[0]?.ceiling).toBe(10);
+
+    // And the owning check does reject it, so nothing is going unreported —
+    // it is reported by the layer that owns the question.
+    expect(
+      findInjuryLocationIssues(
+        input.anatomy,
+        new Set([continuityKey("torso-1")]),
+        RECOVERY_DEFINITIONS,
+        [],
+        [misplaced],
+        listAnatomicalInjuryDefinitions(),
+      ).some((issue) => issue.type === "injury-body-part-not-applicable"),
+    ).toBe(true);
+  });
+});
+
+
+describe("Recovery refuses invalid input, continued", () => {
   it("resolves normally once the input is sound", () => {
     const result = resolveValidatedRecovery(recoveryInput());
 
@@ -948,9 +1125,10 @@ describe("Injury location diagnostics speak continuity", () => {
       recovery: { treatmentRequired: false },
     });
 
-    const issues = findInjuryValidationIssues([
-      injuryWithEmptyLocation("nowhere"),
-    ]);
+    const issues = findInjuryValidationIssues(
+      [injuryWithEmptyLocation("nowhere")],
+      listAnatomicalInjuryDefinitions(),
+    );
 
     expect(issues).toContainEqual({
       type: "invalid-injury-location",
@@ -976,7 +1154,9 @@ describe("Injury location diagnostics speak continuity", () => {
           continuityKeys: [continuityKey(" "), LEFT_ARM, LEFT_ARM],
         },
       },
-    ]);
+    ],
+    listAnatomicalInjuryDefinitions(),
+  );
 
     expect(issues).toContainEqual({
       type: "invalid-injury-location",

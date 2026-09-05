@@ -165,10 +165,16 @@ describe("effects reaching a character", () => {
      * body — so what equipping them changes is the modifier a Combat Ability
      * check receives, not any Attribute.
      */
-    expect(equipped.effects.checkModifiers).toHaveLength(1);
-    expect(equipped.effects.checkModifiers[0]?.amount).toBe(2);
+    /*
+     * Read through the PERSISTENT subset. Equipment is something a character
+     * has rather than something they invoke, so the gauntlets are live the
+     * moment they are worn — and asserting that through the persistent list
+     * proves the channel as well as the amount.
+     */
+    expect(equipped.effects.persistentCheckModifiers).toHaveLength(1);
+    expect(equipped.effects.persistentCheckModifiers[0]?.amount).toBe(2);
 
-    expect(carried.effects.checkModifiers).toEqual([]);
+    expect(carried.effects.availableCheckModifiers).toEqual([]);
 
     expect(equipped.attributes.resolved.agi).toBe(10);
     expect(carried.attributes.resolved.agi).toBe(10);

@@ -440,8 +440,8 @@ export {
  * a governing score and the situational modifiers that apply to a check are
  * added together — either as part of an actual roll (resolveCheck) or, for a
  * passive value, on their own (resolveCheckModifier). Character-authored
- * checkModifiers (see ResolvedRuleEffects above) use this same
- * CheckModifierContribution shape rather than a second structure, so an
+ * modifiers (see ResolvedRuleEffects.availableCheckModifiers above) use this
+ * same CheckModifierContribution shape rather than a second structure, so an
  * authored modifier and the check it eventually applies to are always
  * talking about the same thing.
  */
@@ -475,16 +475,21 @@ export {
  * A persistent modifier applies whenever its scope matches; an invoked one
  * applies only when the Trait, Skill, Technique, ability or piece of
  * equipment carrying it was explicitly selected for the check; a contextual
- * one is supplied by the caller for that resolution alone. These are the
- * shared collectors — a mechanic must never re-answer "was this Skill used"
- * by walking the catalogs itself.
+ * one is supplied by the caller for that resolution alone.
+ *
+ * >>> collectCharacterCheckModifiers(resolved, invocation) is THE public
+ * >>> assembly function. <<<
+ *
+ * Anything building a CheckRequest from a character should call it and
+ * nothing else. It applies both filters — activation here, scope later at
+ * resolution — so an invoked modifier cannot leak in unselected, and a
+ * mechanic never re-answers "was this Skill used?" by walking the catalogs
+ * itself. Handing ResolvedRuleEffects.availableCheckModifiers to resolveCheck
+ * directly is the mistake this function exists to make unnecessary.
+ *
+ * The lower-level collectors below are exported for mechanics that assemble
+ * modifiers from something other than a whole ResolvedCharacter.
  */
-export {
-  collectPersistentCheckModifiers,
-  collectInvokedCheckModifiers,
-  assembleCheckModifiers,
-} from "./checks";
-
 export type { CheckInvocation } from "./character/checks";
 
 export {
@@ -492,6 +497,12 @@ export {
   collectCharacterCheckModifiers,
   collectCharacterInvokedCheckModifiers,
 } from "./character/checks";
+
+export {
+  collectPersistentCheckModifiers,
+  collectInvokedCheckModifiers,
+  assembleCheckModifiers,
+} from "./checks";
 
 export { defaultCheckModifierActivation } from "./character/rules/resolution";
 
@@ -719,13 +730,41 @@ export {
 } from "./character/status/conditions";
 
 /*
- * Injuries and Recovery are Body's subsystems now — see
- * foundation/body/injuries/ and foundation/body/recovery/ — and are exported
- * through the `export * from "./character/foundation/body"` barrel above,
- * alongside every other Body export. Injury and Recovery validation-issue
- * types are re-exported there too (BodyInjuryValidationIssue,
- * InjuryValidationIssue, and friends).
+ * Injuries are split across two layers, and both are exported.
+ *
+ *   ANATOMY  — foundation/body/injuries/, through the
+ *              `export * from "./character/foundation/body"` barrel above:
+ *              AnatomicalInjuryDefinition, CharacterInjury, locations,
+ *              manifestation, and every validation-issue type
+ *              (BodyInjuryValidationIssue, InjuryValidationIssue, friends).
+ *              Recovery is exported there too.
+ *
+ *   CONTENT  — character/status/injuries/, below: the authored catalog, the
+ *              Effect-bearing InjuryDefinition, and the Effect collector.
+ *
+ * See foundation/body/injuries/types.ts for why the interface is split. The
+ * serialized definition shape is unchanged — one object, both halves — so
+ * authored content needs no migration.
  */
+export type { InjuryDefinition, KnownInjuryId } from "./character/status/injuries";
+
+export {
+  INJURY_DEFINITIONS,
+  injuryRegistry,
+  getInjuryDefinition,
+  isKnownInjuryId,
+
+  /*
+   * What a caller feeds into Body. resolveInjuryManifestation,
+   * findBodyInjuryValidationIssues and ResolveRecoveryInput all take
+   * AnatomicalInjuryDefinitions rather than reaching for the catalog
+   * themselves, and these are what a host passes them.
+   */
+  listInjuryDefinitions,
+  listAnatomicalInjuryDefinitions,
+
+  findInjuryCatalogIssues,
+} from "./character/status/injuries";
 
 // Which Conditions and injuries are in force, as rule sources.
 export {
