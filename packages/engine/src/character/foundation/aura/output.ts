@@ -30,10 +30,14 @@
  *
  * The Access Fraction is SUPPLIED, not derived here, and this function does
  * not care where it came from. Ren is the usual source and is why the field
- * used to be called renAccessFraction — but Zetsu closes access, awakening
- * changes it, and an unawakened character leaks a physiological trickle
- * regardless. Naming the general parameter after one principle made every
- * other route look like an exception to a Ren rule.
+ * used to be called renAccessFraction — but Zetsu closes access and the
+ * default Ten state opens 5% of it, and naming the general parameter after one
+ * principle made every other route look like an exception to a Ren rule.
+ *
+ * An UNAWAKENED character's fraction is zero, and that is not a shortcut. Half
+ * open nodes project nothing; the reinforcement such a body does receive is
+ * drawn from Current Aura rather than from Output and never passes through
+ * this function at all — see aura/passive.ts.
  */
 
 
@@ -234,9 +238,9 @@ export function deriveAuraOutput(
 
   /*
    * Named for the ACCESS, not for the principle that opened it. Ren is one
-   * route; awakening, Zetsu and the unawakened physiological trickle are
-   * others, and calling the general field renAccessibleMaximum made each of
-   * them look like an exception to a Ren rule.
+   * route; awakening, the default Ten state and Zetsu are others, and calling
+   * the general field renAccessibleMaximum made each of them look like an
+   * exception to a Ren rule.
    */
   const accessibleMaximum =
     physiologicalMaximum * accessFraction;

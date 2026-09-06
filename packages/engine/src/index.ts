@@ -337,122 +337,51 @@ export * from "./character/foundation/body";
 /* ── Character: Aura ────────────────────────────────────────────────────── */
 
 /*
- * Aura, split the way the domain is: STORED state a sheet writes down, and
- * everything else, which resolves.
+ * The whole Aura subsystem, through its own barrel.
  *
- * Only Current Aura and the character's active allocations are stored.
- * Maximum, Output, Regeneration, Control and every Density derive from
- * Attributes, Body and Nen state — see foundation/aura/state.ts.
+ * Previously this file hand-maintained a dozen Aura export blocks, which is
+ * exactly the arrangement the Body exports were consolidated out of and for
+ * the same reason: the list falls behind the domain and nothing notices.
  *
- * PLACEMENT is the load-bearing distinction. Aura inside a body is denominated
- * in its Volume; Aura on a body is denominated in its Surface Area. Those are
- * different Body measurements with different Scale exponents, so the density
+ * Aura splits three ways. STORED state is Current Aura and the character's
+ * active allocations, and nothing else — everything else about Aura can be
+ * recomputed, and a stored copy is a copy that can disagree with the character
+ * it came from. RESOLVED state is produced by one central resolver and reaches
+ * a caller as ResolvedCharacter.aura. TRANSITIONS are the pure operations that
+ * produce a new stored state: expenditure, drain, allocation, reconciliation.
+ *
+ * Two distinctions inside it are load-bearing:
+ *
+ * PLACEMENT. Aura inside a body is denominated in its Volume and Aura on a
+ * body in its Surface Area. Different measurements, different Scale exponents,
+ * different units — Aura per litre and Aura per square metre — so the density
  * types are separate and deliberately not interchangeable.
  *
- * ResolvedAuraProfile is defined here but nothing populates it yet;
- * ResolvedCharacter.aura arrives with the central Aura resolver.
+ * THE THREE OUTPUTS. Physiological Output is what the body can produce, from
+ * CON alone. Accessible Output is the share the character's current state can
+ * reach. Usable Output is that, capped by the Aura they actually hold. Ren,
+ * Zetsu and the default Ten state move the second; none of them move the
+ * first.
  */
 
-/* Stored state. */
-export type {
-  CharacterAuraState,
-  AuraAllocation,
-  WholeBodyAuraAllocation,
-  LocalizedAuraAllocation,
-} from "./character/foundation/aura/state";
+export * from "./character/foundation/aura";
 
-export {
-  emptyAuraState,
-  isWholeBodyAllocation,
-  isLocalizedAllocation,
-  totalAllocatedAura,
-  allocationsForPlacement,
-  allocationsWithCoverage,
-} from "./character/foundation/aura/state";
-
-/* Placement, coverage and the two density shapes. */
-export type {
-  AuraPlacement,
-  AuraCoverage,
-  AuraDensity,
-  InternalAuraDensity,
-  SurfaceAuraDensity,
-  AuraNodeState,
-} from "./character/foundation/aura/types";
-
-export {
-  AURA_PLACEMENTS,
-  AURA_COVERAGES,
-  AURA_NODE_STATES,
-  SQUARE_CENTIMETRES_PER_SQUARE_METRE,
-} from "./character/foundation/aura/types";
-
-/* Derived values and the profile that will collect them. */
-export type {
-  AuraPool,
-  AuraOutput,
-  AuraOutputLimit,
-  AuraExpenditure,
-  AuraRegenerationCapacity,
-  AuraControl,
-  ResolvedAuraAccess,
-  ResolvedAuraAllocation,
-  ResolvedInternalAuraAllocation,
-  ResolvedSurfaceAuraAllocation,
-  ResolvedAuraDistribution,
-  ResolvedAuraProfile,
-} from "./character/foundation/aura/types";
-
-export {
-  validateAuraPool,
-  deriveMaximumAura,
-  createAuraPool,
-  deriveAuraDepletionFraction,
-} from "./character/foundation/aura/pool";
-
-export { deriveAuraOutput, deriveAuraOutputLimit } from "./character/foundation/aura/output";
-
-export {
-  deriveAuraControl,
-  deriveAuraControlMultiplier,
-  deriveAuraExpenditure,
-} from "./character/foundation/aura/control";
-
-export {
-  resolveInternalAuraDensity,
-  resolveSurfaceAuraDensity,
-} from "./character/foundation/aura/density";
+/* ── Character: wakefulness ─────────────────────────────────────────────── */
 
 /*
- * Stored-Aura validation. validateCharacter already folds this in; it is
- * exported so a workbench can check one edit without revalidating a whole
- * character, and so both callers judge allocations with the same predicate.
+ * Hours awake, exported because Character.wakefulness is required and a caller
+ * cannot build one otherwise.
+ *
+ * The rules that read it — the wakefulness limit, the sleep-debt rate and the
+ * Fatigue curve — are Body's, and reach the barrel through the Body re-export
+ * above. See foundation/body/endurance.
  */
-export type {
-  AuraAllocationIssue,
-  AuraAllocationIssueCode,
-} from "./character/foundation/aura/validation";
-
-export {
-  validateAuraState,
-  findAuraAllocationIssues,
-  auraAllocationIssueToEngineError,
-} from "./character/foundation/aura/validation";
+export { restedWakefulness } from "./character/foundation/body/endurance";
 
 export type {
-  ResolveAuraDistributionInput,
-  ResolveAuraDistributionResult,
-  DroppedAuraAllocation,
-  DroppedAuraAllocationReason,
-} from "./character/foundation/aura/distribution";
+  CharacterWakefulnessState,
+} from "./character/foundation/body/endurance";
 
-export { resolveAuraDistribution } from "./character/foundation/aura/distribution";
-
-export {
-  replenishAura,
-  deriveAuraRegeneration,
-  deriveAuraRegenerationCapacity,
-} from "./character/foundation/aura/replenishment";
 
 /* ── Character: Nen state ───────────────────────────────────────────────── */
 
@@ -462,9 +391,13 @@ export {
  *
  * A SIBLING of Aura, not its owner. Awakening gates deliberate access and
  * externalization; it does not gate having Aura. An unawakened character has a
- * pool, loses Current Aura, and receives involuntary internal reinforcement —
+ * pool, loses Current Aura, and is passively reinforced from 20% of it —
  * createUnawakenedNenState() is what an ordinary person HAS, not a placeholder
  * for missing data.
+ *
+ * Ten's EFFECTIVE mastery, after seals, is what the Aura resolver is handed to
+ * decide whether Ten is available; deriveEffectiveNenMastery is where that
+ * comes from, and it is the only Nen fact Aura consumes.
  *
  * The principle mechanics themselves — advancement, prerequisites, Ren, Ten —
  * are not exported yet; they land with the Nen resolution ticket.
@@ -480,6 +413,14 @@ export type {
 export {
   NEN_PRINCIPLE_IDS,
   createUnawakenedNenState,
+
+  /*
+   * The one Nen derivation Aura consumes. Exported so a caller assembling an
+   * AuraAccessInput reads mastery through the same seal-aware function
+   * character resolution does, rather than off NenState.mastery directly —
+   * which would ignore every temporary seal.
+   */
+  deriveEffectiveNenMastery,
 } from "./character/foundation/nen/nen";
 
 /* ── Character: rules ───────────────────────────────────────────────────── */

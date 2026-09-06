@@ -69,10 +69,12 @@ import {
  * are sliced. Movement reads the Turn division, never the Round budget: see
  * foundation/attributes/speed.ts.
  *
- * The Time module ultimately performs the clock advancement. Round only
- * declares the duration represented by a completed cycle.
+ * The Time module ultimately performs the clock advancement, and now also
+ * DECLARES the six: foundation-level systems need it too — an Aura upkeep rate
+ * may be quoted per Round — and foundation cannot import from gameplay. This
+ * is a re-export under the name Combat callers already use.
  */
-export const COMBAT_ROUND_DURATION_SECONDS = 6;
+export { SECONDS_PER_COMBAT_ROUND as COMBAT_ROUND_DURATION_SECONDS } from "../../time/duration";
 
 
 // ---------------------------------------------------------------------------

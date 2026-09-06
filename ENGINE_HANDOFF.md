@@ -62,7 +62,7 @@ infrastructure/          JsonValue · EngineResult · TraceNode · Warning/Engin
 | `trace.ts` | `TraceNode` — recursive `{id, label, formula?, inputs, output?, rounding?, ruleSource?, decisionId?, warnings, children}`. `createTraceNode()` is the only sanctioned constructor; it defaults the collections so consumers never null-check. |
 | `registry.ts` | `createRegistry<T>(label, authored)` — the machinery behind **every** catalog. Two layers: **authored** (frozen engine source, canon, never removable) and **custom** (host-registered at runtime, additive only, **can never shadow an authored id**). Also `scanReferences()` (the "unknown or duplicate" walk) and `DEFINITION_ID_PATTERN` = `/^[a-z0-9]+(-[a-z0-9]+)*$/`. Uses `hasOwnProperty` so ids like `"constructor"` can't resolve through the prototype chain. |
 | `id.ts` | `createId(prefix)` → prefix + 16 random chars from `[a-z0-9]`, via Web Crypto (`Math.random` fallback for exotic embeddings). `idPattern(prefix)` recognises one. Ids never depend on name, timestamp, or list position. |
-| `rounding.ts` | `roundToOneSignificantFigure()` — shared by Aura Pool, Aura Output, Aura Regeneration and XP thresholds so every caller stays byte-for-byte consistent. |
+| `rounding.ts` | `roundToSignificantFigures(value, digits)` and `roundToOneSignificantFigure()` — shared by Aura Pool, Aura Output, Aura Regeneration, Aura Control and XP thresholds so every caller stays byte-for-byte consistent. Implemented through `toPrecision`, so a two-significant-figure Control multiplier is exactly `2.9` rather than `2.9000000000000004`. |
 
 ---
 
@@ -271,28 +271,173 @@ This is the one Body function taking potentially-invalid caller input across a d
 
 ---
 
+## 5b. Endurance (`foundation/body/endurance/`)
+
+Body's half of the energy model, and a strict one-way dependency: Maximum Aura, the depletion fraction and the Stamina score all arrive as **plain numbers**, so the Aura domain depends on this folder and this folder imports nothing from it — the same rule that keeps Body independent of the Attribute layer.
+
+| | What it is | Stored? |
+|---|---|---|
+| **Stamina** | physical-expenditure efficiency, `10 / max(1, Stamina)` | no — the existing Derived Attribute `round((CON+VIT)/2)` |
+| **Wakefulness** | accumulated hours awake | **yes** — `Character.wakefulness`, a sibling of `aura` |
+| **Fatigue** | derived 0–10 condition | no |
+
+Stamina multipliers: 5 → ×2.0 · 10 → ×1.0 · 15 → ×0.667 · 20 → ×0.5 · 25 → ×0.4 · 30 → ×0.333. Kept at full internal precision; the Rulebook's ×0.67 and ×0.33 are printed two-decimal figures.
+
+**Maximum wakefulness** is `24 × max(1, floor(2 + log10(A_max / 10)))` hours — logarithmic, so ten times the Aura buys one more day rather than ten:
+
+| Max Aura | 10 | 100 | 1,000 | 10,000 | 1e6 | 1e9 | 4e9 |
+|---|---|---|---|---|---|---|---|
+| Hours | 48 | 72 | 96 | 120 | 168 | 240 | 240 |
+
+The last two are equal because of the floor, not a cap. Only **sleep** reduces the debt, at two waking hours per hour slept; intentional rest recovers Aura and clears nothing, and neither does resting behind a Zetsu.
+
+**Fatigue** = `clamp(10r² + depletionBand, 0, 10)`, floored once at the end, `r = hoursAwake / maximumWakefulHours` clamped to 1.
+
+The quadratic is chosen for its shape: half way to the limit is 2.5 and functional, three quarters is 5.6 and impaired, and the last stretch arrives fast. `r = 1` is exactly 10, so the wakefulness limit blacks a character out on its own.
+
+Depletion bands: <25% +0 · 25% +1 · 50% +2 · 75% +3 · 90% +4 · 100% +5, preserving the calibration that ~65% drained is +2. Physical exertion is **not** a third component — exertion spends Aura, depletion already charges for it, and a third term would bill the same effort twice.
+
+States are categorical, never dice penalties: 0–4 unimpaired · 5–6 fatigued · 7–8 severely fatigued · **9 cannot fight** · **10 blackout**. What Fatigue 6 costs a Skill check, a recovery rate or an attack roll belongs to Skills, Body recovery and Combat.
+
+`ResolvedCharacter.fatigue` is assembled after Aura, because the wakefulness limit needs Maximum Aura and the depletion component needs the resolved pool. It feeds nothing back, which keeps that a line rather than a cycle.
+
+---
+
 ## 6. Aura (`foundation/aura/`)
 
-All major derived Aura figures round to **one significant figure**.
+Exported through its own barrel (`foundation/aura/index.ts`), re-exported wholesale from the package root. `resolveCharacter` populates `ResolvedCharacter.aura` through the one central resolver, `resolveAuraProfile`.
+
+Major derived Aura figures round to **one significant figure**; Aura Control rounds to two below DEX 22 and one above it (see below).
 
 | Quantity | Formula |
 |---|---|
 | **Maximum Aura** | `10 · 50^((CON+VIT-20)/10) · 2^(((CON+VIT-20)(CON+VIT-30))/200)` |
 | **Physiological Output Capacity** | `n = (CON-10)/5`; `M = 50ⁿ · 2^(n(n-1)/2)`; `O_phys = 2M` |
-| **Usable Output** | `min(currentAura, O_phys × accessFraction)` |
+| **Accessible Output** | `O_phys × accessFraction` |
+| **Usable Output** | `min(currentAura, accessibleOutput)` |
 | **Aura Regeneration (per hour)** | `n = (VIT-10)/5`; `50ⁿ · 2^(n(n-1)/2)` |
-| **Internal Aura Density** | `allocatedAura / coveredVolumeL` |
-| **Surface Aura Density** | `allocatedAura / (coveredSurfaceAreaCm2 / 10000)` |
+| **Internal Aura Density** | `allocatedAura / coveredVolumeL` — Aura/L |
+| **Surface Aura Density** | `allocatedAura / (coveredSurfaceAreaCm2 / 10000)` — Aura/m² |
+| **Passive internal Aura** (unawakened) | `currentAura × 0.20`, split by Volume |
+| **Baseline Ten coating** | `min(currentAura, 0.05 × O_phys)`, split by Surface Area |
 
-**Aura Control** (`control.ts`) — derived from DEX at the moment of expenditure, affects **cost only**. `x = (DEX-25)/5`:
+### The three Output figures
+
+They are three different questions and conflating any two produces a plausible wrong answer.
+
+- **Physiological** — what the body can produce. **CON alone.** It is *not* a percentage of Maximum Aura and has no 20%-of-pool ceiling. When CON and VIT are equal the Pool and Output formulas happen to place it at exactly 20% of Maximum Aura; when they differ it is some other fraction, and nothing computes it that way.
+- **Accessible** — the share the character's current state can reach. Ren raises the fraction, Zetsu closes it, the default Ten state opens 5% of it. None of them move the physiological figure.
+- **Usable** — accessible, capped by Current Aura, because reachable capacity is not Aura you have.
+
+### Access states (`access.ts`)
+
+A closed, typed model, so the resolver never branches on the name of a Nen principle. It reads a fraction and two permissions.
+
+| State | Nodes | Access fraction | Internal | Surface | Passive |
+|---|---|---|---|---|---|
+| `unawakened` | half-open | 0 | — | — | pseudo-Chū |
+| `uncontained` | open | 0 | — | permitted | — |
+| `ten` | open | 0.05 | — | permitted | — |
+| `override` | open | as supplied | as supplied | as supplied | — |
+
+Overrides are a closed union: `output-access` (Ren), `suppressed` (Zetsu), `internal-access` (Chū), `explicit` (everything else). None of those principles' mechanics are implemented; the shapes exist so they plug in rather than being special-cased. Effective Ten Mastery, after seals, decides one thing only — whether Ten is available.
+
+**Pseudo-Chū is not Output.** An unawakened body converts 20% of *Current Aura* into internal reinforcement through half-open nodes. It consumes no Output capacity, deducts nothing from the reserve, weakens as the character is drained, and disappears at awakening. An awakened character's internal Density is **zero** unless an access override explicitly permits internal placement.
+
+### Aura Control (`control.ts`)
+
+Derived from resolved DEX, affects deliberate expenditure **cost only** — not Maximum Aura, Output, Distribution, Density, reinforcement strength, mastery, permission, or involuntary loss. Two curves meeting at DEX 22, which is perfect mortal control:
 
 ```
-rawMultiplier = e^(-0.00850107x⁴ - 0.14447086x³ - 0.54024269x² - 0.91622329x)
+D ≤ 22   M(D) = (1 + (D - 22)/20) ^ -log₄(5)      → 2 significant figures
+D > 22   M(D) = (1 + (D - 22)/10) ^ -2.75         → 1 significant figure
+D < 7    uses the DEX 7 result
 ```
 
-rounded to one decimal. DEX 7 → ×5.0 · DEX 10 → ×3.0 · **DEX 25 → ×1.0 (perfect)** · DEX 28 → ×0.5 · DEX 30 → ×0.2. Final cost is *not* rounded — fractional Aura stays precise.
+The rounding is part of the calculation, not display formatting. DEX ≤7 → ×5.0 · 10 → ×2.9 · 15 → ×1.6 · 20 → ×1.1 · **22 → ×1.0** · 23 → ×0.8 · 25 → ×0.5 · 30 → ×0.2 · 36 → ×0.09 · 50 → ×0.03. There is **no maximum supported DEX**; the superhuman curve stays defined, positive and falling. Final Cost is *not* rounded — fractional Aura stays precise. `AuraControl` carries the multiplier and nothing else: permission belongs to access and to the application's own requirements.
 
-**Known debt:** `STANDARD_BODY_SURFACE_UNITS = 100` (`constants/surface-units.ts`) is explicitly flagged as scaffolding. The Surface Unit architecture was removed from `Body`; this constant survives only so `aura/distribution.ts` compiles, pending a ticket to redesign Aura density around the new Body/Body-Points model. Its header says: do not build on it. (Rulebook's regional table sums to 101; the engine uses 100 — decision `body.surface-units.total`.)
+### Placement, aggregation and the shared budget
+
+Stored allocations and the automatic Ten coating draw on **one** usable-Output budget; pseudo-Chū bypasses it. Same-placement contributions on a Body Part add their Aura and their densities; internal (Aura/L) and surface (Aura/m²) never combine — how the layers interact is reinforcement's decision.
+
+`resolveAuraProfile` **reconciles** rather than refuses: stored allocations whose anatomy is not manifested, whose placement is not permitted, or that no longer fit the budget are removed or scaled proportionally, and every adjustment is listed in `ResolvedAuraProfile.adjustments`. Stored state is untouched. That keeps `validateCharacter` from judging allocations against runtime Output, which is a boundary the previous ticket drew deliberately.
+
+### State transitions (`transitions.ts`)
+
+Pure, immutable, atomic. All return `EngineResult<AuraStateTransition>` and leave the input state untouched on success and on failure.
+
+| Operation | Current Aura | Control |
+|---|---|---|
+| `spendAura` | `−(baseCost × multiplier)` | applied |
+| `drainAura` | `−amount` | bypassed |
+| `replaceAuraAllocations` / `upsert` / `remove` / `clear` | unchanged | n/a |
+| `reconcileAuraState` | unchanged | n/a |
+
+`replaceAuraAllocations` is the primary operation and the only one that validates; the rest delegate to it. Every operation ends in reconciliation, because Current Aura caps usable Output and a drain can invalidate a placement nobody touched.
+
+### The Aura balance, and the one reserve
+
+Aura is the character's **only** expendable reserve — there is no Stamina bar. Every change composes through one equation, and `advanceAuraTime` (`time.ts`) is the only thing that applies all of it at once:
+
+```
+A' = clamp(A + recovery − physical − deliberate − upkeep − leakage − forcedDrain, 0, A_max)
+```
+
+| Term | Scaled by | Formula |
+|---|---|---|
+| **recovery** | recovery context | `R_VIT × M_recovery × t`, capped at missing Aura |
+| **physical** | **Stamina** | `A_max × 0.001 × ExertionLoad × (10 / Stamina)` |
+| **deliberate** | **Control** | `baseCost × M_Control` |
+| **upkeep** | **Control** | `baseRate × M_Control × t` (rate quoted per hour or per Round) |
+| **leakage** | nothing | uncontained only: `A_max / H_wake` per hour |
+| **forced drain** | nothing | whatever something else took |
+
+Allocation is deliberately absent from the equation: placing Aura through Output changes the distribution and does not touch the reserve. Every transition carries an `AuraBalance` itemising which terms it moved, with the rest at zero.
+
+### Physical expenditure (`expenditure.ts`)
+
+Cost scales with **Maximum Aura**, which is what makes one reserve work across the power range. A superhuman's ordinary punch and an ordinary person's ordinary punch are both Exertion Load 1 — the same relative effort — and the superhuman pays vastly more absolute Aura for a vastly more destructive punch, while their higher Stamina makes it a smaller share of a much larger pool:
+
+| | Max Aura | Stamina | ordinary punch | as % of pool |
+|---|---|---|---|---|
+| CON 10 / VIT 10 | 10 | 10 | 0.01 | 0.1% |
+| CON 20 / VIT 20 | 50,000 | 20 | 25 | 0.05% |
+
+Discrete loads: negligible 0 · light 0.25 · **ordinary committed 1** · forceful 2 · maximal 4 · desperate overexertion 8. Sustained loads are quoted per hour (0 / 5 / 15 / 50 / 100) and at Stamina 10 come out as 0%, 0.5%, 1.5%, 5% and 10% of Maximum Aura per hour. **Ordinary waking is free on both scales** — the cost of merely being awake is wakefulness, which is a different axis.
+
+Load is supplied by Combat and the action layer, never inferred here, and is **relative to the actor**: a superhuman pulling a blow down to human force is doing something light for them. Combat will eventually derive it from force used over maximum force available.
+
+Physical cost bypasses Control and works before and after awakening — awakening gates deliberate projection, not metabolism. `spendActionAura` charges both halves of an Aura-enhanced action in one transaction, because two calls can half-succeed. Required Output is checked and **not** spent.
+
+### Recovery (`recovery.ts`)
+
+The unrestricted `replenishAura(pool, attributes, hours)` is **gone**. It restored at the full VIT rate for any hours handed to it, so an ordinary waking day was a full heal and rest, sleep and Zetsu were decoration on something already free. Recovery now needs an explicit context:
+
+| Context | Multiplier |
+|---|---|
+| ordinary waking | ×0 |
+| intentional rest | ×0.5 |
+| sleep | ×1.0 |
+| rest + Zetsu I–X | ×1.0 – ×5.0 |
+| forced Zetsu | ×1.0 |
+
+Suppression **replaces** the mode multiplier rather than multiplying it — rest + Zetsu I is ×1.0, not ×0.5 — implemented as the maximum of the two, which also stops it downgrading someone already asleep. Voluntary suppression is worth nothing to a character who is not resting; forced suppression applies regardless. Aura never asks which principle is suppressing: it is handed a multiplier and a label.
+
+### Uncontained leakage (`leakage.ts`)
+
+One state leaks: awakened, no effective Ten. `ResolvedAuraAccess.uncontained` says so explicitly rather than being inferred from a missing coating — Chū has no coating and is containing Aura internally, and Zetsu has closed the nodes.
+
+`L = A_max / H_wake`, so a character empties in exactly as long as they could have stayed awake: a full standard reserve in **48 hours**, a half-full one in 24, a 50,000 pool in its own 120. Control does not apply. Reaching zero returns a typed `AuraCollapse` requesting `end-uncontained-state`, `forced-zetsu`, `blackout` and `clear-usable-output` — Aura implements none of those.
+
+### Upkeep (`upkeep.ts`)
+
+`baseRate × M_Control × t`, with rates quoted per hour or per Combat Round. Baseline Ten and pseudo-Chū cost **nothing**: Ten occupies Output without withdrawing from the reserve, and pseudo-Chū is a conversion of Current Aura rather than a withdrawal.
+
+Unaffordable upkeep has two correct answers. `payAuraUpkeep` fails **atomically** — a caller asking to pay wanted a transaction. `advanceAuraTime` **shuts the effect down** instead, because hours passing is not a request that can be refused.
+
+### Not implemented here
+
+Attack-force-to-BP conversion, Injury generation, concrete penalties for Fatigue 5–8, final Nen activation/upkeep formulas, Chū reinforcement strength, Trait/Species/equipment modifiers, advanced Zetsu substitution for sleep, and Workbench integration.
 
 ---
 
@@ -585,15 +730,15 @@ The detection *senses* model (sense-specific modifiers, per-sense concealment) w
 |---|---|
 | **Combat** | `combat/index.ts` is `export {}`. No Guard, Strike, Evasion, action economy, initiative, or death saves. |
 | **Nen: 11 of 15 principles** | shu, en, gyo, ken, chu, in, ko, ryu, yu, ju, fu — graph nodes only. |
+| **Fatigue 5–8 consequences** | Fatigue exposes typed states; no system consumes them yet. Body recovery, Skills and Combat each owe a rule. |
+| **Exertion Load supply** | Aura charges for a load; nothing derives one yet. Combat owes `force used / max force`. |
 | **Nen Abilities (Hatsu abilities)** | No subsystem. `HATSU_EFFECT_MINIMUM_MASTERY = 3` is the only hook. |
 | **Nen subsystem exports** | The whole ~3,800-LOC Nen tree is unreachable from `@nenworld/engine`. |
-| **Aura Control export** | `aura/control.ts` (481 LOC, fully implemented) is not in the barrel. |
 | **Injury content** | `INJURY_DEFINITIONS = {}`. Full machinery, zero entries. |
 | **Condition effects** | 11 Conditions, zero Effects — blocked on combat mechanics. |
 | **Movement / speed** | Nothing. `athletics` is derived but unconsumed. |
 | **Item use pipeline** | `useEffects` / `useRequirements` declared, never executed. |
 | **Improvised skill attempts** | `ImprovisedSkillAttempt` type exists; no resolution. |
-| **Surface Units / Aura density** | Explicitly flagged scaffolding pending redesign. |
 | **`details.ts` integration** | `heightCm`/`weightKg`/`nenType` on `CharacterDetails` are descriptive; `Body` carries its own height/mass and nothing reads `nenType`. **Two sources of truth for height/weight.** |
 | **Awakening mechanics** | `NenState.awakened` is a bare boolean. |
 | **Time clock/calendar exports** | Implemented + validated, unexported by design. |
@@ -657,9 +802,9 @@ Scripts: `npm test` (engine vitest — must be run from `packages/engine`, the r
 
 1. **Commit the Derived Attributes refactor.** It's complete, green, and large enough that leaving it uncommitted is a real risk.
 2. **Decide the fate of sense-specific detection.** The senses model was deleted; either add the `{kind:"sense"}` `CheckScope` variant or record that per-sense modifiers are out of scope.
-3. **Export Nen and Aura Control**, or write down why they're deliberately gated. ~4,300 LOC of finished, untested, unreachable code is the largest single risk in the package.
+3. **Export the Nen subsystem**, or write down why it is deliberately gated. ~3,800 LOC of finished, untested, unreachable code is the largest single risk in the package. (Aura is now fully exported through its own barrel.)
 4. **Write Nen tests.** It is the only major subsystem with zero coverage.
 5. **Author Injury content.** The machinery, validation, and recovery integration are all done and tested against an empty catalog.
 6. **Start combat**, which unblocks Condition effects, Injury effects, the `useEffects` pipeline, and Body damage's caller side.
 7. **Resolve the height/weight duplication** between `CharacterDetails` and `Body`.
-8. **Retire or replace `STANDARD_BODY_SURFACE_UNITS`** and the Aura density model built on it.
+8. **Consume Fatigue.** The 0–10 condition and its typed states now resolve on every character and nothing reads them — Body recovery, Skills and Combat each owe a rule for 5–8, and Combat owes the Exertion Load that feeds it.

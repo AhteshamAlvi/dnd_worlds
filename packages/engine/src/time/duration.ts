@@ -25,6 +25,25 @@ const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
 
 
 /**
+ * How much game time one completed Combat Round represents.
+ *
+ * Declared here rather than in the Combat module because it is a unit of
+ * TIME, and things well below Combat now need it: an Aura upkeep rate may be
+ * quoted per Round and has to be converted to the per-hour rate everything
+ * else in the endurance model uses. Foundation cannot import from gameplay,
+ * and duplicating the six would be two constants that could drift apart.
+ *
+ * gameplay/combat/round.ts re-exports it as COMBAT_ROUND_DURATION_SECONDS,
+ * which is the name Combat callers already use.
+ */
+export const SECONDS_PER_COMBAT_ROUND = 6;
+
+/** Combat Rounds in one hour, for converting per-Round rates to per-hour. */
+export const COMBAT_ROUNDS_PER_HOUR =
+  (MILLISECONDS_PER_HOUR / MILLISECONDS_PER_SECOND) / SECONDS_PER_COMBAT_ROUND;
+
+
+/**
  * Creates a GameDuration from milliseconds.
  */
 export function milliseconds(value: number): GameDuration {

@@ -18,10 +18,10 @@
  *
  * Nen state is a sibling rather than a parent. NenState does not own the pool
  * and does not gate generic Aura loss: an unawakened character possesses Aura,
- * can lose Current Aura, and receives involuntary internal reinforcement.
- * Awakening controls DELIBERATE access and externalization, which is a
- * narrower claim than "has Nen" and the reason the two are separate fields on
- * Character.
+ * can lose Current Aura, and receives passive internal reinforcement from 20%
+ * of it — which costs no Output, because they have none to spend. Awakening
+ * controls DELIBERATE access and externalization, which is a narrower claim
+ * than "has Nen" and the reason the two are separate fields on Character.
  */
 
 import type { ContinuityKey } from "../body/anatomy/types";

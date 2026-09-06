@@ -26,7 +26,7 @@ import {
   deriveMaximumAura,
   getDefinition,
   getMutationVariantDefinition,
-  replenishAura,
+  recoverAura,
 } from "@nenworld/engine";
 
 import {
@@ -543,7 +543,18 @@ export function rosterReducer(
         deriveMaximumAura(attributes),
       );
 
-      const result = replenishAura(pool, attributes, operation.hours);
+      /*
+       * Recovery needs an explicit context now — an ordinary waking hour
+       * restores nothing. The Workbench has no rest/sleep control yet, so this
+       * asks for sleep, which is what the old unrestricted replenishment was
+       * silently doing. A proper control belongs to the Workbench migration.
+       */
+      const result = recoverAura(
+        pool,
+        attributes,
+        { mode: "sleep" },
+        operation.hours,
+      );
 
       const report = singleStepReport(
         "aura.replenishment",
@@ -569,7 +580,7 @@ export function rosterReducer(
         ...existing,
         workbench: {
           ...existing.workbench,
-          auraPool: { current: result.payload.current },
+          auraPool: { current: result.payload.pool.current },
         },
         updatedAt: new Date().toISOString(),
       };
@@ -583,7 +594,7 @@ export function rosterReducer(
         { ...state, sheets: { ...state.sheets, [stamped.id]: stamped }, dirty },
         operation,
         "Aura replenished",
-        `${pool.current} → ${result.payload.current} (+${result.payload.current - pool.current})`,
+        `${pool.current} → ${result.payload.pool.current} (+${result.payload.contribution.amount})`,
         stamped.id,
         report,
       );

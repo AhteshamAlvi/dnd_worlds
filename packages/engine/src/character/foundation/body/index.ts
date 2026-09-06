@@ -41,6 +41,16 @@
 
 export type { Body, BodyMorphology } from "./types";
 
+/*
+ * Endurance: Stamina efficiency, wakefulness and derived Fatigue.
+ *
+ * Body's contribution to the energy model, and a strict one-way dependency —
+ * the Aura domain reads this folder, and this folder takes Maximum Aura and
+ * the depletion fraction as plain numbers rather than importing Aura back.
+ * Same rule that keeps Body independent of the Attribute layer.
+ */
+export * from "./endurance";
+
 export type {
   AnatomicalContinuityState,
   ContinuityStates,

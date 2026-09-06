@@ -559,6 +559,29 @@ export function validateCharacter(
   }
 
   /*
+   * Wakefulness is one stored number and there is exactly one way for it to be
+   * wrong. It is checked here rather than left to the Fatigue derivation
+   * because that derivation deliberately cannot fail — Fatigue is read on
+   * every sheet render, so it clamps a nonsense input to "freshly rested"
+   * rather than refusing to answer, and something has to notice the nonsense.
+   */
+  if (
+    !Number.isFinite(character.wakefulness.hoursAwake) ||
+    character.wakefulness.hoursAwake < 0
+  ) {
+    errors.push({
+      code: "body.wakefulness.hours_awake.invalid",
+      message: "Accumulated waking hours must be a finite non-negative number.",
+      audience: "player",
+      subject,
+      required: "finite number >= 0",
+      actual: Number.isFinite(character.wakefulness.hoursAwake)
+        ? character.wakefulness.hoursAwake
+        : String(character.wakefulness.hoursAwake),
+    });
+  }
+
+  /*
    * Resolved once and threaded through everything that needs it. Both the
    * catalog-reference checks (which judge Requirements against the resolved
    * character) and the Derived Attribute self-check read from this, and

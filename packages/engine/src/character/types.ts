@@ -33,6 +33,7 @@ import type { Attributes } from "./foundation/attributes/types";
 import type { Body } from "./foundation/body/types";
 import type { CharacterAuraState } from "./foundation/aura/state";
 import type { NenState } from "./foundation/nen/types";
+import type { CharacterWakefulnessState } from "./foundation/body/endurance";
 
 import type { CharacterClan } from "./identity/clans";
 import type { CharacterSpecies } from "./identity/species";
@@ -119,6 +120,28 @@ export interface Character {
    * facts becoming unrepresentable.
    */
   readonly nen: NenState;
+
+
+  /*
+   * How long this character has been awake.
+   *
+   * One number, and it is here for the same reason Current Aura is: it cannot
+   * be recomputed from anything. Hours awake is the history of a character's
+   * sleep, and the only alternative to storing it is asking the GM every time
+   * somebody wants to know how tired somebody is.
+   *
+   * Fatigue is deliberately NOT stored beside it. Fatigue is a function of
+   * these hours and of how drained the Aura reserve is, so a stored copy would
+   * be a third number free to disagree with the two it came from — the same
+   * rule that keeps Maximum Aura off `aura`.
+   *
+   * A SIBLING of `body` rather than a field inside it, matching `aura`: Body
+   * is anatomy, morphology and what has happened to them, and hours awake is
+   * none of those. The endurance rules that read this — the wakefulness limit,
+   * the sleep-debt rate, the Fatigue curve — do live under Body, in
+   * foundation/body/endurance.
+   */
+  readonly wakefulness: CharacterWakefulnessState;
 
 
   /*

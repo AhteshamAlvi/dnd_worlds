@@ -480,32 +480,42 @@ describe("distribution refuses what it cannot place", () => {
 
 
 describe("Aura Control distinguishes a fact from a bug", () => {
-  it("succeeds with a multiplier at a supported DEX", () => {
-    const result = deriveAuraControl(25);
+  /*
+   * The set of failures is now exactly one: a DEX that is not a score. Both of
+   * the others this suite used to assert have become ordinary answers.
+   *
+   * A DEX below the floor is a FACT about a clumsy character — they waste five
+   * times the Aura an application needs — rather than a character who "cannot
+   * spend deliberately", which was never Control's question to answer. And a
+   * DEX above 30 is a fact about an extraordinary one: the superhuman curve
+   * stays defined and positive forever, so there is nothing left to call
+   * unsupported.
+   */
+  it("resolves a multiplier at an ordinary DEX", () => {
+    const result = deriveAuraControl(22);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    expect(result.payload).toEqual({
-      multiplier: 1,
-      deliberateExpenditureAvailable: true,
-    });
+    expect(result.payload).toEqual({ multiplier: 1 });
   });
 
-  /*
-   * Below the floor the character is describable: they have Aura and lose it,
-   * they just cannot aim it. That is a successful answer, not a failure.
-   */
-  it("succeeds with expenditure unavailable below the control floor", () => {
+  it("resolves below the floor at the floor's own multiplier", () => {
     const result = deriveAuraControl(3);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    expect(result.payload).toEqual({
-      multiplier: 1,
-      deliberateExpenditureAvailable: false,
-    });
+    expect(result.payload).toEqual({ multiplier: 5 });
+  });
+
+  it("resolves far above the mortal range", () => {
+    const result = deriveAuraControl(50);
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.payload).toEqual({ multiplier: 0.03 });
   });
 
   it("fails on a non-finite DEX rather than reporting no control", () => {
@@ -520,19 +530,25 @@ describe("Aura Control distinguishes a fact from a bug", () => {
       .toContain("aura.control.dex.invalid");
   });
 
-  it("fails as unsupported above the defined progression", () => {
-    expect(errorCodes(deriveAuraControl(31)))
-      .toContain("aura.control.dex.unsupported");
+  it("fails on a negative DEX", () => {
+    expect(errorCodes(deriveAuraControl(-1)))
+      .toContain("aura.control.dex.invalid");
   });
 
-  it("keeps the three outcomes distinguishable", () => {
-    const low = deriveAuraControl(3);
-    const broken = deriveAuraControl(Number.NaN);
-    const beyond = deriveAuraControl(31);
+  /*
+   * The flag this used to carry claimed to answer "may this character spend
+   * Aura deliberately", which Control cannot know: access state and the
+   * application's own requirements decide that. Callers read it as "can act"
+   * when it only ever meant "DEX is below 7".
+   */
+  it("reports no permission of its own", () => {
+    const result = deriveAuraControl(10);
 
-    expect([low.success, broken.success, beyond.success])
-      .toEqual([true, false, false]);
-    expect(errorCodes(broken)).not.toEqual(errorCodes(beyond));
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.payload).not.toHaveProperty("deliberateExpenditureAvailable");
+    expect(Object.keys(result.payload)).toEqual(["multiplier"]);
   });
 });
 

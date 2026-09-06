@@ -19,6 +19,12 @@
  * it does not reduce Current Aura — losing a limb does not drain a character,
  * it only means they are no longer reinforcing it.
  *
+ * AUTOMATIC allocations — baseline Ten, today — are placed alongside the
+ * stored ones rather than in a second pass. They are derived state and are
+ * never written to the character sheet, but they occupy real body and consume
+ * real Output, so anything that treated them separately would be a second
+ * ceiling and a second expansion that could disagree with the first.
+ *
  * This is not the central Aura resolver. It takes an already-resolved Output
  * figure and already-resolved measurements and answers one question: where is
  * the active Aura. What Output the character has is decided elsewhere.
@@ -43,25 +49,55 @@ import {
   findAuraAllocationIssues,
 } from "./validation";
 import type {
+  AuraAllocationSource,
   AuraPlacement,
+  DroppedAuraAllocation,
   ResolvedAuraAllocation,
   ResolvedAuraDistribution,
 } from "./types";
 
 
-/** Why one stored allocation produced no resolved allocation. */
-export type DroppedAuraAllocationReason =
-  | "identity-not-manifested"
-  | "no-measurable-body";
+/*
+ * Declared in types.ts with every other Aura value shape and re-exported here,
+ * because this is the function that produces them and callers reach for the
+ * type from the same module they call.
+ */
+export type {
+  DroppedAuraAllocation,
+  DroppedAuraAllocationReason,
+} from "./types";
 
-export interface DroppedAuraAllocation {
-  readonly allocationId: string;
-  readonly reason: DroppedAuraAllocationReason;
-  readonly aura: number;
+/*
+ * An allocation the engine DERIVED rather than the character authored.
+ *
+ * Baseline Ten is the one that exists: it is recomputed from Output on every
+ * resolution and is deliberately never written into stored state, because a
+ * stored copy would survive the character losing the Ten that produced it.
+ *
+ * It is otherwise an ordinary allocation and goes through the same validation,
+ * the same expansion over present anatomy, and the same Output ceiling — the
+ * `source` tag is what keeps it recognisable once it is sitting next to a
+ * stored allocation on the same Body Part.
+ */
+export type AutomaticAuraAllocation =
+  & AuraAllocation
+  & { readonly source: Exclude<AuraAllocationSource, "stored"> };
+
+
+/** One allocation and where it came from, once the two lists are merged. */
+interface SourcedAllocation {
+  readonly allocation: AuraAllocation;
+  readonly source: AuraAllocationSource;
 }
 
+
 export interface ResolveAuraDistributionInput {
+  /** What the character authored. */
   readonly allocations: readonly AuraAllocation[];
+
+  /** What their current state produces on its own. */
+  readonly automatic?: readonly AutomaticAuraAllocation[];
+
   readonly anatomy: Anatomy;
 
   /** The PRESENT measurements. Destroyed and suppressed anatomy is absent. */
@@ -86,6 +122,30 @@ export interface ResolveAuraDistributionResult {
 
 
 /*
+ * How far past the ceiling a total has to be before it counts as over it.
+ *
+ * A whole-body allocation is split into one share per part and then added back
+ * up, and binary floating point does not promise that the sum returns to the
+ * figure it came from: 1600 spread over eight parts comes back as
+ * 1600.0000000000002. An exact `>` reads that as an over-allocation and
+ * refuses a character who committed exactly what they had — which is not a
+ * hypothetical, it is what the automatic Ten coating does every single time,
+ * because it draws the entire usable Output by construction.
+ *
+ * Relative rather than absolute, because Aura spans nine orders of magnitude
+ * between a CON 10 human and a CON 30 monster, and an epsilon that is
+ * invisible at 800,000,000 would be a real quantity at 2.
+ */
+const OUTPUT_OVERSHOOT_TOLERANCE = 1e-9;
+
+function overAllocated(activeAura: number, availableOutput: number): boolean {
+  const scale = Math.max(Math.abs(activeAura), Math.abs(availableOutput));
+
+  return activeAura - availableOutput > scale * OUTPUT_OVERSHOOT_TOLERANCE;
+}
+
+
+/*
  * The measurement one placement is denominated in.
  *
  * The single place the internal/surface asymmetry is decided; everything below
@@ -102,6 +162,7 @@ function coveredMeasure(
 function resolvedAllocation(
   input: {
     readonly allocationId: string;
+    readonly source: AuraAllocationSource;
     readonly placement: AuraPlacement;
     readonly coverage: "whole-body" | "localized";
     readonly continuityKey: ResolvedAuraAllocation["continuityKey"];
@@ -118,6 +179,7 @@ function resolvedAllocation(
    */
   const shared = {
     allocationId: input.allocationId,
+    source: input.source,
     coverage: input.coverage,
     continuityKey: input.continuityKey,
     partId: input.partId,
@@ -177,7 +239,23 @@ function resolvedAllocation(
 export function resolveAuraDistribution(
   input: ResolveAuraDistributionInput,
 ): EngineResult<ResolveAuraDistributionResult> {
-  const allocations = input.allocations;
+  const automatic = input.automatic ?? [];
+
+  /*
+   * Stored and automatic are placed as ONE list, and that is the point.
+   *
+   * They compete for the same Output ceiling, they expand over the same
+   * anatomy, and they are judged by the same predicate — so a duplicate id
+   * between the two is caught, and baseline Ten cannot quietly overrun a
+   * budget the stored allocations were checked against.
+   */
+  const allocations: readonly SourcedAllocation[] = [
+    ...input.allocations.map((allocation) => ({
+      allocation,
+      source: "stored" as const,
+    })),
+    ...automatic.map((allocation) => ({ allocation, source: allocation.source })),
+  ];
 
   const traceNode = createTraceNode({
     id: "aura.distribution.resolve",
@@ -185,7 +263,8 @@ export function resolveAuraDistribution(
     formula:
       "whole-body shares split by covered measure; localized resolve by continuity identity",
     inputs: {
-      allocations: { value: allocations.length },
+      allocations: { value: input.allocations.length },
+      automatic: { value: automatic.length },
       availableOutput: {
         value: Number.isFinite(input.availableOutput)
           ? input.availableOutput
@@ -221,7 +300,9 @@ export function resolveAuraDistribution(
    * The same predicate the character sheet is validated with. An allocation
    * the sheet rejects must not be one distribution quietly accepts.
    */
-  const allocationIssues = findAuraAllocationIssues(allocations);
+  const allocationIssues = findAuraAllocationIssues(
+    allocations.map((entry) => entry.allocation),
+  );
 
   if (allocationIssues.length > 0) {
     return fail(
@@ -265,7 +346,7 @@ export function resolveAuraDistribution(
     return [];
   };
 
-  for (const allocation of allocations) {
+  for (const { allocation, source } of allocations) {
     if (isLocalizedAllocation(allocation)) {
       const partId = partByContinuityKey.get(allocation.continuityKey);
 
@@ -301,6 +382,7 @@ export function resolveAuraDistribution(
 
       const errors = placeOne({
         allocationId: allocation.id,
+        source,
         placement: allocation.placement,
         coverage: "localized",
         continuityKey: allocation.continuityKey,
@@ -357,6 +439,7 @@ export function resolveAuraDistribution(
     for (const entry of covered) {
       const errors = placeOne({
         allocationId: allocation.id,
+        source,
         placement: allocation.placement,
         coverage: "whole-body",
         continuityKey: entry.continuityKey,
@@ -385,7 +468,7 @@ export function resolveAuraDistribution(
    * Measured against PLACED Aura, not stored: a dropped allocation's Aura is
    * back in unallocated Output and is not competing for the ceiling.
    */
-  if (activeAura > input.availableOutput) {
+  if (overAllocated(activeAura, input.availableOutput)) {
     return fail([{
       code: "aura.distribution.over_allocated",
       message:

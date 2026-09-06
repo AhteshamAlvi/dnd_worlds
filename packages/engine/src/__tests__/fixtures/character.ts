@@ -9,6 +9,7 @@ import { STANDARD_BODY } from "../../character/foundation/body/defaults";
 import type { Body } from "../../character/foundation/body/types";
 import type { Attributes } from "../../character/foundation/attributes/types";
 import { createUnawakenedNenState } from "../../character/foundation/nen/nen";
+import { restedWakefulness } from "../../character/foundation/body/endurance";
 import { createCharacterId } from "../../character/id";
 import type { Character } from "../../character/types";
 import {
@@ -55,6 +56,7 @@ export function createTestCharacter(
 
     aura: { current: 0, allocations: [] },
     nen: createUnawakenedNenState(),
+    wakefulness: restedWakefulness(),
 
     clans: [],
     traits: [],

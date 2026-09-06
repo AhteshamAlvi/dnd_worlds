@@ -118,6 +118,11 @@ import {
 import type { Character } from "./types";
 
 import { listDefinitions } from "./catalogs";
+import { resolveAuraProfile } from "./foundation/aura/resolution";
+import type { ResolvedAuraProfile } from "./foundation/aura/types";
+import { deriveFatigue } from "./foundation/body/endurance";
+import type { ResolvedFatigue } from "./foundation/body/endurance";
+import { deriveEffectiveNenMastery } from "./foundation/nen/nen";
 import { resolveBody } from "./foundation/body/resolution";
 import { resolveAge } from "./foundation/body/age/resolution";
 import { NEUTRAL_MORPHOLOGY } from "./foundation/body/types";
@@ -237,6 +242,38 @@ export interface ResolvedCharacter {
 
   /** Permanent resolved senses and phenomenon access for sensory mechanics. */
   readonly senses: ResolvedSensoryProfile;
+
+  /*
+   * Everything derived about this character's Aura, from one resolver.
+   *
+   * Resolved AFTER the body, and from it: internal Aura is denominated in
+   * litres of Volume and surface Aura in square metres of skin, so the
+   * character's present measurements are an input rather than a detail. That
+   * ordering is also why Aura cannot be handed a ResolvedCharacter — it is
+   * part of one.
+   *
+   * The stored half stays on `character.aura`, and is still only two facts:
+   * how much Aura there is right now, and where the character has deliberately
+   * put it.
+   */
+  readonly aura: ResolvedAuraProfile;
+
+  /*
+   * How tired this character is, from hours awake and how drained they are.
+   *
+   * Resolved last, because it is the only thing that needs BOTH halves of the
+   * endurance model: the wakefulness limit scales with Maximum Aura and the
+   * depletion component reads the resolved pool, so neither is available until
+   * Aura is. That ordering is also why Fatigue is assembled here rather than
+   * inside ResolvedBody — resolveBody has never heard of Maximum Aura and
+   * should not start now.
+   *
+   * Carries typed consequences rather than dice penalties. What Fatigue 6
+   * costs a Skill check or an attack roll belongs to those systems; what
+   * Fatigue can say alone is that at 9 the character cannot fight and at 10
+   * they are unconscious.
+   */
+  readonly fatigue: ResolvedFatigue;
 
   readonly traits: ResolvedTraits;
   readonly capabilities: ResolvedCapabilities;
@@ -1066,6 +1103,58 @@ export function resolveCharacter(
     techniqueGrants: resolved.techniqueGrants,
   });
 
+  /*
+   * Aura, last among the foundation subsystems, because it needs the most.
+   *
+   * The PHYSICALLY-RESOLVED stat block is what it reads, not the raw resolved
+   * attributes: a Giant's Volume/Mass burden lowers their DEX, and their Aura
+   * Control multiplier has to follow the DEX they actually have, exactly as
+   * every Derived Attribute does.
+   *
+   * The PRESENT measurements are what it is placed on, not the form ones.
+   * Physical Attributes deliberately read the intact form so that losing an
+   * Arm cannot make a character quicker — but Aura is placed on the body that
+   * is there, and a severed Arm genuinely carries none.
+   *
+   * Ten's EFFECTIVE mastery, after seals, is consulted for one thing: whether
+   * Ten is available. Nen owns that derivation, which is why it is computed
+   * here and handed down rather than the Aura domain reaching into Nen state.
+   */
+  const aura = resolveAuraProfile({
+    state: character.aura,
+    attributes: stats,
+    anatomy: resolvedBody.anatomy,
+    bodyMeasurements: resolvedBody.measurements.present,
+    access: {
+      awakened: character.nen.awakened,
+      effectiveTenMastery: deriveEffectiveNenMastery(character.nen, "ten"),
+    },
+  });
+
+  if (!aura.success) {
+    return {
+      success: false,
+      trace: characterTrace(character, body.trace.root, false, [
+        aura.trace.root,
+      ]),
+      warnings: [...body.warnings, ...aura.warnings],
+      errors: aura.errors,
+    };
+  }
+
+  /*
+   * Fatigue closes the loop between the two halves of the endurance model. It
+   * needs the resolved pool for its depletion component and Maximum Aura for
+   * the wakefulness limit, so it cannot be derived until Aura has resolved —
+   * and it feeds nothing back, which is what keeps that a line rather than a
+   * cycle.
+   */
+  const fatigue = deriveFatigue({
+    wakefulness: character.wakefulness,
+    maximumAura: aura.payload.pool.maximum,
+    depletionFraction: aura.payload.pool.depletionFraction,
+  });
+
   const payload: ResolvedCharacter = {
     character,
     attributes,
@@ -1088,6 +1177,8 @@ export function resolveCharacter(
     derivedScores: resolveDerivedScores(derivedAttributes),
     actionCapacity,
     senses,
+    aura: aura.payload,
+    fatigue,
 
     traits,
     capabilities,
@@ -1124,6 +1215,7 @@ export function resolveCharacter(
     payload,
     trace: characterTrace(character, body.trace.root, true, [
       actionCapacity.trace,
+      aura.trace.root,
     ]),
     warnings: body.warnings,
   };

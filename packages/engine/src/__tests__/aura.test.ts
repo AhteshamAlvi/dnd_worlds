@@ -26,8 +26,8 @@ import {
 import {
   deriveAuraRegeneration,
   deriveAuraRegenerationCapacity,
-  replenishAura,
-} from "../character/foundation/aura/replenishment";
+  recoverAura,
+} from "../character/foundation/aura/recovery";
 
 // A neutral baseline with only CON/VIT varied, so each test states exactly
 // what it depends on.
@@ -174,51 +174,65 @@ describe("deriveAuraRegeneration", () => {
   });
 });
 
-describe("replenishAura", () => {
+/*
+ * Recovery needs a context now. The unrestricted replenishAura is gone,
+ * because it restored Aura at the full VIT rate for any hours it was handed —
+ * so an ordinary waking day was a full heal, and rest, sleep and Zetsu were
+ * all decoration on top of something already free. The contexts themselves are
+ * covered in aura-endurance.test.ts; what is checked here is the capacity and
+ * the cap, which are the parts that did not change.
+ */
+describe("recoverAura", () => {
   it("restores Aura at the derived rate, capped at what's missing", () => {
-    const result = replenishAura(
+    const result = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
+      { mode: "sleep" },
       1,
     );
 
     expect(result.success).toBe(true);
     if (result.success) {
       // Regen for VIT 18 is 700/hour; 6500 + 700 = 7200.
-      expect(result.payload.current).toBe(7200);
+      expect(result.payload.pool.current).toBe(7200);
     }
   });
 
   it("never pushes Current Aura past Maximum Aura", () => {
-    const result = replenishAura(
+    const result = recoverAura(
       createAuraPool(19800, 20000),
       attributesWith(20, 18),
+      { mode: "sleep" },
       1,
     );
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.payload.current).toBe(20000);
+      expect(result.payload.pool.current).toBe(20000);
+      expect(result.payload.contribution.uncappedAmount).toBe(700);
+      expect(result.payload.contribution.amount).toBe(200);
     }
   });
 
   it("is a no-op over zero hours", () => {
-    const result = replenishAura(
+    const result = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
+      { mode: "sleep" },
       0,
     );
 
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.payload.current).toBe(6500);
+      expect(result.payload.pool.current).toBe(6500);
     }
   });
 
   it("rejects a negative duration", () => {
-    const result = replenishAura(
+    const result = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
+      { mode: "sleep" },
       -1,
     );
 
@@ -226,9 +240,10 @@ describe("replenishAura", () => {
   });
 
   it("rejects an already-invalid pool", () => {
-    const result = replenishAura(
+    const result = recoverAura(
       createAuraPool(25000, 20000),
       attributesWith(20, 18),
+      { mode: "sleep" },
       1,
     );
 
@@ -261,16 +276,17 @@ describe("Aura depletion", () => {
   });
 
   it("is carried on every pool the derivations produce", () => {
-    const replenished = replenishAura(
+    const recovered = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
+      { mode: "sleep" },
       1,
     );
 
-    expect(replenished.success).toBe(true);
-    if (!replenished.success) return;
+    expect(recovered.success).toBe(true);
+    if (!recovered.success) return;
 
-    expect(replenished.payload.depletionFraction).toBeCloseTo(
+    expect(recovered.payload.pool.depletionFraction).toBeCloseTo(
       (20000 - 7200) / 20000,
       10,
     );
