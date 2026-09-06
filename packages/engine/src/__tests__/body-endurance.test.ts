@@ -19,6 +19,7 @@ import {
   MAXIMUM_FATIGUE,
   PHYSICAL_EXERTION_LOADS,
   REFERENCE_STAMINA,
+  SUSTAINED_ACTIVITY_LEVELS,
   SUSTAINED_ACTIVITY_LOADS_PER_HOUR,
   WAKING_HOURS_CLEARED_PER_HOUR_SLEPT,
   advanceWakefulness,
@@ -27,6 +28,7 @@ import {
   deriveMaximumWakefulHours,
   deriveStaminaExpenditureMultiplier,
   deriveWakefulnessFatigue,
+  findActivityCombinationIssues,
   resolveWakefulness,
   restedWakefulness,
 } from "../character/foundation/body/endurance";
@@ -109,6 +111,76 @@ describe("the exertion scales", () => {
       "strenuous": 50,
       "extreme": 100,
     });
+  });
+});
+
+
+describe("activity combinations", () => {
+  /*
+   * Ordinary waking already covers walking, talking, eating and desk work, and
+   * costs nothing — so it permits any activity level layered on top. Rest and
+   * sleep are defined as the body doing nothing, which makes sustained
+   * exertion during them a contradiction rather than a strenuous nap.
+   */
+  it("permits any activity during ordinary waking", () => {
+    for (const activity of SUSTAINED_ACTIVITY_LEVELS) {
+      expect(findActivityCombinationIssues({
+        mode: "ordinary-waking",
+        activity,
+      })).toEqual([]);
+    }
+  });
+
+  it("permits rest and sleep with no exertion at all", () => {
+    for (const mode of ["intentional-rest", "sleep"] as const) {
+      expect(findActivityCombinationIssues({ mode })).toEqual([]);
+      expect(findActivityCombinationIssues({
+        mode,
+        activity: "ordinary-waking",
+      })).toEqual([]);
+      expect(findActivityCombinationIssues({ mode, activityLoadPerHour: 0 }))
+        .toEqual([]);
+    }
+  });
+
+  it("refuses the contradictory pairings", () => {
+    for (const combination of [
+      { mode: "sleep", activity: "extreme" },
+      { mode: "intentional-rest", activity: "strenuous" },
+      { mode: "sleep", activity: "light" },
+      { mode: "intentional-rest", activityLoadPerHour: 5 },
+    ] as const) {
+      expect(findActivityCombinationIssues(combination).map((one) => one.code))
+        .toEqual(["body.activity.combination.contradictory"]);
+    }
+  });
+
+  /*
+   * A nightmare, a possession, an ability that moves a sleeping body are all
+   * real. The difference between a bug and a scene is whether somebody said so.
+   */
+  it("permits an exception when something names itself and says why", () => {
+    expect(findActivityCombinationIssues({
+      mode: "sleep",
+      activity: "extreme",
+      exertionOverride: {
+        source: "nightmare-hatsu",
+        reason: "The ability drives the body while its owner sleeps.",
+      },
+    })).toEqual([]);
+  });
+
+  it("refuses an override that explains nothing", () => {
+    for (const override of [
+      { source: "", reason: "why" },
+      { source: "thing", reason: "  " },
+    ]) {
+      expect(findActivityCombinationIssues({
+        mode: "sleep",
+        activity: "extreme",
+        exertionOverride: override,
+      }).map((one) => one.code)).toEqual(["body.activity.override.incomplete"]);
+    }
   });
 });
 

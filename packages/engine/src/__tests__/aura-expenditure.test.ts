@@ -507,8 +507,9 @@ describe("deliberate upkeep", () => {
     expect(result.payload[0]!.cost).toBe(600);
   });
 
+  /* Rounds are two seconds, so an hour holds 1,800 of them. */
   it("converts a per-Round rate into the same per-hour arithmetic", () => {
-    expect(upkeepRatePerHour(1, "round")).toBe(600);
+    expect(upkeepRatePerHour(1, "round")).toBe(1800);
 
     const result = deriveAuraUpkeep(
       [{ id: "ko", source: "ko", baseRate: 1, period: "round" }],
@@ -516,7 +517,7 @@ describe("deliberate upkeep", () => {
       1,
     );
 
-    expect(result.success && result.payload[0]!.cost).toBe(600);
+    expect(result.success && result.payload[0]!.cost).toBe(1800);
   });
 
   it("accumulates fractionally over part of an hour", () => {

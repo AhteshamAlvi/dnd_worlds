@@ -89,6 +89,39 @@ export const ENGINE_DECISIONS = {
             file: "03 Aura Engine/Aura Statistics.md",
         },
     },
+    "time.continuous-resolution.boundaries": {
+        id: "time.continuous-resolution.boundaries",
+        question:
+            "Time-based Aura was resolved by summing every contribution across whatever span a caller submitted and clamping once at the end. That made the answer depend on how the span was divided: a character 100 Aura short of full, recovering 5,000/hour while paying 100/hour of upkeep, ended two hours later either 100 down or exactly full, depending on whether the GM advanced once or twice.",
+        chosen:
+            "Continuous resolution at calculated boundaries. An interval is split wherever the active rates change — the pool filling, the pool emptying, an upkeep becoming unaffordable, a collapse, an activity or suppression change, a timed effect starting or expiring, a scheduled action, the interval's end — and each segment is integrated at constant rates. Boundary times are solved for algebraically, never stepped towards. Recovery is netted against expenditure UNCAPPED and only the pool is clamped.",
+        rationale:
+            "advance(T) must equal advance(T/N) applied N times, because a rules engine may not give a different answer for a UI that refreshes every second than for a GM who clicks once. Splitting at exactly the instants the old model smeared over is what delivers it: the two answers above differ precisely because the moment the pool filled fell inside the span, and now that moment is a segment boundary. Uncapping recovery is the other half — capping it against missing Aura before netting is what let a full character's upkeep either be free or unpayable depending on subdivision, where the truth is that incoming regeneration pays it and the surplus is discarded. Boundaries are calculated rather than simulated because stepping would be slower AND less accurate, and would reintroduce the dependence on step size the whole exercise removes. Verified at 1, 2, 5, 60 and 600 subdivisions, and at 28,800 one-second steps across eight hours.",
+        ruleSource: {
+            file: "03 Aura Engine/Aura Statistics.md",
+        },
+    },
+    "time.upkeep.exact-shutdown": {
+        id: "time.upkeep.exact-shutdown",
+        question:
+            "A maintained Aura effect the character cannot afford for a whole submitted interval: does it run, or not? The first implementation required affordability for the entire span and treated anything less as inactive throughout.",
+        chosen:
+            "Upkeep is charged continuously until the exact instant the reserve can no longer carry it, and shuts down there with that timestamp reported. 150 Aura against a 100/hour upkeep across two hours runs for ninety minutes, is charged 150, shuts down at start + 1.5 hours, and the remaining half hour resolves without it. When several effects are running and the balance cannot carry them all, the lowest priority is shed first and shedding stops as soon as what remains is sustainable; equal priorities break by commitment id rather than by the order the caller built the array in.",
+        rationale:
+            "Interval-wide affordability made the result depend on how the caller chopped up time in the most visible possible way — the same Ren was up for the whole of four one-hour advances and down for the whole of one four-hour advance. It was also simply wrong about the fiction: an effect that ran for ninety minutes did run for ninety minutes and did whatever it does for them. Reporting the exact instant matters for the same reason: a player needs to know when they lost it, and 'sometime in the last two hours' is not an answer. Breaking priority ties by id rather than array order is what keeps a character from losing a different effect depending on how the scene assembled its list.",
+        ruleSource: {
+            file: "03 Aura Engine/Aura Statistics.md",
+        },
+    },
+    "time.character.lazy-projection": {
+        id: "time.character.lazy-projection",
+        question:
+            "A character sheet has to show Aura, wakefulness and Fatigue as of the current game clock, but stored state is only a snapshot from whenever it was last written. The obvious approach is a tick that walks every character every few seconds and writes their state forward.",
+        chosen:
+            "Each character stores one timestamp, resolvedAt, recording when their stored state was last committed. Sheets PROJECT from there to the clock's current reading through the same coordinator a committed advance uses, and persist nothing. An advance may only start exactly at resolvedAt, which is checked.",
+        rationale:
+            "A tick costs in proportion to the size of the world rather than to what is happening in it, and puts the answer at the mercy of how often it ran — the same dependence on update frequency the continuous solver exists to remove. Projection costs nothing for an NPC nobody is looking at and one calculation when somebody looks. Running the SAME coordinator is what stops a display disagreeing with a save: a separate read-only estimator would drift, and the drift would surface as a value jumping the moment anything persisted. The resolvedAt check is what makes double application impossible — a system with both a live clock and a manual time skip will eventually try to charge the same hour twice, and rejecting it is better than absorbing it.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:

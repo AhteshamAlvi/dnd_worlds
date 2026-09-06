@@ -418,6 +418,46 @@ export function resolveAuraAccess(
 }
 
 
+/* ── Deliberate access ──────────────────────────────────────────────────── */
+
+/*
+ * Whether the character can project Aura ON PURPOSE at all.
+ *
+ * The gate every deliberate expenditure passes and no involuntary one does.
+ * An unawakened character's nodes cannot direct anything and a suppressed
+ * character's are shut, so neither can spend Aura deliberately — while both
+ * can still burn it through physical effort and both can still have it taken
+ * from them. That asymmetry is the whole reason this is a named predicate
+ * rather than an inline check: three call sites reading two boolean fields
+ * would eventually disagree about which combination counts.
+ */
+export function hasDeliberateAuraAccess(
+  access: Pick<
+    ResolvedAuraAccess,
+    "deliberateInternalAccess" | "deliberateExternalAccess"
+  >,
+): boolean {
+  return access.deliberateInternalAccess || access.deliberateExternalAccess;
+}
+
+
+/** The refusal a deliberate expenditure gets when access is closed. */
+export function deliberateAccessError(
+  access: Pick<ResolvedAuraAccess, "state" | "source">,
+): EngineError {
+  return {
+    code: "aura.access.deliberate.not_permitted",
+    message:
+      "This character cannot spend Aura deliberately in their current state.",
+    audience: "player",
+    required: "an access state permitting deliberate Aura expenditure",
+    actual: access.state,
+    resolution:
+      "Deliberate expenditure needs open Aura nodes and an access state that has not closed ordinary Output. Physical exertion and involuntary loss are unaffected.",
+  };
+}
+
+
 /* ── Placement permission ───────────────────────────────────────────────── */
 
 /*

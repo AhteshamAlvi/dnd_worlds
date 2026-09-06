@@ -52,9 +52,14 @@ import type {
 } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 import { COMBAT_ROUNDS_PER_HOUR } from "../../../time/duration";
+import type { GameTimestamp } from "../../../time/types";
 
+import {
+  deliberateAccessError,
+  hasDeliberateAuraAccess,
+} from "./access";
 import { deriveAuraControl } from "./control";
-import type { AuraControl } from "./types";
+import type { AuraControl, ResolvedAuraAccess } from "./types";
 
 
 /** The unit a Base Upkeep Rate is quoted in. */
@@ -78,6 +83,61 @@ export interface AuraUpkeepCommitment {
   readonly baseRate: number;
 
   readonly period: AuraUpkeepPeriod;
+
+  /*
+   * Which effects survive when the reserve cannot carry all of them.
+   *
+   * Higher stays up longer. Defaults to zero, and equal priorities are broken
+   * by commitment id rather than by the order the caller happened to build the
+   * array in — a character running three effects must not lose a different one
+   * depending on how the list was assembled.
+   */
+  readonly priority?: number;
+
+  /*
+   * When a timed effect starts and stops, as absolute world time.
+   *
+   * Both optional: an effect with neither is simply running for the whole
+   * interval. Expiry is not a shutdown — it is the effect ending as intended,
+   * and the two are reported differently because a player needs to know which
+   * happened.
+   */
+  readonly startsAt?: GameTimestamp;
+  readonly endsAt?: GameTimestamp;
+}
+
+
+/**
+ * The order commitments are shed in, worst first.
+ *
+ * Ascending priority, then descending id, so that popping from the end of the
+ * array always removes the one that should go next. Sorted rather than
+ * filtered in place because the input order carries no meaning and must not
+ * be allowed to acquire any.
+ */
+export function auraUpkeepSheddingOrder(
+  commitments: readonly AuraUpkeepCommitment[],
+): readonly AuraUpkeepCommitment[] {
+  return [...commitments].sort((left, right) => {
+    const byPriority = (left.priority ?? 0) - (right.priority ?? 0);
+
+    if (byPriority !== 0) return byPriority;
+
+    return left.id < right.id ? 1 : left.id > right.id ? -1 : 0;
+  });
+}
+
+
+/** Whether a commitment is running at an instant. */
+export function isUpkeepActiveAt(
+  commitment: AuraUpkeepCommitment,
+  at: GameTimestamp,
+): boolean {
+  if (commitment.startsAt !== undefined && at < commitment.startsAt) {
+    return false;
+  }
+
+  return commitment.endsAt === undefined || at < commitment.endsAt;
 }
 
 
@@ -102,21 +162,45 @@ export interface AuraUpkeepCharge {
 
 
 /*
- * A maintained effect that ran out of Aura.
+ * Why a maintained effect stopped.
+ *
+ *   insufficient-aura  the reserve could no longer carry it
+ *   access-lost        the character can no longer project deliberately at
+ *                      all — Zetsu closing over a running effect is the case
+ *
+ * Expiry is deliberately absent: an effect reaching its own endsAt ended as
+ * intended, and calling that a shutdown would tell a player something failed.
+ */
+export const AURA_UPKEEP_SHUTDOWN_REASONS = [
+  "insufficient-aura",
+  "access-lost",
+] as const;
+
+export type AuraUpkeepShutdownReason =
+  typeof AURA_UPKEEP_SHUTDOWN_REASONS[number];
+
+/*
+ * A maintained effect that stopped mid-interval.
  *
  * A RESULT, not an error. The character did not do anything wrong; they ran
  * out, and the effect ended. Whoever owns the effect reads this and stops
  * applying it.
+ *
+ * `at` is the EXACT moment it stopped, not the end of the interval it stopped
+ * inside. An effect that failed ninety minutes into a two-hour advance was up
+ * for those ninety minutes and did whatever it does for them, and a caller
+ * that only knew "sometime in the last two hours" could not say so.
  */
 export interface AuraUpkeepShutdown {
   readonly id: string;
   readonly source: string;
-  readonly reason: "insufficient-aura";
+  readonly reason: AuraUpkeepShutdownReason;
+  readonly at: GameTimestamp;
 
-  /** What the interval would have cost. */
-  readonly requiredAura: number;
+  /** The per-hour rate it was running at when it stopped. */
+  readonly ratePerHour: number;
 
-  /** What was left when it was asked for. */
+  /** What was left when it could no longer be carried. */
   readonly availableAura: number;
 }
 
@@ -206,6 +290,7 @@ export function deriveAuraUpkeep(
   const traceNode = createTraceNode({
     id: "aura.upkeep.derive",
     label: "Derive Aura upkeep",
+    decisionId: "time.upkeep.exact-shutdown",
     formula: "cost = baseRatePerHour * controlMultiplier * hours",
     inputs: {
       commitments: { value: commitments.length },
@@ -296,7 +381,40 @@ export function payAuraUpkeep(
   dex: number,
   commitments: readonly AuraUpkeepCommitment[],
   hours: number,
+
+  /*
+   * The character's resolved access, when the caller has it.
+   *
+   * Optional only because this function is also used to price upkeep in
+   * isolation. When supplied it is enforced: maintaining an Aura effect is
+   * deliberate expenditure, so an unawakened or suppressed character cannot do
+   * it, however much Aura they are holding.
+   */
+  access?: Pick<
+    ResolvedAuraAccess,
+    "state" | "source" | "deliberateInternalAccess" | "deliberateExternalAccess"
+  >,
 ): EngineResult<AuraUpkeepPayment> {
+  if (
+    access !== undefined &&
+    commitments.length > 0 &&
+    !hasDeliberateAuraAccess(access)
+  ) {
+    const traceNode = createTraceNode({
+      id: "aura.upkeep.pay",
+      label: "Pay Aura upkeep",
+      inputs: { accessState: { value: access.state } },
+      output: false,
+    });
+
+    return {
+      success: false,
+      trace: { root: traceNode },
+      warnings: [],
+      errors: [deliberateAccessError(access)],
+    };
+  }
+
   const control = deriveAuraControl(dex);
 
   if (!control.success) return control;

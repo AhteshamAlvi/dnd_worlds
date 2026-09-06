@@ -1075,11 +1075,14 @@ export {
 /* ── Time ────────────────────────────────────────────────────────────────── */
 
 /*
- * The global game clock's core vocabulary — exported for the first time
- * here because Recovery is the first mechanic that needs a caller to
- * construct a GameDuration. Calendar conversion and the mutable clock itself
- * (time/calendar.ts, time/clock.ts) stay unexported until a host mechanic
- * actually needs them.
+ * GameClockState.currentTime is the SOLE authoritative world time, in integer
+ * game milliseconds from the calendar epoch. Everything time-dependent reads
+ * it; nothing keeps its own.
+ *
+ * A host may refresh a display on whatever interval it likes. Gameplay must
+ * never depend on that interval — the whole point of the model below is that
+ * one eight-hour advance, eight one-hour advances and 28,800 one-second
+ * advances reach identical state.
  */
 
 export type {
@@ -1091,7 +1094,41 @@ export type {
   GameTimestamp,
 } from "./time/types";
 
+export type { GameClockTransition } from "./time/clock";
+
 export {
+  advanceFromRealTime,
+  advanceGameClock,
+  advanceGameClockFromRealTime,
+  advanceGameTime,
+  createGameClock,
+  enterCombat,
+  isCombatTimeActive,
+  isGameClockPaused,
+  isGameClockRunning,
+  leaveCombat,
+  pauseGameClock,
+  resumeGameClock,
+  setTimeScale,
+} from "./time/clock";
+
+/*
+ * The authoritative units. Combat rounds are TWO seconds, and every mechanic
+ * that converts between units — Aura upkeep quoted per Round, the calendar,
+ * anything timed that follows — reads these rather than carrying its own.
+ */
+export {
+  COMBAT_ROUNDS_PER_HOUR,
+  GAME_HOURS_PER_DAY,
+  GAME_MILLISECONDS_PER_COMBAT_ROUND,
+  GAME_MILLISECONDS_PER_DAY,
+  GAME_MILLISECONDS_PER_HOUR,
+  GAME_MILLISECONDS_PER_MINUTE,
+  GAME_MILLISECONDS_PER_SECOND,
+  GAME_MINUTES_PER_HOUR,
+  GAME_SECONDS_PER_HOUR,
+  GAME_SECONDS_PER_MINUTE,
+  SECONDS_PER_COMBAT_ROUND,
   milliseconds,
   seconds,
   minutes,
@@ -1109,6 +1146,45 @@ export {
   toHours,
   toDays,
 } from "./time/duration";
+
+/*
+ * Elapsed intervals — the unit every time-dependent mechanic consumes.
+ *
+ * A span carries its own elapsed duration alongside its endpoints, and the
+ * redundancy is checked, so an interval that disagrees with itself is refused
+ * here rather than charging a character for the wrong number of hours three
+ * domains away.
+ */
+export type { GameTimeInterval } from "./time/interval";
+
+export {
+  findGameTimeIntervalIssues,
+  gameTimeInterval,
+  gameTimeIntervalOf,
+  hoursToDuration,
+  intervalContains,
+  intervalHours,
+  validateGameTimeInterval,
+} from "./time/interval";
+
+
+/* ── Character time ─────────────────────────────────────────────────────── */
+
+/*
+ * Where an authoritative interval meets a character.
+ *
+ * One coordinator hands the SAME interval to Aura, to wakefulness and to
+ * Fatigue, because the same hours decide all three and three callers each
+ * advancing one domain would be three chances to disagree. Neither Aura nor
+ * Body may read or advance the clock.
+ *
+ * CharacterTemporalState.resolvedAt records when a character's stored state
+ * was last committed, which is what makes "this interval has already been
+ * applied" a decidable question rather than a guess — and what lets an NPC
+ * nobody has looked at for three in-world days be projected on demand instead
+ * of ticked continuously.
+ */
+export * from "./character/time";
 
 /* ── Character: equipment ───────────────────────────────────────────────── */
 

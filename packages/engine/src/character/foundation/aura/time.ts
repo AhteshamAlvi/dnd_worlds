@@ -1,42 +1,69 @@
 /*
- * Advancing time — the one place every Aura contribution is added up.
+ * Advancing time — continuous rates, resolved at their boundaries.
  *
  *   A' = clamp(A + recovery - physical - deliberate - upkeep - leakage
  *              - forcedDrain, 0, A_max)
  *
- * Everything else in the domain resolves ONE of those terms. This composes
- * them, and it is the only function that does, because they interact: an hour
- * of sleep recovers Aura while wakefulness falls, an hour uncontained bleeds
- * while nothing recovers, and an hour of strenuous work with Ren up pays
- * physical cost and upkeep out of the same reserve. Resolving them separately
- * and applying them one after another would let the second read a pool the
- * first had already clamped.
+ * That equation is still the model. What changed is that it is no longer
+ * applied ONCE across whatever span a caller happened to submit. It is applied
+ * across each SEGMENT of the interval during which the rates are constant, and
+ * the segment ends are computed rather than guessed.
  *
  *
- * WHY WAKEFULNESS AND FATIGUE COME BACK FROM AN AURA FUNCTION
- * -----------------------------------------------------------
+ * WHY SUBDIVISION HAD TO STOP MATTERING
+ * -------------------------------------
  *
- * Because they cannot be advanced independently of it. The same interval
- * decides how much Aura came back AND how much sleep debt was paid, from one
- * answer to "what was the character doing" — and Fatigue is a function of
- * both. Three functions each taking the same hours and the same mode would be
- * three chances to disagree about what happened.
+ * The previous implementation summed every contribution over the whole span
+ * and clamped once. That made the answer depend on how the caller chopped up
+ * the day, which is not a property a rules engine may have:
  *
- * Body still OWNS them. Every wakefulness and Fatigue rule lives in
- * body/endurance, which takes Maximum Aura and the depletion fraction as plain
- * numbers and imports nothing from here. This calls into that folder; it does
- * not reimplement it.
+ *   A character 100 Aura short of full, recovering 5,000/hour, running an
+ *   upkeep of 100/hour, advanced two hours. Whole-span: recovery capped at the
+ *   100 missing, upkeep 200, net -100. Advanced as two one-hour steps: full
+ *   after the first, then upkeep offset by generation, net 0.
+ *
+ * Two defensible-looking answers from the same two hours. Now there is one:
+ *
+ *   advance(T) === advance(T/N) applied N times
+ *
+ * up to floating point, for every case. It holds because the solver splits at
+ * exactly the instants the previous version smeared over — the moment the pool
+ * fills, the moment it empties, the moment an upkeep can no longer be carried.
  *
  *
- * WHAT HOURS PASSING CANNOT DO
- * ----------------------------
+ * THE SEGMENT LOOP
+ * ----------------
  *
- * It cannot be refused. Every operation in transitions.ts can fail and leave
- * the character untouched, because each is a request. Time is not a request:
- * an unaffordable upkeep does not mean the hour failed to happen, it means the
- * effect DROPPED, and a reserve emptied by leakage does not mean the night was
- * invalid, it means the character COLLAPSED. Both come back as typed outcomes
- * on a successful result. Only malformed input fails.
+ *   1  apply everything scheduled at this instant
+ *   2  resolve which upkeep is running, and shed what cannot be carried
+ *   3  compute the rates that hold from here
+ *   4  find the nearest boundary, mathematically
+ *   5  integrate to it
+ *   6  emit the event, and go again
+ *
+ * Boundaries are calculated, never searched. The pool reaching zero at
+ * 1.4732 hours is solved for, not stepped towards — simulating seconds would
+ * be slower AND less accurate, and would reintroduce exactly the dependence on
+ * step size this exists to remove.
+ *
+ *
+ * RECOVERY IS UNCAPPED UNTIL THE CLAMP
+ * ------------------------------------
+ *
+ * Capping recovery at "the Aura currently missing" before combining it with
+ * expenditure is what produced the contradiction above. Generation and drain
+ * are now netted at full strength and the POOL is clamped, which is what makes
+ * a character at full Aura able to pay an upkeep out of incoming regeneration
+ * indefinitely while the surplus is discarded. Both figures are reported:
+ * potential recovery, and how much of it was actually used.
+ *
+ *
+ * WHAT THIS FILE STILL DOES NOT DECIDE
+ * ------------------------------------
+ *
+ * It does not read or advance the clock. It is HANDED an interval by the
+ * character-time coordinator, which is also what hands the same interval to
+ * wakefulness, so no two domains can disagree about how long the night was.
  */
 
 import type { EngineError } from "../../../infrastructure/diagnostics";
@@ -46,8 +73,20 @@ import type {
 } from "../../../infrastructure/result";
 import { createTraceNode, type TraceNode } from "../../../infrastructure/trace";
 import {
-  advanceWakefulness,
+  hoursToDuration,
+  intervalHours,
+  validateGameTimeInterval,
+  type GameTimeInterval,
+} from "../../../time/interval";
+import { GAME_MILLISECONDS_PER_HOUR } from "../../../time/duration";
+import type { GameTimestamp } from "../../../time/types";
+import {
   deriveFatigue,
+  deriveStaminaExpenditureMultiplier,
+  findActivityCombinationIssues,
+  sustainedActivityLoadPerHour,
+  WAKING_HOURS_CLEARED_PER_HOUR_SLEPT,
+  type ActivityExertionOverride,
   type CharacterWakefulnessState,
   type PhysicalExertionLoad,
   type ResolvedFatigue,
@@ -56,18 +95,23 @@ import {
 } from "../body/endurance";
 import { resolveStamina } from "../attributes/derived/resolution";
 
+import { hasDeliberateAuraAccess } from "./access";
 import { resolveAuraBudget, type AuraTransitionContext } from "./budget";
 import { deriveAuraControl } from "./control";
-import {
-  deriveSustainedActivityAuraCost,
-  deriveSustainedPhysicalAuraCost,
-} from "./expenditure";
-import { resolveUncontainedLeakage, uncontainedCollapse } from "./leakage";
+import { PHYSICAL_AURA_COST_COEFFICIENT } from "./expenditure";
+import { deriveUncontainedLeakage, uncontainedCollapse } from "./leakage";
 import type { AuraCollapse } from "./leakage";
-import { recoverAura, resolveAuraRecoveryMultiplier } from "./recovery";
+import {
+  deriveAuraRegeneration,
+  resolveAuraRecoveryMultiplier,
+} from "./recovery";
 import type { CharacterAuraState } from "./state";
 import { settleAuraTransition, type AuraStateTransition } from "./transitions";
-import { deriveAuraUpkeep } from "./upkeep";
+import {
+  auraUpkeepSheddingOrder,
+  isUpkeepActiveAt,
+  upkeepRatePerHour,
+} from "./upkeep";
 import type {
   AuraUpkeepCharge,
   AuraUpkeepCommitment,
@@ -81,19 +125,40 @@ import type {
 
 
 /*
- * What the character spent the interval doing.
+ * How close two instants have to be before they are the same instant.
  *
- * `mode` is the one fact that decides three things at once — how much Aura
- * comes back, whether sleep debt is paid, and whether wakefulness accrues —
- * which is exactly why it is one field rather than three.
+ * A boundary solved in hours and converted to milliseconds lands a fraction of
+ * a millisecond away from the scheduled boundary it coincides with, and
+ * without a tolerance the loop would take a zero-width segment and go round
+ * again. A microsecond is far below anything the model represents and far
+ * above the error the arithmetic produces.
+ */
+const BOUNDARY_EPSILON_MS = 1e-3;
+
+/*
+ * How many segments one interval may be cut into before the engine stops.
  *
- * `activity` is separate because a character can rest lightly, sleep, or spend
- * an ordinary waking day climbing a mountain. Mode is the physiological state;
- * activity is the physical work done inside it.
+ * Reaching it means boundaries are being generated without the state
+ * advancing, which is a bug in this file rather than a busy day. Every real
+ * case is bounded by the number of scheduled events plus a handful of rate
+ * boundaries; a thousand is enormous, and hanging the workbench is worse than
+ * failing loudly.
+ */
+const MAX_SEGMENTS = 1_000;
+
+
+/* ── Input ──────────────────────────────────────────────────────────────── */
+
+/*
+ * What the character is doing, and what that costs and restores.
  *
- * ORDINARY WAKING AND ORDINARY ACTIVITY ARE BOTH FREE. Walking, talking and
- * eating cost nothing, and only wakefulness accumulates. A model in which
- * merely existing drains Aura makes every character a clock running down.
+ * `mode` decides three things at once — recovery multiplier, whether sleep
+ * debt is paid, and whether wakefulness accrues — which is why it is one field
+ * rather than three that could disagree.
+ *
+ * `exertionOverride` is the escape hatch for a mode and an activity that
+ * ordinarily contradict each other. Sprinting in your sleep is refused unless
+ * something names itself and says why.
  */
 export interface AuraTimeActivity {
   readonly mode: WakefulnessMode;
@@ -104,6 +169,46 @@ export interface AuraTimeActivity {
 
   /** Supplied by whatever is suppressing the character's Aura. */
   readonly suppression?: AuraSuppression;
+
+  readonly exertionOverride?: ActivityExertionOverride;
+}
+
+/** The character starts doing something else, at an exact moment. */
+export interface AuraActivityChange {
+  readonly at: GameTimestamp;
+  readonly activity: AuraTimeActivity;
+}
+
+
+/*
+ * Something that happens AT an instant rather than over a span.
+ *
+ * A punch, a technique activation, a hostile drain, a healing effect. These
+ * replace the accumulated `discretePhysical` / `discreteDeliberate` /
+ * `forcedDrain` totals the previous shape took, which could only ever be
+ * smeared across the whole interval — so a strike landing in the last minute
+ * of an eight-hour advance was charged as though it had been happening all
+ * night, and could empty a pool that recovery would have refilled by then.
+ *
+ * `amount` is ALREADY RESOLVED. Physical amounts have had Stamina applied and
+ * deliberate ones Control, by whoever produced the event, because those
+ * multipliers belong to the mechanic that knows what the action was.
+ */
+export const SCHEDULED_AURA_EVENT_KINDS = [
+  "physical",
+  "deliberate",
+  "forced-drain",
+  "recovery",
+] as const;
+
+export type ScheduledAuraEventKind =
+  typeof SCHEDULED_AURA_EVENT_KINDS[number];
+
+export interface ScheduledAuraEvent {
+  readonly at: GameTimestamp;
+  readonly kind: ScheduledAuraEventKind;
+  readonly source: string;
+  readonly amount: number;
 }
 
 
@@ -112,35 +217,95 @@ export interface AdvanceAuraTimeInput {
   readonly wakefulness: CharacterWakefulnessState;
   readonly context: AuraTransitionContext;
 
-  readonly hours: number;
+  /** The authoritative span. Supplied by the clock, never invented here. */
+  readonly interval: GameTimeInterval;
+
+  /** What the character is doing at the interval's first instant. */
   readonly activity: AuraTimeActivity;
 
-  /** Effects the character is holding open across the interval. */
+  /** Changes of activity part-way through, each at its own instant. */
+  readonly activityChanges?: readonly AuraActivityChange[];
+
+  /** Effects the character is holding open, with optional start and end. */
   readonly upkeep?: readonly AuraUpkeepCommitment[];
 
-  /*
-   * Discrete costs already resolved for this interval by somebody else.
-   *
-   * Combat resolves individual blows; this composes them with everything time
-   * does. Supplied rather than derived so the same exertion is never charged
-   * twice — an hour described as "strenuous" already includes the swinging,
-   * and a caller charging blows within it should describe the hour as quieter.
-   */
-  readonly discretePhysical?: number;
-  readonly discreteDeliberate?: number;
-
-  /** Anything taken from the character by something else. Bypasses Control. */
-  readonly forcedDrain?: number;
+  /** Actions resolved at their own moments inside the interval. */
+  readonly instantaneous?: readonly ScheduledAuraEvent[];
 }
 
 
+/* ── Result ─────────────────────────────────────────────────────────────── */
+
+export const AURA_TIMELINE_EVENT_KINDS = [
+  "aura-full",
+  "aura-empty",
+  "upkeep-started",
+  "upkeep-expired",
+  "upkeep-shutdown",
+  "collapse",
+  "activity-changed",
+  "instantaneous",
+  "interval-end",
+] as const;
+
+export type AuraTimelineEventKind =
+  typeof AURA_TIMELINE_EVENT_KINDS[number];
+
 /*
- * Everything an interval did, in one result.
+ * One timestamped thing that happened.
  *
- * Widens AuraStateTransition rather than replacing it, so a caller that only
- * cares about the pool reads the same fields it reads everywhere else.
+ * The reason the result is more than a pair of numbers. "You ended the night
+ * on 0 Aura" is not a report; "your Ren dropped at 02:14 and you bottomed out
+ * at 03:41" is, and the second cannot be reconstructed from the first.
  */
+export interface AuraTimelineEvent {
+  readonly at: GameTimestamp;
+  readonly kind: AuraTimelineEventKind;
+
+  /** Which commitment, activity or action. Empty for pool boundaries. */
+  readonly detail: string;
+
+  /** Current Aura at that instant, after the event applied. */
+  readonly current: number;
+}
+
+/*
+ * Recovery, split three ways.
+ *
+ * `potential` is what the character's regeneration was worth over the
+ * interval; `used` is how much of it the pool actually absorbed; `discarded`
+ * is the surplus that arrived while already full. Keeping the three apart is
+ * what lets a sheet say "you are regenerating 5,000 an hour and losing all but
+ * 100 of it", which is a different situation from regenerating nothing.
+ */
+export interface AuraRecoverySummary {
+  readonly potential: number;
+  readonly used: number;
+  readonly discarded: number;
+}
+
+/** One stretch of the interval over which every rate was constant. */
+export interface AuraTimeSegment {
+  readonly startedAt: GameTimestamp;
+  readonly endedAt: GameTimestamp;
+  readonly hours: number;
+
+  readonly startingAura: number;
+  readonly endingAura: number;
+
+  readonly recoveryRatePerHour: number;
+  readonly physicalRatePerHour: number;
+  readonly upkeepRatePerHour: number;
+  readonly leakageRatePerHour: number;
+  readonly netRatePerHour: number;
+
+  readonly mode: WakefulnessMode;
+  readonly activeUpkeep: readonly string[];
+}
+
+
 export interface AuraTimeTransition extends AuraStateTransition {
+  readonly interval: GameTimeInterval;
   readonly elapsedHours: number;
 
   readonly previousWakefulness: CharacterWakefulnessState;
@@ -149,67 +314,86 @@ export interface AuraTimeTransition extends AuraStateTransition {
   readonly previousFatigue: ResolvedFatigue;
   readonly fatigue: ResolvedFatigue;
 
-  /** What each maintained effect was charged. */
+  readonly recovery: AuraRecoverySummary;
+
+  /** What each maintained effect was actually charged, across the interval. */
   readonly upkeepCharges: readonly AuraUpkeepCharge[];
 
-  /** Effects that could not be paid for and ended. */
+  /** Effects that stopped, each with the exact moment and the reason. */
   readonly upkeepShutdowns: readonly AuraUpkeepShutdown[];
 
   /** Present when an uncontained reserve reached zero. */
   readonly collapse: AuraCollapse | null;
+
+  /*
+   * Drain the empty pool could not pay for.
+   *
+   * A character at zero Aura still exerts themselves and is still bled; the
+   * clamp means that costs nothing, and reporting the shortfall is what stops
+   * that being invisible when something later wants to make it hurt.
+   */
+  readonly unmetDrain: number;
+
+  readonly events: readonly AuraTimelineEvent[];
+  readonly segments: readonly AuraTimeSegment[];
 }
 
 
-/*
- * When a linearly-draining pool hits zero inside the interval.
- *
- * Every term is quoted for the whole span, so the honest reading is that they
- * accrue evenly across it. That is exactly true for leakage, recovery and
- * upkeep, and an approximation for discrete costs — which is the right
- * trade: the alternative is asking every caller to timestamp each blow.
- */
-function collapseHour(
-  startingAura: number,
-  netDrain: number,
-  hours: number,
-): number {
-  if (netDrain <= 0 || hours <= 0) return hours;
+/* ── Rates ──────────────────────────────────────────────────────────────── */
 
-  return Math.min(hours, Math.max(0, (startingAura / netDrain) * hours));
+interface SegmentRates {
+  readonly recovery: number;
+  readonly physical: number;
+  readonly leakage: number;
+}
+
+
+function sustainedLoadPerHour(activity: AuraTimeActivity): number {
+  if (activity.activityLoadPerHour !== undefined) {
+    return activity.activityLoadPerHour;
+  }
+
+  return sustainedActivityLoadPerHour(activity.activity ?? "ordinary-waking");
+}
+
+
+/* ── The solver ─────────────────────────────────────────────────────────── */
+
+interface RunningUpkeep {
+  readonly commitment: AuraUpkeepCommitment;
+  readonly ratePerHour: number;
 }
 
 
 /**
- * Advance a character's Aura and wakefulness across an interval.
+ * Advance a character's Aura and wakefulness across an authoritative interval.
  *
- * Order, and why:
+ * Deterministic and independent of how the caller subdivides: one eight-hour
+ * advance, eight one-hour advances and 28,800 one-second advances all reach
+ * the same state.
  *
- *   1  the budget      Maximum Aura, access and Output all gate what follows
- *   2  recovery        capped at missing Aura, from an explicit context
- *   3  physical        sustained activity plus whatever discrete costs the
- *                      caller already resolved
- *   4  upkeep          Control-scaled, charged in the order supplied, and
- *                      dropped rather than half-paid when unaffordable
- *   5  leakage         only for an uncontained character, capped at the pool
- *   6  the balance     one clamp, once, over all seven terms
- *   7  wakefulness     the same mode that decided recovery
- *   8  reconciliation  a smaller reserve can no longer support what was placed
- *   9  Fatigue         from the new wakefulness and the new depletion
+ * Hours passing cannot be REFUSED. Every operation in transitions.ts can fail
+ * and leave the character untouched, because each is a request; time is not.
+ * An unaffordable upkeep is shut down at the exact instant it became
+ * unaffordable, a reserve emptied by leakage collapses, and both come back as
+ * typed outcomes on a SUCCESS. Only malformed input fails.
  */
 export function advanceAuraTime(
   input: AdvanceAuraTimeInput,
 ): EngineResult<AuraTimeTransition> {
-  const { state, context, activity, hours } = input;
+  const { state, context, interval } = input;
 
   const root = createTraceNode({
     id: "aura.time.advance",
     label: "Advance Aura and wakefulness",
     formula:
-      "next = clamp(current + recovery - physical - deliberate - upkeep - leakage - forcedDrain, 0, maximum)",
+      "per segment: next = clamp(current + (recovery - physical - upkeep - leakage) * dt, 0, maximum)",
+
+    decisionId: "time.continuous-resolution.boundaries",
     inputs: {
-      hours: { value: Number.isFinite(hours) ? hours : String(hours) },
-      mode: { value: String(activity.mode) },
-      activity: { value: activity.activity ?? "custom" },
+      startedAt: { value: interval.startedAt },
+      endedAt: { value: interval.endedAt },
+      mode: { value: String(input.activity.mode) },
       currentAura: {
         value: Number.isFinite(state.current)
           ? state.current
@@ -236,34 +420,38 @@ export function advanceAuraTime(
     };
   };
 
-  if (!Number.isFinite(hours) || hours < 0) {
+  /* ── Validation ───────────────────────────────────────────────────── */
+
+  const validInterval = validateGameTimeInterval(interval);
+
+  root.children.push(validInterval.trace.root);
+
+  if (!validInterval.success) return fail(validInterval.errors);
+
+  for (const candidate of [
+    input.activity,
+    ...(input.activityChanges ?? []).map((change) => change.activity),
+  ]) {
+    const load = candidate.activityLoadPerHour;
+
+    if (load === undefined || (Number.isFinite(load) && load >= 0)) continue;
+
     return fail([{
-      code: "aura.time.duration.invalid",
-      message: "Elapsed time must be a finite non-negative number of hours.",
+      code: "aura.exertion.load.invalid",
+      message: "Sustained activity load must be a finite non-negative number.",
       audience: "developer",
       required: "finite number >= 0",
-      actual: Number.isFinite(hours) ? hours : String(hours),
+      actual: Number.isFinite(load) ? load : String(load),
     }]);
   }
 
-  for (const [name, value] of [
-    ["discretePhysical", input.discretePhysical],
-    ["discreteDeliberate", input.discreteDeliberate],
-    ["forcedDrain", input.forcedDrain],
-  ] as const) {
-    if (value === undefined) continue;
-    if (Number.isFinite(value) && value >= 0) continue;
+  const activityIssues = [
+    input.activity,
+    ...(input.activityChanges ?? []).map((change) => change.activity),
+  ].flatMap((activity) => findActivityCombinationIssues(activity));
 
-    return fail([{
-      code: "aura.time.contribution.invalid",
-      message: `${name} must be a finite non-negative amount of Aura.`,
-      audience: "developer",
-      required: "finite number >= 0",
-      actual: Number.isFinite(value) ? value : String(value),
-    }]);
-  }
+  if (activityIssues.length > 0) return fail(activityIssues);
 
-  /* 1. */
   const budget = resolveAuraBudget(state.current, context);
 
   root.children.push(budget.trace.root);
@@ -272,13 +460,43 @@ export function advanceAuraTime(
 
   const { pool, access } = budget.payload;
 
+  const scheduled = [...(input.instantaneous ?? [])].sort(
+    (left, right) => left.at - right.at,
+  );
+
+  for (const event of scheduled) {
+    if (Number.isFinite(event.at) && Number.isFinite(event.amount) &&
+      event.amount >= 0) {
+      continue;
+    }
+
+    return fail([{
+      code: "aura.time.event.invalid",
+      message:
+        "A scheduled Aura event needs a finite timestamp and a finite non-negative amount.",
+      audience: "developer",
+      required: "finite timestamp, finite amount >= 0",
+      actual: `${String(event.at)} / ${String(event.amount)}`,
+    }]);
+  }
+
+  const control = deriveAuraControl(context.attributes.dex);
+
+  root.children.push(control.trace.root);
+
+  if (!control.success) return fail(control.errors);
+
   /*
    * Suppression on an unawakened character is a caller bug for the same reason
    * an access override is: they have no principles to be suppressing anything
-   * with. Voluntary or forced, something has to have closed nodes that are
-   * only half-open in the first place.
+   * with.
    */
-  if (activity.suppression !== undefined && !access.awakened) {
+  for (const activity of [
+    input.activity,
+    ...(input.activityChanges ?? []).map((change) => change.activity),
+  ]) {
+    if (activity.suppression === undefined || access.awakened) continue;
+
     return fail([{
       code: "aura.time.suppression.unawakened",
       message: "An unawakened character has no Aura suppression to resolve.",
@@ -288,176 +506,452 @@ export function advanceAuraTime(
     }]);
   }
 
-  /* 2. */
-  const recoveryContext = {
-    mode: activity.mode,
-    ...(activity.suppression === undefined
-      ? {}
-      : { suppression: activity.suppression }),
-  };
+  /* ── Fixed figures ────────────────────────────────────────────────── */
 
-  const recovered = recoverAura(pool, context.attributes, recoveryContext, hours);
-
-  root.children.push(recovered.trace.root);
-
-  if (!recovered.success) return fail(recovered.errors);
-
-  const recoveryBySource: readonly AuraRecoveryContribution[] =
-    recovered.payload.contribution.amount > 0 ||
-      recovered.payload.contribution.multiplier > 0
-      ? [recovered.payload.contribution]
-      : [];
-
-  /* 3. */
+  const maximumAura = pool.maximum;
   const stamina = resolveStamina(context.attributes);
+  const staminaMultiplier = deriveStaminaExpenditureMultiplier(stamina);
+  const regenerationPerHour = deriveAuraRegeneration(context.attributes);
 
-  /*
-   * A raw per-hour load overrides the named level, because Combat will
-   * eventually supply a continuous ratio of force used to force available and
-   * the named levels are anchors on that scale rather than the whole of it.
-   */
-  const rawLoad = activity.activityLoadPerHour;
-
-  if (rawLoad !== undefined && (!Number.isFinite(rawLoad) || rawLoad < 0)) {
-    return fail([{
-      code: "aura.exertion.load.invalid",
-      message: "Sustained activity load must be a finite non-negative number.",
-      audience: "developer",
-      required: "finite number >= 0",
-      actual: Number.isFinite(rawLoad) ? rawLoad : String(rawLoad),
-    }]);
-  }
-
-  const sustained = (rawLoad === undefined
-    ? deriveSustainedActivityAuraCost(
-      pool.maximum,
-      activity.activity ?? "ordinary-waking",
-      stamina,
-      hours,
-    )
-    : deriveSustainedPhysicalAuraCost(pool.maximum, rawLoad, stamina, hours)
-  ).cost;
-
-  const physical = sustained + (input.discretePhysical ?? 0);
-  const deliberate = input.discreteDeliberate ?? 0;
-
-  /* 4. */
-  const control = deriveAuraControl(context.attributes.dex);
-
-  root.children.push(control.trace.root);
-
-  if (!control.success) return fail(control.errors);
+  const leakageRatePerHour = access.uncontained
+    ? deriveUncontainedLeakage(maximumAura, pool.current).ratePerHour
+    : 0;
 
   const commitments = input.upkeep ?? [];
 
-  const derivedUpkeep = deriveAuraUpkeep(commitments, control.payload, hours);
-
-  root.children.push(derivedUpkeep.trace.root);
-
-  if (!derivedUpkeep.success) return fail(derivedUpkeep.errors);
-
   /*
-   * Charged in the order supplied, against what is left after recovery and
-   * everything already spent. An effect that cannot be covered in full is
-   * DROPPED and charged nothing: half-paying an upkeep would leave a Ren
-   * running on Aura the character did not have.
+   * Ordered once, worst-to-shed first, so that shedding is a pop rather than a
+   * search and cannot depend on the order the caller assembled the array in.
    */
-  let upkeepBudget = Math.max(
-    0,
-    pool.current + recovered.payload.contribution.amount -
-    physical - deliberate - (input.forcedDrain ?? 0),
-  );
+  const sheddingOrder = auraUpkeepSheddingOrder(commitments);
 
-  const upkeepCharges: AuraUpkeepCharge[] = [];
-  const upkeepShutdowns: AuraUpkeepShutdown[] = [];
+  /* ── Accumulators ─────────────────────────────────────────────────── */
+
+  let current = pool.current;
+  let hoursAwake = Math.max(0, input.wakefulness.hoursAwake);
+  let activity = input.activity;
+
+  let potentialRecovery = 0;
+  let discardedRecovery = 0;
+  let physicalTotal = 0;
+  let deliberateTotal = 0;
   let upkeepTotal = 0;
+  let leakageTotal = 0;
+  let forcedDrainTotal = 0;
+  let unmetDrain = 0;
 
-  for (const charge of derivedUpkeep.payload) {
-    if (charge.cost > upkeepBudget) {
-      upkeepShutdowns.push({
-        id: charge.id,
-        source: charge.source,
-        reason: "insufficient-aura",
-        requiredAura: charge.cost,
-        availableAura: upkeepBudget,
-      });
+  let collapse: AuraCollapse | null = null;
+  let leaking = leakageRatePerHour > 0;
 
-      continue;
-    }
+  const chargedById = new Map<string, number>();
+  const shutdownIds = new Set<string>();
+  const startedIds = new Set<string>();
+  const shutdowns: AuraUpkeepShutdown[] = [];
+  const events: AuraTimelineEvent[] = [];
+  const segments: AuraTimeSegment[] = [];
+  const recoveryBySource: AuraRecoveryContribution[] = [];
 
-    upkeepCharges.push(charge);
-    upkeepBudget -= charge.cost;
-    upkeepTotal += charge.cost;
-  }
+  const emit = (
+    at: GameTimestamp,
+    kind: AuraTimelineEventKind,
+    detail: string,
+  ): void => {
+    events.push({ at, kind, detail, current });
+  };
 
-  /* 5. */
-  const leaked = access.uncontained
-    ? resolveUncontainedLeakage(pool.maximum, pool.current, hours)
-    : null;
+  /* The upkeep running at an instant, minus anything already shut down. */
+  const runningAt = (at: GameTimestamp): readonly RunningUpkeep[] =>
+    sheddingOrder
+      .filter((commitment) =>
+        !shutdownIds.has(commitment.id) && isUpkeepActiveAt(commitment, at)
+      )
+      .map((commitment) => ({
+        commitment,
+        ratePerHour:
+          upkeepRatePerHour(commitment.baseRate, commitment.period) *
+          control.payload.multiplier,
+      }));
 
-  if (leaked !== null) {
-    root.children.push(leaked.trace.root);
+  const ratesFor = (at: GameTimestamp): SegmentRates => {
+    const resolvedRecovery = resolveAuraRecoveryMultiplier({
+      mode: activity.mode,
+      ...(activity.suppression === undefined
+        ? {}
+        : { suppression: activity.suppression }),
+    });
 
-    if (!leaked.success) return fail(leaked.errors);
-  }
+    return {
+      /*
+       * UNCAPPED. Capping against missing Aura before netting is what made the
+       * old answer depend on subdivision; the clamp below is what keeps the
+       * pool honest.
+       */
+      recovery: regenerationPerHour * resolvedRecovery.multiplier,
 
-  const leakage = leaked?.success === true
-    ? leaked.payload.uncappedAmount
-    : 0;
+      physical:
+        maximumAura *
+        PHYSICAL_AURA_COST_COEFFICIENT *
+        sustainedLoadPerHour(activity) *
+        staminaMultiplier,
 
-  /* 6. */
-  const forcedDrain = input.forcedDrain ?? 0;
-
-  const recovery = recovered.payload.contribution.amount;
-
-  const net =
-    recovery - physical - deliberate - upkeepTotal - leakage - forcedDrain;
-
-  const current = Math.min(pool.maximum, Math.max(0, pool.current + net));
-
-  const balance: AuraBalance = {
-    recovery,
-    recoveryBySource,
-    physical,
-    deliberate,
-    upkeep: upkeepTotal,
-    leakage,
-    forcedDrain,
-    net,
+      leakage: leaking && !collapse ? leakageRatePerHour : 0,
+    };
   };
 
   /*
-   * Collapse is specifically an UNCONTAINED death spiral, not any arrival at
-   * zero. A character who spent themselves to nothing has made a choice and
-   * is merely empty; one whose open nodes bled them out while they slept has
-   * had the decision made for them, and that is what forces Zetsu.
+   * Deliberate access is a per-instant fact, because suppression can begin
+   * mid-interval. A Zetsu closing over a running Ren does not refuse the hour;
+   * it drops the Ren at the moment it closes.
    */
-  const collapse: AuraCollapse | null =
-    leakage > 0 && current === 0
-      ? uncontainedCollapse(
-        collapseHour(
-          pool.current,
-          physical + deliberate + upkeepTotal + leakage + forcedDrain - recovery,
-          hours,
-        ),
-      )
-      : null;
+  const deliberatePermittedNow = (): boolean =>
+    hasDeliberateAuraAccess(access) && activity.suppression === undefined;
 
-  /* 7. */
-  const advanced = advanceWakefulness(input.wakefulness, activity.mode, hours);
+  const shutDown = (
+    entry: RunningUpkeep,
+    at: GameTimestamp,
+    reason: AuraUpkeepShutdown["reason"],
+  ): void => {
+    shutdownIds.add(entry.commitment.id);
+    shutdowns.push({
+      id: entry.commitment.id,
+      source: entry.commitment.source,
+      reason,
+      at,
+      ratePerHour: entry.ratePerHour,
+      availableAura: current,
+    });
+    emit(at, "upkeep-shutdown", entry.commitment.id);
+  };
 
-  root.children.push(advanced.trace.root);
+  /* ── The loop ─────────────────────────────────────────────────────── */
 
-  if (!advanced.success) return fail(advanced.errors);
+  let at = interval.startedAt;
+  let scheduledIndex = 0;
+  let activityIndex = 0;
 
-  /* 9a. Fatigue as it was, before anything is settled. */
+  const changes = [...(input.activityChanges ?? [])].sort(
+    (left, right) => left.at - right.at,
+  );
+
+  for (let segment = 0; ; segment += 1) {
+    if (segment > MAX_SEGMENTS) {
+      return fail([{
+        code: "aura.time.segments.unstable",
+        message:
+          `Resolving this interval did not settle within ${MAX_SEGMENTS} segments.`,
+        audience: "developer",
+        required: `at most ${MAX_SEGMENTS} rate changes`,
+        actual: segment,
+        resolution:
+          "A boundary is being emitted without the state advancing past it. This is an engine bug rather than a busy interval.",
+      }]);
+    }
+
+    /* 1. Everything scheduled at, or already behind, this instant. */
+    while (
+      scheduledIndex < scheduled.length &&
+      scheduled[scheduledIndex]!.at <= at + BOUNDARY_EPSILON_MS
+    ) {
+      const event = scheduled[scheduledIndex]!;
+
+      scheduledIndex += 1;
+
+      if (event.kind === "deliberate" && !deliberatePermittedNow()) {
+        return fail([{
+          code: "aura.access.deliberate.not_permitted",
+          message:
+            "A deliberate Aura expenditure was scheduled while the character cannot spend Aura deliberately.",
+          audience: "player",
+          required: "an access state permitting deliberate Aura expenditure",
+          actual: access.state,
+          resolution:
+            "Resolve the action before suppression begins, or drop the deliberate component.",
+        }]);
+      }
+
+      if (event.kind === "recovery") {
+        const applied = Math.min(event.amount, maximumAura - current);
+
+        current += applied;
+        potentialRecovery += event.amount;
+        discardedRecovery += event.amount - applied;
+        recoveryBySource.push({
+          source: "natural-regeneration",
+          context: event.source,
+          ratePerHour: 0,
+          multiplier: 1,
+          hours: 0,
+          uncappedAmount: event.amount,
+          amount: applied,
+        });
+      } else {
+        /*
+         * Reported in FULL, with whatever the empty pool could not cover in
+         * unmetDrain — the same convention the continuous rates use. Reporting
+         * only what was paid would make the balance's terms sum to the clamped
+         * change and quietly hide a character being asked for more than they
+         * had.
+         */
+        const paid = Math.min(event.amount, current);
+
+        current -= paid;
+        unmetDrain += event.amount - paid;
+
+        if (event.kind === "physical") physicalTotal += event.amount;
+        else if (event.kind === "deliberate") deliberateTotal += event.amount;
+        else forcedDrainTotal += event.amount;
+      }
+
+      emit(event.at, "instantaneous", event.source);
+    }
+
+    /* Activity changes take effect at their instant. */
+    while (
+      activityIndex < changes.length &&
+      changes[activityIndex]!.at <= at + BOUNDARY_EPSILON_MS
+    ) {
+      activity = changes[activityIndex]!.activity;
+      activityIndex += 1;
+      emit(at, "activity-changed", activity.mode);
+    }
+
+    /* Newly-started timed effects, reported once. */
+    for (const commitment of sheddingOrder) {
+      if (startedIds.has(commitment.id)) continue;
+      if (!isUpkeepActiveAt(commitment, at)) continue;
+
+      startedIds.add(commitment.id);
+
+      if (commitment.startsAt !== undefined) {
+        emit(at, "upkeep-started", commitment.id);
+      }
+    }
+
+    /*
+     * Collapse, judged before the loop can end.
+     *
+     * An uncontained reserve that hits zero exactly ON the interval boundary
+     * has still hit zero, and checking only at the top of a segment that never
+     * runs would miss the commonest case of all: the full standard character
+     * advanced exactly the 48 hours it takes to empty them.
+     *
+     * The rate test uses recovery against the two drains the character cannot
+     * choose to stop. Upkeep can only make it more negative, so leaving it out
+     * cannot turn a collapse into a non-collapse — and it lets this run before
+     * upkeep has been resolved for the segment.
+     */
+    if (collapse === null && leaking && current <= 0) {
+      const unavoidable = ratesFor(at);
+
+      if (
+        unavoidable.recovery - unavoidable.physical - unavoidable.leakage <= 0
+      ) {
+        collapse = uncontainedCollapse(at);
+        emit(at, "collapse", "uncontained-leakage-exhausted");
+        leaking = false;
+      }
+    }
+
+    if (at >= interval.endedAt - BOUNDARY_EPSILON_MS) break;
+
+    /* 2. Access, then affordability. */
+    let running = runningAt(at);
+
+    if (!deliberatePermittedNow()) {
+      for (const entry of running) shutDown(entry, at, "access-lost");
+
+      running = [];
+    }
+
+    const rates = ratesFor(at);
+
+    /*
+     * Shed what an empty pool cannot carry.
+     *
+     * Only at zero, and only upkeep: physical effort and leakage are not
+     * things the character can choose to stop, so the lowest-priority
+     * maintained effect goes first and keeps going until the continuous
+     * balance is sustainable or there is nothing left to drop.
+     */
+    if (current <= 0) {
+      let upkeepRate = running.reduce(
+        (sum, entry) => sum + entry.ratePerHour,
+        0,
+      );
+
+      while (
+        running.length > 0 &&
+        rates.recovery - rates.physical - upkeepRate - rates.leakage < 0
+      ) {
+        const dropped = running[0]!;
+
+        shutDown(dropped, at, "insufficient-aura");
+        running = running.slice(1);
+        upkeepRate -= dropped.ratePerHour;
+      }
+    }
+
+    const upkeepRate = running.reduce(
+      (sum, entry) => sum + entry.ratePerHour,
+      0,
+    );
+
+    /* 4. The nearest boundary. */
+    const boundaries: number[] = [interval.endedAt];
+
+    if (scheduledIndex < scheduled.length) {
+      boundaries.push(scheduled[scheduledIndex]!.at);
+    }
+
+    if (activityIndex < changes.length) {
+      boundaries.push(changes[activityIndex]!.at);
+    }
+
+    for (const commitment of sheddingOrder) {
+      if (shutdownIds.has(commitment.id)) continue;
+
+      if (commitment.startsAt !== undefined && commitment.startsAt > at) {
+        boundaries.push(commitment.startsAt);
+      }
+
+      if (commitment.endsAt !== undefined && commitment.endsAt > at) {
+        boundaries.push(commitment.endsAt);
+      }
+    }
+
+    const net = rates.recovery - rates.physical - upkeepRate - rates.leakage;
+
+    if (net > 0 && current < maximumAura) {
+      boundaries.push(
+        at + hoursToDuration((maximumAura - current) / net),
+      );
+    }
+
+    if (net < 0 && current > 0) {
+      boundaries.push(at + hoursToDuration(current / -net));
+    }
+
+    const endsAt = Math.min(
+      interval.endedAt,
+      ...boundaries.filter((candidate) => candidate > at + BOUNDARY_EPSILON_MS),
+    );
+
+    const hours = (endsAt - at) / GAME_MILLISECONDS_PER_HOUR;
+
+    /* 5. Integrate. */
+    const startingAura = current;
+
+    const unclamped = current + net * hours;
+
+    current = Math.min(maximumAura, Math.max(0, unclamped));
+
+    potentialRecovery += rates.recovery * hours;
+    physicalTotal += rates.physical * hours;
+    upkeepTotal += upkeepRate * hours;
+    leakageTotal += rates.leakage * hours;
+
+    discardedRecovery += Math.max(0, unclamped - maximumAura);
+    unmetDrain += Math.max(0, -unclamped);
+
+    for (const entry of running) {
+      chargedById.set(
+        entry.commitment.id,
+        (chargedById.get(entry.commitment.id) ?? 0) + entry.ratePerHour * hours,
+      );
+    }
+
+    hoursAwake = activity.mode === "sleep"
+      ? Math.max(0, hoursAwake - WAKING_HOURS_CLEARED_PER_HOUR_SLEPT * hours)
+      : hoursAwake + hours;
+
+    segments.push({
+      startedAt: at,
+      endedAt: endsAt,
+      hours,
+      startingAura,
+      endingAura: current,
+      recoveryRatePerHour: rates.recovery,
+      physicalRatePerHour: rates.physical,
+      upkeepRatePerHour: upkeepRate,
+      leakageRatePerHour: rates.leakage,
+      netRatePerHour: net,
+      mode: activity.mode,
+      activeUpkeep: running.map((entry) => entry.commitment.id),
+    });
+
+    at = endsAt;
+
+    /* 6. Expiries and pool boundaries, reported where they happened. */
+    for (const commitment of sheddingOrder) {
+      if (shutdownIds.has(commitment.id)) continue;
+      if (commitment.endsAt === undefined) continue;
+      if (Math.abs(commitment.endsAt - at) > BOUNDARY_EPSILON_MS) continue;
+
+      emit(at, "upkeep-expired", commitment.id);
+    }
+
+    if (current >= maximumAura && startingAura < maximumAura) {
+      emit(at, "aura-full", "");
+    }
+
+    if (current <= 0 && startingAura > 0) {
+      emit(at, "aura-empty", "");
+    }
+  }
+
+  emit(interval.endedAt, "interval-end", "");
+
+  /* ── Assembly ─────────────────────────────────────────────────────── */
+
+  const elapsedHours = intervalHours(interval);
+
+  const resolvedRecovery = resolveAuraRecoveryMultiplier({
+    mode: input.activity.mode,
+    ...(input.activity.suppression === undefined
+      ? {}
+      : { suppression: input.activity.suppression }),
+  });
+
+  if (potentialRecovery > 0 && recoveryBySource.length === 0) {
+    recoveryBySource.push({
+      source: "natural-regeneration",
+      context: resolvedRecovery.context,
+      ratePerHour: regenerationPerHour,
+      multiplier: resolvedRecovery.multiplier,
+      hours: elapsedHours,
+      uncappedAmount: potentialRecovery,
+      amount: potentialRecovery - discardedRecovery,
+    });
+  }
+
+  const recoveryUsed = potentialRecovery - discardedRecovery;
+
+  const balance: AuraBalance = {
+    recovery: recoveryUsed,
+    recoveryBySource,
+    physical: physicalTotal,
+    deliberate: deliberateTotal,
+    upkeep: upkeepTotal,
+    leakage: leakageTotal,
+    forcedDrain: forcedDrainTotal,
+
+    /*
+     * The arithmetic sum of the terms above, before clamping — so a reader
+     * adding up the fields gets this number. It differs from `currentChange`
+     * exactly when the pool hit zero and could not pay for everything asked of
+     * it, and `unmetDrain` is that difference.
+     */
+    net:
+      recoveryUsed - physicalTotal - deliberateTotal - upkeepTotal -
+      leakageTotal - forcedDrainTotal,
+  };
+
   const previousFatigue = deriveFatigue({
     wakefulness: input.wakefulness,
-    maximumAura: pool.maximum,
+    maximumAura,
     depletionFraction: pool.depletionFraction,
   });
 
-  /* 8. */
   const settled = settleAuraTransition(
     state,
     current,
@@ -470,32 +964,57 @@ export function advanceAuraTime(
 
   if (!settled.success) return fail(settled.errors);
 
-  /* 9b. */
+  const wakefulness: CharacterWakefulnessState = { hoursAwake };
+
   const fatigue = deriveFatigue({
-    wakefulness: advanced.payload.state,
-    maximumAura: pool.maximum,
-    depletionFraction: pool.maximum > 0
-      ? Math.min(1, Math.max(0, (pool.maximum - current) / pool.maximum))
+    wakefulness,
+    maximumAura,
+    depletionFraction: maximumAura > 0
+      ? Math.min(1, Math.max(0, (maximumAura - current) / maximumAura))
       : 0,
   });
 
+  const upkeepCharges: readonly AuraUpkeepCharge[] = commitments
+    .filter((commitment) => chargedById.has(commitment.id))
+    .map((commitment) => {
+      const baseRatePerHour = upkeepRatePerHour(
+        commitment.baseRate,
+        commitment.period,
+      );
+
+      return {
+        id: commitment.id,
+        source: commitment.source,
+        baseRate: commitment.baseRate,
+        period: commitment.period,
+        baseRatePerHour,
+        controlMultiplier: control.payload.multiplier,
+        ratePerHour: baseRatePerHour * control.payload.multiplier,
+        hours: elapsedHours,
+        cost: chargedById.get(commitment.id) ?? 0,
+      };
+    });
+
   root.output = {
-    hours,
-    mode: activity.mode,
+    startedAt: interval.startedAt,
+    endedAt: interval.endedAt,
+    segments: segments.length,
     previousCurrent: state.current,
     current,
-    recovery,
-    physical,
-    deliberate,
+    recoveryPotential: potentialRecovery,
+    recoveryUsed: potentialRecovery - discardedRecovery,
+    recoveryDiscarded: discardedRecovery,
+    physical: physicalTotal,
+    deliberate: deliberateTotal,
     upkeep: upkeepTotal,
-    leakage,
-    forcedDrain,
-    net,
+    leakage: leakageTotal,
+    forcedDrain: forcedDrainTotal,
+    unmetDrain,
     previousHoursAwake: input.wakefulness.hoursAwake,
-    hoursAwake: advanced.payload.state.hoursAwake,
+    hoursAwake,
     previousFatigue: previousFatigue.level,
     fatigue: fatigue.level,
-    upkeepShutdowns: upkeepShutdowns.length,
+    upkeepShutdowns: shutdowns.length,
     collapsed: collapse !== null,
   };
 
@@ -503,17 +1022,25 @@ export function advanceAuraTime(
     success: true,
     payload: {
       ...settled.payload,
-      elapsedHours: hours,
+      interval,
+      elapsedHours,
       previousWakefulness: input.wakefulness,
-      wakefulness: advanced.payload.state,
+      wakefulness,
       previousFatigue,
       fatigue,
+      recovery: {
+        potential: potentialRecovery,
+        used: potentialRecovery - discardedRecovery,
+        discarded: discardedRecovery,
+      },
       upkeepCharges,
-      upkeepShutdowns,
+      upkeepShutdowns: shutdowns,
       collapse,
+      unmetDrain,
+      events,
+      segments,
     },
     trace: { root },
     warnings: settled.warnings,
   };
 }
-

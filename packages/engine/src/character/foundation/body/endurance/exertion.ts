@@ -22,10 +22,13 @@
  * recovery, which VIT owns through Regeneration Capacity.
  */
 
+import type { EngineError } from "../../../../infrastructure/diagnostics";
+
 import type {
   PhysicalExertionLevel,
   PhysicalExertionLoad,
   SustainedActivityLevel,
+  WakefulnessMode,
 } from "./types";
 
 
@@ -108,4 +111,103 @@ export function deriveStaminaExpenditureMultiplier(stamina: number): number {
   if (!Number.isFinite(stamina)) return REFERENCE_STAMINA;
 
   return REFERENCE_STAMINA / Math.max(1, stamina);
+}
+
+
+/* ── Activity combinations ──────────────────────────────────────────────── */
+
+/*
+ * A deliberate exception to the ordinary mode/activity pairing.
+ *
+ * Sprinting in your sleep is not something the model should quietly allow, and
+ * it is also not something it should make impossible — a nightmare, a
+ * possession, a Nen ability that moves a sleeping body are all real. The
+ * difference between a bug and a scene is whether somebody said so, and this
+ * is where they say so.
+ */
+export interface ActivityExertionOverride {
+  readonly source: string;
+  readonly reason: string;
+}
+
+/*
+ * What a character is doing over an interval, as the exertion rules see it.
+ *
+ * The Aura domain's richer activity shape is structurally compatible with
+ * this; the narrower type is what keeps the rule readable and keeps this
+ * folder from importing Aura.
+ */
+export interface ActivityCombination {
+  readonly mode: WakefulnessMode;
+  readonly activity?: SustainedActivityLevel;
+  readonly activityLoadPerHour?: number;
+  readonly exertionOverride?: ActivityExertionOverride;
+}
+
+
+/** Whether a mode is one in which the body is doing nothing by default. */
+function isRestingMode(mode: WakefulnessMode): boolean {
+  return mode === "intentional-rest" || mode === "sleep";
+}
+
+
+/**
+ * Reject a mode and an activity that cannot both be true.
+ *
+ * Ordinary waking already covers walking, talking, eating, desk work and
+ * routine movement, and costs nothing — so it permits any activity level on
+ * top, including none. Rest and sleep are defined as the body doing nothing,
+ * so any sustained exertion during them is a contradiction rather than a
+ * strenuous nap.
+ *
+ * An explicit override with a named source permits the combination anyway. It
+ * is required to carry a reason, because the point of the exception is that
+ * somebody can be asked why.
+ */
+export function findActivityCombinationIssues(
+  combination: ActivityCombination,
+): readonly EngineError[] {
+  if (!isRestingMode(combination.mode)) return [];
+
+  const load = combination.activityLoadPerHour;
+
+  const exerting =
+    (combination.activity !== undefined &&
+      combination.activity !== "ordinary-waking") ||
+    (load !== undefined && load > 0);
+
+  if (!exerting) return [];
+
+  const override = combination.exertionOverride;
+
+  if (override !== undefined) {
+    if (
+      typeof override.source === "string" &&
+      override.source.trim().length > 0 &&
+      typeof override.reason === "string" &&
+      override.reason.trim().length > 0
+    ) {
+      return [];
+    }
+
+    return [{
+      code: "body.activity.override.incomplete",
+      message:
+        "An exertion override must name both its source and its reason.",
+      audience: "developer",
+      required: "non-empty source and reason",
+      actual: `${String(override.source)} / ${String(override.reason)}`,
+    }];
+  }
+
+  return [{
+    code: "body.activity.combination.contradictory",
+    message:
+      `A character cannot sustain ${combination.activity ?? "physical"} exertion while in ${combination.mode}.`,
+    audience: "developer",
+    required: `${combination.mode} with no sustained exertion`,
+    actual: combination.activity ?? load ?? "exertion",
+    resolution:
+      "Use ordinary waking for activity above rest, or supply an explicit exertionOverride naming its source and reason.",
+  }];
 }

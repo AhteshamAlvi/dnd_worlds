@@ -44,6 +44,7 @@
 import type { EngineResult } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 import { deriveMaximumWakefulHours } from "../body/endurance";
+import type { GameTimestamp } from "../../../time/types";
 
 
 /*
@@ -68,8 +69,15 @@ export type AuraCollapseReason = typeof AURA_COLLAPSE_REASONS[number];
 export interface AuraCollapse {
   readonly reason: AuraCollapseReason;
 
-  /** Hours into the interval at which the reserve reached zero. */
-  readonly atHours: number;
+  /*
+   * The exact world time the reserve reached zero.
+   *
+   * An absolute timestamp rather than an offset into whatever interval
+   * happened to contain it. A character who collapsed at 03:41 collapsed at
+   * 03:41 whether the GM advanced the night in one step or in eight, and an
+   * offset would say something different in each case.
+   */
+  readonly at: GameTimestamp;
 
   readonly requests: readonly AuraCollapseRequest[];
 }
@@ -226,10 +234,10 @@ export function resolveUncontainedLeakage(
 
 
 /** The collapse an exhausted uncontained character produces. */
-export function uncontainedCollapse(atHours: number): AuraCollapse {
+export function uncontainedCollapse(at: GameTimestamp): AuraCollapse {
   return {
     reason: "uncontained-leakage-exhausted",
-    atHours,
+    at,
     requests: UNCONTAINED_COLLAPSE_REQUESTS,
   };
 }

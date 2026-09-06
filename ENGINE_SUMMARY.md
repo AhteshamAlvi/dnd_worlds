@@ -3,8 +3,8 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
 **Snapshot:** 2026-09-05 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **65 files, 1,754 tests, all passing** (~3.0 s). `tsc --noEmit` → **clean**.
-**Size:** 210 source files / ~59,200 LOC + 69 test files / ~28,500 LOC.
+**Health:** `vitest run` → **68 files, 1,824 tests, all passing** (~3.6 s). `tsc --noEmit` → **clean**.
+**Size:** 215 source files / ~61,100 LOC + 72 test files / ~30,000 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
 The Body refactor (12 phases) is **through Phase 10**, plus the post-refactor integration
@@ -708,6 +708,43 @@ bypasses it. Same-placement contributions on a Body Part add their Aura and dens
 no longer fit — removing unmanifested or unpermitted ones, scaling the rest proportionally — and
 lists every adjustment in `ResolvedAuraProfile.adjustments` without touching stored state.
 
+### Time resolution
+
+`advanceAuraTime` takes a `GameTimeInterval`, never a bare number of hours, and resolves it
+**continuously**: the span is split wherever the active rates change and each segment is
+integrated at constant rates. Boundaries are solved for algebraically, never stepped towards —
+the pool filling, the pool emptying, an upkeep shutdown, a collapse, an activity or suppression
+change, a timed effect starting or expiring, a scheduled action, the interval's end.
+
+The property this buys is **`advance(T) === advance(T/N)` applied N times**, verified at 1, 2, 5,
+60 and 600 subdivisions and at 28,800 one-second steps across eight hours. Recovery is netted
+against expenditure *uncapped* and only the pool is clamped, which is what lets a character at
+full Aura pay an upkeep out of incoming regeneration indefinitely while the surplus is discarded
+(`recovery: {potential, used, discarded}`).
+
+**Upkeep runs until the exact instant it cannot be carried.** 150 Aura against a 100/hour upkeep
+across two hours runs 90 minutes, is charged 150, and shuts down at `start + 1.5h` with that
+timestamp reported. When the balance cannot carry several effects, the lowest `priority` is shed
+first and shedding stops as soon as what remains is sustainable; equal priorities break by
+commitment id, never by array order. Commitments may carry `startsAt` / `endsAt`, and expiry is
+reported as an expiry rather than a shutdown.
+
+**Instantaneous events** (`ScheduledAuraEvent {at, kind, source, amount}`) resolve at their own
+timestamps — a strike landing in the last minute of an eight-hour advance is charged there, not
+smeared across the night. They replaced the accumulated `discretePhysical` /
+`discreteDeliberate` / `forcedDrain` fields.
+
+**Deliberate access is enforced.** `spendAura`, the deliberate half of `spendActionAura` and
+`payAuraUpkeep` all refuse when the character is unawakened or suppressed, keyed off the base Aura
+cost rather than required Output — a technique that costs Aura and places none must not slip
+through. Physical exertion and involuntary drain are unaffected in every state. Over an interval
+the answer differs and both are right: hours passing cannot be refused, so suppression beginning
+mid-span drops running effects at that instant with `reason: "access-lost"`.
+
+**Activity combinations are validated.** Ordinary waking permits any activity level; rest and
+sleep permit none, and `{mode: "sleep", activity: "extreme"}` is refused unless an
+`exertionOverride` names its source and its reason.
+
 **Transitions** (`transitions.ts`) are pure, immutable and atomic: `spendAura` (Control applied),
 `drainAura` (Control bypassed), `spendActionAura` / `spendPhysicalAura` (Stamina applied to the
 physical half, Control to the deliberate half, both charged in one transaction),
@@ -1041,10 +1078,42 @@ left to preserve, reset, or flag a decision about.)
 
 ## 11 · Time, catalogs, orchestration, validation
 
-**Time** — `GameTimestamp` (ms from epoch) · `GameDuration` (ms) · `GameDateTime` (derived via
-calendar, never independently mutable). `GameClockState {currentTime, campaignStartedAt, mode,
-timeScale, fractionalMs}`; modes `running` / `paused` / `combat`. Calendar: 12 months, leap years.
-Only `time/types.ts` and `time/duration.ts` are exported.
+**Time** — `GameClockState.currentTime` is the **sole authoritative world time**, in integer game
+milliseconds from the calendar epoch. `GameTimestamp` (ms from epoch) · `GameDuration` (ms) ·
+`GameDateTime` (derived via calendar, never independently mutable). `GameClockState {currentTime,
+campaignStartedAt, mode, timeScale, fractionalMs}`; modes `running` / `paused` / `combat`.
+Calendar: 12 months, leap years. A host may refresh a display on any interval it likes; gameplay
+never depends on that interval.
+
+The authoritative units live in `time/duration.ts` and everything that converts reads them:
+`GAME_MILLISECONDS_PER_SECOND` / `_MINUTE` / `_HOUR` / `_DAY`, `GAME_SECONDS_PER_MINUTE`,
+`GAME_MINUTES_PER_HOUR`, `GAME_HOURS_PER_DAY`. **`SECONDS_PER_COMBAT_ROUND = 2`**, so
+`COMBAT_ROUNDS_PER_HOUR = 1800`. The calendar's four private copies and Combat's own round length
+are gone; `gameplay/combat/round.ts` re-exports the round under its old name.
+
+**`GameTimeInterval {startedAt, endedAt, elapsed}`** (`time/interval.ts`) is the unit every
+time-dependent mechanic consumes. It carries its elapsed duration next to its endpoints and the
+redundancy is **checked** — an interval that disagrees with itself is refused there rather than
+charging a character for the wrong span three domains away. `advanceGameClock` returns a
+`GameClockTransition {previous, clock, interval}`; `advanceGameTime` remains as a wrapper for
+callers that only want the clock. A paused or combat clock crosses a *zero-length* interval
+rather than none at all.
+
+**Character time** (`character/time/`) is the coordinator. One interval goes to Aura, to
+wakefulness and to Fatigue together, because the same hours decide all three. Time imports nothing
+from Aura or Body; neither may read or advance the clock.
+
+`CharacterTemporalState {resolvedAt}` records when a character's stored Aura and wakefulness were
+last committed, and `advanceCharacterTime` refuses any interval that does not start exactly there
+— `character.time.interval.stale` going backwards, `.gap` going forwards. That is what makes
+double application impossible in a system with both a live clock and a manual time skip.
+
+`projectCharacterAtTime` runs the same coordinator from `resolvedAt` to the clock's current
+reading and persists nothing, so a sheet shows live Aura, wakefulness and Fatigue without a tick
+walking every character. An NPC nobody has opened for three in-world days costs nothing until
+somebody opens them. Projection and commitment are the same arithmetic, so they cannot drift.
+Before resolving an action: commit the projection through the action's timestamp, then resolve
+against `projection.character`.
 
 **Catalogs** — one generic surface over 11 domains: species · clan · trait · technique · skill ·
 condition · injury · item · body-part · special-point · **reference-form**. The `injury` registry
@@ -1315,8 +1384,15 @@ out of `gameplay/`.
 The Rulebook is frozen; every divergence gets a log entry and a `decisionId` on the trace node
 rather than an edit to the book.
 
-1. **`body.surface-units.total`** — the regional SU table sums to 101, the text divides by 100; the engine uses 100.
+1. **`body.surface-area.retires-surface-units`** — Surface Units are gone; surface Aura density divides by real authored `surfaceAreaCm2`, so Scale finally reaches it.
 2. **`attributes.derived.rounding-direction`** — Derived Attribute ties round up; asymmetric across zero, and derived values *can* go negative.
+3. **`aura.control.dex-22-pivot`** — two power curves meeting at DEX 22, rounded to two significant figures below and one above, with no maximum supported DEX.
+4. **`aura.unawakened.pseudo-chu-from-current-aura`** — unawakened reinforcement is 20% of *Current Aura*, not an Output trickle, so it weakens as the character drains and vanishes at awakening.
+5. **`aura.endurance.single-reserve`** — no Stamina bar; physical effort is paid out of Aura and Stamina is an efficiency multiplier.
+6. **`body.fatigue.wakefulness-and-depletion`** — Fatigue is derived from a quadratic wakefulness curve plus banded Aura depletion, floored once.
+7. **`time.continuous-resolution.boundaries`** — intervals are split at calculated rate changes so `advance(T)` equals `advance(T/N)` N times; recovery is netted uncapped and only the pool is clamped.
+8. **`time.upkeep.exact-shutdown`** — upkeep is charged until the exact instant it cannot be carried, then shut down with that timestamp; lowest priority sheds first, ties by id.
+9. **`time.character.lazy-projection`** — characters store `resolvedAt` and sheets project on demand rather than a tick walking the world; projection and commitment share one implementation.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1325,7 +1401,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (65 files, 1,754 tests)
+## 14 · Test coverage (68 files, 1,824 tests)
 
 | Area | Files (tests) |
 |---|---|
@@ -1335,8 +1411,8 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
 | Rules | check-modifiers 29 · requirements 25 · effects 16 — **70** |
-| Aura | validation 44 · profile 43 · time 39 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · control 21 · character-state 12 — **344** |
-| Endurance | body-endurance 34 |
+| Aura | time 50 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · control 21 · access-enforcement 16 · interval-invariance 14 · character-state 12 — **385** |
+| Endurance & character time | body-endurance 39 · character-time 24 — **63** |
 | Catalogs | 28 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Checks** 6 · **Infra** trace 8 + id 7 — **88** |
 | **Foundation stability** | character-foundation-stability 41 · injury-ownership 17 · architecture 8 — **66** |
 

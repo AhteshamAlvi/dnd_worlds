@@ -18,29 +18,61 @@ import type {
 } from "./types";
 
 
-const MILLISECONDS_PER_SECOND = 1_000;
-const MILLISECONDS_PER_MINUTE = 60 * MILLISECONDS_PER_SECOND;
-const MILLISECONDS_PER_HOUR = 60 * MILLISECONDS_PER_MINUTE;
-const MILLISECONDS_PER_DAY = 24 * MILLISECONDS_PER_HOUR;
+/*
+ * The authoritative game-time units.
+ *
+ * Every system that converts between units reads these. They are exported and
+ * prefixed GAME_ rather than kept private because the alternative had already
+ * happened twice: calendar.ts carried its own private copy of the same four
+ * numbers, and Combat carried its own round length. Two constants that mean
+ * the same thing are two constants that can drift, and a mismatch between the
+ * calendar's idea of an hour and Aura's would be almost impossible to see.
+ */
+export const GAME_MILLISECONDS_PER_SECOND = 1_000;
+export const GAME_SECONDS_PER_MINUTE = 60;
+export const GAME_MINUTES_PER_HOUR = 60;
+export const GAME_HOURS_PER_DAY = 24;
+
+export const GAME_MILLISECONDS_PER_MINUTE =
+  GAME_MILLISECONDS_PER_SECOND * GAME_SECONDS_PER_MINUTE;
+
+export const GAME_MILLISECONDS_PER_HOUR =
+  GAME_MILLISECONDS_PER_MINUTE * GAME_MINUTES_PER_HOUR;
+
+export const GAME_MILLISECONDS_PER_DAY =
+  GAME_MILLISECONDS_PER_HOUR * GAME_HOURS_PER_DAY;
+
+export const GAME_SECONDS_PER_HOUR =
+  GAME_SECONDS_PER_MINUTE * GAME_MINUTES_PER_HOUR;
 
 
 /**
  * How much game time one completed Combat Round represents.
  *
- * Declared here rather than in the Combat module because it is a unit of
- * TIME, and things well below Combat now need it: an Aura upkeep rate may be
- * quoted per Round and has to be converted to the per-hour rate everything
- * else in the endurance model uses. Foundation cannot import from gameplay,
- * and duplicating the six would be two constants that could drift apart.
+ * TWO seconds. Declared here rather than in the Combat module because it is a
+ * unit of TIME, and things well below Combat need it: an Aura upkeep rate may
+ * be quoted per Round and has to become the per-hour rate the endurance model
+ * works in. Foundation cannot import from gameplay, and a second copy of the
+ * number would be a second thing to keep in step.
  *
  * gameplay/combat/round.ts re-exports it as COMBAT_ROUND_DURATION_SECONDS,
  * which is the name Combat callers already use.
  */
-export const SECONDS_PER_COMBAT_ROUND = 6;
+export const SECONDS_PER_COMBAT_ROUND = 2;
 
 /** Combat Rounds in one hour, for converting per-Round rates to per-hour. */
 export const COMBAT_ROUNDS_PER_HOUR =
-  (MILLISECONDS_PER_HOUR / MILLISECONDS_PER_SECOND) / SECONDS_PER_COMBAT_ROUND;
+  GAME_SECONDS_PER_HOUR / SECONDS_PER_COMBAT_ROUND;
+
+export const GAME_MILLISECONDS_PER_COMBAT_ROUND =
+  SECONDS_PER_COMBAT_ROUND * GAME_MILLISECONDS_PER_SECOND;
+
+
+/* Local aliases, so the arithmetic below reads the way it always has. */
+const MILLISECONDS_PER_SECOND = GAME_MILLISECONDS_PER_SECOND;
+const MILLISECONDS_PER_MINUTE = GAME_MILLISECONDS_PER_MINUTE;
+const MILLISECONDS_PER_HOUR = GAME_MILLISECONDS_PER_HOUR;
+const MILLISECONDS_PER_DAY = GAME_MILLISECONDS_PER_DAY;
 
 
 /**

@@ -305,9 +305,9 @@ describe("uncontained leakage", () => {
   });
 
   it("asks for everything a collapse implies, and nothing less", () => {
-    expect(uncontainedCollapse(12)).toEqual({
+    expect(uncontainedCollapse(1_234_567)).toEqual({
       reason: "uncontained-leakage-exhausted",
-      atHours: 12,
+      at: 1_234_567,
       requests: [...AURA_COLLAPSE_REQUESTS],
     });
   });

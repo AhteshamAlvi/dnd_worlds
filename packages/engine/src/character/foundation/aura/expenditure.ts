@@ -67,6 +67,10 @@ import {
   type SustainedActivityLevel,
 } from "../body/endurance";
 
+import {
+  deliberateAccessError,
+  hasDeliberateAuraAccess,
+} from "./access";
 import { resolveAuraBudget, type AuraTransitionContext } from "./budget";
 import { applyAuraControl, deriveAuraControl } from "./control";
 import { deriveMaximumAura } from "./pool";
@@ -438,6 +442,27 @@ export function resolveActionAuraCostFor(
   const budget = resolveAuraBudget(state.current, context);
 
   if (!budget.success) return budget;
+
+  /*
+   * The deliberate half needs deliberate access; the physical half never does.
+   *
+   * Keyed off the BASE COST rather than off required Output, because a
+   * technique can cost Aura without requiring any placed on the body, and
+   * gating on Output would have let exactly that case through: a positive
+   * baseAuraCost with requiredOutput absent or zero would spend Aura a
+   * suppressed character cannot project.
+   */
+  if (
+    (request.baseAuraCost ?? 0) > 0 &&
+    !hasDeliberateAuraAccess(budget.payload.access)
+  ) {
+    return {
+      success: false,
+      trace: budget.trace,
+      warnings: [],
+      errors: [deliberateAccessError(budget.payload.access)],
+    };
+  }
 
   const cost = resolveAuraActionCost(
     context.attributes,

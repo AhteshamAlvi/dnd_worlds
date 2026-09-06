@@ -57,7 +57,11 @@ import type { ContinuityKey } from "../body/anatomy/types";
 
 import type { PhysicalExertionLoad } from "../body/endurance";
 
-import { findAuraPlacementIssues } from "./access";
+import {
+  deliberateAccessError,
+  findAuraPlacementIssues,
+  hasDeliberateAuraAccess,
+} from "./access";
 import {
   reconcileAuraAllocations,
   resolveAuraBudget,
@@ -292,6 +296,25 @@ export function spendAura(
       required: "finite number >= 0",
       actual: Number.isFinite(baseCost) ? baseCost : String(baseCost),
     }]);
+  }
+
+  /*
+   * Access first, before anything is derived.
+   *
+   * Deliberate expenditure is exactly what an unawakened character cannot do
+   * and exactly what suppression closes off, and neither of those was being
+   * checked — a character in Zetsu could spend Aura on a technique they have
+   * no way to project. Physical effort and involuntary loss are unaffected and
+   * do not come through here.
+   */
+  const budget = resolveAuraBudget(state.current, context);
+
+  root.children.push(budget.trace.root);
+
+  if (!budget.success) return failed(root, budget.errors);
+
+  if (baseCost > 0 && !hasDeliberateAuraAccess(budget.payload.access)) {
+    return failed(root, [deliberateAccessError(budget.payload.access)]);
   }
 
   const control = deriveAuraControl(context.attributes.dex);

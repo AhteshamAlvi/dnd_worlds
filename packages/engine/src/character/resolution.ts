@@ -120,6 +120,8 @@ import type { Character } from "./types";
 import { listDefinitions } from "./catalogs";
 import { resolveAuraProfile } from "./foundation/aura/resolution";
 import type { ResolvedAuraProfile } from "./foundation/aura/types";
+import type { AuraTransitionContext } from "./foundation/aura/budget";
+import type { NenState } from "./foundation/nen/types";
 import { deriveFatigue } from "./foundation/body/endurance";
 import type { ResolvedFatigue } from "./foundation/body/endurance";
 import { deriveEffectiveNenMastery } from "./foundation/nen/nen";
@@ -167,6 +169,43 @@ import { createTraceNode } from "../infrastructure/trace";
  * that surprises nobody.
  */
 const MATURE_ADULT_AGE = 20;
+
+/**
+ * The four things the Aura domain resolves against, assembled from a body.
+ *
+ * Exported and used in BOTH places that need one: character resolution here,
+ * and the character-time coordinator that advances a character across an
+ * interval. Two constructions of the same context would be two chances to hand
+ * Aura a different body or a different access state than the one it was last
+ * resolved with, and the mismatch would show up as a character whose Aura
+ * quietly disagrees with their sheet.
+ *
+ * The PHYSICALLY-RESOLVED stat block and the PRESENT measurements, for the
+ * reasons stated where they are consumed: a Giant's burden must reach their
+ * Control multiplier, and a severed arm must carry no Aura.
+ */
+export function auraTransitionContext(
+  stats: CharacterStats,
+  body: ResolvedBody,
+  nen: NenState,
+): AuraTransitionContext {
+  return {
+    attributes: stats,
+    anatomy: body.anatomy,
+    bodyMeasurements: body.measurements.present,
+    access: {
+      awakened: nen.awakened,
+
+      /*
+       * Effective mastery, after seals. Nen owns that derivation, which is why
+       * it is computed here and handed down rather than the Aura domain
+       * reaching into Nen state.
+       */
+      effectiveTenMastery: deriveEffectiveNenMastery(nen, "ten"),
+    },
+  };
+}
+
 
 /**
  * A character with everything derivable derived.
@@ -1122,13 +1161,7 @@ export function resolveCharacter(
    */
   const aura = resolveAuraProfile({
     state: character.aura,
-    attributes: stats,
-    anatomy: resolvedBody.anatomy,
-    bodyMeasurements: resolvedBody.measurements.present,
-    access: {
-      awakened: character.nen.awakened,
-      effectiveTenMastery: deriveEffectiveNenMastery(character.nen, "ten"),
-    },
+    ...auraTransitionContext(stats, resolvedBody, character.nen),
   });
 
   if (!aura.success) {

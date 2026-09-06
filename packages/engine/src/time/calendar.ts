@@ -27,19 +27,31 @@ import type {
 } from "./types";
 
 
-const MILLISECONDS_PER_SECOND = 1_000;
-const SECONDS_PER_MINUTE = 60;
-const MINUTES_PER_HOUR = 60;
-const HOURS_PER_DAY = 24;
+/*
+ * The authoritative units, from duration.ts.
+ *
+ * These were four private constants here and four more there until an Aura
+ * upkeep rate needed to know how long an hour was. One definition now, aliased
+ * locally so the conversion arithmetic below reads unchanged.
+ */
+import {
+  GAME_HOURS_PER_DAY,
+  GAME_MILLISECONDS_PER_DAY,
+  GAME_MILLISECONDS_PER_HOUR,
+  GAME_MILLISECONDS_PER_MINUTE,
+  GAME_MILLISECONDS_PER_SECOND,
+  GAME_MINUTES_PER_HOUR,
+  GAME_SECONDS_PER_MINUTE,
+} from "./duration";
 
-const MILLISECONDS_PER_MINUTE =
-  SECONDS_PER_MINUTE * MILLISECONDS_PER_SECOND;
+const MILLISECONDS_PER_SECOND = GAME_MILLISECONDS_PER_SECOND;
+const SECONDS_PER_MINUTE = GAME_SECONDS_PER_MINUTE;
+const MINUTES_PER_HOUR = GAME_MINUTES_PER_HOUR;
+const HOURS_PER_DAY = GAME_HOURS_PER_DAY;
 
-const MILLISECONDS_PER_HOUR =
-  MINUTES_PER_HOUR * MILLISECONDS_PER_MINUTE;
-
-const MILLISECONDS_PER_DAY =
-  HOURS_PER_DAY * MILLISECONDS_PER_HOUR;
+const MILLISECONDS_PER_MINUTE = GAME_MILLISECONDS_PER_MINUTE;
+const MILLISECONDS_PER_HOUR = GAME_MILLISECONDS_PER_HOUR;
+const MILLISECONDS_PER_DAY = GAME_MILLISECONDS_PER_DAY;
 
 
 /**

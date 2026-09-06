@@ -815,6 +815,20 @@ describe("the Aura subsystem's public surface", () => {
       "advanceAuraTime",
       "emptyAuraBalance",
 
+      /* The authoritative time model and the character-time coordinator. */
+      "SECONDS_PER_COMBAT_ROUND",
+      "COMBAT_ROUNDS_PER_HOUR",
+      "GAME_MILLISECONDS_PER_HOUR",
+      "advanceGameClock",
+      "gameTimeInterval",
+      "gameTimeIntervalOf",
+      "validateGameTimeInterval",
+      "intervalHours",
+      "hoursToDuration",
+      "advanceCharacterTime",
+      "projectCharacterAtTime",
+      "characterTemporalState",
+
       /* The Body-owned half, through the Body barrel. */
       "deriveStaminaExpenditureMultiplier",
       "deriveMaximumWakefulHours",
@@ -823,6 +837,7 @@ describe("the Aura subsystem's public surface", () => {
       "restedWakefulness",
       "PHYSICAL_EXERTION_LOADS",
       "SUSTAINED_ACTIVITY_LOADS_PER_HOUR",
+      "findActivityCombinationIssues",
     ];
 
     for (const name of surface) {

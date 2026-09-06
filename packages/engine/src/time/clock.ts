@@ -28,6 +28,11 @@
  */
 
 import { fromGameDateTime } from "./calendar";
+import {
+  gameTimeInterval,
+  gameTimeIntervalOf,
+  type GameTimeInterval,
+} from "./interval";
 
 import type {
   GameClockCreation,
@@ -43,6 +48,20 @@ import type {
  * The campaign begins at the supplied calendar date rather than at the
  * calendar epoch.
  */
+/**
+ * A clock advancement, and the span of world time it crossed.
+ *
+ * `previous` is kept alongside because an advancement that changed nothing —
+ * a paused clock, a zero duration — is still a legitimate answer, and a caller
+ * comparing the two can see that without inspecting timestamps.
+ */
+export interface GameClockTransition {
+  readonly previous: GameClockState;
+  readonly clock: GameClockState;
+  readonly interval: GameTimeInterval;
+}
+
+
 export function createGameClock(
   creation: GameClockCreation,
 ): GameClockState {
@@ -137,16 +156,63 @@ export function advanceGameTime(
   clock: GameClockState,
   duration: GameDuration,
 ): GameClockState {
+  return advanceGameClock(clock, duration).clock;
+}
+
+
+/**
+ * Advances the clock and reports the interval it crossed.
+ *
+ * The form every time-dependent mechanic should be driven from. Returning only
+ * the new clock, as advanceGameTime does, throws away the one fact the
+ * character domains need most: WHICH span of world time just happened. A
+ * caller left to reconstruct it by subtracting two timestamps it saved either
+ * side of the call can get it wrong, can apply it twice, and has nothing to
+ * check a character's last-committed moment against.
+ *
+ * The interval always begins at the clock's current timestamp, which is what
+ * makes "this interval has already been applied to this character" a decidable
+ * question rather than a guess.
+ *
+ * advanceGameTime remains as a thin wrapper, because plenty of callers only
+ * want the clock and should not have to reach through a transition for it.
+ */
+export function advanceGameClock(
+  clock: GameClockState,
+  duration: GameDuration,
+): GameClockTransition {
   assertValidForwardDuration(duration);
 
-  if (duration === 0) {
-    return clock;
-  }
+  const next: GameClockState = duration === 0
+    ? clock
+    : { ...clock, currentTime: clock.currentTime + duration };
 
   return {
-    ...clock,
-    currentTime:
-      clock.currentTime + duration,
+    previous: clock,
+    clock: next,
+    interval: gameTimeIntervalOf(clock.currentTime, duration),
+  };
+}
+
+
+/**
+ * Advances from real elapsed time and reports the interval it crossed.
+ *
+ * A paused or combat clock crosses a ZERO-length interval rather than none at
+ * all. That distinction matters to the caller: a projection asked to bring a
+ * character up to a stopped clock should resolve to "nothing happened", not
+ * fail for want of an interval.
+ */
+export function advanceGameClockFromRealTime(
+  clock: GameClockState,
+  realElapsedMs: number,
+): GameClockTransition {
+  const next = advanceFromRealTime(clock, realElapsedMs);
+
+  return {
+    previous: clock,
+    clock: next,
+    interval: gameTimeInterval(clock.currentTime, next.currentTime),
   };
 }
 

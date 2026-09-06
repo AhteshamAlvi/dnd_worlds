@@ -260,8 +260,8 @@ describe("locomotion gates movement, never Speed", () => {
 
 
 describe("the action economy", () => {
-  it("runs a six-second Round", () => {
-    expect(COMBAT_ROUND_DURATION_SECONDS).toBe(6);
+  it("runs a two-second Round", () => {
+    expect(COMBAT_ROUND_DURATION_SECONDS).toBe(2);
   });
 
   it.each([

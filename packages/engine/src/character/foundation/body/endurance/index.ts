@@ -30,11 +30,17 @@ export {
   restedWakefulness,
 } from "./types";
 
+export type {
+  ActivityCombination,
+  ActivityExertionOverride,
+} from "./exertion";
+
 export {
   PHYSICAL_EXERTION_LOADS,
   REFERENCE_STAMINA,
   SUSTAINED_ACTIVITY_LOADS_PER_HOUR,
   deriveStaminaExpenditureMultiplier,
+  findActivityCombinationIssues,
   physicalExertionLoad,
   sustainedActivityLoadPerHour,
 } from "./exertion";

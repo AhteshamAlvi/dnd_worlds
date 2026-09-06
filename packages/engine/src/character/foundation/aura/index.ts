@@ -123,7 +123,9 @@ export {
 /* ── Access ─────────────────────────────────────────────────────────────── */
 
 export {
+  deliberateAccessError,
   findAuraPlacementIssues,
+  hasDeliberateAuraAccess,
   PSEUDO_CHU_EFFICIENCY,
   resolveAuraAccess,
   TEN_SURFACE_COATING_OUTPUT_FRACTION,
@@ -241,9 +243,14 @@ export type {
   AuraUpkeepShutdown,
 } from "./upkeep";
 
+export type { AuraUpkeepShutdownReason } from "./upkeep";
+
 export {
   AURA_UPKEEP_PERIODS,
+  AURA_UPKEEP_SHUTDOWN_REASONS,
+  auraUpkeepSheddingOrder,
   deriveAuraUpkeep,
+  isUpkeepActiveAt,
   payAuraUpkeep,
   upkeepRatePerHour,
 } from "./upkeep";
@@ -278,11 +285,22 @@ export {
  */
 export type {
   AdvanceAuraTimeInput,
+  AuraActivityChange,
+  AuraRecoverySummary,
   AuraTimeActivity,
+  AuraTimelineEvent,
+  AuraTimelineEventKind,
+  AuraTimeSegment,
   AuraTimeTransition,
+  ScheduledAuraEvent,
+  ScheduledAuraEventKind,
 } from "./time";
 
-export { advanceAuraTime } from "./time";
+export {
+  AURA_TIMELINE_EVENT_KINDS,
+  SCHEDULED_AURA_EVENT_KINDS,
+  advanceAuraTime,
+} from "./time";
 
 
 /* ── State transitions ──────────────────────────────────────────────────── */

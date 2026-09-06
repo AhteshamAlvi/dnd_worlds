@@ -435,6 +435,55 @@ One state leaks: awakened, no effective Ten. `ResolvedAuraAccess.uncontained` sa
 
 Unaffordable upkeep has two correct answers. `payAuraUpkeep` fails **atomically** — a caller asking to pay wanted a transaction. `advanceAuraTime` **shuts the effect down** instead, because hours passing is not a request that can be refused.
 
+### Time resolution (`time.ts`)
+
+`advanceAuraTime` takes a `GameTimeInterval`, never a bare hour count, and resolves it **continuously**. The span is split wherever the active rates change and each segment integrated at constant rates; boundary times are solved for algebraically, never stepped towards.
+
+Recognised boundaries: the pool reaching Maximum · the pool reaching zero · an upkeep shutdown · a collapse · an activity mode change · suppression beginning or ending · a timed effect starting or expiring · a scheduled instantaneous action · the interval's end.
+
+The property this buys:
+
+```
+advance(T) === advance(T / N), applied N times
+```
+
+verified at 1, 2, 5, 60 and 600 subdivisions and at **28,800 one-second steps** across eight hours. The previous implementation summed everything over the whole submitted span and clamped once, so the answer depended on how the caller chopped up the day.
+
+**Recovery is netted uncapped** and only the pool is clamped. Capping it against missing Aura first is what produced the contradiction; now a character at full Aura pays an upkeep out of incoming regeneration indefinitely and the surplus is discarded. Reported as `recovery: {potential, used, discarded}` — 5,000/hour against a 100/hour upkeep at full is potential 5,000, used 100, discarded 4,900.
+
+**Upkeep runs until the exact instant it cannot be carried.** 150 Aura against 100/hour across two hours runs 90 minutes, is charged 150, and shuts down at `start + 1.5h`; the remaining half hour resolves without it. Commitments carry an optional `priority` and optional `startsAt` / `endsAt`. When the balance cannot carry several, the lowest priority sheds first and shedding stops as soon as what remains is sustainable; equal priorities break by **commitment id**, never by array order. Expiry is reported as an expiry, not a shutdown.
+
+**Instantaneous events** resolve at their own timestamps:
+
+```ts
+interface ScheduledAuraEvent {
+  readonly at: GameTimestamp;
+  readonly kind: "physical" | "deliberate" | "forced-drain" | "recovery";
+  readonly source: string;
+  readonly amount: number;   // already Stamina- or Control-scaled
+}
+```
+
+They replaced the accumulated `discretePhysical` / `discreteDeliberate` / `forcedDrain` fields, which could only ever be smeared across the whole interval — so a strike landing in the last minute of an eight-hour advance was charged as though it had been happening all night.
+
+The result carries a timestamped `events` list and the `segments` the interval was cut into, plus `unmetDrain` for the drain an empty pool could not pay for.
+
+### Deliberate access (§ enforced)
+
+|  | unawakened | awakened with access | suppressed |
+|---|---|---|---|
+| physical exertion | allowed | allowed | allowed |
+| involuntary drain | allowed | allowed | allowed |
+| uncontained leakage | n/a | when uncontained | disabled |
+| **deliberate expenditure** | **refused** | allowed | **refused** |
+| **deliberate upkeep** | **refused** | allowed | **refused** |
+
+`hasDeliberateAuraAccess` is the one predicate, and `spendAura`, the deliberate half of `spendActionAura` and `payAuraUpkeep` all consult it. Keyed off the **base Aura cost**, not required Output — a technique that costs Aura and places none must not slip through a zero-Output check. Over an interval the answer differs and both are right: hours passing cannot be refused, so suppression beginning mid-span drops running effects at that instant with `reason: "access-lost"`.
+
+### Activity validation
+
+Ordinary waking covers walking, talking, eating and desk work at **zero** expenditure, and permits any activity level on top. Rest and sleep are defined as the body doing nothing, so `{mode: "sleep", activity: "extreme"}` is refused unless an `exertionOverride` names both its source and its reason.
+
 ### Not implemented here
 
 Attack-force-to-BP conversion, Injury generation, concrete penalties for Fatigue 5–8, final Nen activation/upkeep formulas, Chū reinforcement strength, Trait/Species/equipment modifiers, advanced Zetsu substitution for sleep, and Workbench integration.
@@ -643,9 +692,51 @@ It **reports** healed Injury ids; it never mutates `character.injuries` — mirr
 
 `GameClockState {currentTime, campaignStartedAt, mode, timeScale, fractionalMs}`. Modes: `running` (real time advances game time by `timeScale`), `paused`, `combat` (combat advances the clock explicitly). `fractionalMs` prevents precision loss under sub-millisecond scaling.
 
-`calendar.ts` — 12 months, leap years, `to/fromGameDateTime`. `clock.ts` — create/advance/pause/resume/enter-combat/leave-combat. `validation.ts` — 9 validators.
+`calendar.ts` — 12 months, leap years, `to/fromGameDateTime`. `clock.ts` — create/advance/pause/resume/enter-combat/leave-combat. `validation.ts` — 9 validators. `interval.ts` — the elapsed span every mechanic consumes.
 
-**Only `time/types.ts` and `time/duration.ts` are exported** (Recovery is the first mechanic needing a caller to build a `GameDuration`). `calendar.ts`, `clock.ts` and `time/validation.ts` stay unexported until a host mechanic needs them.
+**`GameClockState.currentTime` is the sole authoritative world time.** Nothing else keeps its own, and a host may refresh a display on whatever interval it likes without gameplay depending on it.
+
+#### The authoritative units
+
+All in `duration.ts`, all exported, and everything that converts reads them rather than carrying a copy:
+
+`GAME_MILLISECONDS_PER_SECOND` · `_MINUTE` · `_HOUR` · `_DAY` · `GAME_SECONDS_PER_MINUTE` · `GAME_MINUTES_PER_HOUR` · `GAME_HOURS_PER_DAY` · `GAME_SECONDS_PER_HOUR`.
+
+**`SECONDS_PER_COMBAT_ROUND = 2`**, so `COMBAT_ROUNDS_PER_HOUR = 1800` and `GAME_MILLISECONDS_PER_COMBAT_ROUND = 2000`. `calendar.ts` had four private copies of the same numbers and Combat had its own round length; both now alias these. `gameplay/combat/round.ts` re-exports the round as `COMBAT_ROUND_DURATION_SECONDS`, the name Combat callers already use.
+
+#### Intervals
+
+```ts
+interface GameTimeInterval {
+  readonly startedAt: GameTimestamp;
+  readonly endedAt: GameTimestamp;
+  readonly elapsed: GameDuration;   // checked against the endpoints
+}
+```
+
+The redundancy is the point: an interval whose `elapsed` disagrees with its endpoints is refused in `validateGameTimeInterval` rather than charging a mechanic for the wrong span three domains away. Backwards intervals are refused; zero-length ones are legal and mean nothing happened.
+
+`advanceGameClock(clock, duration)` returns `GameClockTransition {previous, clock, interval}`, and `advanceGameClockFromRealTime` does the same from real elapsed time. `advanceGameTime` survives as a wrapper for callers that only want the new clock. A paused or combat clock crosses a **zero-length** interval rather than none at all, so a projection asked to bring a character up to a stopped clock resolves to "nothing happened" instead of failing.
+
+Manual time skips, ordinary progression and combat time all produce the same shape, which is what lets one coordinator consume all three.
+
+The whole of `time/` is now exported.
+
+### Character time (`character/time/`)
+
+The coordinator between the clock and a character. **Time imports nothing from Aura or Body; neither may read or advance the clock.**
+
+`advanceCharacterTime({character, temporalState, interval, activity, activeEffects})` hands ONE interval to Aura recovery, sustained expenditure, upkeep, leakage, wakefulness and Fatigue. They are not independent — the same hours decide how much Aura came back AND how much sleep debt was paid, and Fatigue reads both — so three callers each advancing one domain would be three chances to disagree.
+
+```ts
+interface CharacterTemporalState { readonly resolvedAt: GameTimestamp; }
+```
+
+One timestamp per character, recording when their stored Aura and wakefulness were last committed. An advance may only start **exactly** there: `character.time.interval.stale` going backwards, `.gap` going forwards. That is what makes double application impossible in a system with both a live clock and a manual time skip.
+
+Runtime activity, active principles and maintained effects stay **outside** `NenState` and outside the character. They are scene state the caller already holds; a sheet that persisted "Ren is active" could be loaded into a world where it is not.
+
+`projectCharacterAtTime({character, temporalState, currentTime, activity, activeEffects})` runs the same coordinator from `resolvedAt` to now and persists nothing. A sheet shows live Aura, wakefulness and Fatigue without a tick walking every character; an NPC nobody has opened for three in-world days costs nothing until somebody opens them. **Projection and commitment are one implementation**, so a display cannot drift from what saving would produce. Before resolving an action: commit the projection through the action's timestamp, then resolve against `projection.character`.
 
 ### Catalogs (`character/catalogs.ts`)
 

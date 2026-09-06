@@ -21,6 +21,11 @@ import { advanceAuraTime } from "../character/foundation/aura/time";
 import type { AdvanceAuraTimeInput } from "../character/foundation/aura/time";
 import { deriveMaximumAura } from "../character/foundation/aura/pool";
 import { restedWakefulness } from "../character/foundation/body/endurance";
+import {
+  gameTimeIntervalOf,
+  hoursToDuration,
+} from "../time/interval";
+import type { GameTimestamp } from "../time/types";
 import { deriveZetsuReplenishmentMultiplier } from "../character/foundation/nen/principles/zetsu";
 import type { AuraAccessInput } from "../character/foundation/aura/types";
 import type { CharacterAuraState } from "../character/foundation/aura/state";
@@ -41,10 +46,20 @@ const REN_III: AuraAccessInput = {
   override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
 };
 
-type Options = Partial<Omit<AdvanceAuraTimeInput, "context">> & {
-  readonly attributes?: Parameters<typeof auraTestAttributes>[0];
-  readonly access?: AuraAccessInput;
-};
+/*
+ * A fixed campaign instant to hang every interval off, so timestamps in
+ * assertions are readable offsets rather than epoch arithmetic.
+ */
+const T0 = 1_000_000_000;
+
+type Options =
+  & Partial<Omit<AdvanceAuraTimeInput, "context" | "interval">>
+  & {
+    readonly attributes?: Parameters<typeof auraTestAttributes>[0];
+    readonly access?: AuraAccessInput;
+    readonly hours?: number;
+    readonly startedAt?: GameTimestamp;
+  };
 
 function advance(options: Options = {}) {
   const {
@@ -53,6 +68,7 @@ function advance(options: Options = {}) {
     state = { current: 0, allocations: [] },
     wakefulness = restedWakefulness(),
     hours = 1,
+    startedAt = T0,
     activity = { mode: "ordinary-waking" as const },
     ...rest
   } = options;
@@ -61,10 +77,20 @@ function advance(options: Options = {}) {
     state,
     wakefulness,
     context: auraContext({ attributes, access }),
-    hours,
+    interval: gameTimeIntervalOf(startedAt, hoursToDuration(hours)),
     activity,
     ...rest,
   });
+}
+
+/** One instantaneous event, at an offset in hours from the interval start. */
+function at(
+  hours: number,
+  kind: "physical" | "deliberate" | "forced-drain" | "recovery",
+  amount: number,
+  source = kind,
+) {
+  return { at: T0 + hoursToDuration(hours), kind, source, amount } as const;
 }
 
 function succeed(options: Options = {}) {
@@ -127,8 +153,7 @@ describe("the balance keeps every contribution apart", () => {
     hours: 2,
     activity: { mode: "ordinary-waking", activity: "strenuous" },
     upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
-    discreteDeliberate: 500,
-    forcedDrain: 250,
+    instantaneous: [at(0.5, "deliberate", 500), at(1, "forced-drain", 250)],
     access: REN_III,
   });
 
@@ -353,7 +378,7 @@ describe("sustained activity and discrete actions", () => {
     const discreteOnly = succeed({
       state: { current: 50_000, allocations: [] },
       activity: { mode: "ordinary-waking" },
-      discretePhysical: sustainedOnly.balance.physical,
+      instantaneous: [at(0.5, "physical", sustainedOnly.balance.physical)],
     });
 
     expect(discreteOnly.balance.physical).toBe(sustainedOnly.balance.physical);
@@ -361,7 +386,7 @@ describe("sustained activity and discrete actions", () => {
     const both = succeed({
       state: { current: 50_000, allocations: [] },
       activity: { mode: "ordinary-waking", activity: "strenuous" },
-      discretePhysical: 100,
+      instantaneous: [at(0.5, "physical", 100)],
     });
 
     expect(both.balance.physical).toBe(sustainedOnly.balance.physical + 100);
@@ -372,14 +397,17 @@ describe("sustained activity and discrete actions", () => {
       activity: { mode: "ordinary-waking", activityLoadPerHour: -5 },
     }))).toContain("aura.exertion.load.invalid");
 
-    expect(errorCodes(advance({ discretePhysical: Number.NaN })))
-      .toContain("aura.time.contribution.invalid");
+    expect(errorCodes(advance({
+      instantaneous: [at(0.5, "physical", Number.NaN)],
+    }))).toContain("aura.time.event.invalid");
 
-    expect(errorCodes(advance({ forcedDrain: -1 })))
-      .toContain("aura.time.contribution.invalid");
+    expect(errorCodes(advance({
+      instantaneous: [at(0.5, "forced-drain", -1)],
+    }))).toContain("aura.time.event.invalid");
 
+    /* A backwards interval is the Time domain's refusal, not Aura's. */
     expect(errorCodes(advance({ hours: -1 })))
-      .toContain("aura.time.duration.invalid");
+      .toContain("time.interval.reversed");
   });
 });
 
@@ -396,17 +424,18 @@ describe("upkeep across an interval", () => {
       ],
     });
 
-    expect(result.balance.upkeep).toBe(200 + 1200);
+    expect(result.balance.upkeep).toBe(200 + 3600);
     expect(result.upkeepCharges.map((charge) => charge.id))
       .toEqual(["ren", "ken"]);
     expect(result.upkeepShutdowns).toEqual([]);
   });
 
   /*
-   * Hours passing is not a request that can be refused. A Ren that ran out of
-   * Aura at 03:00 did not fail to happen — it dropped.
+   * The ticket's worked example, and the behaviour that replaced interval-wide
+   * affordability. An effect the character can carry for part of the span is
+   * carried for that part — it did not fail to happen, it ran and then dropped.
    */
-  it("shuts an unaffordable effect down rather than failing the interval", () => {
+  it("charges an unaffordable effect up to its exact shutdown moment", () => {
     const result = succeed({
       state: { current: 150, allocations: [] },
       hours: 2,
@@ -414,34 +443,71 @@ describe("upkeep across an interval", () => {
       upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
     });
 
-    expect(result.upkeepCharges).toEqual([]);
-    expect(result.upkeepShutdowns).toEqual([{
+    expect(result.balance.upkeep).toBeCloseTo(150, 8);
+    expect(result.upkeepCharges[0]!.cost).toBeCloseTo(150, 8);
+
+    expect(result.upkeepShutdowns).toHaveLength(1);
+    expect(result.upkeepShutdowns[0]).toEqual(expect.objectContaining({
       id: "ren",
-      source: "ren",
       reason: "insufficient-aura",
-      requiredAura: 200,
-      availableAura: 150,
-    }]);
-    expect(result.balance.upkeep).toBe(0);
-    expect(result.current).toBe(150);
+      ratePerHour: 100,
+    }));
+    expect(result.upkeepShutdowns[0]!.at)
+      .toBeCloseTo(T0 + hoursToDuration(1.5), 6);
+
+    /* And the remaining half hour resolves without it. */
+    expect(result.current).toBe(0);
   });
 
-  /* Half-paying an upkeep would leave a Ren running on Aura nobody had. */
-  it("drops what it cannot afford in full and keeps what it can", () => {
+  /*
+   * Shedding stops as soon as what remains is sustainable. Recovery of 2,500
+   * an hour cannot carry 4,000 of upkeep, and can comfortably carry 2,000.
+   */
+  it("sheds the lowest priority first and keeps what the balance sustains", () => {
     const result = succeed({
+      state: { current: 1000, allocations: [] },
+      hours: 4,
+      access: REN_III,
+      activity: { mode: "intentional-rest" },
+      upkeep: [
+        { id: "expendable", source: "in", baseRate: 2000, period: "hour", priority: 0 },
+        { id: "essential", source: "ren", baseRate: 2000, period: "hour", priority: 5 },
+      ],
+    });
+
+    expect(result.upkeepShutdowns.map((shutdown) => shutdown.id))
+      .toEqual(["expendable"]);
+
+    /* The survivor is paid for out of incoming recovery, indefinitely. */
+    expect(result.current).toBeGreaterThan(0);
+    expect(result.upkeepCharges.find((charge) => charge.id === "essential"))
+      .toBeDefined();
+  });
+
+  /* Equal priorities break by id, never by the order the caller built. */
+  it("sheds deterministically when priorities tie", () => {
+    const forward = succeed({
       state: { current: 250, allocations: [] },
       hours: 1,
       access: REN_III,
       upkeep: [
-        { id: "cheap", source: "in", baseRate: 200, period: "hour" },
-        { id: "dear", source: "ren", baseRate: 400, period: "hour" },
+        { id: "aaa", source: "in", baseRate: 200, period: "hour" },
+        { id: "zzz", source: "ren", baseRate: 400, period: "hour" },
+      ],
+    });
+    const reversed = succeed({
+      state: { current: 250, allocations: [] },
+      hours: 1,
+      access: REN_III,
+      upkeep: [
+        { id: "zzz", source: "ren", baseRate: 400, period: "hour" },
+        { id: "aaa", source: "in", baseRate: 200, period: "hour" },
       ],
     });
 
-    expect(result.upkeepCharges.map((charge) => charge.id)).toEqual(["cheap"]);
-    expect(result.upkeepShutdowns.map((shutdown) => shutdown.id))
-      .toEqual(["dear"]);
-    expect(result.current).toBe(50);
+    expect(forward.upkeepShutdowns.map((shutdown) => shutdown.id))
+      .toEqual(reversed.upkeepShutdowns.map((shutdown) => shutdown.id));
+    expect(forward.upkeepShutdowns[0]!.id).toBe("zzz");
   });
 
   /*
@@ -478,7 +544,7 @@ describe("uncontained leakage over time", () => {
     expect(result.balance.leakage).toBeCloseTo(10, 10);
     expect(result.current).toBe(0);
     expect(result.collapse).not.toBeNull();
-    expect(result.collapse!.atHours).toBeCloseTo(48, 8);
+    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(48), 6);
   });
 
   it("leaves something at 47 hours", () => {
@@ -504,7 +570,7 @@ describe("uncontained leakage over time", () => {
     });
 
     expect(result.collapse).not.toBeNull();
-    expect(result.collapse!.atHours).toBeCloseTo(24, 8);
+    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(24), 6);
   });
 
   it("gives a larger pool its own wakefulness limit rather than more", () => {
@@ -516,7 +582,7 @@ describe("uncontained leakage over time", () => {
     });
 
     expect(result.current).toBe(0);
-    expect(result.collapse!.atHours).toBeCloseTo(120, 8);
+    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(120), 6);
   });
 
   /* Leakage is not something the character is doing. */
@@ -560,7 +626,7 @@ describe("uncontained leakage over time", () => {
     const result = succeed({
       state: { current: 500, allocations: [] },
       activity: { mode: "ordinary-waking" },
-      discretePhysical: 500,
+      instantaneous: [at(0.5, "physical", 500)],
     });
 
     expect(result.current).toBe(0);
@@ -642,6 +708,207 @@ describe("reconciliation and Fatigue across an interval", () => {
 });
 
 
+describe("activity combinations reach the solver", () => {
+  it("refuses contradictory ordinary inputs", () => {
+    expect(errorCodes(advance({
+      activity: { mode: "sleep", activity: "extreme" },
+    }))).toContain("body.activity.combination.contradictory");
+
+    expect(errorCodes(advance({
+      activity: { mode: "intentional-rest", activity: "strenuous" },
+    }))).toContain("body.activity.combination.contradictory");
+  });
+
+  it("refuses one that appears part-way through", () => {
+    expect(errorCodes(advance({
+      hours: 4,
+      activityChanges: [{
+        at: T0 + hoursToDuration(2),
+        activity: { mode: "sleep", activity: "extreme" },
+      }],
+    }))).toContain("body.activity.combination.contradictory");
+  });
+
+  it("permits an explicit override", () => {
+    const result = succeed({
+      state: { current: 50_000, allocations: [] },
+      hours: 2,
+      activity: {
+        mode: "sleep",
+        activity: "extreme",
+        exertionOverride: {
+          source: "nightmare-hatsu",
+          reason: "The ability drives the body while its owner sleeps.",
+        },
+      },
+    });
+
+    /* Sleeping, so recovering — and exerting, so paying for it. */
+    expect(result.balance.physical).toBeGreaterThan(0);
+    expect(result.balance.recovery).toBeGreaterThan(0);
+    expect(result.wakefulness.hoursAwake).toBe(0);
+  });
+});
+
+
+describe("boundaries inside one interval", () => {
+  /*
+   * A boundary is calculated, not searched for. Filling exactly half way
+   * through a span has to land on the timeline, not at the end of it.
+   */
+  it("marks the moment the pool fills", () => {
+    const result = succeed({
+      state: { current: 45_000, allocations: [] },
+      hours: 4,
+      activity: { mode: "sleep" },
+    });
+
+    const full = result.events.find((event) => event.kind === "aura-full");
+
+    expect(full).toBeDefined();
+    expect(full!.at).toBeCloseTo(T0 + hoursToDuration(1), 6);
+    expect(result.segments).toHaveLength(2);
+  });
+
+  it("marks the moment the pool empties", () => {
+    const result = succeed({
+      state: { current: 2500, allocations: [] },
+      hours: 4,
+      access: REN_III,
+      upkeep: [{ id: "ren", source: "ren", baseRate: 1000, period: "hour" }],
+    });
+
+    const empty = result.events.find((event) => event.kind === "aura-empty");
+
+    expect(empty).toBeDefined();
+    expect(empty!.at).toBeCloseTo(T0 + hoursToDuration(2.5), 6);
+  });
+
+  it("starts and expires a timed effect at its own instants", () => {
+    const result = succeed({
+      state: { current: 50_000, allocations: [] },
+      hours: 4,
+      access: REN_III,
+      upkeep: [{
+        id: "ken",
+        source: "ken",
+        baseRate: 1000,
+        period: "hour",
+        startsAt: T0 + hoursToDuration(1),
+        endsAt: T0 + hoursToDuration(3),
+      }],
+    });
+
+    /* Two hours of it, and nothing either side. */
+    expect(result.balance.upkeep).toBeCloseTo(2000, 8);
+
+    expect(result.events.map((event) => event.kind))
+      .toEqual(expect.arrayContaining(["upkeep-started", "upkeep-expired"]));
+  });
+
+  it("resolves an instantaneous action at its own timestamp", () => {
+    const result = succeed({
+      state: { current: 1000, allocations: [] },
+      hours: 4,
+      activity: { mode: "intentional-rest" },
+      instantaneous: [at(2, "forced-drain", 5000)],
+    });
+
+    /*
+     * Resting recovers 2,500 an hour. The drain lands at hour two, by which
+     * point there is 6,000 to take it from — so it lands in full and the last
+     * two hours refill. Smeared across the interval it would have emptied the
+     * pool instead.
+     */
+    expect(result.balance.forcedDrain).toBe(5000);
+    expect(result.unmetDrain).toBe(0);
+    expect(result.current).toBeCloseTo(6000, 6);
+  });
+
+  it("reports every segment it cut the interval into", () => {
+    const result = succeed({
+      state: { current: 45_000, allocations: [] },
+      hours: 4,
+      activity: { mode: "sleep" },
+    });
+
+    expect(result.segments[0]!.startedAt).toBe(T0);
+    expect(result.segments.at(-1)!.endedAt)
+      .toBeCloseTo(T0 + hoursToDuration(4), 6);
+
+    for (const segment of result.segments) {
+      expect(segment.endedAt).toBeGreaterThan(segment.startedAt);
+    }
+  });
+});
+
+
+describe("recovery is netted before the pool is clamped", () => {
+  /*
+   * The ticket's worked example, and the case the old whole-interval clamp got
+   * wrong: at full Aura, incoming regeneration pays an upkeep indefinitely and
+   * the surplus is discarded.
+   */
+  it("offsets upkeep out of generation while already full", () => {
+    const result = succeed({
+      state: { current: 50_000, allocations: [] },
+      hours: 1,
+      access: REN_III,
+      activity: { mode: "sleep" },
+      upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
+    });
+
+    expect(result.current).toBe(50_000);
+    expect(result.recovery.potential).toBe(5000);
+    expect(result.recovery.used).toBe(100);
+    expect(result.recovery.discarded).toBe(4900);
+    expect(result.balance.upkeep).toBe(100);
+  });
+
+  it("reports the drain an empty pool could not pay for", () => {
+    const result = succeed({
+      state: { current: 100, allocations: [] },
+      hours: 2,
+      activity: { mode: "ordinary-waking", activity: "extreme" },
+    });
+
+    expect(result.current).toBe(0);
+    expect(result.unmetDrain).toBeGreaterThan(0);
+  });
+
+  /*
+   * The terms have to add up to the number they claim to. `net` is the
+   * unclamped sum; `currentChange` is what the pool actually did; `unmetDrain`
+   * is exactly the difference when it bottomed out.
+   */
+  it("makes the balance's own terms sum to its net", () => {
+    for (const scenario of [
+      { state: { current: 30_000, allocations: [] }, hours: 3,
+        activity: { mode: "sleep" as const } },
+      { state: { current: 100, allocations: [] }, hours: 2,
+        activity: { mode: "ordinary-waking" as const, activity: "extreme" as const } },
+      { state: { current: 5000, allocations: [] }, hours: 2, access: REN_III,
+        upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" as const }],
+        instantaneous: [at(1, "forced-drain", 400)] },
+    ]) {
+      const result = succeed(scenario);
+      const { balance } = result;
+
+      expect(balance.net).toBeCloseTo(
+        balance.recovery - balance.physical - balance.deliberate -
+        balance.upkeep - balance.leakage - balance.forcedDrain,
+        8,
+      );
+
+      expect(result.currentChange).toBeCloseTo(
+        balance.net + result.unmetDrain,
+        8,
+      );
+    }
+  });
+});
+
+
 describe("immutability and determinism", () => {
   const state: CharacterAuraState = {
     current: 20_000,
@@ -663,7 +930,7 @@ describe("immutability and determinism", () => {
       hours: 3,
       activity: { mode: "ordinary-waking", activity: "moderate" },
       upkeep: [{ id: "ren", source: "ren", baseRate: 50, period: "hour" }],
-      forcedDrain: 100,
+      instantaneous: [at(1, "forced-drain", 100)],
     });
   }
 
@@ -709,11 +976,9 @@ describe("immutability and determinism", () => {
     expect(result.trace.root.id).toBe("aura.time.advance");
 
     for (const id of [
+      "time.interval.validate",
       "aura.budget.resolve",
-      "aura.recovery.apply",
       "aura.control.multiplier",
-      "aura.upkeep.derive",
-      "body.wakefulness.advance",
     ]) {
       expect([id, serialized.includes(id)]).toEqual([id, true]);
     }
