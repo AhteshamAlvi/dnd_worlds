@@ -30,10 +30,21 @@ import {
 import { resolveStrength } from "../character/foundation/attributes/strength";
 import { createCharacterStats } from "../character/foundation/attributes/stats";
 import {
-  REFERENCE_MOVEMENT_RATE_MPS,
+  REFERENCE_ROUND_MOVEMENT_METERS,
+  REFERENCE_SPEED_OF_SOUND_MPS,
+  presentMovementMeters,
   resolveMovement,
   resolveMovementRateMps,
+  resolveRoundMovementMeters,
+  resolveSpeedPosition,
 } from "../character/foundation/attributes/speed";
+import {
+  beginRoundMovement,
+  beginRoundMovementFor,
+  grantMovement,
+  movesRemaining,
+  spendMove,
+} from "../character/foundation/attributes/movement";
 import { resolveDerivedAttributes } from "../character/foundation/attributes/derived/resolution";
 import { deriveBaseRoundActionCapacity } from "../character/foundation/actions/resolution";
 import { COMBAT_ROUND_DURATION_SECONDS } from "../gameplay/combat/round";
@@ -88,8 +99,9 @@ function resolve(scale: number, continuity: ContinuityStates = {}) {
     burden,
     stats,
     derived,
+    strength,
     movement: resolveMovement(
-      (stats.str + stats.agi) / 2,
+      resolveSpeedPosition(strength.position ?? 0, stats.agi),
       body.payload.locomotion.fraction,
     ),
   };
@@ -111,10 +123,11 @@ describe("the Standard Human", () => {
     expect(human.stats.str).toBe(10);
   });
 
-  it("moves 10 metres in a standard 3-second Move", () => {
+  it("covers 6 metres in a two-second Round, which is 3 m/s", () => {
     expect(human.derived.speed).toBe(10);
-    expect(human.movement.baseMovementRateMps).toBeCloseTo(10 / 3, 10);
-    expect(human.movement.moveDistanceMeters).toBeCloseTo(10, 10);
+    expect(human.movement.speedPosition).toBeCloseTo(10, 10);
+    expect(human.movement.baselineRoundMovementMeters).toBeCloseTo(6, 10);
+    expect(human.movement.baselineMovementRateMps).toBeCloseTo(3, 10);
   });
 
   it("resolves every derived attribute to 10", () => {
@@ -162,36 +175,313 @@ describe("the Scale-10 Giant", () => {
    * Less agile than a Human and still faster in a straight line, because
    * Strength carries it. Speed 11 = (16 + 6) / 2.
    */
-  it("moves 12.6 metres per Move despite being clumsier", () => {
+  it("covers 7.6 metres a Round despite being clumsier", () => {
     expect(giant.derived.speed).toBe(11);
-    expect(giant.movement.baseMovementRateMps).toBeCloseTo(4.1997, 4);
-    expect(giant.movement.moveDistanceMeters).toBeCloseTo(12.599, 3);
+
+    /*
+     * The displayed Speed is 11 and the position it MOVES on is 11.32,
+     * because Strength arrives continuous: the Giant's 16.64 ladder position
+     * is worth a third of a point of Speed that flooring would have thrown
+     * away. Movement is one of the few consumers that needs the difference.
+     */
+    expect(giant.strength.position).toBeCloseTo(16.6439, 4);
+    expect(giant.movement.speedPosition).toBeCloseTo(11.3219, 4);
+
+    expect(giant.movement.baselineRoundMovementMeters).toBeCloseTo(7.5874, 4);
+    expect(giant.movement.baselineMovementRateMps).toBeCloseTo(3.7937, 4);
   });
 });
 
 
-describe("Speed scaling", () => {
-  it("doubles velocity every +3 and halves it every -3", () => {
-    const base = resolveMovementRateMps(10);
+/*
+ * The burden is DERIVED from the present measurements every resolve, never
+ * banked against the stored score. That is what makes a body change
+ * reversible: a character who grows and shrinks back is where they started,
+ * and a character who invested in AGI to carry the burden still has the
+ * investment when the burden lifts.
+ */
+describe("a body change is reversible and never consumes invested AGI", () => {
+  const small = resolve(1);
+  const large = resolve(10);
+  const smallAgain = resolve(1);
 
-    expect(base).toBeCloseTo(REFERENCE_MOVEMENT_RATE_MPS, 10);
-    expect(resolveMovementRateMps(13)).toBeCloseTo(base * 2, 10);
-    expect(resolveMovementRateMps(16)).toBeCloseTo(base * 4, 10);
-    expect(resolveMovementRateMps(7)).toBeCloseTo(base / 2, 10);
+  it("charges the large form and returns the small one intact", () => {
+    expect(large.burden.steps).toBe(4);
+    expect(large.stats.agi).toBe(6);
+
+    expect(smallAgain.burden.steps).toBe(0);
+    expect(smallAgain.stats.agi).toBe(10);
+    expect(smallAgain.stats.agi).toBe(small.stats.agi);
+  });
+
+  it("returns movement to exactly where it started", () => {
+    expect(large.movement.baselineRoundMovementMeters)
+      .not.toBeCloseTo(small.movement.baselineRoundMovementMeters, 6);
+
+    expect(smallAgain.movement.speedPosition)
+      .toBe(small.movement.speedPosition);
+
+    expect(smallAgain.movement.baselineRoundMovementMeters)
+      .toBe(small.movement.baselineRoundMovementMeters);
   });
 
   /*
-   * Actions per TURN slice the Round more finely; Actions per ROUND do not.
-   * A creature with more Round Actions gets more opportunities to move, each
-   * covering a full distance — not more, shorter ones.
+   * The Giant is SLOWER in AGI and FASTER overall, because Strength carries
+   * it. Both halves reach movement through the resolved scores and neither is
+   * applied twice — Speed never sees Volume or Mass at all.
    */
-  it("divides a Move by Actions per Turn and not by Actions per Round", () => {
-    const move = (actionsPerTurn: number) =>
-      resolveMovement(10, 1, actionsPerTurn).moveDistanceMeters;
+  it("lets Strength outrun the agility the size cost", () => {
+    expect(large.stats.agi).toBeLessThan(small.stats.agi);
 
-    expect(move(2)).toBeCloseTo(10, 10);
-    expect(move(3)).toBeCloseTo(6.667, 3);
-    expect(move(4)).toBeCloseTo(5, 10);
+    expect(large.movement.baselineRoundMovementMeters)
+      .toBeGreaterThan(small.movement.baselineRoundMovementMeters);
+  });
+});
+
+
+describe("the Speed curve", () => {
+  /* The two locked anchors. Everything else is the curve between them. */
+  it("puts Speed 10 at exactly 6 metres a Round and 3 m/s", () => {
+    expect(resolveRoundMovementMeters(10)).toBeCloseTo(6, 10);
+    expect(resolveRoundMovementMeters(10))
+      .toBeCloseTo(REFERENCE_ROUND_MOVEMENT_METERS, 10);
+    expect(resolveMovementRateMps(10)).toBeCloseTo(3, 10);
+  });
+
+  it("puts Speed 30 at 700 metres a Round and 350 m/s", () => {
+    expect(resolveRoundMovementMeters(30)).toBeCloseTo(700, 6);
+    expect(resolveMovementRateMps(30)).toBeCloseTo(350, 6);
+  });
+
+  /*
+   * The top of the ladder is meant to sit just past the sound barrier — near
+   * enough that breaking it is a landmark rather than an afterthought.
+   */
+  it("leaves Speed 30 barely past the reference speed of sound", () => {
+    expect(resolveMovementRateMps(30))
+      .toBeGreaterThan(REFERENCE_SPEED_OF_SOUND_MPS);
+
+    expect(resolveMovementRateMps(29))
+      .toBeLessThan(REFERENCE_SPEED_OF_SOUND_MPS);
+  });
+
+  it("stays finite, positive and monotonic across Speed 1 to 30", () => {
+    let previous = 0;
+
+    for (let speed = 1; speed <= 30; speed += 0.25) {
+      const movement = resolveRoundMovementMeters(speed);
+
+      expect(Number.isFinite(movement)).toBe(true);
+      expect(movement).toBeGreaterThan(0);
+      expect(movement).toBeGreaterThan(previous);
+
+      previous = movement;
+    }
+  });
+
+  /*
+   * The property the quadratic term exists for. A constant-doubling curve
+   * would make every one of these ratios identical, and the last points of
+   * the ladder would buy no more than the first.
+   */
+  it("makes each point of Speed buy proportionally more than the last", () => {
+    const growth = (speed: number) =>
+      resolveRoundMovementMeters(speed + 1) / resolveRoundMovementMeters(speed);
+
+    for (let speed = 1; speed < 29; speed += 1) {
+      expect(growth(speed + 1)).toBeGreaterThan(growth(speed));
+    }
+  });
+
+  /* Flooring before converting is what this replaces. */
+  it("moves a fractional Speed position differently from a whole one", () => {
+    expect(resolveRoundMovementMeters(10.5))
+      .toBeGreaterThan(resolveRoundMovementMeters(10));
+
+    expect(resolveRoundMovementMeters(10.5))
+      .toBeLessThan(resolveRoundMovementMeters(11));
+  });
+
+  it("averages the two resolved Attributes it is built from", () => {
+    expect(resolveSpeedPosition(16.643856189774723, 6))
+      .toBeCloseTo(11.321928094887362, 12);
+  });
+
+  /*
+   * Safe rather than refused: these are pure derivations with no EngineResult
+   * to fail into, and a NaN distance on a sheet names nothing.
+   */
+  it("resolves a non-finite input to zero instead of propagating it", () => {
+    expect(resolveRoundMovementMeters(Number.NaN)).toBe(0);
+    expect(resolveRoundMovementMeters(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(resolveSpeedPosition(Number.NaN, 10)).toBe(0);
+    expect(resolveSpeedPosition(10, Number.NaN)).toBe(0);
+  });
+});
+
+
+describe("movement presentation", () => {
+  it("presents two significant figures", () => {
+    expect(presentMovementMeters(6)).toBe(6);
+    expect(presentMovementMeters(resolveRoundMovementMeters(13))).toBe(10);
+    expect(presentMovementMeters(resolveRoundMovementMeters(16))).toBe(19);
+    expect(presentMovementMeters(resolveRoundMovementMeters(25))).toBe(170);
+    expect(presentMovementMeters(resolveRoundMovementMeters(30))).toBe(700);
+  });
+
+  /*
+   * The rounding is a display concern and nothing downstream consumes it.
+   * Rounding a Move share before it accumulates is precisely how a character
+   * ends a Round having travelled slightly more or less than their allowance.
+   */
+  it("does not disturb the value it was derived from", () => {
+    const exact = resolveRoundMovementMeters(16);
+
+    presentMovementMeters(exact);
+
+    expect(exact).toBeCloseTo(19.0659, 4);
+    expect(exact).not.toBe(presentMovementMeters(exact));
+  });
+
+  it("does not alter the Round movement cap", () => {
+    const round = beginRoundMovement(resolveRoundMovementMeters(16), 4);
+
+    expect(round.allowance.roundMovementMeters).toBeCloseTo(19.0659, 4);
+    expect(presentMovementMeters(round.allowance.moveDistanceMeters)).toBe(4.8);
+    expect(round.allowance.moveDistanceMeters).not.toBe(4.8);
+  });
+});
+
+
+/*
+ * A Round holds ONE allowance. Round Actions decide how finely it divides,
+ * never how much of it there is.
+ */
+describe("Move divides one Round allowance", () => {
+  const humanRound = (capacity: number) => beginRoundMovement(6, capacity);
+
+  it.each([
+    [1, 6],
+    [2, 3],
+    [3, 2],
+    [4, 1.5],
+    [6, 1],
+    [10, 0.6],
+  ])("gives %i Round Actions a %s metre Move", (capacity, expected) => {
+    expect(humanRound(capacity).allowance.moveDistanceMeters)
+      .toBeCloseTo(expected, 10);
+  });
+
+  it("reaches exactly the cap when every Action is spent on Move", () => {
+    for (const capacity of [1, 2, 3, 4, 6, 7, 10]) {
+      let state = humanRound(capacity);
+
+      for (let move = 0; move < capacity; move += 1) {
+        state = spendMove(state).state;
+      }
+
+      /* Exactly, not approximately: seven sevenths of 6 must be 6. */
+      expect(state.consumedMeters).toBe(6);
+      expect(state.remainingMeters).toBe(0);
+    }
+  });
+
+  it("refuses a Move once the allowance is spent", () => {
+    let state = humanRound(2);
+
+    state = spendMove(state).state;
+    state = spendMove(state).state;
+
+    const extra = spendMove(state);
+
+    expect(extra.distanceMeters).toBe(0);
+    expect(extra.refusal).toBe("allowance-spent");
+    expect(extra.state.consumedMeters).toBe(6);
+  });
+
+  it("cannot Move at all on zero Round Actions", () => {
+    const none = beginRoundMovement(6, 0);
+
+    expect(none.allowance.moveShare).toBe(0);
+    expect(none.allowance.moveDistanceMeters).toBe(0);
+
+    const attempt = spendMove(none);
+
+    expect(attempt.distanceMeters).toBe(0);
+    expect(attempt.refusal).toBe("no-round-actions");
+  });
+
+  /*
+   * The divisor is a snapshot. Re-dividing as the capacity moved would let an
+   * effect that never mentioned movement rob a character of ground they had
+   * already banked, or hand them ground they had not.
+   */
+  it("keeps the divisor a character opened the Round with", () => {
+    const opened = humanRound(2);
+    const afterOneMove = spendMove(opened).state;
+
+    expect(afterOneMove.consumedMeters).toBeCloseTo(3, 10);
+
+    /* An Action lost mid-Round: the snapshot, and the banked half, survive. */
+    expect(afterOneMove.allowance.roundActionCapacity).toBe(2);
+    expect(afterOneMove.allowance.moveDistanceMeters).toBeCloseTo(3, 10);
+    expect(movesRemaining(afterOneMove)).toBe(1);
+  });
+
+  /*
+   * Actions per TURN are a sequencing rule. They decide when a character may
+   * act, not how far they travel, and appear in neither formula.
+   */
+  it("is unaffected by how the Round's Actions are spread across Turns", () => {
+    const twoTurnsOfOne = humanRound(2);
+    const oneTurnOfTwo = humanRound(2);
+
+    expect(twoTurnsOfOne.allowance.moveDistanceMeters)
+      .toBe(oneTurnOfTwo.allowance.moveDistanceMeters);
+  });
+
+  /* A Speed 30 character with two Actions: 350 m per Move, 700 m per Round. */
+  it("moves a Speed 30 character 350 metres a Move and 700 a Round", () => {
+    let state = beginRoundMovement(resolveRoundMovementMeters(30), 2);
+
+    expect(state.allowance.moveDistanceMeters).toBeCloseTo(350, 6);
+
+    state = spendMove(state).state;
+    state = spendMove(state).state;
+
+    expect(state.consumedMeters).toBeCloseTo(700, 6);
+    expect(presentMovementMeters(state.consumedMeters)).toBe(700);
+  });
+
+  /*
+   * Granted movement must say whether it draws on the Round allowance.
+   * Neither answer is safe to assume: a free step that ignored the cap is a
+   * movement bonus, and a shove that consumed it punishes the victim.
+   */
+  it("charges granted movement against the cap only when told to", () => {
+    const charged = grantMovement(humanRound(2), 2, {
+      chargedAgainstCap: true,
+    });
+
+    expect(charged.consumedMeters).toBeCloseTo(2, 10);
+    expect(charged.remainingMeters).toBeCloseTo(4, 10);
+
+    const free = grantMovement(humanRound(2), 2, {
+      chargedAgainstCap: false,
+    });
+
+    expect(free.consumedMeters).toBe(0);
+    expect(free.remainingMeters).toBe(6);
+    expect(free.grantedUnchargedMeters).toBe(2);
+  });
+
+  it("never lets charged grants push consumption past the cap", () => {
+    const shoved = grantMovement(humanRound(2), 100, {
+      chargedAgainstCap: true,
+    });
+
+    expect(shoved.consumedMeters).toBe(6);
+    expect(shoved.remainingMeters).toBe(0);
   });
 });
 
@@ -224,16 +514,22 @@ describe("locomotion gates movement, never Speed", () => {
     expect(lost.derived.speed).toBe(10);
 
     expect(lost.body.locomotion.fraction).toBe(0);
-    expect(lost.movement.baseMovementRateMps).toBeCloseTo(10 / 3, 10);
-    expect(lost.movement.currentMovementRateMps).toBe(0);
-    expect(lost.movement.moveDistanceMeters).toBe(0);
+    expect(lost.movement.baselineRoundMovementMeters).toBeCloseTo(6, 10);
+    expect(lost.movement.currentRoundMovementMeters).toBe(0);
+
+    const round = beginRoundMovementFor(lost.movement, 2);
+
+    expect(round.allowance.moveDistanceMeters).toBe(0);
   });
 
   it("halves movement when one of two chains is gone", () => {
     const lost = resolve(1, destroyed("lower-limb:left"));
 
     expect(lost.body.locomotion.fraction).toBe(0.5);
-    expect(lost.movement.moveDistanceMeters).toBeCloseTo(5, 10);
+    expect(lost.movement.currentRoundMovementMeters).toBeCloseTo(3, 10);
+
+    expect(beginRoundMovementFor(lost.movement, 2).allowance.moveDistanceMeters)
+      .toBeCloseTo(1.5, 10);
   });
 
   /*
@@ -244,7 +540,7 @@ describe("locomotion gates movement, never Speed", () => {
     const lost = resolve(1, destroyed("upper-limb:left", "upper-limb:right"));
 
     expect(lost.body.locomotion.fraction).toBe(1);
-    expect(lost.movement.moveDistanceMeters).toBeCloseTo(10, 10);
+    expect(lost.movement.currentRoundMovementMeters).toBeCloseTo(6, 10);
   });
 
   it("finds two chains on a humanoid, each a Leg and its Foot", () => {

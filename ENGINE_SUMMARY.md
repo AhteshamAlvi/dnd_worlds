@@ -303,17 +303,43 @@ Uses the **form** measurements, not present ones, so losing an arm doesn't make 
 follows because it is recalculated. Ties round up (decision `attributes.derived.rounding-direction`).
 (`athletics` was replaced by `speed` in Phase 10.)
 
-### Speed → real velocity (`speed.ts`)
+### Speed → Round movement (`speed.ts`, `movement.ts`)
 
 ```
-Speed 10 = 10/3 m/s = 10 m in a 3-second Move     every +3 Speed doubles velocity
-ROUND_DURATION_SECONDS = 6      STANDARD_ACTIONS_PER_TURN = 2
+x = (S - 10) / 20        RoundMovement(S) = 6 × 2^(5x + 1.866248611111173x²)
+
+Speed 10 =   6 m per two-second Round =   3 m/s
+Speed 30 = 700 m per two-second Round = 350 m/s     (reference speed of sound 343)
 ```
 
-Conversion takes the **continuous** position, not the floored stat. No height or stride term —
-large bodies were already charged through AGI. `resolveMovement()` returns both the intact rate
-and the current rate (rate × locomotor condition), because a GM seeing only one can't explain
-why a character moved 5 m instead of 10.
+Movement is denominated **per Round** and imports `SECONDS_PER_COMBAT_ROUND` from `time/duration.ts`;
+it declares no timing constant of its own. The curve **accelerates** — the quadratic term makes each
+point buy proportionally more than the last — and is finite, positive and monotonic across the range.
+
+| Speed | 1 | 5 | 10 | 13 | 16 | 20 | 25 | 30 |
+|---|---|---|---|---|---|---|---|---|
+| m/Round | 1.6 | 2.7 | 6.0 | 10 | 19 | 47 | 170 | 700 |
+
+Conversion takes the **continuous** position — the mean of the continuous Strength ladder position
+and resolved AGI, *not* the floored `stats.str`, which made two characters 40% apart in Structural
+Capacity move identically. No height or stride term: large bodies were already charged through AGI.
+`resolveMovement()` returns both the intact allowance and the current one (× locomotor condition).
+
+**Move** (`movement.ts`) divides one Round allowance by the Round Action Capacity **snapshotted at
+Round start**:
+
+```
+MoveShare = 1 / RoundActionCapacity        MoveDistance = CurrentRoundMovement × MoveShare
+```
+
+Actions per Turn affect **sequencing only** and appear in neither formula. Spending every Round
+Action on Move reaches exactly the cap and no arrangement of Actions exceeds it; consumption is
+tracked as a *count* of Moves so awkward shares (sevenths of 6 m) accumulate without drift.
+Reaction Moves draw on the same allowance. Granted and forced movement must declare whether it
+charges against the cap. Presentation is **two significant figures**; nothing internal consumes it.
+
+Decisions: `time.combat-round.two-seconds`, `movement.speed.round-denominated-accelerating-curve`,
+`movement.move.round-action-capacity-divisor`, `movement.presentation.two-significant-figures`.
 
 ### Strength surface (`attributes/strength.ts`)
 
@@ -732,9 +758,15 @@ reported as an expiry rather than a shutdown.
 **Instantaneous events** (`ScheduledAuraEvent {at, kind, source, amount}`) resolve at their own
 timestamps — a strike landing in the last minute of an eight-hour advance is charged there, not
 smeared across the night. They replaced the accumulated `discretePhysical` /
-`discreteDeliberate` / `forcedDrain` fields. Events sharing a timestamp are resolved as **one
-instant**: recovery and drain are summed separately and the pool clamped once, so the answer does
-not depend on array order.
+`discreteDeliberate` / `forcedDrain` fields.
+
+Events sharing a timestamp are resolved as **one atomic instant**: every contribution is combined
+into a single net change and the pool is clamped **once**. Neither the caller's array order nor
+the *kind* of contribution can decide the answer — an earlier version added recovery, clamped,
+discarded the overflow and only then applied drains, so a character on 49,000 of 50,000 taking
+3,000 of each at one moment ended on 47,000 instead of 49,000. Overflow above the cap is still
+discarded (split proportionally across simultaneous heals) and a net-negative result still reports
+`unmetDrain`; at most one of the two can be non-zero.
 
 ### The timeline (`timeline.ts`)
 
@@ -1117,6 +1149,17 @@ campaignStartedAt, mode, timeScale, fractionalMs}`; modes `running` / `paused` /
 Calendar: 12 months, leap years. A host may refresh a display on any interval it likes; gameplay
 never depends on that interval.
 
+**One Combat Round is TWO seconds**, declared exactly once as `SECONDS_PER_COMBAT_ROUND` in
+`time/duration.ts` — so `COMBAT_ROUNDS_PER_HOUR = 1800` and
+`GAME_MILLISECONDS_PER_COMBAT_ROUND = 2000`. It lives in Time rather than Combat because it is a
+unit of *time* and things well below Combat need it: an Aura upkeep rate may be quoted per Round,
+and movement is denominated per Round. `gameplay/combat/round.ts` re-exports it as
+`COMBAT_ROUND_DURATION_SECONDS`, the name Combat callers already use, and
+`foundation/attributes/speed.ts` imports it directly (foundation cannot import from gameplay).
+**No other file may declare a Round length**, and `movement.test.ts` enforces that against the
+source text — a stale six survived in `speed.ts` for a whole phase precisely because it was a
+second declaration nothing compared against the first.
+
 The authoritative units live in `time/duration.ts` and everything that converts reads them:
 `GAME_MILLISECONDS_PER_SECOND` / `_MINUTE` / `_HOUR` / `_DAY`, `GAME_SECONDS_PER_MINUTE`,
 `GAME_MINUTES_PER_HOUR`, `GAME_HOURS_PER_DAY`. **`SECONDS_PER_COMBAT_ROUND = 2`**, so
@@ -1430,6 +1473,10 @@ rather than an edit to the book.
 7. **`time.continuous-resolution.boundaries`** — intervals are split at calculated rate changes so `advance(T)` equals `advance(T/N)` N times; recovery is netted uncapped and only the pool is clamped.
 8. **`time.upkeep.exact-shutdown`** — upkeep is charged until the exact instant it cannot be carried, then shut down with that timestamp; lowest priority sheds first, ties by id.
 9. **`time.character.lazy-projection`** — characters store `resolvedAt` and sheets project on demand rather than a tick walking the world; projection and commitment share one implementation.
+10. **`time.combat-round.two-seconds`** — one canonical Round of two seconds, declared once in `time/duration.ts`; 1,800 to the hour, and no other file may declare a Round length.
+11. **`movement.speed.round-denominated-accelerating-curve`** — Speed is metres per Round on an accelerating curve pinned at 6 m (Speed 10) and 700 m (Speed 30), taking the continuous STR/AGI position.
+12. **`movement.move.round-action-capacity-divisor`** — a Round holds one movement allowance divided by the Round Action Capacity snapshotted at Round start; Actions per Turn are sequencing only.
+13. **`movement.presentation.two-significant-figures`** — movement rounds at the sheet and nowhere else, unlike Aura Control, because a Move share accumulates and a rounded share drifts.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1438,20 +1485,20 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (69 files, 1,882 tests)
+## 14 · Test coverage (70 files, 1,936 tests)
 
 | Area | Files (tests) |
 |---|---|
 | Body | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · effects-integration 29 · damage 25 · **continuity 24** · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · effects 19 · recovery 20 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **529** |
-| Attributes | standard-modifier 39 · derived 35 · phase9-model 34 · physical 15 · propagation 7 — **130** |
+| Attributes | phase9-model 60 · standard-modifier 39 · derived 35 · **movement 18** · physical 15 · propagation 7 — **174** |
 | Progression | 58 |
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
 | Rules | check-modifiers 29 · requirements 25 · effects 16 — **70** |
-| Aura | time 51 · timeline 49 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · interval-invariance 22 · control 21 · access-enforcement 16 · character-state 12 — **443** |
+| Aura | time 61 · timeline 49 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · interval-invariance 22 · control 21 · access-enforcement 16 · character-state 12 — **453** |
 | Endurance & character time | body-endurance 39 · character-time 24 — **63** |
 | Catalogs | 28 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Checks** 6 · **Infra** trace 8 + id 7 — **88** |
-| **Foundation stability** | character-foundation-stability 41 · injury-ownership 17 · architecture 8 — **66** |
+| **Foundation stability** | architecture 56 · character-foundation-stability 41 · injury-ownership 17 — **114** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1486,62 +1533,27 @@ equipment beyond the two demo items.
 
 ## 15 · What is NOT developed
 
-### Not built at all
+**The authoritative backlog is [`BACKLOG.md`](BACKLOG.md).** It is the only place incomplete
+mechanics are enumerated, and it classifies every entry as *Specified but absent*, *Partially
+implemented*, *Implemented but internal*, *Implemented but insufficiently tested*, or *Complete*.
+This document describes what exists; when it needs to say something is missing, it links there.
 
-| Gap | State |
-|---|---|
-| **Damage → BP model** | Nothing defines how Strength Points become BP damage. This is the **highest-leverage hole**: it is what would validate `CONSTITUTION_DOUBLING_INTERVAL = 2` and the STR/CON durability parity the whole BP calibration rests on. |
-| **Combat check resolution** | No Guard, Strike, Evasion, attack rolls, death saves. `gameplay/combat/` is turn/round/initiative/action *structure* only and references no Body, STR, BP or damage. |
-| **Nen: 11 of 15 principles** | shu, en, gyo, ken, chu, in, ko, ryu, yu, ju, fu — graph nodes only, no principle files. |
-| **Nen Abilities (Hatsu abilities)** | No subsystem. `HATSU_EFFECT_MINIMUM_MASTERY = 3` is the only hook. |
-| **Injury content** | `INJURY_DEFINITIONS = {}`. Machinery, validation and recovery integration are done and tested against an empty catalog. |
-| **Condition effects** | 11 Conditions, zero Effects — blocked on combat mechanics. |
-| **Item use pipeline** | `useEffects` / `useRequirements` are declared and validated, never executed. |
-| **Improvised skill attempts** | `ImprovisedSkillAttempt` type exists; no resolution. |
-| **Sense-specific detection** | The senses model was deleted in the Derived Attributes refactor. A `{kind:"sense"}` `CheckScope` variant is described as a one-line addition; the capability is currently gone. |
-| **Awakening mechanics** | `NenState.awakened` is a bare boolean. |
+The shape of it, for orientation only — the file has the detail and the states:
 
-### Built but not wired up
-
-| Gap | Detail |
-|---|---|
-| **`details.nenType`** | Declared on `CharacterDetails`; nothing reads it. |
-
-### Built but unexported from `@nenworld/engine`
-
-`gameplay/combat/*` (~5,470 LOC) · most of `checks/*` (~1,150 LOC — `resolveCheck`,
-`resolveFixedCheck`, `resolveOpposedCheck`, `CheckRequest` and friends are not exported; only the
-scope vocabulary, `CheckModifierContribution`/`CheckSourceRef`/`CheckModifierChannel`, and the
-roll-free `resolveCheckModifier`/`createCheckModifierTraceNode`/`collectApplicableCheckModifiers`
-are, via `character/rules/effects.ts`'s re-export and the "Checks" barrel block) · the whole
-`foundation/nen/` tree (~3,970 LOC) · `foundation/aura/control.ts` · `character/details.ts` ·
-`time/{validation,calendar,clock}` · `infrastructure/{rounding,id}` · `character/progression/index`.
-
-`foundation/actions/*` (Action capacity) is exported now — it moved out of `character/mechanics/`
-in the Body-ownership pass and was integrated into `ResolvedCharacter.actionCapacity` at the same
-time (§11), closing what used to be a "tested but never resolved" gap.
-
-**~9,400 LOC of finished code is unreachable from the public barrel**, most of it also untested.
-
-### Outstanding refactor phases
-
-- **Phase 11 — downstream consumers.** `apps/workbench` is broken against the engine:
-  **65 TypeScript errors, 49 of 97 tests failing.** It never absorbed three engine migrations
-  (`character.name` → `character.details.name`, `body.surfaceUnits` removed, `str` no longer an
-  Attribute) plus everything the Body refactor changed. It was deliberately not a gate for
-  Phases 1–10.
-- **Phase 12 — full regression.** Body goldens + full suite + `tsc`.
-
-### Open questions carried forward
-
-1. `CONSTITUTION_DOUBLING_INTERVAL = 2` is a reasoned guess pending a damage model (`/3` is the alternative).
-2. Ages below ~4 resolve too light (1.8 kg at birth vs. a real 3.5) — mass goes as scale³, and the real fix is age *local* morphology, which the profile format supports but does not use. Ages 6+ land within 3%.
-3. Orphaned archive retention policy is implemented as "retain forever"; a deliberate purge operation does not exist.
-4. `details.heightCm` / `weightKg` were removed; the duplicate-source problem is resolved.
-5. *(Resolved.)* The last `foundation/` → `character/rules/` import — the Injury definition —
-   is gone. `AnatomicalInjuryDefinition` stays under Body, `InjuryDefinition` was rebuilt on top
-   of it in `character/status/injuries/`, and Body is handed the definitions it needs. §1 rule 6
-   now holds with **no exceptions**, enforced by `architecture.test.ts`. See §10.
+- **Highest leverage:** SP→BP damage conversion, and a Spatial/Range vocabulary. Each blocks a
+  cluster: damage blocks Aura reinforcement, Condition effects and every combat check; space
+  blocks terrain, Range bands and targeting, and is what movement's metres are currently
+  denominated against nothing for.
+- **Absent:** Sprint, encumbrance, terrain, combat Stamina expenditure, full combat resolution,
+  Perception↔Reaction integration, Foundry.
+- **Partial:** Fatigue (derived, no consequences), locomotor conditions (destruction only, no
+  graded impairment), Aura reinforcement (unawakened only), the Nen principles (4 of 15 written,
+  no combat contracts), skill execution.
+- **Internal:** ~9,400 LOC unreachable from the barrel — Combat (~5,480), Nen (~3,970), most of
+  `checks/`.
+- **Downstream:** `apps/workbench` is broken against the engine — 65 TypeScript errors, 49 of 97
+  tests failing, verified at Phase 0 close. Pre-existing; it never absorbed three engine
+  migrations plus the Body refactor.
 
 ---
 
@@ -1550,7 +1562,7 @@ time (§11), closing what used to be a "tested but never resolved" gap.
 ```
 dnd_worlds/                     npm workspaces, "nenworld"
 ├── packages/engine/            the rules kernel — this document
-├── apps/workbench/             React + Vite; currently broken (Phase 11)
+├── apps/workbench/             React + Vite; currently broken — see BACKLOG.md
 ├── foundry_module/             planned consumer
 └── worldbuilding/              Obsidian vault — the frozen Rulebook + content
     ├── Rulebook/               01 Core Rules · 02 Characters · 03 Aura Engine · 04 Combat ·
@@ -1559,7 +1571,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 41 files, 1,023 tests
+cd packages/engine && npx vitest run     # 70 files, 1,936 tests
 ```
 
 ```bash

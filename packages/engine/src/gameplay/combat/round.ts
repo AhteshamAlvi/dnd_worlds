@@ -61,18 +61,24 @@ import {
 // ---------------------------------------------------------------------------
 
 /*
- * One completed Combat Round represents six seconds of in-game time.
+ * One completed Combat Round represents TWO seconds of in-game time.
  *
  * A Round is not a Turn. A creature may take several Turns within one Round,
  * spending its Round Action budget across them — Combat Ability decides how
  * many Actions the Round holds, and Actions per Turn decides how finely those
- * are sliced. Movement reads the Turn division, never the Round budget: see
- * foundation/attributes/speed.ts.
+ * are distributed across Turns.
  *
- * The Time module ultimately performs the clock advancement, and now also
- * DECLARES the six: foundation-level systems need it too — an Aura upkeep rate
- * may be quoted per Round — and foundation cannot import from gameplay. This
- * is a re-export under the name Combat callers already use.
+ * Movement reads the ROUND budget, never the Turn division. A Round holds one
+ * movement allowance and each Move spends 1/RoundActionCapacity of it, so
+ * Actions per Turn are a sequencing rule that cannot make anyone faster: see
+ * foundation/attributes/movement.ts. Dividing by the Turn division instead is
+ * what made a third Action per Turn a 50% speed bonus nobody had priced.
+ *
+ * The Time module ultimately performs the clock advancement, and also DECLARES
+ * the two: foundation-level systems need it too — an Aura upkeep rate may be
+ * quoted per Round, and movement is denominated per Round — and foundation
+ * cannot import from gameplay. This is a re-export under the name Combat
+ * callers already use.
  */
 export { SECONDS_PER_COMBAT_ROUND as COMBAT_ROUND_DURATION_SECONDS } from "../../time/duration";
 

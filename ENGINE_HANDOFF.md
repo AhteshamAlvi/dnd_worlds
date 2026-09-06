@@ -1,10 +1,20 @@
 # Nenworld Rules Engine — Complete State Handoff
 
+> ⚠️ **This document is a historical snapshot and is stale.** It was written at 27 files /
+> 596 tests; the engine is now at **70 files / 1,936 tests**. Several sections below describe
+> code that has since moved (`character/mechanics/` → `foundation/`), been rewritten (Speed and
+> movement), or been completed (Aura time resolution).
+>
+> - For **current state**, read [`ENGINE_SUMMARY.md`](ENGINE_SUMMARY.md).
+> - For **what is not done**, read [`BACKLOG.md`](BACKLOG.md) — the single authoritative backlog.
+>
+> This file is kept for the design narrative it carries, not as a status report.
+
 **Package:** `@nenworld/engine` (`packages/engine`)
 **Snapshot date:** 2026-08-27
 **Branch:** `main` @ `6a3450b` + substantial uncommitted work (see §12)
 
-**Health:** `vitest run` → **27 files, 596 tests, all passing** (~1.2s). `tsc --noEmit` → **clean**.
+**Health at snapshot:** `vitest run` → **27 files, 596 tests, all passing** (~1.2s). `tsc --noEmit` → **clean**.
 **Size:** 120 `.ts` files, ~38,100 LOC total (~28,000 source / ~10,000 test).
 
 **Stack:** TypeScript 5.6, ESM (`"type": "module"`), Vitest 2.1, zero runtime dependencies.
@@ -158,7 +168,7 @@ Ten values, each the **rounded mean** of 2–5 **resolved** Attributes:
 | Derived Attribute | Formula |
 |---|---|
 | `combatAbility` | round((STR + AGI + DEX + PER + WIS) / 5) |
-| `athletics` | round((STR + AGI) / 2) |
+| `speed` | round((STR + AGI) / 2) — named `athletics` at the time of this snapshot |
 | `acrobatics` | round((AGI + DEX) / 2) |
 | `accuracy` | round((DEX + PER) / 2) |
 | `detection` | round((PER + WIS) / 2) |
@@ -747,7 +757,7 @@ All in `duration.ts`, all exported, and everything that converts reads them rath
 
 `GAME_MILLISECONDS_PER_SECOND` · `_MINUTE` · `_HOUR` · `_DAY` · `GAME_SECONDS_PER_MINUTE` · `GAME_MINUTES_PER_HOUR` · `GAME_HOURS_PER_DAY` · `GAME_SECONDS_PER_HOUR`.
 
-**`SECONDS_PER_COMBAT_ROUND = 2`**, so `COMBAT_ROUNDS_PER_HOUR = 1800` and `GAME_MILLISECONDS_PER_COMBAT_ROUND = 2000`. `calendar.ts` had four private copies of the same numbers and Combat had its own round length; both now alias these. `gameplay/combat/round.ts` re-exports the round as `COMBAT_ROUND_DURATION_SECONDS`, the name Combat callers already use.
+**`SECONDS_PER_COMBAT_ROUND = 2`**, so `COMBAT_ROUNDS_PER_HOUR = 1800` and `GAME_MILLISECONDS_PER_COMBAT_ROUND = 2000`. `calendar.ts` had four private copies of the same numbers and Combat had its own round length; both now alias these. `gameplay/combat/round.ts` re-exports the round as `COMBAT_ROUND_DURATION_SECONDS`, the name Combat callers already use, and `foundation/attributes/speed.ts` imports it to denominate movement per Round.
 
 #### Intervals
 
@@ -869,26 +879,14 @@ The detection *senses* model (sense-specific modifiers, per-sense concealment) w
 
 ## 13. What is NOT in the engine
 
-| Gap | Status |
-|---|---|
-| **Combat** | `combat/index.ts` is `export {}`. No Guard, Strike, Evasion, action economy, initiative, or death saves. |
-| **Nen: 11 of 15 principles** | shu, en, gyo, ken, chu, in, ko, ryu, yu, ju, fu — graph nodes only. |
-| **Fatigue 5–8 consequences** | Fatigue exposes typed states; no system consumes them yet. Body recovery, Skills and Combat each owe a rule. |
-| **Exertion Load supply** | Aura charges for a load; nothing derives one yet. Combat owes `force used / max force`. |
-| **Nen Abilities (Hatsu abilities)** | No subsystem. `HATSU_EFFECT_MINIMUM_MASTERY = 3` is the only hook. |
-| **Nen subsystem exports** | The whole ~3,800-LOC Nen tree is unreachable from `@nenworld/engine`. |
-| **Injury content** | `INJURY_DEFINITIONS = {}`. Full machinery, zero entries. |
-| **Condition effects** | 11 Conditions, zero Effects — blocked on combat mechanics. |
-| **Movement / speed** | Nothing. `athletics` is derived but unconsumed. |
-| **Item use pipeline** | `useEffects` / `useRequirements` declared, never executed. |
-| **Improvised skill attempts** | `ImprovisedSkillAttempt` type exists; no resolution. |
-| **`details.ts` integration** | `heightCm`/`weightKg`/`nenType` on `CharacterDetails` are descriptive; `Body` carries its own height/mass and nothing reads `nenType`. **Two sources of truth for height/weight.** |
-| **Awakening mechanics** | `NenState.awakened` is a bare boolean. |
-| **Time clock/calendar exports** | Implemented + validated, unexported by design. |
+**Moved.** This section used to carry its own gap table and its own "unexported modules (complete
+list)". Both are gone: the single authoritative backlog is [`BACKLOG.md`](BACKLOG.md), which
+classifies every incomplete mechanic as *Specified but absent*, *Partially implemented*,
+*Implemented but internal*, *Implemented but insufficiently tested*, or *Complete*.
 
-### Unexported modules (complete list)
-
-`combat/index` · `character/details` · `time/{validation,calendar,clock}` · `infrastructure/{rounding,id}` · `character/progression/index` (superseded by direct barrel exports) · `character/foundation/nen/{nen,types}` · `character/foundation/nen/principles/{ten,ren,zetsu,hatsu}` · `character/foundation/aura/control` · `character/foundation/body/body-points/modifiers`
+The table that stood here was already wrong in ways nobody noticed — it recorded movement as
+"Nothing. `athletics` is derived but unconsumed" long after `athletics` had been renamed to
+`speed` and wired into `ResolvedCharacter`. That is the argument for one list rather than three.
 
 ---
 

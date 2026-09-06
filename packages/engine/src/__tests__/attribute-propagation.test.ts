@@ -51,7 +51,7 @@ describe("a permanent score change reaches the Derived Attributes", () => {
     expect(before.attributes.resolved.agi).toBe(17);
     expect(after.attributes.resolved.agi).toBe(19);
 
-    // Athletics = round((STR 10 + AGI) / 2): 14 -> 15 (13.5 and 14.5 both
+    // Speed = round((STR 10 + AGI) / 2): 14 -> 15 (13.5 and 14.5 both
     // round up).
     expect(before.derivedAttributes.speed).toBe(14);
     expect(after.derivedAttributes.speed).toBe(15);

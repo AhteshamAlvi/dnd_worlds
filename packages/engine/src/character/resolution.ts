@@ -144,9 +144,15 @@ import {
   applyPhysicalScaleSteps,
   resolvePhysicalScaleBurden,
 } from "./foundation/attributes/physical";
-import { resolveStrength } from "./foundation/attributes/strength";
+import {
+  resolveStrength,
+  ZERO_STRENGTH,
+} from "./foundation/attributes/strength";
 import { createCharacterStats } from "./foundation/attributes/stats";
-import { resolveMovement } from "./foundation/attributes/speed";
+import {
+  resolveMovement,
+  resolveSpeedPosition,
+} from "./foundation/attributes/speed";
 import type { Attributes } from "./foundation/attributes/types";
 import type { CharacterStats } from "./foundation/attributes/stats";
 import type { PhysicalScaleBurden } from "./foundation/attributes/physical";
@@ -1128,8 +1134,20 @@ export function resolveCharacter(
 
   const senses = resolveSensoryProfile(stats, { effects: resolved.sensory });
 
+  /*
+   * The CONTINUOUS Strength position, not the displayed Stat.
+   *
+   * `stats.str` is floored and clamped to 1..30 for the sheet, and feeding
+   * that here threw away up to a fifth of a doubling: two characters whose
+   * Structural Capacity differed by 40% both displayed STR 16 and moved
+   * identically. Speed is one of the few consumers that genuinely needs the
+   * unrounded ladder position, so it gets it.
+   *
+   * `position` is null only for a body producing no force at all, where
+   * ZERO_STRENGTH is the defined answer.
+   */
   const movement = resolveMovement(
-    (stats.str + stats.agi) / 2,
+    resolveSpeedPosition(strength.position ?? ZERO_STRENGTH, stats.agi),
     resolvedBody.locomotion.fraction,
   );
 

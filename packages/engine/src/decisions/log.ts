@@ -122,6 +122,48 @@ export const ENGINE_DECISIONS = {
         rationale:
             "A tick costs in proportion to the size of the world rather than to what is happening in it, and puts the answer at the mercy of how often it ran — the same dependence on update frequency the continuous solver exists to remove. Projection costs nothing for an NPC nobody is looking at and one calculation when somebody looks. Running the SAME coordinator is what stops a display disagreeing with a save: a separate read-only estimator would drift, and the drift would surface as a value jumping the moment anything persisted. The resolvedAt check is what makes double application impossible — a system with both a live clock and a manual time skip will eventually try to charge the same hour twice, and rejecting it is better than absorbing it.",
     },
+    "time.combat-round.two-seconds": {
+        id: "time.combat-round.two-seconds",
+        question:
+            "How long is a Combat Round? The Rulebook's Combat Core quotes a six-second reference turn, Combat Time then says a Round's fictional length is not a flat constant at all but whatever the active Combat Scale's differential produces, and Scale Speed and Magnitude tabulates combat movement against the old flat six. Three answers, and the engine had been carrying a fourth: time/duration.ts said two seconds while foundation/attributes/speed.ts said six.",
+        chosen:
+            "One canonical Combat Round of TWO seconds, declared once in time/duration.ts as SECONDS_PER_COMBAT_ROUND and re-exported to Combat callers as COMBAT_ROUND_DURATION_SECONDS. One hour is exactly 1,800 Rounds. Every system that needs a Round length imports it; no other file may declare one, and a test enforces that against the source text.",
+        rationale:
+            "The variable-length reading is unimplementable as a conversion rate: Aura upkeep quoted per Round has to become a per-hour rate for the endurance model, and a Round whose length depends on the encounter's Scale makes that conversion undefined outside an encounter. Two seconds rather than six because the Round is now the unit movement is denominated in, and a shorter Round is what keeps a Move a single committed burst rather than a span long enough to contain a change of mind. The number mattering less than the singleness of it is the real point — the six survived in movement for as long as it did precisely because it was a second declaration nothing compared against the first, and a stale constant that only ever multiplies is invisible until someone checks the anchor by hand.",
+        ruleSource: {
+            file: "04 Combat/Combat Time.md",
+        },
+    },
+    "movement.speed.round-denominated-accelerating-curve": {
+        id: "movement.speed.round-denominated-accelerating-curve",
+        question:
+            "Speed converted to a velocity of 10/3 m/s at Speed 10 and doubled every three points forever. Three things about that were unusable: it was anchored to a three-second Move that no longer existed, a constant proportional gain made the last points of the ladder buy exactly what the first did, and nothing said what the top of the scale was supposed to mean.",
+        chosen:
+            "Speed is denominated in metres per ROUND and accelerates. With x = (S - 10) / 20, RoundMovement(S) = 6 x 2 ^ (5x + 1.866248611111173x^2). Speed 10 is exactly 6 metres per two-second Round (3 m/s) and Speed 30 is exactly 700 (350 m/s). Velocity is the allowance divided by the imported Round length. The conversion takes the CONTINUOUS Speed position — the mean of the continuous Strength ladder position and resolved AGI — and rounding to two significant figures happens only at the sheet.",
+        rationale:
+            "Two anchors and a curve between them, rather than one anchor and a slope, is what lets the top of the ladder mean something: 350 m/s puts Speed 30 barely past the engine's 343 m/s reference speed of sound, so breaking it is a landmark a character arrives at rather than a threshold the curve sails through. The quadratic term is not chosen for elegance — the linear five doublings across the span is chosen first, and 1.866248611111173 is whatever makes the upper anchor land on exactly 700 rather than approximately there, which is why it is carried to full double precision. The exponent's slope stays positive far below Speed 1, so the curve is finite, positive and monotonic across the supported range without clamping. Denominating in metres per Round rather than m/s is what removes movement's ability to disagree with the clock: there is one Round length, movement imports it, and a velocity is one division away. Taking the continuous position matters more here than anywhere else on the ladder, because Strength is a logarithm of Structural Capacity: two characters 40% apart in real force both display STR 16, and flooring before converting made them move identically.",
+        ruleSource: {
+            file: "01 Core Rules/Scale Speed and Magnitude.md",
+        },
+    },
+    "movement.move.round-action-capacity-divisor": {
+        id: "movement.move.round-action-capacity-divisor",
+        question:
+            "A Move is one Action, so how far is it? The engine divided the Round by ACTIONS PER TURN, which meant a creature granted a third Action per Turn covered three full Moves in the same Round a two-Action creature covered two in — a 50% speed bonus attached to a sequencing mechanic, priced as though it were nothing.",
+        chosen:
+            "A Round holds ONE movement allowance. MoveShare = 1 / RoundActionCapacity and MoveDistance = CurrentRoundMovement x MoveShare, so spending every Round Action on Move covers exactly the Round allowance and no arrangement of Actions covers more. The divisor is SNAPSHOTTED at Round start after start-of-Round modifiers and is fixed for that Round. Actions per Turn affect sequencing only and appear in neither formula. Reaction Moves draw on the same allowance. Forced or granted movement must declare whether it charges against the cap.",
+        rationale:
+            "Dividing one allowance is the only form of the rule under which the action economy cannot be traded for ground: more Actions buy finer control over when a character moves, which is worth having, rather than more distance, which was never intended to be for sale. Snapshotting the divisor is what makes the arithmetic conserve — a two-Action character who has Moved once has spent half their Round, and re-dividing when they lose an Action would retroactively make that half the whole thing, so an effect that never mentioned movement could rob them of ground they had already banked. Losing Actions still costs, and costs the right way: the shares remain and the character has no Action left to spend on one. Consumption is tracked as a COUNT of Moves rather than an accumulating distance because adding a share at a time drifts, and the drift surfaces as a character who cannot quite reach a square they have exactly enough movement for; counting makes capacity/capacity exactly one. Grants are required to declare their relationship to the cap because both answers are legitimate and neither is safe to default: a free step that ignored the cap is an unpriced movement bonus, and a shove that consumed it punishes the victim for being shoved.",
+    },
+    "movement.presentation.two-significant-figures": {
+        id: "movement.presentation.two-significant-figures",
+        question:
+            "Movement figures off an exponential curve are not round numbers — Speed 16 is 19.0659 metres and a third of it is 6.3553. How much of that does a character sheet show, and does the engine calculate with the shown value?",
+        chosen:
+            "Two significant figures at the SHEET only. Stored positions, Round allowances, Move shares and consumed distance all keep full double precision, and nothing in the engine consumes presentMovementMeters's output.",
+        rationale:
+            "This is deliberately the opposite of the Aura Control decision, where rounding is part of the calculation so that two characters whose raw curves differ in the third decimal genuinely pay the same. Movement ACCUMULATES, and that is the whole difference: a multiplier is applied once, but a Move share is added up to ten times within a Round, and rounding it first is exactly how a character ends the Round having travelled 5.9 or 6.1 metres against a 6-metre allowance. Two figures rather than one because movement spans four orders of magnitude across the ladder and one figure would collapse Speed 12 through 14 into a single displayed distance.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:
