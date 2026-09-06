@@ -147,19 +147,19 @@ describe("migrateSheet", () => {
     const migrated = migrateSheet(v2Sheet);
 
     expect(migrated.schemaVersion).toBe(CURRENT_SHEET_SCHEMA_VERSION);
-    // auraOutput isn't translated into renAccessFraction — it was a
+    // auraOutput isn't translated into accessFraction — it was a
     // hand-typed number under a formula that's since changed, so there's no
     // sound way to back it into a 0-1 fraction. Current Aura is preserved
     // (it's still the same quantity); Ren access resets to the same
     // "hasn't learned Ren" default a new character gets.
     expect(migrated.workbench).toEqual({
       auraPool: { current: 3200 },
-      renAccessFraction: 0,
+      accessFraction: 0,
       notes: "some notes",
     });
   });
 
-  it("drops a v3 sheet's stored Aura Output, defaulting Ren Access Fraction rather than guessing", () => {
+  it("drops a v3 sheet's stored Aura Output, defaulting Access Fraction rather than guessing", () => {
     const v3Sheet: CharacterSheet = {
       schemaVersion: 3,
       id: "char-v3",
@@ -178,7 +178,7 @@ describe("migrateSheet", () => {
     expect(migrated.schemaVersion).toBe(CURRENT_SHEET_SCHEMA_VERSION);
     expect(migrated.workbench).toEqual({
       auraPool: { current: 8000 },
-      renAccessFraction: 0,
+      accessFraction: 0,
       notes: "",
     });
   });

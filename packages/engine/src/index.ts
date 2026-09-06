@@ -423,6 +423,22 @@ export {
   resolveSurfaceAuraDensity,
 } from "./character/foundation/aura/density";
 
+/*
+ * Stored-Aura validation. validateCharacter already folds this in; it is
+ * exported so a workbench can check one edit without revalidating a whole
+ * character, and so both callers judge allocations with the same predicate.
+ */
+export type {
+  AuraAllocationIssue,
+  AuraAllocationIssueCode,
+} from "./character/foundation/aura/validation";
+
+export {
+  validateAuraState,
+  findAuraAllocationIssues,
+  auraAllocationIssueToEngineError,
+} from "./character/foundation/aura/validation";
+
 export type {
   ResolveAuraDistributionInput,
   ResolveAuraDistributionResult,

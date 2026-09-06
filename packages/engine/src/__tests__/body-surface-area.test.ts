@@ -390,6 +390,43 @@ describe("present versus intact anatomy", () => {
 
 
 describe("validation", () => {
+  it("checks every active part, not only those with a morphology override", () => {
+    /*
+     * The regression this closes. Two identical bodies, one with an authored
+     * override and one without: both must reject the same bad definition.
+     */
+    const broken: BodyPartDefinition = {
+      ...BODY_PART_DEFINITIONS.arm,
+      id: "unchecked-arm",
+      reference: {
+        ...BODY_PART_DEFINITIONS.arm.reference,
+        surfaceAreaCm2: -1,
+      },
+    };
+
+    const anatomy = createAnatomy([
+      { id: "unchecked-1", type: "unchecked-arm", attachment: null },
+    ] as readonly BodyPartCreationSpec[]);
+
+    const withoutOverride = validateMeasurementInputs(
+      anatomy,
+      [...DEFINITIONS, broken],
+      1,
+    );
+
+    const withOverride = validateMeasurementInputs(
+      anatomy,
+      [...DEFINITIONS, broken],
+      1,
+      { ["unchecked-1" as BodyPartId]: NEUTRAL_MORPHOLOGY },
+    );
+
+    expect(withoutOverride.valid).toBe(false);
+    expect(withOverride.valid).toBe(false);
+    expect(withoutOverride.issues.map((issue) => issue.code))
+      .toEqual(withOverride.issues.map((issue) => issue.code));
+  });
+
   it("accepts the standard body", () => {
     expect(
       validateMeasurementInputs(STANDARD_HUMANOID_ANATOMY, DEFINITIONS, 1).valid,
@@ -429,12 +466,13 @@ describe("validation", () => {
       { id: "broken-1", type: "broken-arm", attachment: null },
     ] as readonly BodyPartCreationSpec[]);
 
-    const result = validateMeasurementInputs(
-      anatomy,
-      [...DEFINITIONS, broken],
-      1,
-      { ["broken-1" as BodyPartId]: NEUTRAL_MORPHOLOGY },
-    );
+    /*
+     * No morphology argument. This is the path an ordinary character takes,
+     * and it used to skip every part that had no individual override — which
+     * meant an authored Surface Area was only ever checked on a body somebody
+     * had already customised.
+     */
+    const result = validateMeasurementInputs(anatomy, [...DEFINITIONS, broken], 1);
 
     expect(result.valid).toBe(false);
     expect(result.issues.map((issue) => issue.code))
@@ -455,18 +493,17 @@ describe("validation", () => {
       { id: "nan-1", type: "nan-arm", attachment: null },
     ] as readonly BodyPartCreationSpec[]);
 
-    const result = validateMeasurementInputs(
-      anatomy,
-      [...DEFINITIONS, broken],
-      1,
-      { ["nan-1" as BodyPartId]: NEUTRAL_MORPHOLOGY },
-    );
+    const result = validateMeasurementInputs(anatomy, [...DEFINITIONS, broken], 1);
 
     expect(result.valid).toBe(false);
     expect(result.issues.map((issue) => issue.code))
       .toContain("invalid-resolved-surface-area");
   });
 
+  /*
+   * Zero area is legal and has to stay legal: internal anatomy exposes none,
+   * and rejecting it would make organs unrepresentable.
+   */
   it("allows a zero Surface Area, which is a part with no exposed skin", () => {
     const internal: BodyPartDefinition = {
       ...BODY_PART_DEFINITIONS.arm,
@@ -481,12 +518,7 @@ describe("validation", () => {
       { id: "organ-1", type: "internal-organ", attachment: null },
     ] as readonly BodyPartCreationSpec[]);
 
-    const result = validateMeasurementInputs(
-      anatomy,
-      [...DEFINITIONS, internal],
-      1,
-      { ["organ-1" as BodyPartId]: NEUTRAL_MORPHOLOGY },
-    );
+    const result = validateMeasurementInputs(anatomy, [...DEFINITIONS, internal], 1);
 
     expect(
       result.issues.map((issue) => issue.code),

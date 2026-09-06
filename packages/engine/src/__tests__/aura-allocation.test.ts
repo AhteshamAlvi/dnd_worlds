@@ -95,14 +95,17 @@ function measure(
   );
 }
 
-function place(
+interface PlaceOptions {
+  readonly anatomy?: Anatomy;
+  readonly effectiveScale?: number;
+  readonly availableOutput?: number;
+  readonly overrides?: Readonly<Record<string, Partial<BodyMorphology>>>;
+}
+
+/** The raw result, for cases that are about the resolver refusing. */
+function attempt(
   allocations: readonly AuraAllocation[],
-  options: {
-    readonly anatomy?: Anatomy;
-    readonly effectiveScale?: number;
-    readonly availableOutput?: number;
-    readonly overrides?: Readonly<Record<string, Partial<BodyMorphology>>>;
-  } = {},
+  options: PlaceOptions = {},
 ) {
   const anatomy = options.anatomy ?? STANDARD_HUMANOID_ANATOMY;
 
@@ -116,6 +119,27 @@ function place(
     ),
     availableOutput: options.availableOutput ?? 100_000,
   });
+}
+
+/** Unwrapped, for the majority of cases that are about a successful placement. */
+function place(
+  allocations: readonly AuraAllocation[],
+  options: PlaceOptions = {},
+) {
+  const result = attempt(allocations, options);
+
+  if (!result.success) {
+    throw new Error(
+      "Expected the allocations to place, but resolution failed: " +
+      result.errors.map((error) => error.code).join(", "),
+    );
+  }
+
+  return result.payload;
+}
+
+function errorCodes(result: ReturnType<typeof attempt>): readonly string[] {
+  return result.success ? [] : result.errors.map((error) => error.code);
 }
 
 function internal(
@@ -635,13 +659,30 @@ describe("simultaneous allocations", () => {
     expect(distribution.unallocatedOutput).toBeCloseTo(1700, 10);
   });
 
-  it("never reports negative spare Output", () => {
-    const { distribution } = place(
+  /*
+   * Over-allocation used to clamp unallocatedOutput to zero, which produced a
+   * distribution indistinguishable from a legally full one. Nothing downstream
+   * could then tell a character spending everything they have from a character
+   * spending five times it.
+   */
+  it("refuses to place more Aura than the available Output supplies", () => {
+    const result = attempt(
       [{ id: "ten", coverage: "whole-body", placement: "surface", aura: 5000 }],
       { availableOutput: 1000 },
     );
 
-    expect(distribution.unallocatedOutput).toBe(0);
+    expect(result.success).toBe(false);
+    expect(errorCodes(result)).toContain("aura.distribution.over_allocated");
+  });
+
+  it("accepts an allocation that exactly spends the available Output", () => {
+    const { distribution } = place(
+      [{ id: "ten", coverage: "whole-body", placement: "surface", aura: 1000 }],
+      { availableOutput: 1000 },
+    );
+
+    expect(distribution.activeAura).toBeCloseTo(1000, 10);
+    expect(distribution.unallocatedOutput).toBeCloseTo(0, 10);
   });
 
   it("places nothing when there is nothing to place", () => {

@@ -7,9 +7,9 @@
  * everything the engine doesn't model as stored state. Maximum Aura, the
  * Output Limit, and Aura Output itself are all derived by the engine on
  * every read (from CON/VIT/attributes, and — for Output — Current Aura and a
- * Ren Access Fraction) — storing any of them would just be a second,
+ * Access Fraction) — storing any of them would just be a second,
  * driftable copy of an engine calculation. `workbench` keeps only what's
- * genuinely independent state: the current reserve, and the Ren Access
+ * genuinely independent state: the current reserve, and the Aura Access
  * Fraction itself (a workbench stand-in for the Nen/Ren system, which the
  * engine does not model yet — see aura/output.ts's own docstring).
  */
@@ -28,8 +28,8 @@ import { STANDARD_BODY, type Attributes, type Character } from "@nenworld/engine
  *
  * 3 → 4: Aura Output stops being manually set. It's now derived by the
  * engine (`deriveAuraOutput`) from the physiological limit, Current Aura,
- * and a Ren Access Fraction — so `workbench.auraOutput` is dropped and
- * `workbench.renAccessFraction` takes its place, the one workbench-held
+ * and a Access Fraction — so `workbench.auraOutput` is dropped and
+ * `workbench.accessFraction` takes its place, the one workbench-held
  * stand-in for the Nen/Ren system until the engine models it directly.
  *
  * migrateSheet below reads whichever of these shapes is on disk.
@@ -79,10 +79,10 @@ export function requiresDeleteConfirmation(name: string): boolean {
 
 /*
  * The state the engine treats as real but does not store itself: a
- * character's current Aura reserve, notes, and the Ren Access Fraction.
+ * character's current Aura reserve, notes, and the Access Fraction.
  *
  * Aura Output is *not* here — it is never set, only derived (see
- * `deriveAuraOutput` and adapters/sheetPipeline.ts). `renAccessFraction` is
+ * `deriveAuraOutput` and adapters/sheetPipeline.ts). `accessFraction` is
  * the one exception to "the engine derives everything": the engine takes it
  * as an external input on purpose (it's supplied by the Nen/Ren system,
  * which doesn't exist yet), so until that system lands, this is where a
@@ -92,7 +92,7 @@ export function requiresDeleteConfirmation(name: string): boolean {
  */
 export interface SheetWorkbenchData {
   auraPool: { current: number };
-  renAccessFraction: number;
+  accessFraction: number;
   notes: string;
 }
 
@@ -151,14 +151,14 @@ export function migrateSheet(sheet: CharacterSheet): CharacterSheet {
   // loosely (this vault is a folder of JSON someone may well hand-edit) and
   // keep only what's still real state.
   //
-  // `auraOutput` specifically is not translated into `renAccessFraction`:
+  // `auraOutput` specifically is not translated into `accessFraction`:
   // the old value was a hand-typed absolute number under a since-changed
   // physiological formula (it also doubled when Ren access was introduced),
   // so there's no sound way to back it into a 0–1 fraction. A migrated sheet
   // gets the same "hasn't learned Ren" default as a new character.
   const rawWorkbench = sheet.workbench as unknown as {
     auraPool?: { current?: unknown };
-    renAccessFraction?: unknown;
+    accessFraction?: unknown;
     notes?: unknown;
   };
 
@@ -169,9 +169,9 @@ export function migrateSheet(sheet: CharacterSheet): CharacterSheet {
           ? rawWorkbench.auraPool.current
           : 0,
     },
-    renAccessFraction:
-      typeof rawWorkbench.renAccessFraction === "number"
-        ? rawWorkbench.renAccessFraction
+    accessFraction:
+      typeof rawWorkbench.accessFraction === "number"
+        ? rawWorkbench.accessFraction
         : 0,
     notes: typeof rawWorkbench.notes === "string" ? rawWorkbench.notes : "",
   };
@@ -219,7 +219,7 @@ export function createDefaultCharacter(id: string, name: string): Character {
 export function defaultWorkbenchData(): SheetWorkbenchData {
   return {
     auraPool: { current: 0 },
-    renAccessFraction: 0,
+    accessFraction: 0,
     notes: "",
   };
 }

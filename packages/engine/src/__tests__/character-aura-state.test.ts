@@ -31,6 +31,14 @@ import { createTestCharacter, resolveTestCharacter } from "./fixtures/character"
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
+/*
+ * Maximum Aura is derived from CON and VIT, and the neutral fixture's all-10
+ * stat line derives a pool of 10. Every character here carries a stat line
+ * that can actually hold the Aura it is storing, because validateCharacter now
+ * enforces that — which is the point, and was worth finding.
+ */
+const AURA_CAPABLE = { con: 20, vit: 18 } as const;
+
 const ALLOCATIONS: readonly AuraAllocation[] = [
   { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
   {
@@ -50,6 +58,7 @@ function roundTrip(character: Character): Character {
 describe("what Character stores about Aura", () => {
   it("carries Current Aura and the active allocations", () => {
     const character = createTestCharacter({
+      attributes: AURA_CAPABLE,
       aura: { current: 5000, allocations: ALLOCATIONS },
     });
 
@@ -63,6 +72,7 @@ describe("what Character stores about Aura", () => {
    */
   it("stores nothing that can be recomputed", () => {
     const stored = createTestCharacter({
+      attributes: AURA_CAPABLE,
       aura: { current: 5000, allocations: ALLOCATIONS },
     }).aura;
 
@@ -110,6 +120,7 @@ describe("Nen state as a sibling of Aura", () => {
    */
   it("lets an unawakened character hold and lose Current Aura", () => {
     const character = createTestCharacter({
+      attributes: AURA_CAPABLE,
       aura: { current: 4000, allocations: [] },
       nen: createUnawakenedNenState(),
     });
@@ -148,6 +159,7 @@ describe("Nen state as a sibling of Aura", () => {
 
 describe("serialization", () => {
   const character = createTestCharacter({
+    attributes: AURA_CAPABLE,
     aura: { current: 5000, allocations: ALLOCATIONS },
     nen: { ...createUnawakenedNenState(), awakened: true },
   });

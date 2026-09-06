@@ -35,7 +35,7 @@ function sheet(id: string, name: string): CharacterSheet {
     },
     workbench: {
       auraPool: { current: 3200 },
-      renAccessFraction: 0.32,
+      accessFraction: 0.32,
       notes: "",
     },
     updatedAt: new Date().toISOString(),

@@ -257,28 +257,56 @@ export function deriveAuraControlMultiplier(
 
 
 /**
- * The character's resolved Control, in the domain's own shape.
+ * The character's resolved Control.
  *
- * `deliberateExpenditureAvailable` is the honest reading of the DEX floor: a
- * character below it still HAS Aura and still loses it, they simply cannot
- * spend it on purpose. Returning a failure for that case would make "cannot
- * aim it" indistinguishable from "does not have it", so this reports the fact
- * rather than refusing to answer, and the multiplier falls back to 1 because
- * there is no deliberate expenditure for it to scale.
+ * Two outcomes that used to be one. A DEX below the deliberate-control floor
+ * is a FACT about the character — they still have Aura and still lose it, they
+ * simply cannot aim it — so it succeeds with `deliberateExpenditureAvailable`
+ * false and a neutral multiplier, because there is no deliberate expenditure
+ * for a multiplier to scale.
+ *
+ * A non-finite, fractional or out-of-range DEX is a BUG, and it now surfaces
+ * as one. This function previously flattened every failure into the same
+ * "cannot spend deliberately" answer, so a NaN DEX resolved to a perfectly
+ * ordinary-looking profile and the developer error vanished.
  *
  * ResolvedAuraProfile.control has one producer, and this is it.
  */
-export function deriveAuraControl(dex: number): AuraControl {
+export function deriveAuraControl(
+  dex: number,
+): EngineResult<AuraControl> {
   const result = deriveAuraControlMultiplier(dex);
 
-  if (!result.success) {
-    return { multiplier: 1, deliberateExpenditureAvailable: false };
+  if (result.success) {
+    return {
+      success: true,
+      payload: {
+        multiplier: result.payload,
+        deliberateExpenditureAvailable: true,
+      },
+      trace: result.trace,
+      warnings: [],
+    };
   }
 
-  return {
-    multiplier: result.payload,
-    deliberateExpenditureAvailable: true,
-  };
+  /*
+   * The one failure that is not a failure of this function's contract. Below
+   * the floor the character is describable, so describe them.
+   */
+  const belowFloor = result.errors.some(
+    (error) => error.code === "aura.control.dex.insufficient",
+  );
+
+  if (belowFloor) {
+    return {
+      success: true,
+      payload: { multiplier: 1, deliberateExpenditureAvailable: false },
+      trace: result.trace,
+      warnings: [],
+    };
+  }
+
+  return result;
 }
 
 

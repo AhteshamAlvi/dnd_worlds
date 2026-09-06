@@ -143,12 +143,12 @@ describe("deriveAuraOutput", () => {
     }
   });
 
-  it("rejects a Ren Access Fraction outside 0 through 1", () => {
+  it("rejects a Access Fraction outside 0 through 1", () => {
     const tooHigh = deriveAuraOutput(attributesWith(20, 18), createAuraPool(8000, 20000), 1.5);
     expect(tooHigh.success).toBe(false);
     if (!tooHigh.success) {
       expect(tooHigh.errors[0]).toEqual(
-        expect.objectContaining({ code: "aura.output.ren_access.invalid" }),
+        expect.objectContaining({ code: "aura.output.access_fraction.invalid" }),
       );
     }
 

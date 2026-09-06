@@ -11,7 +11,7 @@
  * longer independent state — the engine derives both from CON/VIT/CON alone
  * (see `deriveMaximumAura`/`deriveAuraOutputLimit`). Aura Output itself is
  * never set either — it's `deriveAuraOutput(attributes, pool,
- * renAccessFraction)` — so a package states `renAccessFraction` (a stand-in
+ * accessFraction)` — so a package states `accessFraction` (a stand-in
  * for Ren mastery, since the engine doesn't model Ren yet) rather than an
  * output number. Setting attributes + a fraction and letting the engine
  * derive everything else is what keeps this file numbers only, with no
@@ -46,16 +46,16 @@ export const PALETTE_CATEGORY_VALUES: readonly PaletteCategory[] = [
 
 /*
  * What applying an item changes. Split along the same line as CharacterSheet:
- * `attributes` is engine data; `auraCurrent` and `renAccessFraction` are the
+ * `attributes` is engine data; `auraCurrent` and `accessFraction` are the
  * two pieces of Aura state the engine treats as real but doesn't derive
- * (Current Aura, and the Ren Access Fraction it takes as an external input)
+ * (Current Aura, and the Access Fraction it takes as an external input)
  * — everything else about Aura (Maximum Aura, the Output Limit, Aura Output
  * itself, Regeneration) is derived and has no place in an effect.
  */
 export interface PaletteEffect {
   readonly attributes?: Partial<Attributes>;
   readonly auraCurrent?: number;
-  readonly renAccessFraction?: number;
+  readonly accessFraction?: number;
 }
 
 export interface PaletteItem {
@@ -136,7 +136,7 @@ const STAT_PACKAGES: readonly PaletteItem[] = [
 ];
 
 /*
- * Aura packages. Each sets CON/VIT plus a Ren Access Fraction and states
+ * Aura packages. Each sets CON/VIT plus a Access Fraction and states
  * what follows from it — Maximum Aura via `deriveMaximumAura`, the Output
  * Limit via `deriveAuraOutputLimit`, and the resulting usable output via
  * `deriveAuraOutput` — in a comment, so every number below is visibly
@@ -152,7 +152,7 @@ const AURA_PACKAGES: readonly PaletteItem[] = [
     description: "Empties the reserve and Ren access — a mundane target, whatever its attributes.",
     effect: {
       auraCurrent: 0,
-      renAccessFraction: 0,
+      accessFraction: 0,
     },
   },
   {
@@ -165,7 +165,7 @@ const AURA_PACKAGES: readonly PaletteItem[] = [
     effect: {
       attributes: { con: 13, vit: 12 },
       auraCurrent: 50,
-      renAccessFraction: 0.3,
+      accessFraction: 0.3,
     },
   },
   {
@@ -179,7 +179,7 @@ const AURA_PACKAGES: readonly PaletteItem[] = [
     effect: {
       attributes: { con: 20, vit: 18 },
       auraCurrent: 8000,
-      renAccessFraction: 0.32,
+      accessFraction: 0.32,
     },
   },
   {
@@ -193,7 +193,7 @@ const AURA_PACKAGES: readonly PaletteItem[] = [
     effect: {
       attributes: { con: 21, vit: 19 },
       auraCurrent: 50000,
-      renAccessFraction: 0.8,
+      accessFraction: 0.8,
     },
   },
   {
@@ -208,7 +208,7 @@ const AURA_PACKAGES: readonly PaletteItem[] = [
     effect: {
       attributes: { con: 20, vit: 18 },
       auraCurrent: 400,
-      renAccessFraction: 0.32,
+      accessFraction: 0.32,
     },
   },
 ];

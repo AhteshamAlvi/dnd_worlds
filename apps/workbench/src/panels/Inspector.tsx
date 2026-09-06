@@ -212,7 +212,7 @@ function JsonView({
           value={{
             character: sheet.character,
             auraPool: sheet.workbench.auraPool,
-            renAccessFraction: sheet.workbench.renAccessFraction,
+            accessFraction: sheet.workbench.accessFraction,
           }}
         />
       ) : (

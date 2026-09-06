@@ -631,7 +631,7 @@ function AuraTab({
 }) {
   const [hours, setHours] = useState(1);
 
-  const renAccessInvalid = report.errors.some(
+  const accessFractionInvalid = report.errors.some(
     (error) => error.code === "aura.output.ren_access.invalid",
   );
 
@@ -662,7 +662,7 @@ function AuraTab({
         <div className="section-label">Output</div>
         <p className="note">
           Aura Output is never set directly — it's derived from the
-          physiological limit, Ren Access Fraction, and Current Aura.
+          physiological limit, Aura Access Fraction, and Current Aura.
         </p>
         <StatRow
           label="Physiological limit"
@@ -670,12 +670,12 @@ function AuraTab({
           note="derived from CON"
         />
         <NumberField
-          label="Ren Access Fraction"
-          value={sheet.workbench.renAccessFraction}
+          label="Aura Access Fraction"
+          value={sheet.workbench.accessFraction}
           min={0}
           max={1}
           step={0.01}
-          invalid={renAccessInvalid}
+          invalid={accessFractionInvalid}
           hint="0–1. Workbench stand-in for Ren mastery (Ren I ≈ 0.10 … Ren X = 1.00) until the Nen/Ren system is modeled."
           onChange={(value) =>
             dispatch({
@@ -692,7 +692,7 @@ function AuraTab({
               ? "—"
               : formatNumber(report.renAccessibleMaximum)
           }
-          note="physiological limit × Ren Access Fraction"
+          note="physiological limit × Aura Access Fraction"
         />
         <StatRow
           label="Usable Aura Output"

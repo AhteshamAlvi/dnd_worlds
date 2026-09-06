@@ -24,15 +24,28 @@
  * the active Aura. What Output the character has is decided elsewhere.
  */
 
+import type { EngineError } from "../../../infrastructure/diagnostics";
+import type {
+  EngineResult,
+  NonEmptyArray,
+} from "../../../infrastructure/result";
+import { createTraceNode, type TraceNode } from "../../../infrastructure/trace";
 import type { Anatomy, BodyPartId } from "../body/anatomy/types";
 import type { ResolvedBodyMeasurements } from "../body/measurements/types";
+import {
+  resolveInternalAuraDensity,
+  resolveSurfaceAuraDensity,
+} from "./density";
 import { isLocalizedAllocation } from "./state";
 import type { AuraAllocation } from "./state";
 import {
-  SQUARE_CENTIMETRES_PER_SQUARE_METRE,
-  type AuraPlacement,
-  type ResolvedAuraAllocation,
-  type ResolvedAuraDistribution,
+  auraAllocationIssueToEngineError,
+  findAuraAllocationIssues,
+} from "./validation";
+import type {
+  AuraPlacement,
+  ResolvedAuraAllocation,
+  ResolvedAuraDistribution,
 } from "./types";
 
 
@@ -60,6 +73,14 @@ export interface ResolveAuraDistributionInput {
 
 export interface ResolveAuraDistributionResult {
   readonly distribution: ResolvedAuraDistribution;
+
+  /*
+   * Allocations that could not be placed because their anatomy is not there.
+   *
+   * Not an error. A character who lost the arm they were reinforcing has a
+   * perfectly valid distribution; they are simply no longer reinforcing it.
+   * The Aura returns to unallocated Output and Current Aura is untouched.
+   */
   readonly dropped: readonly DroppedAuraAllocation[];
 }
 
@@ -88,44 +109,127 @@ function resolvedAllocation(
     readonly aura: number;
     readonly measure: number;
   },
-): ResolvedAuraAllocation {
-  if (input.placement === "internal") {
-    return {
-      allocationId: input.allocationId,
-      placement: "internal",
-      coverage: input.coverage,
-      continuityKey: input.continuityKey,
-      partId: input.partId,
-      aura: input.aura,
-      coveredVolumeL: input.measure,
-      density: {
-        placement: "internal",
-        auraPerLiter: input.aura / input.measure,
-      },
-    };
-  }
-
-  return {
+): EngineResult<ResolvedAuraAllocation> {
+  /*
+   * Density is NOT recomputed here. density.ts owns both formulas and both
+   * denominators — including the single cm2-to-m2 conversion — so this asks it
+   * rather than dividing again. A second division is a second place the
+   * conversion can be forgotten.
+   */
+  const shared = {
     allocationId: input.allocationId,
-    placement: "surface",
     coverage: input.coverage,
     continuityKey: input.continuityKey,
     partId: input.partId,
     aura: input.aura,
-    coveredSurfaceAreaCm2: input.measure,
-    density: {
+  } as const;
+
+  if (input.placement === "internal") {
+    const density = resolveInternalAuraDensity(input.aura, input.measure);
+
+    if (!density.success) return density;
+
+    return {
+      success: true,
+      payload: {
+        ...shared,
+        placement: "internal",
+        coveredVolumeL: input.measure,
+        density: density.payload,
+      },
+      trace: density.trace,
+      warnings: [],
+    };
+  }
+
+  const density = resolveSurfaceAuraDensity(input.aura, input.measure);
+
+  if (!density.success) return density;
+
+  return {
+    success: true,
+    payload: {
+      ...shared,
       placement: "surface",
-      auraPerSquareMeter:
-        input.aura /
-        (input.measure / SQUARE_CENTIMETRES_PER_SQUARE_METRE),
+      coveredSurfaceAreaCm2: input.measure,
+      density: density.payload,
     },
+    trace: density.trace,
+    warnings: [],
   };
 }
 
 
+/*
+ * Places stored allocations onto the body that is actually there.
+ *
+ * Returns an EngineResult because there are inputs it genuinely cannot place,
+ * and the previous shape had no way to say so. Over-allocation was the worst
+ * of them: more Aura committed than the character can reach was silently
+ * clamped to zero unallocated Output, so an impossible distribution came back
+ * looking merely full. A caller cannot distinguish "exactly spent" from
+ * "spent 5x what you have" after the fact, so the clamp is gone and the
+ * failure is reported.
+ *
+ * Dropped allocations remain a SUCCESS. Anatomy that is not manifested is a
+ * fact about the body, not a malformed input.
+ */
 export function resolveAuraDistribution(
   input: ResolveAuraDistributionInput,
-): ResolveAuraDistributionResult {
+): EngineResult<ResolveAuraDistributionResult> {
+  const allocations = input.allocations;
+
+  const traceNode = createTraceNode({
+    id: "aura.distribution.resolve",
+    label: "Place Aura allocations on the body",
+    formula:
+      "whole-body shares split by covered measure; localized resolve by continuity identity",
+    inputs: {
+      allocations: { value: allocations.length },
+      availableOutput: {
+        value: Number.isFinite(input.availableOutput)
+          ? input.availableOutput
+          : String(input.availableOutput),
+      },
+    },
+  });
+
+  const fail = (
+    errors: NonEmptyArray<EngineError>,
+  ): EngineResult<ResolveAuraDistributionResult> => {
+    traceNode.output = false;
+
+    return { success: false, trace: { root: traceNode }, warnings: [], errors };
+  };
+
+  if (
+    !Number.isFinite(input.availableOutput) ||
+    input.availableOutput < 0
+  ) {
+    return fail([{
+      code: "aura.distribution.output.invalid",
+      message: "Available Aura Output must be a finite non-negative number.",
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: Number.isFinite(input.availableOutput)
+        ? input.availableOutput
+        : String(input.availableOutput),
+    }]);
+  }
+
+  /*
+   * The same predicate the character sheet is validated with. An allocation
+   * the sheet rejects must not be one distribution quietly accepts.
+   */
+  const allocationIssues = findAuraAllocationIssues(allocations);
+
+  if (allocationIssues.length > 0) {
+    return fail(
+      allocationIssues.map(auraAllocationIssueToEngineError) as
+        NonEmptyArray<EngineError>,
+    );
+  }
+
   /*
    * Present anatomy only, and keyed by identity. A part that is not in
    * `measurements.byPartId` did not contribute Volume or Surface Area, which
@@ -145,8 +249,23 @@ export function resolveAuraDistribution(
 
   const resolved: ResolvedAuraAllocation[] = [];
   const dropped: DroppedAuraAllocation[] = [];
+  const children: TraceNode[] = [];
 
-  for (const allocation of input.allocations) {
+  /* Collects one placed allocation, or fails the whole resolution. */
+  const placeOne = (
+    entry: Parameters<typeof resolvedAllocation>[0],
+  ): EngineError[] => {
+    const result = resolvedAllocation(entry);
+
+    if (!result.success) return [...result.errors];
+
+    resolved.push(result.payload);
+    children.push(result.trace.root);
+
+    return [];
+  };
+
+  for (const allocation of allocations) {
     if (isLocalizedAllocation(allocation)) {
       const partId = partByContinuityKey.get(allocation.continuityKey);
 
@@ -166,6 +285,11 @@ export function resolveAuraDistribution(
       const part = input.measurements.byPartId[partId]!;
       const measure = coveredMeasure(allocation.placement, part);
 
+      /*
+       * Zero covered measure is not a failure here: an internal organ with no
+       * exposed skin genuinely cannot carry surface Aura, which is a fact
+       * about the anatomy rather than about the request.
+       */
       if (!Number.isFinite(measure) || measure <= 0) {
         dropped.push({
           allocationId: allocation.id,
@@ -175,7 +299,7 @@ export function resolveAuraDistribution(
         continue;
       }
 
-      resolved.push(resolvedAllocation({
+      const errors = placeOne({
         allocationId: allocation.id,
         placement: allocation.placement,
         coverage: "localized",
@@ -183,7 +307,9 @@ export function resolveAuraDistribution(
         partId,
         aura: allocation.aura,
         measure,
-      }));
+      });
+
+      if (errors.length > 0) return fail(errors as NonEmptyArray<EngineError>);
 
       continue;
     }
@@ -229,7 +355,7 @@ export function resolveAuraDistribution(
     }
 
     for (const entry of covered) {
-      resolved.push(resolvedAllocation({
+      const errors = placeOne({
         allocationId: allocation.id,
         placement: allocation.placement,
         coverage: "whole-body",
@@ -237,7 +363,9 @@ export function resolveAuraDistribution(
         partId: entry.partId,
         aura: allocation.aura * (entry.measure / totalMeasure),
         measure: entry.measure,
-      }));
+      });
+
+      if (errors.length > 0) return fail(errors as NonEmptyArray<EngineError>);
     }
   }
 
@@ -246,16 +374,48 @@ export function resolveAuraDistribution(
     0,
   );
 
+  /*
+   * More Aura placed than the character can reach.
+   *
+   * Reported rather than clamped. Clamping produced a distribution that looked
+   * exactly like a legally full one, so nothing downstream could tell a
+   * character spending everything they have from a character spending five
+   * times it.
+   *
+   * Measured against PLACED Aura, not stored: a dropped allocation's Aura is
+   * back in unallocated Output and is not competing for the ceiling.
+   */
+  if (activeAura > input.availableOutput) {
+    return fail([{
+      code: "aura.distribution.over_allocated",
+      message:
+        "More Aura is allocated than the character's available Output can supply.",
+      audience: "player",
+      required: `active Aura <= ${input.availableOutput}`,
+      actual: activeAura,
+      resolution:
+        "Reduce an allocation, or raise accessible Output before placing it.",
+    }]);
+  }
+
+  const distribution: ResolvedAuraDistribution = {
+    activeAura,
+    unallocatedOutput: input.availableOutput - activeAura,
+    allocations: resolved,
+  };
+
+  traceNode.output = {
+    activeAura,
+    unallocatedOutput: distribution.unallocatedOutput,
+    placed: resolved.length,
+    dropped: dropped.length,
+  };
+  traceNode.children = children;
+
   return {
-    distribution: {
-      activeAura,
-      /*
-       * Never negative. Over-allocation is a validation failure rather than
-       * something to represent as negative spare capacity.
-       */
-      unallocatedOutput: Math.max(0, input.availableOutput - activeAura),
-      allocations: resolved,
-    },
-    dropped,
+    success: true,
+    payload: { distribution, dropped },
+    trace: { root: traceNode },
+    warnings: [],
   };
 }

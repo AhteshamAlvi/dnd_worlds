@@ -80,10 +80,22 @@ export type NenMasterySeals = Readonly<
 
 
 /**
- * Complete current Nen state.
+ * Stored Nen state: awakening, mastery, and temporary mastery seals.
  *
- * Awakening eligibility and the process of awakening will be defined later.
- * For now, awakening is represented only as a boolean.
+ * That is the whole of it, and the name deliberately no longer promises more.
+ * There is NO active-principle state here — nothing records that Ten is up,
+ * that Ren is running at some output, or that the character is in Zetsu.
+ *
+ * Those are runtime application state, and they arrive with the Nen
+ * integration and transition contracts, which have to answer questions this
+ * shape cannot: what it costs per unit time to hold a principle, what happens
+ * when two are incompatible, and what a transition between them takes. A
+ * boolean per principle invented ahead of those answers would be the wrong
+ * shape and would have to be migrated out again — active Ren is an output
+ * level, not an on/off flag.
+ *
+ * Awakening eligibility and the process of awakening will also be defined
+ * later. For now, awakening is represented only as a boolean.
  */
 export interface NenState {
   readonly awakened: boolean;

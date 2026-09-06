@@ -593,13 +593,13 @@ export function rosterReducer(
       const existing = state.sheets[operation.id];
       if (!existing) return state;
 
-      const before = existing.workbench.renAccessFraction;
+      const before = existing.workbench.accessFraction;
 
       const updated: CharacterSheet = {
         ...existing,
         workbench: {
           ...existing.workbench,
-          renAccessFraction: operation.fraction,
+          accessFraction: operation.fraction,
         },
       };
 
@@ -607,7 +607,7 @@ export function rosterReducer(
         state,
         operation,
         updated,
-        "Ren Access Fraction changed",
+        "Access Fraction changed",
         `${before} → ${operation.fraction}`,
       );
     }
@@ -629,7 +629,7 @@ export function rosterReducer(
       const existing = state.sheets[operation.id];
       if (!existing) return state;
 
-      const { attributes, auraCurrent, renAccessFraction } = operation.effect;
+      const { attributes, auraCurrent, accessFraction } = operation.effect;
 
       /*
        * Effects are partial: an item states only the fields it changes, and
@@ -648,7 +648,7 @@ export function rosterReducer(
           ...(auraCurrent !== undefined
             ? { auraPool: { current: auraCurrent } }
             : {}),
-          ...(renAccessFraction !== undefined ? { renAccessFraction } : {}),
+          ...(accessFraction !== undefined ? { accessFraction } : {}),
         },
       };
 

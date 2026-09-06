@@ -36,7 +36,7 @@ function fixtureSheet(
     },
     workbench: {
       auraPool: { current: 0 },
-      renAccessFraction: 0,
+      accessFraction: 0,
       notes: "",
     },
     updatedAt: new Date().toISOString(),

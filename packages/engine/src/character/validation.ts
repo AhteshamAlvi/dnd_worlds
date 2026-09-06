@@ -20,6 +20,9 @@ import { createTraceNode, type EngineTrace } from "../infrastructure/trace";
 
 import { validateAttributes } from "./foundation/attributes/validation";
 
+import { validateAuraState } from "./foundation/aura/validation";
+import { validateNenState } from "./foundation/nen/nen";
+
 import {
   findClanValidationIssues,
   type ClanValidationIssue,
@@ -450,7 +453,7 @@ function findCharacterReferenceIssues(
 
 /*
  * Checks identity fields and catalog references, and folds in attribute,
- * derived-attribute, Body and stature validation.
+ * stored Aura, Nen, derived-attribute, Body and stature validation.
  *
  * Body is judged from the RESOLVED body rather than the stored one, so an
  * Effect that changed the body plan has its result validated rather than its
@@ -522,6 +525,40 @@ export function validateCharacter(
   }
 
   /*
+   * Stored Aura and Nen state.
+   *
+   * Both are required fields on Character and neither was being checked, so a
+   * character could carry a negative Current Aura, two allocations with the
+   * same id, or a Nen mastery outside the rank range and validate cleanly.
+   *
+   * Judged from the SHEET rather than from the resolved character, and before
+   * resolution, because both are stored state: nothing about resolving a body
+   * changes whether an allocation id is empty. Maximum Aura is derived from
+   * the stored Attributes inside validateAuraState, which is the same place
+   * the pool rule already lived.
+   *
+   * What is deliberately NOT checked here is whether the allocations fit
+   * inside the character's accessible Output. That depends on runtime Nen
+   * state, so a character legal at rest and over-allocated mid-Ren does not
+   * have an invalid sheet. resolveAuraDistribution owns that limit.
+   */
+  const auraResult = validateAuraState(character.aura, character.attributes);
+
+  if (!auraResult.success) {
+    for (const error of auraResult.errors) {
+      errors.push({ ...error, subject });
+    }
+  }
+
+  const nenResult = validateNenState(character.nen);
+
+  if (!nenResult.success) {
+    for (const error of nenResult.errors) {
+      errors.push({ ...error, subject });
+    }
+  }
+
+  /*
    * Resolved once and threaded through everything that needs it. Both the
    * catalog-reference checks (which judge Requirements against the resolved
    * character) and the Derived Attribute self-check read from this, and
@@ -553,7 +590,12 @@ export function validateCharacter(
             name: { value: character.details.name },
           },
           output: false,
-          children: [attributesResult.trace.root, resolution.trace.root],
+          children: [
+            attributesResult.trace.root,
+            auraResult.trace.root,
+            nenResult.trace.root,
+            resolution.trace.root,
+          ],
           warnings,
         }),
       },
@@ -717,6 +759,8 @@ export function validateCharacter(
       output: errors.length === 0,
       children: [
         attributesResult.trace.root,
+        auraResult.trace.root,
+        nenResult.trace.root,
         derivedResult.trace.root,
         referenceTraceNode,
         resolution.trace.root,

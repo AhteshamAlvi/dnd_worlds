@@ -65,7 +65,7 @@ export interface PipelineReport {
   readonly auraPerSurfaceUnit: number | null;
 
   // Derived straight from attributes, independent of whether the stored
-  // Current Aura / Ren Access Fraction happen to validate — Maximum Aura,
+  // Current Aura / Access Fraction happen to validate — Maximum Aura,
   // the physiological Output Limit, and the Regeneration rate are all pure
   // functions of CON/VIT and are always computable.
   readonly maximumAura: number;
@@ -119,7 +119,7 @@ export function runSheetPipeline(sheet: CharacterSheet): PipelineReport {
 
   // Always computable from attributes alone, independent of everything else
   // below — these are what the Aura tab shows as read-only, engine-derived
-  // ceilings regardless of whether the stored Current Aura / Ren Access
+  // ceilings regardless of whether the stored Current Aura / Aura Access
   // Fraction happen to be legal right now.
   const maximumAura = deriveMaximumAura(attributes);
   const outputLimitMaximum = deriveAuraOutputLimit(attributes).maximum;
@@ -166,7 +166,7 @@ export function runSheetPipeline(sheet: CharacterSheet): PipelineReport {
   );
 
   // 3. Aura Output is never set by hand — it's derived from the
-  //    physiological limit (CON), the Ren Access Fraction (a workbench
+  //    physiological limit (CON), the Access Fraction (a workbench
   //    stand-in until the Nen/Ren system exists), and Current Aura. Needs a
   //    valid pool first — an invalid Current Aura has nothing meaningful to
   //    cap output against.
@@ -188,12 +188,12 @@ export function runSheetPipeline(sheet: CharacterSheet): PipelineReport {
   const outputResult = deriveAuraOutput(
     attributes,
     poolResult.payload,
-    sheet.workbench.renAccessFraction,
+    sheet.workbench.accessFraction,
   );
   record(
     "output",
     "Derive Aura Output",
-    "usableMaximum = min(Current Aura, physiological limit from CON × Ren Access Fraction).",
+    "usableMaximum = min(Current Aura, physiological limit from CON × Access Fraction).",
     outputResult,
   );
 

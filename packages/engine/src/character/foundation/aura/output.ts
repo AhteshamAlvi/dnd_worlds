@@ -4,7 +4,7 @@
  * Aura Output is not manually set.
  *
  * CON determines the body's Physiological Aura Output Capacity.
- * Ren determines what fraction of that capacity can be consciously accessed.
+ * An Access Fraction determines how much of that capacity is reachable.
  * Current Aura provides the final availability cap.
  *
  * Magnitude curve:
@@ -22,13 +22,18 @@
  *
  * Usable Aura Output:
  *
- *   Ren Accessible Output =
- *     O_phys × Ren Access Fraction
+ *   Accessible Output =
+ *     O_phys × Access Fraction
  *
  *   Usable Output =
- *     min(Current Aura, Ren Accessible Output)
+ *     min(Current Aura, Accessible Output)
  *
- * Ren Access Fraction is resolved by the Nen/Ren system and supplied here.
+ * The Access Fraction is SUPPLIED, not derived here, and this function does
+ * not care where it came from. Ren is the usual source and is why the field
+ * used to be called renAccessFraction — but Zetsu closes access, awakening
+ * changes it, and an unawakened character leaks a physiological trickle
+ * regardless. Naming the general parameter after one principle made every
+ * other route look like an exception to a Ren rule.
  */
 
 
@@ -87,7 +92,8 @@ export function deriveAuraOutputLimit(
 /**
  * Derive the character's currently usable Aura Output.
  *
- * renAccessFraction is supplied by the Nen/Ren system:
+ * accessFraction is supplied by whatever governs access. Ren mastery is the
+ * usual source:
  *
  *   Ren I   = 0.10
  *   Ren II  = 0.20
@@ -95,12 +101,12 @@ export function deriveAuraOutputLimit(
  *   ...
  *   Ren X   = 1.00
  *
- * This file does not derive Ren mastery or Ren access.
+ * This file derives neither Ren mastery nor any other access route.
  */
 export function deriveAuraOutput(
   attributes: Attributes,
   pool: AuraPool,
-  renAccessFraction: number,
+  accessFraction: number,
 ): EngineResult<AuraOutput> {
   const rawPhysiologicalMaximum =
     deriveRawAuraOutputLimit(attributes);
@@ -116,7 +122,7 @@ export function deriveAuraOutput(
     label: "Derive Aura Output",
 
     formula:
-      "usableMaximum = min(currentAura, physiologicalMaximum * renAccessFraction)",
+      "usableMaximum = min(currentAura, physiologicalMaximum * accessFraction)",
 
     inputs: {
       con: {
@@ -129,10 +135,10 @@ export function deriveAuraOutput(
           : String(pool.current),
       },
 
-      renAccessFraction: {
-        value: Number.isFinite(renAccessFraction)
-          ? renAccessFraction
-          : String(renAccessFraction),
+      accessFraction: {
+        value: Number.isFinite(accessFraction)
+          ? accessFraction
+          : String(accessFraction),
       },
     },
   });
@@ -168,9 +174,9 @@ export function deriveAuraOutput(
 
 
   if (
-    !Number.isFinite(renAccessFraction) ||
-    renAccessFraction < 0 ||
-    renAccessFraction > 1
+    !Number.isFinite(accessFraction) ||
+    accessFraction < 0 ||
+    accessFraction > 1
   ) {
     return {
       success: false,
@@ -183,14 +189,14 @@ export function deriveAuraOutput(
 
       errors: [
         {
-          code: "aura.output.ren_access.invalid",
+          code: "aura.output.access_fraction.invalid",
           message:
-            "Ren Access Fraction must be a finite number from 0 through 1.",
+            "The Aura Access Fraction must be a finite number from 0 through 1.",
           audience: "developer",
           required: "finite number between 0 and 1",
-          actual: Number.isFinite(renAccessFraction)
-            ? renAccessFraction
-            : String(renAccessFraction),
+          actual: Number.isFinite(accessFraction)
+            ? accessFraction
+            : String(accessFraction),
         },
       ],
     };
@@ -233,7 +239,7 @@ export function deriveAuraOutput(
    * them look like an exception to a Ren rule.
    */
   const accessibleMaximum =
-    physiologicalMaximum * renAccessFraction;
+    physiologicalMaximum * accessFraction;
 
   const usableMaximum = Math.min(
     pool.current,
@@ -251,7 +257,7 @@ export function deriveAuraOutput(
   traceNode.output = {
     rawPhysiologicalMaximum,
     physiologicalMaximum,
-    renAccessFraction,
+    accessFraction,
     accessibleMaximum,
     currentAura: pool.current,
     usableMaximum,

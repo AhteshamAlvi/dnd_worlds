@@ -263,7 +263,7 @@ describe("field-edit operations", () => {
 
     const workbench = updated.sheets[id]?.workbench;
     expect(workbench?.auraPool).toEqual({ current: 8000 });
-    expect(workbench?.renAccessFraction).toBe(0.32);
+    expect(workbench?.accessFraction).toBe(0.32);
 
     // A legal, derived output against a real distribution should now
     // succeed. Maximum Aura / Output Limit / the Ren-accessible ceiling are
@@ -425,18 +425,18 @@ describe("apply-palette-item", () => {
       effect: {
         attributes: { con: 20, vit: 18 },
         auraCurrent: 8000,
-        renAccessFraction: 0.32,
+        accessFraction: 0.32,
       },
     });
 
     const sheet = applied.sheets[id];
     expect(sheet?.character.attributes.str).toBe(18); // survived
-    expect(sheet?.workbench.renAccessFraction).toBe(0.32);
+    expect(sheet?.workbench.accessFraction).toBe(0.32);
     expect(sheet?.workbench.auraPool).toEqual({ current: 8000 });
   });
 
-  it("applies a Ren Access Fraction of zero rather than skipping it", () => {
-    // Guards the `renAccessFraction !== undefined` check — a plain
+  it("applies a Access Fraction of zero rather than skipping it", () => {
+    // Guards the `accessFraction !== undefined` check — a plain
     // truthiness test would silently ignore the "No aura" package.
     const { state, id } = withOneCharacter();
 
@@ -444,17 +444,17 @@ describe("apply-palette-item", () => {
       kind: "apply-palette-item",
       id,
       itemName: "Trained aura",
-      effect: { renAccessFraction: 0.32 },
+      effect: { accessFraction: 0.32 },
     });
-    expect(withAura.sheets[id]?.workbench.renAccessFraction).toBe(0.32);
+    expect(withAura.sheets[id]?.workbench.accessFraction).toBe(0.32);
 
     const cleared = rosterReducer(withAura, {
       kind: "apply-palette-item",
       id,
       itemName: "No aura",
-      effect: { renAccessFraction: 0 },
+      effect: { accessFraction: 0 },
     });
-    expect(cleared.sheets[id]?.workbench.renAccessFraction).toBe(0);
+    expect(cleared.sheets[id]?.workbench.accessFraction).toBe(0);
   });
 
   it("marks the sheet dirty and logs one event for the whole item", () => {
@@ -601,7 +601,7 @@ describe("hydrate", () => {
           },
           // CON 10 / VIT 10 -> Maximum Aura 10. A hand-edit left this at
           // 99,999, far past what the body can hold.
-          workbench: { auraPool: { current: 99999 }, renAccessFraction: 0, notes: "" },
+          workbench: { auraPool: { current: 99999 }, accessFraction: 0, notes: "" },
           updatedAt: new Date().toISOString(),
         },
       ],
@@ -625,7 +625,7 @@ describe("hydrate", () => {
             },
             body: { surfaceUnits: 100 },
           },
-          workbench: { auraPool: { current: -50 }, renAccessFraction: 0, notes: "" },
+          workbench: { auraPool: { current: -50 }, accessFraction: 0, notes: "" },
           updatedAt: new Date().toISOString(),
         },
       ],
@@ -653,7 +653,7 @@ describe("hydrate", () => {
           },
           workbench: {
             auraPool: { current: 0 },
-            renAccessFraction: 0,
+            accessFraction: 0,
             notes: "",
           },
           updatedAt: new Date().toISOString(),

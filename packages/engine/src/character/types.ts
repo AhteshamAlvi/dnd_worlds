@@ -106,7 +106,11 @@ export interface Character {
 
 
   /*
-   * Nen awakening, mastery, seals and active principle state.
+   * Nen awakening, mastery and temporary mastery seals.
+   *
+   * NOT active principle state. Nothing here records that Ten is up or that
+   * Ren is running; that is runtime application state and arrives with the Nen
+   * integration and transition contracts. See foundation/nen/types.ts.
    *
    * A SIBLING of `aura`, not its owner. Awakening gates deliberate access and
    * externalization; it does not gate having Aura. An unawakened character has

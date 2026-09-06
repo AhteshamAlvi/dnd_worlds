@@ -14,6 +14,7 @@
  */
 
 import { createBodyPartDefinitionMap } from "../selectors";
+import { NEUTRAL_MORPHOLOGY } from "../types";
 import {
   DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
   resolvePartMeasurements,
@@ -238,6 +239,11 @@ export function validateMeasurementInputs(
    * even Adiposity 0 leaves it at about 80% of its mass. This exists so that
    * unusual anatomy fails loudly at the point of authoring rather than
    * resolving to a body part that weighs less than nothing.
+   *
+   * Surface Area is checked in the same pass, and for a sharper reason: it is
+   * authored per definition rather than derived from Volume, so a bad value
+   * reaches the resolver intact instead of being caught by the volume
+   * arithmetic on its way through.
    */
   for (const part of anatomy.parts) {
     if (part.state !== "active") continue;
@@ -246,9 +252,21 @@ export function validateMeasurementInputs(
 
     if (definition === undefined) continue;
 
-    const morphology = morphologyByPartId[part.id];
-
-    if (morphology === undefined) continue;
+    /*
+     * Absent morphology means NEUTRAL, not "skip this part".
+     *
+     * This used to `continue`, and that left a hole exactly where the common
+     * case lives: a body nobody has authored individual morphology for has no
+     * entry for any part, so no part was measured and no authored value was
+     * ever checked. A definition with a negative or non-finite Surface Area
+     * passed validation on every ordinary character and only failed on one
+     * that happened to carry a morphology override.
+     *
+     * Neutral is what resolveBodyMeasurements itself substitutes, so
+     * validating against it checks the same numbers the physics will produce
+     * rather than a case that may never be resolved.
+     */
+    const morphology = morphologyByPartId[part.id] ?? NEUTRAL_MORPHOLOGY;
 
     const resolved = resolvePartMeasurements(
       part.id,

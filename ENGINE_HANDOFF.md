@@ -279,9 +279,10 @@ All major derived Aura figures round to **one significant figure**.
 |---|---|
 | **Maximum Aura** | `10 · 50^((CON+VIT-20)/10) · 2^(((CON+VIT-20)(CON+VIT-30))/200)` |
 | **Physiological Output Capacity** | `n = (CON-10)/5`; `M = 50ⁿ · 2^(n(n-1)/2)`; `O_phys = 2M` |
-| **Usable Output** | `min(currentAura, O_phys × renAccessFraction)` |
+| **Usable Output** | `min(currentAura, O_phys × accessFraction)` |
 | **Aura Regeneration (per hour)** | `n = (VIT-10)/5`; `50ⁿ · 2^(n(n-1)/2)` |
-| **Aura Density** | `aura / surfaceUnits` |
+| **Internal Aura Density** | `allocatedAura / coveredVolumeL` |
+| **Surface Aura Density** | `allocatedAura / (coveredSurfaceAreaCm2 / 10000)` |
 
 **Aura Control** (`control.ts`) — derived from DEX at the moment of expenditure, affects **cost only**. `x = (DEX-25)/5`:
 
