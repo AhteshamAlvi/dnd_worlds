@@ -79,7 +79,7 @@
 import type { EngineResult } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 
-import type { AuraExpenditure } from "./types";
+import type { AuraControl, AuraExpenditure } from "./types";
 
 
 const MIN_CONTROL_DEX = 7;
@@ -252,6 +252,32 @@ export function deriveAuraControlMultiplier(
     },
 
     warnings: [],
+  };
+}
+
+
+/**
+ * The character's resolved Control, in the domain's own shape.
+ *
+ * `deliberateExpenditureAvailable` is the honest reading of the DEX floor: a
+ * character below it still HAS Aura and still loses it, they simply cannot
+ * spend it on purpose. Returning a failure for that case would make "cannot
+ * aim it" indistinguishable from "does not have it", so this reports the fact
+ * rather than refusing to answer, and the multiplier falls back to 1 because
+ * there is no deliberate expenditure for it to scale.
+ *
+ * ResolvedAuraProfile.control has one producer, and this is it.
+ */
+export function deriveAuraControl(dex: number): AuraControl {
+  const result = deriveAuraControlMultiplier(dex);
+
+  if (!result.success) {
+    return { multiplier: 1, deliberateExpenditureAvailable: false };
+  }
+
+  return {
+    multiplier: result.payload,
+    deliberateExpenditureAvailable: true,
   };
 }
 

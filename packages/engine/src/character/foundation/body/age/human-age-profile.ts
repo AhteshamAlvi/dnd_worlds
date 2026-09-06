@@ -42,7 +42,7 @@
  *
  * The twelve-year-old is the one row worth arguing about. Scale 0.89 puts them
  * at 147 cm against a real ~149, which is the number Scale actually means and
- * the one worth getting right: Size and Mass follow it as a cube and Structural
+ * the one worth getting right: Volume and Mass follow it as a cube and Structural
  * Capacity as a square, so an error here is an error everywhere downstream. The
  * alternative anchor, 0.85, lands the height at 140 cm — a ten-year-old's
  * height on a twelve-year-old — and then needs Bulk to RISE from 1.10 at six to
@@ -50,7 +50,7 @@
  * six-year-old.
  *
  * Correct height taken, mass is then tuned with Bulk rather than by moving
- * Scale, because Bulk reaches Mass and Size and never reaches Structural
+ * Scale, because Bulk reaches Mass and Volume and never reaches Structural
  * Capacity: every value in the STR column is identical at any Bulk, so this is
  * a free choice physically. Bulk 1.04 is the lowest value the curve allows.
  * Childhood Bulk is strictly decreasing — 1.30, 1.22, 1.10, 1.04, 1.03, 1.00 —

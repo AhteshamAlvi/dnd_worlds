@@ -3,7 +3,7 @@
  *
  * Body represents the character's persistent physical organism.
  *
- * Height, Mass and Size are NOT stored here. They resolve from anatomy, Scale
+ * Height, Mass and Volume are NOT stored here. They resolve from anatomy, Scale
  * and morphology in body/measurements/, because a stored height and a resolved
  * height are two sources that can disagree and one of them is always the wrong
  * one to trust.
@@ -107,10 +107,10 @@ export interface Body {
  *
  * What each dimension actually drives:
  *
- *   length      → Length, and through it Size, Mass and Height
- *   bulk        → Size, Mass, Body Points. Never Structural Capacity.
+ *   length      → Length, and through it Volume, Mass and Height
+ *   bulk        → Volume, Mass, Body Points. Never Structural Capacity.
  *   muscularity → Mass, Structural Capacity, force production
- *   adiposity   → Size, Mass, Body Points. Never Structural Capacity.
+ *   adiposity   → Volume, Mass, Body Points. Never Structural Capacity.
  *
  * Only Muscularity reaches Structural Capacity, which is why it is the
  * mechanism Strength advancement operates through. A body can be enormous and

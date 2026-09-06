@@ -107,7 +107,7 @@ export function resolveCombatAbility(attributes: CharacterStats): number {
  * metres per second — see attributes/speed.ts — so a Move covers a distance
  * rather than a feeling.
  *
- * Size and Mass are NOT applied here. They have already moved AGI through the
+ * Volume and Mass are NOT applied here. They have already moved AGI through the
  * physical base resolution, and applying them again would charge a large
  * creature twice for being large.
  */

@@ -91,7 +91,7 @@ describe("the calibration gate", () => {
   });
 
   /*
-   * Scale enters SQUARED where Size and Mass take the cube, because it is
+   * Scale enters SQUARED where Volume and Mass take the cube, because it is
    * cross-section that carries force and resists destruction, not volume.
    * A Scale-10 Giant is 1,000 times as heavy and only 100 times as capable —
    * square-cube, as it is for real animals.

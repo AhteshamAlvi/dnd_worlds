@@ -28,13 +28,14 @@ export interface EngineDecision {
 }
 
 export const ENGINE_DECISIONS = {
-    "body.surface-units.total": {
-        id: "body.surface-units.total",
+    "body.surface-area.retires-surface-units": {
+        id: "body.surface-area.retires-surface-units",
         question:
-            "The per-region Surface Unit table sums to 101, while the text and every worked example divide by 100.",
-        chosen: "The standard body totals 100 Surface Units.",
+            "Aura density was denominated in Surface Units, an abstract 100-unit body total taken from the Rulebook. The per-region SU table sums to 101 while the text and every worked example divide by 100, and the engine had been carrying 100 as an acknowledged placeholder because Body had no area measurement of its own.",
+        chosen:
+            "Surface Units are retired. Every BodyPartDefinition now authors a real external surfaceAreaCm2, the Basic Human Standard totals 16,900 cm2 (1.69 m2), and surface Aura density is Aura per square metre of actually covered anatomy.",
         rationale:
-            "SU is the denominator of every aura density figure, so matching the worked examples keeps published numbers reproducible. The one-unit gap is a rounding artefact of the regional table, not a rule.",
+            "The 101-vs-100 discrepancy stopped mattering once the denominator became a measurement rather than a partition of an abstract whole. Real area also fixes what the placeholder could not: a constant 100 gave a Giant a human denominator, so surface density was independent of the body it was on. Surface Area scales as Scale squared while Volume scales as Scale cubed, which is the divergence that makes a large creature harder to armour in Aura and is unrepresentable with a fixed total. Area is authored per part rather than derived from Volume so that thin anatomy — a wing — can carry high area against low volume.",
         ruleSource: {
             file: "03 Aura Engine/Aura Density and Concentration.md",
         },

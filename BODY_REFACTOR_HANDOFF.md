@@ -27,7 +27,7 @@ Base/Resolved Effect split at all.
 |---|---|---|
 | `Body_Implementation_Plan.md` | Phase structure, module layout, test plan | Missing corrections below; Phase 11 under-scoped |
 | `Consolidated_Body_Design.md` | Formulas, semantics, invariants | Missing corrections below |
-| `Human_Standard_Scale.md` | Per-part Length/Size/Mass/SC, sensitivity matrix, Anatomical Point roster | Current and clean. Already ported into the engine in Phase 1 |
+| `Human_Standard_Scale.md` | Per-part Length/Volume/Mass/SC, sensitivity matrix, Anatomical Point roster | Current and clean. Already ported into the engine in Phase 1 |
 
 The older `Body System Refactor — Implementation Plan.md`, `Body System —
 Complete Consolidated Design.md`, and `Basic Human Standard — Complete Body
@@ -118,7 +118,7 @@ ReferenceFormAnatomicalCapacity = Σ refSC of ALL parts in the intact Reference 
 TotalIntrinsicBodySP            = Σ IntrinsicMaxSP of ALL physically present parts
 ```
 Inert anatomy (bone spike, shell, horn) sets `intrinsicPhysicalForce: 0` and
-contributes 0 to the numerator by arithmetic while still carrying Size, Mass,
+contributes 0 to the numerator by arithmetic while still carrying Volume, Mass,
 SC and BP. **Delete the phrase "force-contributing anatomy" from the design
 doc.** Intended consequence: a form carrying inert structure reads as weaker.
 
@@ -181,8 +181,8 @@ multiply-between-layer) and `body/scale.ts`. Sensitivity bounds enforced.
 later"). They become a silently-disagreeing second source once measurements
 resolve.
 
-- `body/measurements/` — resolved Length/Size/Mass per part and body totals.
-  `EffectiveBulk`, `AdipositySizeFactor`, `MassCompositionFactor`. Only
+- `body/measurements/` — resolved Length/Volume/Mass per part and body totals.
+  `EffectiveBulk`, `AdiposityVolumeFactor`, `MassCompositionFactor`. Only
   physically present parts contribute; joint-destroyed and paralysed limbs
   still have mass, suppressed and severed ones don't.
 - `measurements/height.ts` — direction-independent longitudinal coordinates on

@@ -6,7 +6,7 @@
  * on a two-stage modifier pipeline (additive before Constitution, multiplicative
  * after) that no longer exists: adding BP directly is gone, because a body that
  * is genuinely tougher should say so through Scale, Bulk or Muscularity and let
- * Structural Capacity carry the consequence into BP, Strength, Mass and Size at
+ * Structural Capacity carry the consequence into BP, Strength, Mass and Volume at
  * once.
  *
  * What replaces it is the arithmetic that actually decides a number now — the
@@ -195,15 +195,15 @@ describe("the build factor", () => {
       ...DEFINITIONS[0]!,
       sensitivity: {
         ...TEST_PART_PHYSICALS.sensitivity,
-        bulkSize: 1,
-        adipositySize: 1,
+        bulkVolume: 1,
+        adiposityVolume: 1,
       },
     },
   ];
 
   /*
    * Bulk and Adiposity are halved and quartered relative to their effect on
-   * Size and Mass: a thicker body is harder to destroy, but not in proportion
+   * Volume and Mass: a thicker body is harder to destroy, but not in proportion
    * to how much larger it is.
    */
   it("halves Bulk and quarters Adiposity", () => {

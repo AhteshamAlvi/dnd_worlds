@@ -18,12 +18,10 @@
  */
 
 import {
-  calculateAuraDensity,
   deriveAuraOutput,
   deriveAuraOutputLimit,
   deriveAuraRegeneration,
   deriveMaximumAura,
-  distributeAura,
   validateAuraPool,
   validateCharacter,
   type EngineResult,
@@ -214,44 +212,40 @@ export function runSheetPipeline(sheet: CharacterSheet): PipelineReport {
     );
   }
 
-  const distributionResult = distributeAura(
-    outputResult.payload,
-    sheet.character.body,
-  );
-  record(
+  /*
+   * 4-5. Distribution and density are awaiting their engine-side migration.
+   *
+   * Surface Units are gone. Aura density is now placement-specific — internal
+   * Aura divides by covered Volume in litres, surface Aura by covered Surface
+   * Area in square metres — and both denominators come from RESOLVED Body
+   * measurements rather than from the stored Body this pipeline holds. Wiring
+   * that up means running the character through resolveCharacter and
+   * reworking the Aura panel's labels and units, which is the next Aura
+   * ticket's work.
+   *
+   * Reported as skipped rather than faked. A zero here would render as a real
+   * density of zero, and the Inspector deliberately distinguishes "did not
+   * run" from "ran and produced nothing".
+   */
+  skip(
     "distribution",
     "Distribute Aura",
-    "Version 1 spreads all active Aura across the whole body.",
-    distributionResult,
+    "Skipped: awaiting placement-aware allocation against resolved Body measurements.",
   );
-
-  // 5. Density needs a distribution.
-  if (!distributionResult.success) {
-    skip("density", "Aura density", "Skipped: distribution failed.");
-    return summarise(
-      steps, errors, warnings,
-      outputResult.payload.renAccessibleMaximum,
-      null, null, null,
-      maximumAura, outputLimitMaximum, auraRegenerationPerHour,
-    );
-  }
-
-  const densityResult = calculateAuraDensity(distributionResult.payload);
-  record(
+  skip(
     "density",
     "Aura density",
-    "Aura divided by Surface Units, the denominator under every defensive figure.",
-    densityResult,
+    "Skipped: Surface Units are retired; density now needs resolved Volume or Surface Area.",
   );
 
   return summarise(
     steps,
     errors,
     warnings,
-    outputResult.payload.renAccessibleMaximum,
-    distributionResult.payload.aura,
-    distributionResult.payload.surfaceUnits,
-    densityResult.success ? densityResult.payload.auraPerSurfaceUnit : null,
+    outputResult.payload.accessibleMaximum,
+    null,
+    null,
+    null,
     maximumAura,
     outputLimitMaximum,
     auraRegenerationPerHour,

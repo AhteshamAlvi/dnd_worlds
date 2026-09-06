@@ -100,7 +100,7 @@ describe("the Standard Human", () => {
   const human = resolve(1);
 
   it("carries no physical burden and keeps its stored scores", () => {
-    expect(human.body.measurements.form.totalSizeL).toBeCloseTo(60, 6);
+    expect(human.body.measurements.form.totalVolumeL).toBeCloseTo(60, 6);
     expect(human.body.measurements.form.totalMassKg).toBeCloseTo(62, 6);
 
     expect(human.burden.rawBurden).toBe(0);
@@ -132,7 +132,7 @@ describe("the Scale-10 Giant", () => {
    * 16.5 m, 60,000 L, 62,000 kg. The burden is exactly log2(10) x 1.25.
    */
   it("is charged four whole physical scale steps", () => {
-    expect(giant.body.measurements.form.totalSizeL).toBeCloseTo(60_000, 3);
+    expect(giant.body.measurements.form.totalVolumeL).toBeCloseTo(60_000, 3);
     expect(giant.body.measurements.form.totalMassKg).toBeCloseTo(62_000, 3);
 
     expect(giant.burden.linearSizeRatio).toBeCloseTo(10, 10);
@@ -147,7 +147,7 @@ describe("the Scale-10 Giant", () => {
   });
 
   /*
-   * Size and Mass reach these through AGI and DEX and are never reapplied.
+   * Volume and Mass reach these through AGI and DEX and are never reapplied.
    * Charging a large creature twice for being large is the failure this
    * propagation exists to avoid.
    */

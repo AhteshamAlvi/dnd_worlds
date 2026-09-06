@@ -91,7 +91,7 @@ export const SPECIES_DEFINITIONS = {
    * because it is ten times this.
    *
    * Nothing physical is authored here beyond that anchor and the stature
-   * bands. Height, Mass, Size, Structural Capacity and Strength all resolve
+   * bands. Height, Mass, Volume, Structural Capacity and Strength all resolve
    * from the anatomy and the reference table in body/anatomy/body-parts.ts —
    * 165 cm, 62.00 kg, 60.00 L, 100 SC, STR 10 — and a Species that restated
    * any of them would be a second source waiting to drift.

@@ -14,7 +14,7 @@
  *        v
  *   Reference Form -> Anatomy -> Morphology
  *        v
- *   Measurements  (Length, Size, Mass, Height)
+ *   Measurements  (Length, Volume, Mass, Height)
  *        v
  *   Structural Capacity
  *        /                    \
@@ -274,7 +274,7 @@ export type {
 } from "./measurements/types";
 export {
   DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L,
-  resolveAdipositySizeFactor,
+  resolveAdiposityVolumeFactor,
   resolveAdiposityMassDeltaKg,
   resolveAdiposityVolumeDeltaL,
   resolveBodyMeasurements,

@@ -9,7 +9,7 @@
  * still be ten times a Human; it would just be ten times the wrong Human.
  *
  * Deliberately arithmetic over authored data with no resolver involved. These
- * five totals can be checked before a single formula exists, which is exactly
+ * six totals can be checked before a single formula exists, which is exactly
  * what makes them a usable gate.
  */
 
@@ -53,8 +53,12 @@ describe("Basic Human Standard reference totals", () => {
     expect(PARTS).toHaveLength(12);
   });
 
-  it("sums to 60.00 L of Size", () => {
-    expect(sum((d) => d.reference.sizeL)).toBeCloseTo(60, 10);
+  it("sums to 60.00 L of Volume", () => {
+    expect(sum((d) => d.reference.volumeL)).toBeCloseTo(60, 10);
+  });
+
+  it("sums to 16,900 cm2 of Surface Area", () => {
+    expect(sum((d) => d.reference.surfaceAreaCm2)).toBeCloseTo(16_900, 10);
   });
 
   it("sums to 62.00 kg of Mass", () => {
@@ -63,6 +67,30 @@ describe("Basic Human Standard reference totals", () => {
 
   it("sums to 100 Reference Structural Capacity", () => {
     expect(sum((d) => d.reference.structuralCapacity)).toBeCloseTo(100, 10);
+  });
+
+  /*
+   * The two ratios the six totals imply, stated here so a change to any one
+   * of Volume, Surface Area or Mass has to face what it does to the others.
+   *
+   * A body that gains litres without gaining skin has quietly become a
+   * different creature, and the surface-area-to-volume ratio is where that
+   * shows up first — it is also the number every Aura surface density will be
+   * measured against once the Aura resolver lands.
+   */
+  it("has a mean density of 1.033 kg/L", () => {
+    const volumeL = sum((d) => d.reference.volumeL);
+    const massKg = sum((d) => d.reference.massKg);
+
+    expect(massKg / volumeL).toBeCloseTo(1.0333, 4);
+  });
+
+  it("has a surface-area-to-volume ratio of 28.17 per metre", () => {
+    const volumeM3 = sum((d) => d.reference.volumeL) / 1000;
+    const surfaceAreaM2 = sum((d) => d.reference.surfaceAreaCm2) / 10_000;
+
+    expect(surfaceAreaM2).toBeCloseTo(1.69, 10);
+    expect(surfaceAreaM2 / volumeM3).toBeCloseTo(28.17, 2);
   });
 
   /*

@@ -1,7 +1,7 @@
 /*
  * How being large costs agility.
  *
- * Size and Mass are direct inputs to the BASE resolution of AGI and DEX. They
+ * Volume and Mass are direct inputs to the BASE resolution of AGI and DEX. They
  * are deliberately not Attribute modifiers and not Effects: the number they
  * produce is the creature's actual physical base, not a penalty layered on top
  * of one. A Giant does not have "AGI 10 with a -4 modifier"; a Giant has AGI 6.
@@ -12,7 +12,7 @@
  *
  * THE FORMULA
  *
- *   LinearSizeRatio = (SizeL / 60)^(1/3)
+ *   LinearSizeRatio = (VolumeL / 60)^(1/3)
  *
  *   RawBurden = 0.50 x log2(LinearSizeRatio)
  *             + 0.25 x log2(MassKg / 62)
@@ -22,7 +22,7 @@
  *   BaseAGI   = StoredAGI - Steps
  *   BaseDEX   = StoredDEX - Steps
  *
- * Size is stored as VOLUME, so it is converted to a linear ratio first —
+ * Volume is litres, so it is converted to a linear ratio first —
  * otherwise doubling a creature's height would count as eight times the size
  * and the two terms would not be comparable.
  *
@@ -72,22 +72,25 @@ import type { ResolvedBodyMeasurements } from "../body/measurements/types";
  * mass carries no burden at all — the reference defines the middle of the
  * scale rather than being placed on it by hand.
  */
-export const REFERENCE_BODY_SIZE_L = 60;
+export const REFERENCE_BODY_VOLUME_L = 60;
 export const REFERENCE_BODY_MASS_KG = 62;
 
-export const SIZE_BURDEN_SENSITIVITY = 0.50;
+export const VOLUME_BURDEN_SENSITIVITY = 0.50;
 export const MASS_BURDEN_SENSITIVITY = 0.25;
 
 
 /*
  * Volume to linear ratio.
  *
- * Size is a volume, and volume goes as the cube of length, so a creature twice
- * as tall is eight times the size. Comparing that eight directly against a
- * mass ratio would double-count the same growth.
+ * Volume goes as the cube of length, so a creature twice as tall holds eight
+ * times the litres. Comparing that eight directly against a mass ratio would
+ * double-count the same growth.
+ *
+ * The name keeps "Size" because what it RETURNS is a linear extent ratio, not
+ * a volume one — the mechanical measurement it consumes is `volumeL`.
  */
-export function resolveLinearSizeRatio(sizeL: number): number {
-  return Math.cbrt(sizeL / REFERENCE_BODY_SIZE_L);
+export function resolveLinearSizeRatio(volumeL: number): number {
+  return Math.cbrt(volumeL / REFERENCE_BODY_VOLUME_L);
 }
 
 
@@ -99,13 +102,13 @@ export function resolveLinearSizeRatio(sizeL: number): number {
  * than two.
  */
 export function resolveRawPhysicalScaleBurden(
-  sizeL: number,
+  volumeL: number,
   massKg: number,
 ): number {
-  if (sizeL <= 0 || massKg <= 0) return 0;
+  if (volumeL <= 0 || massKg <= 0) return 0;
 
   return (
-    SIZE_BURDEN_SENSITIVITY * Math.log2(resolveLinearSizeRatio(sizeL)) +
+    VOLUME_BURDEN_SENSITIVITY * Math.log2(resolveLinearSizeRatio(volumeL)) +
     MASS_BURDEN_SENSITIVITY * Math.log2(massKg / REFERENCE_BODY_MASS_KG)
   );
 }
@@ -115,15 +118,15 @@ export function resolveRawPhysicalScaleBurden(
  * Whole physical scale steps. See the note above on why this rounds.
  */
 export function resolvePhysicalScaleSteps(
-  sizeL: number,
+  volumeL: number,
   massKg: number,
 ): number {
-  return Math.round(resolveRawPhysicalScaleBurden(sizeL, massKg));
+  return Math.round(resolveRawPhysicalScaleBurden(volumeL, massKg));
 }
 
 
 export interface PhysicalScaleBurden {
-  readonly sizeL: number;
+  readonly volumeL: number;
   readonly massKg: number;
 
   readonly linearSizeRatio: number;
@@ -143,15 +146,15 @@ export interface PhysicalScaleBurden {
 export function resolvePhysicalScaleBurden(
   formMeasurements: ResolvedBodyMeasurements,
 ): PhysicalScaleBurden {
-  const sizeL = formMeasurements.totalSizeL;
+  const volumeL = formMeasurements.totalVolumeL;
   const massKg = formMeasurements.totalMassKg;
 
   return {
-    sizeL,
+    volumeL,
     massKg,
-    linearSizeRatio: resolveLinearSizeRatio(sizeL),
-    rawBurden: resolveRawPhysicalScaleBurden(sizeL, massKg),
-    steps: resolvePhysicalScaleSteps(sizeL, massKg),
+    linearSizeRatio: resolveLinearSizeRatio(volumeL),
+    rawBurden: resolveRawPhysicalScaleBurden(volumeL, massKg),
+    steps: resolvePhysicalScaleSteps(volumeL, massKg),
   };
 }
 

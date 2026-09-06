@@ -1,5 +1,5 @@
 /*
- * Size and Mass as physical inputs to base AGI and DEX.
+ * Volume and Mass as physical inputs to base AGI and DEX.
  *
  * The rule this suite defends: the number is a creature's actual physical
  * base, not a penalty layered on top of one. A Giant does not have AGI 10 with
@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 import {
   MASS_BURDEN_SENSITIVITY,
   REFERENCE_BODY_MASS_KG,
-  REFERENCE_BODY_SIZE_L,
-  SIZE_BURDEN_SENSITIVITY,
+  REFERENCE_BODY_VOLUME_L,
+  VOLUME_BURDEN_SENSITIVITY,
   applyPhysicalScaleSteps,
   resolveLinearSizeRatio,
   resolvePhysicalScaleSteps,
@@ -21,13 +21,13 @@ import {
 
 const raw = resolveRawPhysicalScaleBurden;
 const steps = resolvePhysicalScaleSteps;
-const agi = (stored: number, sizeL: number, massKg: number) =>
-  applyPhysicalScaleSteps(stored, steps(sizeL, massKg));
+const agi = (stored: number, volumeL: number, massKg: number) =>
+  applyPhysicalScaleSteps(stored, steps(volumeL, massKg));
 
 
 describe("the reference body", () => {
   it("carries no burden at all", () => {
-    expect(REFERENCE_BODY_SIZE_L).toBe(60);
+    expect(REFERENCE_BODY_VOLUME_L).toBe(60);
     expect(REFERENCE_BODY_MASS_KG).toBe(62);
 
     expect(raw(60, 62)).toBe(0);
@@ -36,7 +36,7 @@ describe("the reference body", () => {
   });
 
   /*
-   * Size is a volume and volume goes as the cube of length, so it converts to
+   * Volume goes as the cube of length, so it converts to
    * a linear ratio first. Comparing a volume ratio directly against a mass
    * ratio would count the same growth twice.
    */
@@ -69,7 +69,7 @@ describe("the Scale-10 Giant", () => {
       expect(raw(size, mass)).toBeCloseTo(1.25 * Math.log2(linear), 10);
     }
 
-    expect(SIZE_BURDEN_SENSITIVITY + 3 * MASS_BURDEN_SENSITIVITY).toBe(1.25);
+    expect(VOLUME_BURDEN_SENSITIVITY + 3 * MASS_BURDEN_SENSITIVITY).toBe(1.25);
   });
 });
 
@@ -86,9 +86,9 @@ describe("ordinary humans keep their AGI", () => {
     ["95 kg", 92, 95],
     ["120 kg", 116, 120],
     ["200 cm tall", 60 * (200 / 165) ** 3, 62 * (200 / 165) ** 3],
-  ])("leaves a %s human at stored AGI", (_label, sizeL, massKg) => {
-    expect(Math.abs(raw(sizeL, massKg))).toBeLessThan(0.5);
-    expect(agi(10, sizeL, massKg)).toBe(10);
+  ])("leaves a %s human at stored AGI", (_label, volumeL, massKg) => {
+    expect(Math.abs(raw(volumeL, massKg))).toBeLessThan(0.5);
+    expect(agi(10, volumeL, massKg)).toBe(10);
   });
 
   /*
@@ -100,9 +100,9 @@ describe("ordinary humans keep their AGI", () => {
     ["150 kg", 145, 150],
     ["200 kg", 194, 200],
     ["230 cm tall", 60 * (230 / 165) ** 3, 62 * (230 / 165) ** 3],
-  ])("charges a %s body one step", (_label, sizeL, massKg) => {
-    expect(steps(sizeL, massKg)).toBe(1);
-    expect(agi(10, sizeL, massKg)).toBe(9);
+  ])("charges a %s body one step", (_label, volumeL, massKg) => {
+    expect(steps(volumeL, massKg)).toBe(1);
+    expect(agi(10, volumeL, massKg)).toBe(9);
   });
 });
 

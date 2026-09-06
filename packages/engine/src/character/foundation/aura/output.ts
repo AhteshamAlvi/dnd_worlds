@@ -226,18 +226,24 @@ export function deriveAuraOutput(
   }
 
 
-  const renAccessibleMaximum =
+  /*
+   * Named for the ACCESS, not for the principle that opened it. Ren is one
+   * route; awakening, Zetsu and the unawakened physiological trickle are
+   * others, and calling the general field renAccessibleMaximum made each of
+   * them look like an exception to a Ren rule.
+   */
+  const accessibleMaximum =
     physiologicalMaximum * renAccessFraction;
 
   const usableMaximum = Math.min(
     pool.current,
-    renAccessibleMaximum,
+    accessibleMaximum,
   );
 
 
   const payload: AuraOutput = {
     physiologicalMaximum,
-    renAccessibleMaximum,
+    accessibleMaximum,
     usableMaximum,
   };
 
@@ -246,7 +252,7 @@ export function deriveAuraOutput(
     rawPhysiologicalMaximum,
     physiologicalMaximum,
     renAccessFraction,
-    renAccessibleMaximum,
+    accessibleMaximum,
     currentAura: pool.current,
     usableMaximum,
   };

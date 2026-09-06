@@ -30,8 +30,8 @@ const MORPHOLOGY_DIMENSIONS = [
 ] as const satisfies readonly (keyof BodyMorphology)[];
 
 const PLAIN_SENSITIVITIES = [
-  "bulkSize",
-  "adipositySize",
+  "bulkVolume",
+  "adiposityVolume",
   "muscularityMass",
 ] as const;
 

@@ -9,7 +9,7 @@
  *                      x EffectiveScale^2
  *                      x MuscularityStructuralFactor
  *
- * Scale enters SQUARED, where Size and Mass take the cube. That is not a
+ * Scale enters SQUARED, where Volume and Mass take the cube. That is not a
  * calibration choice — it is the difference between volume and cross-section.
  * Doubling every linear dimension multiplies volume by eight but the
  * load-bearing cross-section only by four, and it is cross-section that

@@ -17,20 +17,22 @@
  *   stored attributes        authored     →  base and resolved are derived
  *   traits                   authored     →  granted Traits are derived
  *   skills / techniques      authored     →  granted access is derived
+ *   current Aura             authored     →  maximum, output, density derived
  *
  * A Skill a character has only because a Trait grants it is deliberately
  * absent from this object. Writing it in would mean the sheet keeps the Skill
  * after the Trait is removed, and no amount of later cleanup reliably
  * unpicks that. See resolution.ts for the derived view.
  *
- * Equipment, progression and additional Nen statistics join as the mechanics
- * they feed are implemented.
+ * Equipment and progression join as the mechanics they feed are implemented.
  */
 
 import type { CharacterDetails } from "./details";
 
 import type { Attributes } from "./foundation/attributes/types";
 import type { Body } from "./foundation/body/types";
+import type { CharacterAuraState } from "./foundation/aura/state";
+import type { NenState } from "./foundation/nen/types";
 
 import type { CharacterClan } from "./identity/clans";
 import type { CharacterSpecies } from "./identity/species";
@@ -90,6 +92,29 @@ export interface Character {
    * integrated as the Body system is developed further.
    */
   readonly body: Body;
+
+
+  /*
+   * Stored Aura: Current Aura and the character's active allocations.
+   *
+   * Nothing derivable is here. Maximum Aura, Output Capacity, Regeneration
+   * Capacity, the Control multiplier and every Aura Density resolve from
+   * Attributes, Body and Nen state — see foundation/aura/state.ts for the
+   * full list and why each one is absent.
+   */
+  readonly aura: CharacterAuraState;
+
+
+  /*
+   * Nen awakening, mastery, seals and active principle state.
+   *
+   * A SIBLING of `aura`, not its owner. Awakening gates deliberate access and
+   * externalization; it does not gate having Aura. An unawakened character has
+   * a pool, loses Current Aura, and receives involuntary internal
+   * reinforcement — so the Aura pool cannot live under here without those
+   * facts becoming unrepresentable.
+   */
+  readonly nen: NenState;
 
 
   /*

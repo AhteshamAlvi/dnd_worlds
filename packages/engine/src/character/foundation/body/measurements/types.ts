@@ -10,7 +10,7 @@
  * Units are the real ones throughout:
  *
  *   Length  centimetres
- *   Size    litres (1 L = 1 dm3)
+ *   Volume    litres (1 L = 1 dm3)
  *   Mass    kilograms
  *
  * Real units are not decoration. A body that reports 165 cm and 62 kg can be
@@ -35,7 +35,17 @@ export interface ResolvedPartMeasurements {
   readonly partId: BodyPartId;
 
   readonly lengthCm: number;
-  readonly sizeL: number;
+  readonly volumeL: number;
+
+  /*
+   * Exposed external area, in square centimetres.
+   *
+   * Body stays in cm2 throughout. Consumers that want m2 — Aura surface
+   * density is the first — convert at the point of use rather than having a
+   * second stored figure here that could disagree with this one.
+   */
+  readonly surfaceAreaCm2: number;
+
   readonly massKg: number;
 
   /*
@@ -45,18 +55,29 @@ export interface ResolvedPartMeasurements {
    * A resolved measurement is otherwise unexplainable: "this Arm weighs 3.1 kg"
    * is a fact nobody can argue with and nobody can debug. Keeping the factors
    * is what lets a trace answer the question this subsystem is most often
-   * asked — why did a Trait change Mass but not Size? — by showing that it
-   * moved massComposition and left effectiveBulk and adipositySize alone.
+   * asked — why did a Trait change Mass but not Volume? — by showing that it
+   * moved massComposition and left effectiveBulk and adiposityVolume alone.
    *
    * `preAdiposityVolumeL` is the part's volume before fat is added: everything
-   * Scale, Length and Bulk make it. Both the size factor and the adiposity
+   * Scale, Length and Bulk make it. Both the volume factor and the adiposity
    * mass delta are taken against it, which is what keeps the litres that
-   * appear in Size and the litres that are weighed into Mass the same litres.
+   * appear in Volume and the litres that are weighed into Mass the same litres.
    */
   readonly lengthFactor: number;
   readonly effectiveBulk: number;
-  readonly adipositySizeFactor: number;
+  readonly adiposityVolumeFactor: number;
   readonly massCompositionFactor: number;
+
+  /*
+   * How much thicker morphology made the part across its cross-section:
+   * effectiveBulk x adiposityVolumeFactor.
+   *
+   * Retained because it is the one factor Volume and Surface Area share, and
+   * the exponent they take it to is the whole difference between them. Volume
+   * uses it directly; Surface Area takes its square root, because area grows
+   * with the cross-section's PERIMETER rather than its area.
+   */
+  readonly crossSectionFactor: number;
 
   readonly preAdiposityVolumeL: number;
   readonly adiposityVolumeDeltaL: number;
@@ -67,8 +88,9 @@ export interface ResolvedPartMeasurements {
 /*
  * The whole body's resolved physical measurements.
  *
- * `parts` carries only the parts that physically contributed. A suppressed or
- * archived-removed BodyPart is absent entirely rather than present with zeroes,
+ * `parts` carries only the parts that physically contributed. A destroyed,
+ * removed, archived or suppressed BodyPart contributes no Volume and no
+ * Surface Area, and is absent entirely rather than present with zeroes,
  * because zero-valued anatomy and absent anatomy mean different things and the
  * distinction survives better as presence than as a magic number.
  *
@@ -83,7 +105,8 @@ export interface ResolvedBodyMeasurements {
 
   readonly byPartId: Readonly<Record<BodyPartId, ResolvedPartMeasurements>>;
 
-  readonly totalSizeL: number;
+  readonly totalVolumeL: number;
+  readonly totalSurfaceAreaCm2: number;
   readonly totalMassKg: number;
 
   readonly heightCm: number;

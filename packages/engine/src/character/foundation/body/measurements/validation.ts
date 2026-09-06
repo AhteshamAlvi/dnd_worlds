@@ -34,7 +34,8 @@ export type MeasurementValidationIssueCode =
   | "unknown-body-part-type"
   | "invalid-effective-scale"
   | "invalid-adipose-tissue-density"
-  | "non-positive-resolved-mass";
+  | "non-positive-resolved-mass"
+  | "invalid-resolved-surface-area";
 
 
 /*
@@ -70,9 +71,10 @@ function createValidationResult(
 /*
  * Rejects an Effective Scale that measurements cannot be resolved against.
  *
- * Scale multiplies every linear dimension and cubes into Size and Mass, so
- * zero collapses the entire body to a point and a negative value produces
- * negative mass. Neither is a body; both are upstream bugs.
+ * Scale multiplies every linear dimension, squares into Surface Area and cubes
+ * into Volume and Mass, so zero collapses the entire body to a point and a
+ * negative value produces negative mass. Neither is a body; both are upstream
+ * bugs.
  */
 export function findEffectiveScaleIssues(
   effectiveScale: number,
@@ -256,6 +258,26 @@ export function validateMeasurementInputs(
       effectiveScale,
       adiposeTissueDensityKgPerL,
     );
+
+    /*
+     * Surface Area is authored per definition rather than derived from Volume,
+     * so an authoring mistake reaches here as a NaN or a negative rather than
+     * being caught by the volume arithmetic on its way through. Area may be
+     * zero — an internal organ exposes none — but it may not be negative, and
+     * a body cannot have an unmeasurable amount of skin.
+     */
+    if (
+      !Number.isFinite(resolved.surfaceAreaCm2) ||
+      resolved.surfaceAreaCm2 < 0
+    ) {
+      issues.push({
+        code: "invalid-resolved-surface-area",
+        partId: part.id,
+        message:
+          `BodyPart "${part.id}" resolves to ${resolved.surfaceAreaCm2} cm2 of ` +
+          `surface area. External area must be finite and non-negative.`,
+      });
+    }
 
     if (!Number.isFinite(resolved.massKg) || resolved.massKg <= 0) {
       issues.push({

@@ -21,7 +21,8 @@
  * measurements — a Human Leg really is 81 cm and 11.8 kg — and they sum
  * exactly to the reference body:
  *
- *   Size                                60.00 L
+ *   Volume                                60.00 L
+ *   Surface Area                       16,900 cm2  (1.69 m2)
  *   Mass                                62.00 kg
  *   Structural Capacity                    100
  *   Height (signed vertical span)       165 cm
@@ -36,7 +37,22 @@
  * measures 176 cm; with signs, crossing the pelvis into the opposite Leg
  * returns to the same lower coordinate rather than adding another 88 cm.
  *
- * body-reference-standard.test.ts asserts all five directly against this
+ * Those totals give the Basic Human Standard its two derived constants:
+ *
+ *   Mean density                  1.033 kg/L   (62.00 / 60.00)
+ *   Surface-area-to-volume ratio  28.17 m^-1   (1.69 m2 / 0.060 m3)
+ *
+ * The surface partition is calibrated from the adult Lund-Browder anatomical
+ * percentages, adapted to this engine's combined Arm and Leg definitions —
+ * Lund-Browder splits a limb across upper, lower and extremity segments where
+ * the table below carries one Arm and one Leg, so those percentages are summed
+ * into the combined part rather than reinvented.
+ *
+ * Surface Area is EXTERNAL area only. Attachment cross-sections between
+ * connected parts are excluded, which is why the eight figures sum to a body's
+ * skin rather than to the surface of eight free-floating solids.
+ *
+ * body-reference-standard.test.ts asserts all six directly against this
  * table, so a typo here fails immediately rather than surfacing later as a
  * character who weighs the wrong amount.
  *
@@ -58,7 +74,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["core"],
     reference: {
       lengthCm: 22,
-      sizeL: 3.35,
+      volumeL: 3.35,
+      surfaceAreaCm2: 1183,
       massKg: 3.65,
       structuralCapacity: 8,
       intrinsicPhysicalForce: 1,
@@ -67,8 +84,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: 1,
     },
     sensitivity: {
-      bulkSize: 0.15,
-      adipositySize: 0.04,
+      bulkVolume: 0.15,
+      adiposityVolume: 0.04,
       muscularityMass: 0.05,
       muscularityStructural: 0.05,
       muscularityForce: 0.05,
@@ -81,7 +98,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["core"],
     reference: {
       lengthCm: 6,
-      sizeL: 0.55,
+      volumeL: 0.55,
+      surfaceAreaCm2: 338,
       massKg: 0.58,
       structuralCapacity: 2,
       intrinsicPhysicalForce: 1,
@@ -90,8 +108,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: 1,
     },
     sensitivity: {
-      bulkSize: 0.6,
-      adipositySize: 0.08,
+      bulkVolume: 0.6,
+      adiposityVolume: 0.08,
       muscularityMass: 0.2,
       muscularityStructural: 0.4,
       muscularityForce: 0.4,
@@ -104,7 +122,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["core", "torso"],
     reference: {
       lengthCm: 31,
-      sizeL: 20.15,
+      volumeL: 20.15,
+      surfaceAreaCm2: 2873,
       massKg: 19.82,
       structuralCapacity: 10,
       intrinsicPhysicalForce: 1,
@@ -113,8 +132,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: 1,
     },
     sensitivity: {
-      bulkSize: 0.85,
-      adipositySize: 0.22,
+      bulkVolume: 0.85,
+      adiposityVolume: 0.22,
       muscularityMass: 0.3,
       muscularityStructural: 0.75,
       muscularityForce: 0.75,
@@ -127,7 +146,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["core", "torso"],
     reference: {
       lengthCm: 18,
-      sizeL: 6.95,
+      volumeL: 6.95,
+      surfaceAreaCm2: 2535,
       massKg: 6.85,
       structuralCapacity: 4,
       intrinsicPhysicalForce: 1,
@@ -136,8 +156,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: 1,
     },
     sensitivity: {
-      bulkSize: 0.9,
-      adipositySize: 0.24,
+      bulkVolume: 0.9,
+      adiposityVolume: 0.24,
       muscularityMass: 0.25,
       muscularityStructural: 0.8,
       muscularityForce: 0.8,
@@ -150,7 +170,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["limb", "upper-limb"],
     reference: {
       lengthCm: 55,
-      sizeL: 2.37,
+      volumeL: 2.37,
+      surfaceAreaCm2: 1183,
       massKg: 2.56,
       structuralCapacity: 14,
       intrinsicPhysicalForce: 1,
@@ -159,8 +180,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: 1,
     },
     sensitivity: {
-      bulkSize: 1.0,
-      adipositySize: 0.12,
+      bulkVolume: 1.0,
+      adiposityVolume: 0.12,
       muscularityMass: 0.45,
       muscularityStructural: 1.0,
       muscularityForce: 1.0,
@@ -173,7 +194,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["limb", "upper-limb", "extremity", "manipulator"],
     reference: {
       lengthCm: 18,
-      sizeL: 0.32,
+      volumeL: 0.32,
+      surfaceAreaCm2: 422.5,
       massKg: 0.36,
       structuralCapacity: 4,
       intrinsicPhysicalForce: 1,
@@ -182,8 +204,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: 1,
     },
     sensitivity: {
-      bulkSize: 0.5,
-      adipositySize: 0.04,
+      bulkVolume: 0.5,
+      adiposityVolume: 0.04,
       muscularityMass: 0.15,
       muscularityStructural: 0.3,
       muscularityForce: 0.3,
@@ -196,7 +218,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["limb", "lower-limb", "locomotor"],
     reference: {
       lengthCm: 81,
-      sizeL: 11.05,
+      volumeL: 11.05,
+      surfaceAreaCm2: 2788.5,
       massKg: 11.8,
       structuralCapacity: 16,
       intrinsicPhysicalForce: 1,
@@ -205,8 +228,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: -1,
     },
     sensitivity: {
-      bulkSize: 1.0,
-      adipositySize: 0.15,
+      bulkVolume: 1.0,
+      adiposityVolume: 0.15,
       muscularityMass: 0.5,
       muscularityStructural: 1.0,
       muscularityForce: 1.0,
@@ -219,7 +242,8 @@ export const BODY_PART_DEFINITIONS = {
     tags: ["limb", "lower-limb", "extremity", "locomotor"],
     reference: {
       lengthCm: 25,
-      sizeL: 0.76,
+      volumeL: 0.76,
+      surfaceAreaCm2: 591.5,
       massKg: 0.83,
       structuralCapacity: 4,
       intrinsicPhysicalForce: 1,
@@ -228,8 +252,8 @@ export const BODY_PART_DEFINITIONS = {
       heightAxisSign: -1,
     },
     sensitivity: {
-      bulkSize: 0.45,
-      adipositySize: 0.05,
+      bulkVolume: 0.45,
+      adiposityVolume: 0.05,
       muscularityMass: 0.15,
       muscularityStructural: 0.25,
       muscularityForce: 0.25,

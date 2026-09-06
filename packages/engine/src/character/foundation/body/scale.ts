@@ -20,7 +20,7 @@
  * Scale does not propagate uniformly across dimensions:
  *
  *   Length  proportional to  Scale
- *   Size    proportional to  Scale cubed
+ *   Volume    proportional to  Scale cubed
  *   Mass    proportional to  Scale cubed
  *   SC      proportional to  Scale squared
  *

@@ -2,7 +2,8 @@
  * Placeholder physical data for Body tests written before the physical model.
  *
  * These suites — anatomy structure, Body Points, damage, recovery, selectors —
- * predate Structural Capacity, Length/Size/Mass and Strength Points, and none
+ * predate Structural Capacity, Length/Volume/Surface Area/Mass and Strength
+ * Points, and none
  * of them exercise those values. They only need their BodyPartDefinition and
  * Body fixtures to satisfy the type.
  *
@@ -21,7 +22,8 @@ import { NEUTRAL_MORPHOLOGY } from "../../character/foundation/body/types";
 export const TEST_PART_PHYSICALS = {
   reference: {
     lengthCm: 10,
-    sizeL: 1,
+    volumeL: 1,
+    surfaceAreaCm2: 100,
     massKg: 1,
     structuralCapacity: 10,
     intrinsicPhysicalForce: 1,
@@ -29,8 +31,8 @@ export const TEST_PART_PHYSICALS = {
       heightAxisSign: 1,
   },
   sensitivity: {
-    bulkSize: 0,
-    adipositySize: 0,
+    bulkVolume: 0,
+    adiposityVolume: 0,
     muscularityMass: 0,
     muscularityStructural: 0,
     muscularityForce: 0,

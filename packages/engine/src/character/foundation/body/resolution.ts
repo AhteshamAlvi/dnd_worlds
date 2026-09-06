@@ -359,19 +359,22 @@ export function resolveBody(
   children.push(
     createTraceNode({
       id: "body.measurements",
-      label: "Length, Size and Mass",
+      label: "Length, Volume, Surface Area and Mass",
       formula:
-        "size = refSize x scale^3 x length x bulk x adiposity; " +
+        "volume = refVolume x scale^3 x length x bulk x adiposity; " +
+        "surfaceArea = refArea x scale^2 x length x sqrt(bulk x adiposity); " +
         "mass = leanMass x scale^3 x length x bulk x composition + adiposeMass",
       inputs: { adiposeTissueDensityKgPerL: { value: adiposeDensity } },
       output: traced({
         form: {
-          sizeL: measurements.form.totalSizeL,
+          volumeL: measurements.form.totalVolumeL,
+          surfaceAreaCm2: measurements.form.totalSurfaceAreaCm2,
           massKg: measurements.form.totalMassKg,
           parts: measurements.form.parts,
         },
         present: {
-          sizeL: measurements.present.totalSizeL,
+          volumeL: measurements.present.totalVolumeL,
+          surfaceAreaCm2: measurements.present.totalSurfaceAreaCm2,
           massKg: measurements.present.totalMassKg,
           heightCm: measurements.present.heightCm,
           parts: measurements.present.parts,

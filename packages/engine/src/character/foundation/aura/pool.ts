@@ -35,6 +35,39 @@ export function deriveMaximumAura(
   );
 }
 
+/*
+ * How drained the character is, 0 at full and 1 at empty.
+ *
+ * Carried on the pool rather than recomputed by each consumer, because every
+ * exhaustion rule that eventually reads it must read the SAME number — two
+ * call sites dividing slightly differently is exactly how a threshold ends up
+ * meaning two things.
+ *
+ * A zero maximum reports 0 rather than NaN: a character who cannot hold Aura
+ * is not infinitely depleted, they simply have no pool to be depleted from.
+ */
+export function deriveAuraDepletionFraction(
+  current: number,
+  maximum: number,
+): number {
+  if (!Number.isFinite(maximum) || maximum <= 0) return 0;
+
+  return Math.min(1, Math.max(0, (maximum - current) / maximum));
+}
+
+
+export function createAuraPool(
+  current: number,
+  maximum: number,
+): AuraPool {
+  return {
+    current,
+    maximum,
+    depletionFraction: deriveAuraDepletionFraction(current, maximum),
+  };
+}
+
+
 export function validateAuraPool(
   current: number,
   attributes: Attributes,
@@ -109,10 +142,7 @@ export function validateAuraPool(
 
   return {
     success: true,
-    payload: {
-      current,
-      maximum,
-    },
+    payload: createAuraPool(current, maximum),
     trace: {
       root: traceNode,
     },

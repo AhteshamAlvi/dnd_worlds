@@ -478,7 +478,7 @@ export interface ModifyResolvedIntrinsicPhysicalForceEffect {
  * The narrow exception in an otherwise physical vocabulary. If an effect is
  * naturally a matter of being bigger, thicker or better muscled it should say
  * that instead and let Structural Capacity carry it into Body Points,
- * Strength, Mass and Size together. Stone skin is the case this exists for:
+ * Strength, Mass and Volume together. Stone skin is the case this exists for:
  * the body is no larger and no stronger, it is simply harder to destroy.
  */
 export interface ModifyBaseDestructionResistanceEffect {

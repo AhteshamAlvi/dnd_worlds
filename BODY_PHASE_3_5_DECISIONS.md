@@ -131,7 +131,7 @@ validation, serialization, selectors, and tracing where relevant.
 Resolved measurements use only active anatomy:
 
 ```
-active            -> contributes Length geometry, Size, Mass, Height
+active            -> contributes Length geometry, Volume, Mass, Height
 suppressed        -> contributes nothing
 archived-removed  -> contributes nothing
 ```
@@ -157,7 +157,7 @@ integration just to make these production-path tests. Document the split.
 `0.85 → 0.89` is authoritative. Update `HUMAN_AGE_PROFILE`, its documented age
 table, the Phase 3 age goldens, and any fixture derived from that anchor,
 *before* writing the Measurement goldens. Do not retain anything expecting
-0.85. Regenerate every Height/Mass/Size expectation for that age from the
+0.85. Regenerate every Height/Mass/Volume expectation for that age from the
 finalized profile rather than preserving stale output.
 
 (The STR column of that documented table cannot be regenerated until Phase 5.
@@ -166,8 +166,8 @@ Phase 3 regenerates height and mass; Phase 5 closes the STR column.)
 ## Phase 3 gate
 
 ```
-Standard Human:   Height 165 cm   Mass 62.00 kg   Size 60.00 L
-Scale-10 fixture: Height 16.5 m   Mass 62,000 kg  Size 60,000 L
+Standard Human:   Height 165 cm   Mass 62.00 kg   Volume 60.00 L
+Scale-10 fixture: Height 16.5 m   Mass 62,000 kg  Volume 60,000 L
 Height traversal: direction-independent, signed-coordinate based,
                   does not produce the false 176 cm two-Leg path
 Age:              final HUMAN_AGE_PROFILE reproduces its own updated table

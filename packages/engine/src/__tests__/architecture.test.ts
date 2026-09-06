@@ -322,3 +322,72 @@ describe("the sensory vocabulary has exactly one declaration", () => {
     }
   });
 });
+
+
+/*
+ * The Body Size -> Volume migration, enforced rather than assumed.
+ *
+ * The mechanical measurement was called Size and had always been litres, so
+ * the unit and the name disagreed and every reader had to be told which one to
+ * believe. Renaming it is only worth anything if it is COMPLETE: one surviving
+ * `sizeL` beside a `volumeL` is worse than the original, because now there are
+ * two names and no way to know whether they mean the same thing.
+ *
+ * `Scale` is untouched and ordinary uses of the word "size" are fine — this
+ * checks the specific mechanical identifiers.
+ */
+describe("Body Volume has no Size-named survivors", () => {
+  const everySource = sourceFilesUnder(SRC);
+
+  const RETIRED = [
+    "sizeL",
+    "totalSizeL",
+    "bulkSize",
+    "adipositySize",
+    "adipositySizeFactor",
+    "resolveAdipositySizeFactor",
+    "REFERENCE_BODY_SIZE_L",
+    "SIZE_BURDEN_SENSITIVITY",
+  ] as const;
+
+  const REPLACEMENTS = [
+    "volumeL",
+    "totalVolumeL",
+    "bulkVolume",
+    "adiposityVolume",
+    "adiposityVolumeFactor",
+    "REFERENCE_BODY_VOLUME_L",
+    "VOLUME_BURDEN_SENSITIVITY",
+  ] as const;
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.length).toBeGreaterThan(50);
+  });
+
+  it.each(RETIRED)("has no occurrence of %s left", (name) => {
+    const offenders = everySource.filter((path) => {
+      /* This file names them as strings; that is the check, not a survivor. */
+      if (path === fileURLToPath(import.meta.url)) return false;
+
+      return new RegExp(`\\b${name}\\b`).test(readFileSync(path, "utf8"));
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it.each(REPLACEMENTS)("uses %s instead", (name) => {
+    const users = everySource.filter((path) =>
+      new RegExp(`\\b${name}\\b`).test(readFileSync(path, "utf8")),
+    );
+
+    expect(users.length).toBeGreaterThan(0);
+  });
+
+  it("keeps Scale, which was never the measurement being renamed", () => {
+    const users = everySource.filter((path) =>
+      /\beffectiveScale\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(users.length).toBeGreaterThan(0);
+  });
+});

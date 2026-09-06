@@ -277,7 +277,7 @@ describe("Species body profiles", () => {
   });
 
   /*
-   * Nothing physical is restated. Height, Mass, Size, SC and STR all resolve
+   * Nothing physical is restated. Height, Mass, Volume, SC and STR all resolve
    * from the anatomy and the reference table; a Species that authored any of
    * them would be a second source waiting to drift.
    */

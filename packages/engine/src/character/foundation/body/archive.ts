@@ -24,7 +24,7 @@
  * not erase the record of the left arm that was destroyed before it. The
  * record survives, inert, and becomes relevant again if the slot ever returns.
  *
- * Orphaned records contribute nothing to the current body — no Mass, Size,
+ * Orphaned records contribute nothing to the current body — no Mass, Volume,
  * Height, Structural Capacity, Strength Points, Body Points, and nothing to
  * normalization. They are history, not anatomy.
  *

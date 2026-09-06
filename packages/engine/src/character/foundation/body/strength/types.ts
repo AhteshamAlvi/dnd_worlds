@@ -15,7 +15,7 @@
  * physically present part is in the sum, and anatomy that inherently produces
  * no force sets `intrinsicPhysicalForce: 0` and contributes zero by
  * arithmetic. A bone spike, shell plate or decorative horn therefore carries
- * Size, Mass, Structural Capacity and Body Points while carrying no Strength,
+ * Volume, Mass, Structural Capacity and Body Points while carrying no Strength,
  * and a form loaded with inert structure reads as weaker — which is the
  * intended consequence, not a side effect to correct.
  */

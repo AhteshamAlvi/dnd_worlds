@@ -6,7 +6,7 @@
  * that dimension actually responds to.
  *
  *   ScaledReferenceLength = ReferenceLength x EffectiveScale
- *   ScaledReferenceSize   = ReferenceSize   x EffectiveScale^3
+ *   ScaledReferenceVolume   = ReferenceVolume   x EffectiveScale^3
  *   ScaledReferenceMass   = ReferenceMass   x EffectiveScale^3
  *
  * The exponents are geometry, not calibration. Doubling every linear dimension
@@ -16,16 +16,16 @@
  * carries meaning, and the asymmetry is deliberate:
  *
  *   Length  responds to length alone
- *   Size    responds to length, bulk and adiposity
+ *   Volume    responds to length, bulk and adiposity
  *   Mass    responds to length, bulk, adiposity AND muscularity
  *
- * Muscularity is in Mass but not in Size because muscle is denser than what it
+ * Muscularity is in Mass but not in Volume because muscle is denser than what it
  * replaces. A heavily built character is heavier than a soft one of the same
  * volume rather than larger than them, which is exactly the distinction a
  * single "build" score cannot express.
  *
  * Sensitivities decide how much of each deviation reaches a given part. An Arm
- * has bulkSize 1.00 and a Head has 0.15, so a broadly-built character has
+ * has bulkVolume 1.00 and a Head has 0.15, so a broadly-built character has
  * substantially thicker arms and a barely larger skull.
  *
  * Internal resolvers return plain values. EngineResult/TraceNode wrapping
@@ -55,7 +55,7 @@ import type {
 /*
  * How much larger Bulk makes this particular part.
  *
- *   1 + ((Bulk - 1) x BulkSizeSensitivity)
+ *   1 + ((Bulk - 1) x BulkVolumeSensitivity)
  *
  * Linear rather than exponential: bulk is breadth, and breadth accumulates.
  */
@@ -63,24 +63,24 @@ export function resolveEffectiveBulk(
   morphology: BodyMorphology,
   sensitivity: BodyPartMorphologySensitivity,
 ): number {
-  return 1 + ((morphology.bulk - 1) * sensitivity.bulkSize);
+  return 1 + ((morphology.bulk - 1) * sensitivity.bulkVolume);
 }
 
 
 /*
  * How much larger Adiposity makes this particular part.
  *
- *   1 + ((Adiposity - 1) x AdipositySizeSensitivity)
+ *   1 + ((Adiposity - 1) x AdiposityVolumeSensitivity)
  *
  * Kept separate from bulk because fat and frame do not distribute alike. The
  * Human sensitivities put most adiposity on the torso and almost none on the
  * skull.
  */
-export function resolveAdipositySizeFactor(
+export function resolveAdiposityVolumeFactor(
   morphology: BodyMorphology,
   sensitivity: BodyPartMorphologySensitivity,
 ): number {
-  return 1 + ((morphology.adiposity - 1) * sensitivity.adipositySize);
+  return 1 + ((morphology.adiposity - 1) * sensitivity.adiposityVolume);
 }
 
 
@@ -109,7 +109,7 @@ export const DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L = 0.9;
  * Muscularity only. Adiposity used to appear here too, with its own authored
  * sensitivity, and that was the mistake: it let a definition claim adiposity
  * adds a lot of volume and very little weight. The Human table did exactly
- * that — a whole-body size response of 0.171 against a mass response of 0.092
+ * that — a whole-body volume response of 0.171 against a mass response of 0.092
  * — so an Adiposity 5 body gained 41 litres and only 23 kg, and read as
  * unremarkable on any mass measure while being obviously obese by volume.
  *
@@ -119,6 +119,28 @@ export const DEFAULT_ADIPOSE_TISSUE_DENSITY_KG_PER_L = 0.9;
  * appearing, so its mass is that tissue's volume times what that tissue
  * weighs — see resolveAdiposityMassDelta.
  */
+/*
+ * How much thicker morphology made the part across its cross-section.
+ *
+ *   effectiveBulk x adiposityVolumeFactor
+ *
+ * The single factor Volume and Surface Area share. Volume multiplies by it
+ * directly, because it is a cross-sectional AREA ratio. Surface Area takes its
+ * square root, because the skin wrapping a limb grows with the cross-section's
+ * perimeter rather than with its area — a limb twice as thick in area is only
+ * sqrt(2) times around.
+ *
+ * Deriving both from one factor is what stops a body from becoming twice as
+ * broad without its skin noticing.
+ */
+export function resolveCrossSectionFactor(
+  effectiveBulk: number,
+  adiposityVolumeFactor: number,
+): number {
+  return effectiveBulk * adiposityVolumeFactor;
+}
+
+
 export function resolveMassCompositionFactor(
   morphology: BodyMorphology,
   sensitivity: BodyPartMorphologySensitivity,
@@ -130,7 +152,7 @@ export function resolveMassCompositionFactor(
 /*
  * The volume adiposity adds to a part, in litres.
  *
- * Taken against the part's volume BEFORE adiposity — scaled reference size
+ * Taken against the part's volume BEFORE adiposity — scaled reference volume
  * through Length and Bulk — so that adiposity is a proportion of the body it
  * is being added to rather than of the body it produces. A broader frame
  * carries proportionally more fat at the same Adiposity, which is right, and
@@ -147,7 +169,7 @@ export function resolveAdiposityVolumeDeltaL(
   return (
     preAdiposityVolumeL *
     (morphology.adiposity - 1) *
-    sensitivity.adipositySize
+    sensitivity.adiposityVolume
   );
 }
 
@@ -182,7 +204,7 @@ export function resolvePartMeasurements(
 
   const effectiveBulk = resolveEffectiveBulk(morphology, sensitivity);
 
-  const adipositySizeFactor = resolveAdipositySizeFactor(
+  const adiposityVolumeFactor = resolveAdiposityVolumeFactor(
     morphology,
     sensitivity,
   );
@@ -192,15 +214,20 @@ export function resolvePartMeasurements(
     sensitivity,
   );
 
+  const crossSectionFactor = resolveCrossSectionFactor(
+    effectiveBulk,
+    adiposityVolumeFactor,
+  );
+
   /*
    * The part's volume before adiposity: everything Scale, Length and Bulk
-   * make it, and nothing fat has added yet. Both the size factor and the
+   * make it, and nothing fat has added yet. Both the volume factor and the
    * adiposity mass delta are taken against this, which is what keeps the two
-   * consistent by construction — the same litres that appear in Size are the
+   * consistent by construction — the same litres that appear in Volume are the
    * litres that are weighed into Mass.
    */
   const preAdiposityVolumeL =
-    reference.sizeL * scale3 * lengthFactor * effectiveBulk;
+    reference.volumeL * scale3 * lengthFactor * effectiveBulk;
 
   const adiposityVolumeDeltaL = resolveAdiposityVolumeDeltaL(
     preAdiposityVolumeL,
@@ -218,7 +245,22 @@ export function resolvePartMeasurements(
 
     lengthCm: reference.lengthCm * effectiveScale * lengthFactor,
 
-    sizeL: preAdiposityVolumeL * adipositySizeFactor,
+    volumeL: preAdiposityVolumeL * adiposityVolumeFactor,
+
+    /*
+     * Scale SQUARED, where Volume and Mass take the cube.
+     *
+     * Authored area, not area computed back out of volume: `surfaceAreaCm2` on
+     * the reference is what lets thin anatomy exist at all. A Wing that is
+     * mostly membrane carries a large area against a tiny volume, and nothing
+     * here has to be told that it is thin — the definition already said so.
+     */
+    surfaceAreaCm2:
+      reference.surfaceAreaCm2 *
+      effectiveScale *
+      effectiveScale *
+      lengthFactor *
+      Math.sqrt(crossSectionFactor),
 
     /*
      * Lean mass through the multiplicative chain, then adipose tissue ADDED
@@ -236,8 +278,9 @@ export function resolvePartMeasurements(
 
     lengthFactor,
     effectiveBulk,
-    adipositySizeFactor,
+    adiposityVolumeFactor,
     massCompositionFactor,
+    crossSectionFactor,
 
     preAdiposityVolumeL,
     adiposityVolumeDeltaL,
@@ -249,9 +292,9 @@ export function resolvePartMeasurements(
 /*
  * Resolves the physical measurements of a whole body.
  *
- * Only active anatomy participates. A suppressed or archived-removed BodyPart
- * has left the body: it has no volume, no mass, and no place in the vertical
- * geometry.
+ * Only active anatomy participates. A destroyed, removed, archived or
+ * suppressed BodyPart has left the body: it has no volume, no surface area,
+ * no mass, and no place in the vertical geometry.
  *
  * Damage is a separate axis and does not appear here at all. A limb that is
  * badly hurt, paralysed, or stranded behind a destroyed Joint still weighs
@@ -317,8 +360,13 @@ export function resolveBodyMeasurements(
     parts,
     byPartId,
 
-    totalSizeL: parts.reduce(
-      (total, part) => total + part.sizeL,
+    totalVolumeL: parts.reduce(
+      (total, part) => total + part.volumeL,
+      0,
+    ),
+
+    totalSurfaceAreaCm2: parts.reduce(
+      (total, part) => total + part.surfaceAreaCm2,
       0,
     ),
 
@@ -393,7 +441,11 @@ export function resolveReferenceFormMeasurements(
     parts,
     byPartId,
 
-    totalSizeL: parts.reduce((total, part) => total + part.sizeL, 0),
+    totalVolumeL: parts.reduce((total, part) => total + part.volumeL, 0),
+    totalSurfaceAreaCm2: parts.reduce(
+      (total, part) => total + part.surfaceAreaCm2,
+      0,
+    ),
     totalMassKg: parts.reduce((total, part) => total + part.massKg, 0),
 
     heightCm: 0,

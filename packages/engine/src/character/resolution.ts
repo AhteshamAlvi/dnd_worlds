@@ -189,7 +189,7 @@ export interface ResolvedCharacter {
    * foundation/attributes/derived/types.ts.
    */
   /*
-   * The physically-resolved stat block. Attributes after the Size/Mass burden
+   * The physically-resolved stat block. Attributes after the Volume/Mass burden
    * has moved AGI and DEX, plus the Strength derived from the body — which is
    * what every derived attribute was actually computed from.
    */
@@ -659,7 +659,7 @@ function resolveCharacterPass(
   /*
    * BODY RESOLVES BETWEEN ATTRIBUTES AND DERIVED ATTRIBUTES.
    *
-   * It has to. Base AGI and DEX depend on the body's Size and Mass, and
+   * It has to. Base AGI and DEX depend on the body's Volume and Mass, and
    * Strength is derived from its Structural Capacity — so the physical
    * pipeline sits in the middle of the Attribute pipeline rather than beside
    * it.
@@ -1011,7 +1011,7 @@ export function resolveCharacter(
   ]);
 
   /*
-   * Size and Mass reach AGI and DEX here, once, and never again. Every derived
+   * Volume and Mass reach AGI and DEX here, once, and never again. Every derived
    * stat that consumes AGI or DEX inherits the effect for free; reapplying it
    * inside Acrobatics or Accuracy would charge a large creature twice.
    *
@@ -1072,7 +1072,7 @@ export function resolveCharacter(
     attributeScores: resolveAttributeScores(attributes.resolved),
 
     /*
-     * The physically-resolved stat block: attributes after the Size/Mass
+     * The physically-resolved stat block: attributes after the Volume/Mass
      * burden, plus the Strength that fell out of the body. This is what
      * derived attributes were computed from and what a sheet should show.
      */

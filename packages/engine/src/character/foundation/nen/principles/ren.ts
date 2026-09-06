@@ -747,10 +747,14 @@ export function resolveRen(
           ? output.physiologicalMaximum
           : String(output.physiologicalMaximum),
       },
+      /*
+       * Ren's own figure keeps Ren's own name. The general AuraOutput field it
+       * is read from is `accessibleMaximum`, because access is not always Ren.
+       */
       renAccessibleMaximum: {
-        value: Number.isFinite(output.renAccessibleMaximum)
-          ? output.renAccessibleMaximum
-          : String(output.renAccessibleMaximum),
+        value: Number.isFinite(output.accessibleMaximum)
+          ? output.accessibleMaximum
+          : String(output.accessibleMaximum),
       },
       usableMaximum: {
         value: Number.isFinite(output.usableMaximum)
@@ -818,7 +822,7 @@ export function resolveRen(
 
   const enduranceResult =
     resolveRenEndurance(
-      output.renAccessibleMaximum,
+      output.accessibleMaximum,
       chosenOutput,
       mastery,
     );
@@ -846,7 +850,7 @@ export function resolveRen(
       output.physiologicalMaximum,
     accessFraction,
     renAccessibleMaximum:
-      output.renAccessibleMaximum,
+      output.accessibleMaximum,
     usableMaximum:
       output.usableMaximum,
     chosenOutput,

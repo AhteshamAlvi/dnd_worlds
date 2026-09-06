@@ -16,7 +16,7 @@
  */
 
 import {
-  resolveAdipositySizeFactor,
+  resolveAdiposityVolumeFactor,
   resolveEffectiveBulk,
 } from "../measurements/resolution";
 import { resolveBodyStructuralCapacity } from "../structure/resolution";
@@ -79,7 +79,7 @@ export const CONSTITUTION_DOUBLING_INTERVAL = 2;
 /*
  * How much Bulk and Adiposity each contribute to durability.
  *
- * Both are halved or quartered relative to their effect on Size and Mass: a
+ * Both are halved or quartered relative to their effect on Volume and Mass: a
  * thick body is harder to destroy, but not in proportion to how much larger it
  * is, and fat contributes half again less than frame does. They add rather
  * than multiply inside the factor, so a broad AND heavy character is not
@@ -126,7 +126,7 @@ export function resolveBuildFactor(
   sensitivity: BodyPartMorphologySensitivity,
 ): number {
   const effectiveBulk = resolveEffectiveBulk(morphology, sensitivity);
-  const effectiveAdiposity = resolveAdipositySizeFactor(morphology, sensitivity);
+  const effectiveAdiposity = resolveAdiposityVolumeFactor(morphology, sensitivity);
 
   return (
     1 +

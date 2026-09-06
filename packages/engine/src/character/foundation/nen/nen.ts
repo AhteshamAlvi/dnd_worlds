@@ -351,10 +351,34 @@ export const NEN_PRINCIPLE_GRAPH:
 };
 
 
-const NEN_PRINCIPLE_IDS =
+export const NEN_PRINCIPLE_IDS =
   Object.keys(
     NEN_PRINCIPLE_GRAPH,
   ) as NenPrincipleId[];
+
+
+/**
+ * The Nen state of somebody who has never awakened.
+ *
+ * Required rather than optional on Character, and this is what makes that
+ * cheap. Every principle at NO_MASTERY and `awakened: false` is a real,
+ * complete answer — an ordinary person HAS this Nen state, they do not lack
+ * one. Leaving the field absent would have made "no Nen data recorded" and
+ * "definitely unawakened" the same value, and only one of those is a fact
+ * about the character.
+ *
+ * Note what it does NOT say: nothing about Aura. An unawakened character still
+ * has a pool and still loses Current Aura. See foundation/aura/state.ts.
+ */
+export function createUnawakenedNenState(): NenState {
+  const mastery = {} as Record<NenPrincipleId, NenMasteryRank>;
+
+  for (const principleId of NEN_PRINCIPLE_IDS) {
+    mastery[principleId] = NO_MASTERY;
+  }
+
+  return { awakened: false, mastery };
+}
 
 
 /**

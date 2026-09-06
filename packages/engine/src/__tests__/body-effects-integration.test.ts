@@ -107,7 +107,7 @@ describe("Scale Effects reach the resolved character", () => {
 
     /*
      * The exponents are the whole point, and they are geometry rather than
-     * calibration: length is linear in Scale, Size and Mass cube, and
+     * calibration: length is linear in Scale, Volume and Mass cube, and
      * Structural Capacity squares because it is cross-section that carries
      * force. One Effect, four different powers.
      */
@@ -154,11 +154,11 @@ describe("morphology Effects reach the resolved character", () => {
       2,
     );
 
-    // Muscle is denser than what it replaces, so Mass moves and Size does not.
+    // Muscle is denser than what it replaces, so Mass moves and Volume does not.
     expect(resolved.body.measurements.form.totalMassKg).toBeGreaterThan(
       BASELINE.massKg,
     );
-    expect(resolved.body.measurements.form.totalSizeL).toBeCloseTo(60, 6);
+    expect(resolved.body.measurements.form.totalVolumeL).toBeCloseTo(60, 6);
   });
 
   it("applies a targeted morphology Effect to the selected parts only", () => {

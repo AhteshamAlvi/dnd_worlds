@@ -187,9 +187,9 @@ export interface BodyPartDefinition {
  * Scale 1.0, every morphology value 1.0, undamaged. Everything else in the
  * Body pipeline is expressed as a factor applied to these.
  *
- * Units are real physical units — centimetres, litres, kilograms — because a
- * body that reports 165 cm and 62 kg can be sanity-checked against reality in
- * a way that abstract "size points" cannot.
+ * Units are real physical units — centimetres, litres, square centimetres,
+ * kilograms — because a body that reports 165 cm, 1.69 m2 and 62 kg can be
+ * sanity-checked against reality in a way that abstract "size points" cannot.
  *
  * `structuralCapacity` is the shared foundation beneath both durability and
  * force. It is not a Body Point value and not a Strength Point value; BP and
@@ -201,7 +201,7 @@ export interface BodyPartDefinition {
  *   1 → an ordinary force-producing part
  *   0 → real physical structure that generates no force of its own
  *
- * A bone spike, shell plate, or decorative horn therefore contributes Size,
+ * A bone spike, shell plate, or decorative horn therefore contributes Volume,
  * Mass, Structural Capacity and Body Points while contributing no Strength
  * Points. This is why normalization needs no separate "force-contributing"
  * flag: parts that make no force contribute zero to the numerator on their
@@ -221,7 +221,26 @@ export interface BodyPartDefinition {
  */
 export interface BodyPartReference {
   readonly lengthCm: number;
-  readonly sizeL: number;
+  readonly volumeL: number;
+
+  /*
+   * Exposed EXTERNAL area, in square centimetres.
+   *
+   * Authored independently rather than derived from Volume, because the
+   * relationship between the two is exactly what anatomy varies. A Wing is
+   * the case that forces it: a thin membrane has very little volume and a
+   * great deal of area, and any formula that computes one from the other
+   * would have to be told the part's thinness anyway — at which point the
+   * area is the thing being authored, one indirection later.
+   *
+   * Attachment cross-sections do not count. Where an Arm meets an Upper Body
+   * neither part has skin, so the authored figures are the area actually
+   * exposed to the outside once the body is assembled. That is why the Human
+   * parts sum to 16,900 cm2 rather than to the surface of eight separate
+   * solids.
+   */
+  readonly surfaceAreaCm2: number;
+
   readonly massKg: number;
 
   readonly structuralCapacity: number;
@@ -268,7 +287,7 @@ export type HeightAxisSign = 1 | -1;
  * How strongly one kind of body part responds to each morphology dimension.
  *
  * Each value is the fraction of a morphology deviation that reaches this
- * particular part. An Arm has `bulkSize: 1.00` and a Head has `bulkSize:
+ * particular part. An Arm has `bulkVolume: 1.00` and a Head has `bulkVolume:
  * 0.15`, so a broadly-built character has substantially thicker arms and a
  * barely-larger skull.
  *
@@ -277,7 +296,7 @@ export type HeightAxisSign = 1 | -1;
  * something, so asking a definition to answer "how much larger does adiposity
  * make this part" AND, separately, "how much heavier" invites the two answers
  * to drift apart — which they had, badly: the Human table gave adiposity a
- * whole-body size response of 0.171 and a mass response of 0.092, so a body
+ * whole-body volume response of 0.171 and a mass response of 0.092, so a body
  * could become visibly obese while barely gaining weight. Adiposity mass is
  * now derived from the volume adiposity adds, times the Species' soft-tissue
  * density. One question, one answer, and mass follows from physics.
@@ -305,8 +324,8 @@ export type HeightAxisSign = 1 | -1;
  * stays positive for every finite input.
  */
 export interface BodyPartMorphologySensitivity {
-  readonly bulkSize: number;
-  readonly adipositySize: number;
+  readonly bulkVolume: number;
+  readonly adiposityVolume: number;
 
   readonly muscularityMass: number;
 
@@ -462,7 +481,7 @@ export interface Anatomy {
  * The physical state of one body-part instance.
  *
  * "active"
- * → physically present. Contributes Size, Mass, Height, Structural Capacity,
+ * → physically present. Contributes Volume, Mass, Height, Structural Capacity,
  *   Body Points, Strength Points, Anatomical Points and connections.
  *
  * "suppressed"
@@ -483,7 +502,7 @@ export interface Anatomy {
  *
  * What this state does and does not gate:
  *
- *   active            Length geometry, Size, Mass, Height, SC, SP
+ *   active            Length geometry, Volume, Mass, Height, SC, SP
  *   suppressed        nothing
  *   archived-removed  nothing
  *

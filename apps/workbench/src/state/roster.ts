@@ -22,6 +22,7 @@ import type {
 } from "@nenworld/engine";
 import {
   createCharacterId,
+  createAuraPool,
   deriveMaximumAura,
   getDefinition,
   getMutationVariantDefinition,
@@ -537,10 +538,10 @@ export function rosterReducer(
       if (!existing) return state;
 
       const attributes = existing.character.attributes;
-      const pool = {
-        current: existing.workbench.auraPool.current,
-        maximum: deriveMaximumAura(attributes),
-      };
+      const pool = createAuraPool(
+        existing.workbench.auraPool.current,
+        deriveMaximumAura(attributes),
+      );
 
       const result = replenishAura(pool, attributes, operation.hours);
 

@@ -39,7 +39,7 @@ import type {
  * more, and its absence is the point. A body that is genuinely tougher is
  * tougher because it is bigger, thicker, or better muscled, so it should say
  * so through Scale, Bulk or Muscularity and let SC carry the consequence into
- * BP, Strength, Mass and Size together. Adding BP directly would have made a
+ * BP, Strength, Mass and Volume together. Adding BP directly would have made a
  * character durable without making them heavy, large, or strong.
  *
  * What survives here is the genuinely exceptional case: an effect that changes
@@ -110,7 +110,7 @@ export interface ResolvedBodyPointModifiers {
  * could be destroyed by arithmetic nobody applied. It is now an explicit
  * anatomy state transition owned by damage application, so resolution only
  * ever describes parts that are still here. A destroyed part is not resolved
- * with zeroes; it is absent, the same way it is absent from Size, Mass, Height
+ * with zeroes; it is absent, the same way it is absent from Volume, Mass, Height
  * and Strength Points.
  */
 export interface ResolvedBodyPartBP {

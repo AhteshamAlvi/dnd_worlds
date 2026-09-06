@@ -11,7 +11,8 @@ import type { Attributes } from "../attributes/types";
 import type { EngineResult } from "../../../infrastructure/result";
 import { roundToOneSignificantFigure } from "../../../infrastructure/rounding";
 import { createTraceNode } from "../../../infrastructure/trace";
-import type { AuraPool } from "./types";
+import type { AuraPool, AuraRegenerationCapacity } from "./types";
+import { createAuraPool } from "./pool";
 
 /**
  * Derive the body's raw Aura Regeneration Capacity from VIT.
@@ -46,6 +47,20 @@ export function deriveAuraRegeneration(
     deriveRawAuraRegeneration(attributes),
   );
 }
+
+/**
+ * The resolved Aura Regeneration Capacity, in the domain's own shape.
+ *
+ * Same number as deriveAuraRegeneration; the wrapper exists so
+ * ResolvedAuraProfile.regeneration has one authoritative producer rather than
+ * a bare number that any caller could relabel.
+ */
+export function deriveAuraRegenerationCapacity(
+  attributes: Attributes,
+): AuraRegenerationCapacity {
+  return { perHour: deriveAuraRegeneration(attributes) };
+}
+
 
 /**
  * Replenish Current Aura over a specified number of hours.
@@ -193,10 +208,10 @@ export function replenishAura(
     possibleRecovery,
   );
 
-  const replenishedPool: AuraPool = {
-    current: pool.current + recoveredAura,
-    maximum: pool.maximum,
-  };
+  const replenishedPool: AuraPool = createAuraPool(
+    pool.current + recoveredAura,
+    pool.maximum,
+  );
 
   traceNode.output = {
     rawRegeneration,

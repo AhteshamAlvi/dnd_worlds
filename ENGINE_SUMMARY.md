@@ -74,7 +74,7 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
 ### The load-bearing design rules
 
 1. **Nothing derivable is stored.** Level comes from `lifetimeXp`. Derived Attributes from
-   resolved Attributes. Height/Mass/Size/BP/STR from Body physics. Granted content is never
+   resolved Attributes. Height/Mass/Volume/BP/STR from Body physics. Granted content is never
    written to the sheet. Two fields that must agree are two fields that will disagree.
 2. **New content is data, not code.** A domain adds a definition; the rules layer already
    reads its `effects` / `requirements`. Deliberate exception: Nen principles (bespoke math).
@@ -260,7 +260,7 @@ Stored   (authored; only progression writes it)
 Base     (what the sheet shows)
    ↓ modifyResolvedAttribute  active: Conditions, injuries, equipped Items
 Resolved (what a check rolls against)
-   ↓ physical scale burden    Size/Mass move AGI and DEX
+   ↓ physical scale burden    Volume/Mass move AGI and DEX
 ```
 
 ### Standard modifier
@@ -272,7 +272,7 @@ shared render shape.
 ### Physical scale burden (`physical.ts`) — how being large costs agility
 
 ```
-LinearSizeRatio = (SizeL / 60)^(1/3)
+LinearSizeRatio = (VolumeL / 60)^(1/3)
 RawBurden       = 0.50·log2(LinearSizeRatio) + 0.25·log2(MassKg / 62)
 Steps           = round(RawBurden)
 BaseAGI/DEX     = stored − Steps
@@ -338,11 +338,11 @@ Body {
 }
 ```
 
-Height, Mass and Size are **not stored** — they resolve. CON is not part of Body; it enters
+Height, Mass and Volume are **not stored** — they resolve. CON is not part of Body; it enters
 only at Body Points.
 
-**What each morphology dimension drives:** `length` → Length→Size/Mass/Height · `bulk` → Size,
-Mass, BP · `muscularity` → Mass, **Structural Capacity**, force · `adiposity` → Size, Mass, BP.
+**What each morphology dimension drives:** `length` → Length→Volume/Mass/Height · `bulk` → Size,
+Mass, BP · `muscularity` → Mass, **Structural Capacity**, force · `adiposity` → Volume, Mass, BP.
 Only Muscularity reaches SC, which is why it is the channel Strength advancement operates through.
 
 ### 5.1 The three namespaces
@@ -400,25 +400,32 @@ Reference Form = intent; instance state = what is currently present. Damage neve
 **Basic Human Standard — 8 part definitions** (`anatomy/body-parts.ts`), 12 instances in
 `STANDARD_HUMANOID_ANATOMY`:
 
-| Part | Length cm | Size L | Mass kg | Ref SC | heightContribution / axis |
-|---|---|---|---|---|---|
-| head | 22 | 3.35 | 3.65 | 8 | 1.0 / +1 |
-| neck | 6 | 0.55 | 0.58 | 2 | 1.0 / +1 |
-| upper-body | 31 | 20.15 | 19.82 | 10 | 1.0 / +1 |
-| lower-body | 18 | 6.95 | 6.85 | 4 | 1.0 / +1 |
-| arm | 55 | 2.37 | 2.56 | 14 | 0 / +1 |
-| hand | 18 | 0.32 | 0.36 | 4 | 0 / +1 |
-| leg | 81 | 11.05 | 11.80 | 16 | 1.0 / −1 |
-| foot | 25 | 0.76 | 0.83 | 4 | 0.28 / −1 |
+| Part | Length cm | Volume L | Surface cm² | Mass kg | Ref SC | heightContribution / axis |
+|---|---|---|---|---|---|---|
+| head | 22 | 3.35 | 1,183 | 3.65 | 8 | 1.0 / +1 |
+| neck | 6 | 0.55 | 338 | 0.58 | 2 | 1.0 / +1 |
+| upper-body | 31 | 20.15 | 2,873 | 19.82 | 10 | 1.0 / +1 |
+| lower-body | 18 | 6.95 | 2,535 | 6.85 | 4 | 1.0 / +1 |
+| arm | 55 | 2.37 | 1,183 | 2.56 | 14 | 0 / +1 |
+| hand | 18 | 0.32 | 422.5 | 0.36 | 4 | 0 / +1 |
+| leg | 81 | 11.05 | 2,788.5 | 11.80 | 16 | 1.0 / −1 |
+| foot | 25 | 0.76 | 591.5 | 0.83 | 4 | 0.28 / −1 |
 
-Whole body resolves to **165 cm · 62.00 kg · 60.00 L · 100 SC · 100 normalized SP · STR 10**.
-Every other Species and creature is calibrated against this.
+Whole body resolves to **165 cm · 62.00 kg · 60.00 L · 16,900 cm² · 100 SC · 100 normalized SP ·
+STR 10**, giving a mean density of **1.033 kg/L** and a surface-area-to-volume ratio of
+**28.17 m⁻¹**. Every other Species and creature is calibrated against this.
+
+Surface Area is EXTERNAL area — attachment cross-sections between connected parts are excluded —
+and is **authored per definition, never derived from Volume**. That is what lets thin anatomy
+exist: a wing carries high area against low volume, which no volume-derived formula can express.
+The surface partition is calibrated from the adult Lund–Browder percentages, summed into this
+engine's combined Arm and Leg.
 
 ### 5.2 Scale, age, morphology layers
 
 ```
 EffectiveScale = SpeciesStandardScale × AgeScale × CharacterScale
-Length ∝ Scale · Size ∝ Scale³ · Mass ∝ Scale³ · SC ∝ Scale²
+Length ∝ Scale · Surface Area ∝ Scale² · Volume ∝ Scale³ · Mass ∝ Scale³ · SC ∝ Scale²
 ```
 
 `age/` — linear anchor interpolation; holds flat outside the authored range; absent data →
@@ -429,13 +436,17 @@ character, strengthDevelopmentMuscularity, and Effect layers.
 ### 5.3 Measurements and Height (`measurements/`)
 
 ```
-ScaledReferenceLength = ReferenceLength × EffectiveScale
-ScaledReferenceSize   = ReferenceSize   × EffectiveScale³
-ScaledReferenceMass   = ReferenceMass   × EffectiveScale³
+ScaledReferenceLength      = ReferenceLength      × EffectiveScale
+ScaledReferenceSurfaceArea = ReferenceSurfaceArea × EffectiveScale²
+ScaledReferenceVolume      = ReferenceVolume      × EffectiveScale³
+ScaledReferenceMass        = ReferenceMass        × EffectiveScale³
 
-Length responds to length
-Size   responds to length, bulk, adiposity
-Mass   responds to length, bulk, adiposity AND muscularity   (muscle is denser)
+crossSectionFactor = effectiveBulk × adiposityVolumeFactor
+
+Length        responds to length
+Surface Area  responds to length and √crossSectionFactor   (perimeter, not area)
+Volume        responds to length, bulk, adiposity
+Mass          responds to length, bulk, adiposity AND muscularity   (muscle is denser)
 ```
 
 Two views resolve with identical formulas: **form** (the intact Reference Form) and **present**
@@ -475,7 +486,7 @@ resolved alongside and never inside normalization. STR describes the quality of 
 instance history describes how much of that form is left.
 
 There is no `forceContributing` flag: inert anatomy (horn, shell, bone spike) sets
-`intrinsicPhysicalForce: 0` and contributes 0 by arithmetic while still carrying Size, Mass, SC and BP.
+`intrinsicPhysicalForce: 0` and contributes 0 by arithmetic while still carrying Volume, Mass, SC and BP.
 
 **Advancement** (`advancement.ts`): buying +1 STR does not write a number — it solves for the
 `strengthDevelopmentMuscularity` that **doubles Base normalized SP**, and persists it.
@@ -962,7 +973,7 @@ authored character
 attribute modifiers: stored → base → resolved
   ↓ RESOLVE BODY         form (+ replaceForm) → instantiate anatomy from continuity →
                          morphology → measurements → SC → strength → BP → capability → locomotion
-  ↓ STR from normalized SP; Size/Mass burden on AGI and DEX (once, from the FORM measurements)
+  ↓ STR from normalized SP; Volume/Mass burden on AGI and DEX (once, from the FORM measurements)
   ↓ CharacterStats → Derived Attributes → movement
   ↓ resolveActionCapacity(combatAbility, resolvedRuleEffects.actionCapacity)
 ```

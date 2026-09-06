@@ -276,8 +276,8 @@ export {
 export {
   MASS_BURDEN_SENSITIVITY,
   REFERENCE_BODY_MASS_KG,
-  REFERENCE_BODY_SIZE_L,
-  SIZE_BURDEN_SENSITIVITY,
+  REFERENCE_BODY_VOLUME_L,
+  VOLUME_BURDEN_SENSITIVITY,
   applyPhysicalScaleSteps,
   resolveLinearSizeRatio,
   resolvePhysicalScaleBurden,
@@ -334,22 +334,137 @@ export {
  */
 export * from "./character/foundation/body";
 
+/* ── Character: Aura ────────────────────────────────────────────────────── */
+
+/*
+ * Aura, split the way the domain is: STORED state a sheet writes down, and
+ * everything else, which resolves.
+ *
+ * Only Current Aura and the character's active allocations are stored.
+ * Maximum, Output, Regeneration, Control and every Density derive from
+ * Attributes, Body and Nen state — see foundation/aura/state.ts.
+ *
+ * PLACEMENT is the load-bearing distinction. Aura inside a body is denominated
+ * in its Volume; Aura on a body is denominated in its Surface Area. Those are
+ * different Body measurements with different Scale exponents, so the density
+ * types are separate and deliberately not interchangeable.
+ *
+ * ResolvedAuraProfile is defined here but nothing populates it yet;
+ * ResolvedCharacter.aura arrives with the central Aura resolver.
+ */
+
+/* Stored state. */
+export type {
+  CharacterAuraState,
+  AuraAllocation,
+  WholeBodyAuraAllocation,
+  LocalizedAuraAllocation,
+} from "./character/foundation/aura/state";
+
+export {
+  emptyAuraState,
+  isWholeBodyAllocation,
+  isLocalizedAllocation,
+  totalAllocatedAura,
+  allocationsForPlacement,
+  allocationsWithCoverage,
+} from "./character/foundation/aura/state";
+
+/* Placement, coverage and the two density shapes. */
+export type {
+  AuraPlacement,
+  AuraCoverage,
+  AuraDensity,
+  InternalAuraDensity,
+  SurfaceAuraDensity,
+  AuraNodeState,
+} from "./character/foundation/aura/types";
+
+export {
+  AURA_PLACEMENTS,
+  AURA_COVERAGES,
+  AURA_NODE_STATES,
+  SQUARE_CENTIMETRES_PER_SQUARE_METRE,
+} from "./character/foundation/aura/types";
+
+/* Derived values and the profile that will collect them. */
 export type {
   AuraPool,
   AuraOutput,
   AuraOutputLimit,
-  AuraDistribution,
-  AuraDensity,
+  AuraExpenditure,
+  AuraRegenerationCapacity,
+  AuraControl,
+  ResolvedAuraAccess,
+  ResolvedAuraAllocation,
+  ResolvedInternalAuraAllocation,
+  ResolvedSurfaceAuraAllocation,
+  ResolvedAuraDistribution,
+  ResolvedAuraProfile,
 } from "./character/foundation/aura/types";
 
-export { validateAuraPool, deriveMaximumAura } from "./character/foundation/aura/pool";
+export {
+  validateAuraPool,
+  deriveMaximumAura,
+  createAuraPool,
+  deriveAuraDepletionFraction,
+} from "./character/foundation/aura/pool";
+
 export { deriveAuraOutput, deriveAuraOutputLimit } from "./character/foundation/aura/output";
-export { distributeAura } from "./character/foundation/aura/distribution";
-export { calculateAuraDensity } from "./character/foundation/aura/density";
+
+export {
+  deriveAuraControl,
+  deriveAuraControlMultiplier,
+  deriveAuraExpenditure,
+} from "./character/foundation/aura/control";
+
+export {
+  resolveInternalAuraDensity,
+  resolveSurfaceAuraDensity,
+} from "./character/foundation/aura/density";
+
+export type {
+  ResolveAuraDistributionInput,
+  ResolveAuraDistributionResult,
+  DroppedAuraAllocation,
+  DroppedAuraAllocationReason,
+} from "./character/foundation/aura/distribution";
+
+export { resolveAuraDistribution } from "./character/foundation/aura/distribution";
+
 export {
   replenishAura,
   deriveAuraRegeneration,
+  deriveAuraRegenerationCapacity,
 } from "./character/foundation/aura/replenishment";
+
+/* ── Character: Nen state ───────────────────────────────────────────────── */
+
+/*
+ * Stored Nen state, exported because Character.nen is required and a caller
+ * cannot build one otherwise.
+ *
+ * A SIBLING of Aura, not its owner. Awakening gates deliberate access and
+ * externalization; it does not gate having Aura. An unawakened character has a
+ * pool, loses Current Aura, and receives involuntary internal reinforcement —
+ * createUnawakenedNenState() is what an ordinary person HAS, not a placeholder
+ * for missing data.
+ *
+ * The principle mechanics themselves — advancement, prerequisites, Ren, Ten —
+ * are not exported yet; they land with the Nen resolution ticket.
+ */
+export type {
+  NenState,
+  NenMasteryState,
+  NenMasterySeals,
+  NenMasteryRank,
+  NenPrincipleId,
+} from "./character/foundation/nen/types";
+
+export {
+  NEN_PRINCIPLE_IDS,
+  createUnawakenedNenState,
+} from "./character/foundation/nen/nen";
 
 /* ── Character: rules ───────────────────────────────────────────────────── */
 
@@ -1124,6 +1239,4 @@ export {
   spendGrowthPoints,
 } from "./character/progression/growth";
 
-/* ── Constants ──────────────────────────────────────────────────────────── */
 
-export { STANDARD_BODY_SURFACE_UNITS } from "./constants/surface-units";

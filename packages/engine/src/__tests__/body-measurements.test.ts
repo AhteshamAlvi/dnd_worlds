@@ -28,7 +28,7 @@ import { HUMAN_AGE_PROFILE } from "../character/foundation/body/age/human-age-pr
 import { resolveAge } from "../character/foundation/body/age/resolution";
 import { resolveHeightCm } from "../character/foundation/body/measurements/height";
 import {
-  resolveAdipositySizeFactor,
+  resolveAdiposityVolumeFactor,
   resolveBodyMeasurements,
   resolveEffectiveBulk,
   resolveMassCompositionFactor,
@@ -106,7 +106,7 @@ describe("the Basic Human Standard, resolved", () => {
 
     expect(resolved.heightCm).toBeCloseTo(165, 10);
     expect(resolved.totalMassKg).toBeCloseTo(62, 10);
-    expect(resolved.totalSizeL).toBeCloseTo(60, 10);
+    expect(resolved.totalVolumeL).toBeCloseTo(60, 10);
   });
 
   it("resolves all twelve parts and keeps the totals agreeing with them", () => {
@@ -125,7 +125,7 @@ describe("the Basic Human Standard, resolved", () => {
   /*
    * The Giant fixture. Scale is geometry: length goes as Scale, volume and
    * mass as Scale cubed. A proportionally ordinary creature ten times as tall
-   * is a thousand times as heavy, which is why a Giant needs no authored Size
+   * is a thousand times as heavy, which is why a Giant needs no authored Volume
    * or Mass of its own.
    *
    * Species wiring is deliberately absent — this is an explicit Scale, not a
@@ -137,15 +137,15 @@ describe("the Basic Human Standard, resolved", () => {
 
     expect(resolved.heightCm).toBeCloseTo(1650, 6);
     expect(resolved.totalMassKg).toBeCloseTo(62_000, 6);
-    expect(resolved.totalSizeL).toBeCloseTo(60_000, 6);
+    expect(resolved.totalVolumeL).toBeCloseTo(60_000, 6);
   });
 
-  it("scales Length linearly while Size and Mass go as the cube", () => {
+  it("scales Length linearly while Volume and Mass go as the cube", () => {
     const single = measure(STANDARD_HUMANOID_ANATOMY, 1);
     const doubled = measure(STANDARD_HUMANOID_ANATOMY, 2);
 
     expect(doubled.heightCm / single.heightCm).toBeCloseTo(2, 10);
-    expect(doubled.totalSizeL / single.totalSizeL).toBeCloseTo(8, 10);
+    expect(doubled.totalVolumeL / single.totalVolumeL).toBeCloseTo(8, 10);
     expect(doubled.totalMassKg / single.totalMassKg).toBeCloseTo(8, 10);
   });
 });
@@ -158,7 +158,7 @@ describe("morphology factors", () => {
   it("distributes Bulk by per-part sensitivity", () => {
     const broad: BodyMorphology = { ...NEUTRAL_MORPHOLOGY, bulk: 1.5 };
 
-    // Arm bulkSize 1.00 takes the whole deviation; Head's 0.15 takes a sliver.
+    // Arm bulkVolume 1.00 takes the whole deviation; Head's 0.15 takes a sliver.
     expect(resolveEffectiveBulk(broad, arm.sensitivity)).toBeCloseTo(1.5, 10);
     expect(resolveEffectiveBulk(broad, head.sensitivity)).toBeCloseTo(1.075, 10);
   });
@@ -166,7 +166,7 @@ describe("morphology factors", () => {
   it("distributes Adiposity size separately from Bulk", () => {
     const soft: BodyMorphology = { ...NEUTRAL_MORPHOLOGY, adiposity: 2 };
 
-    expect(resolveAdipositySizeFactor(soft, arm.sensitivity)).toBeCloseTo(1.12, 10);
+    expect(resolveAdiposityVolumeFactor(soft, arm.sensitivity)).toBeCloseTo(1.12, 10);
   });
 
   /*
@@ -199,7 +199,7 @@ describe("morphology factors", () => {
    * than what it replaces, so it makes a body heavier without making it
    * larger.
    */
-  it("lets Muscularity reach Mass but never Size", () => {
+  it("lets Muscularity reach Mass but never Volume", () => {
     const muscular: BodyMorphology = { ...NEUTRAL_MORPHOLOGY, muscularity: 2 };
 
     const neutral = resolvePartMeasurements(
@@ -218,7 +218,7 @@ describe("morphology factors", () => {
       1,
     );
 
-    expect(built.sizeL).toBeCloseTo(neutral.sizeL, 10);
+    expect(built.volumeL).toBeCloseTo(neutral.volumeL, 10);
     expect(built.massKg).toBeGreaterThan(neutral.massKg);
     expect(built.massKg).toBeCloseTo(neutral.massKg * 1.45, 10);
   });
@@ -394,10 +394,10 @@ describe("Height as a signed vertical span", () => {
 
 describe("physical presence state", () => {
   /*
-   * Amputation removes a part from the body outright, so its Size and Mass go
+   * Amputation removes a part from the body outright, so its Volume and Mass go
    * with it. Height does not move: Arms never contributed any.
    */
-  it("drops amputated anatomy from Size and Mass but not from Height", () => {
+  it("drops amputated anatomy from Volume and Mass but not from Height", () => {
     let anatomy = STANDARD_HUMANOID_ANATOMY;
 
     for (const id of ["arm-1", "hand-1", "arm-2", "hand-2"]) {
