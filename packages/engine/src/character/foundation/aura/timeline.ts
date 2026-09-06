@@ -50,6 +50,7 @@ import { intervalOwns, type GameTimeInterval } from "../../../time/interval";
 import type { GameTimestamp } from "../../../time/types";
 import {
   findActivityCombinationIssues,
+  sustainedActivityLoadPerHour,
   SUSTAINED_ACTIVITY_LEVELS,
   WAKEFULNESS_MODES,
   type ActivityExertionOverride,
@@ -80,7 +81,12 @@ import type { AuraSuppression, ResolvedAuraAccess } from "./types";
 export interface AuraTimeActivity {
   readonly mode: WakefulnessMode;
 
-  /** Named level, or a raw load per hour for a caller with a finer figure. */
+  /*
+   * Named level, or a raw load per hour for a caller with a finer figure.
+   *
+   * Alternatives, and enforced as such: supplying both is refused unless the
+   * number matches what the named level costs.
+   */
   readonly activity?: SustainedActivityLevel;
   readonly activityLoadPerHour?: PhysicalExertionLoad;
 
@@ -222,6 +228,32 @@ function activityIssues(
   }
 
   const load = activity.activityLoadPerHour;
+
+  /*
+   * The two are ALTERNATIVES, and were only documented as such.
+   *
+   * The resolver silently preferred the raw figure, so an activity that named
+   * itself "extreme" and supplied a load of 0 cost nothing at all — the label
+   * a caller reads back and the number the engine charges disagreed, and
+   * nothing said so. Naming both is a caller who has not decided which they
+   * meant, so it is refused unless they agree.
+   */
+  if (activity.activity !== undefined && load !== undefined) {
+    const named = inVocabulary(SUSTAINED_ACTIVITY_LEVELS, activity.activity)
+      ? sustainedActivityLoadPerHour(activity.activity)
+      : undefined;
+
+    if (named !== undefined && named !== load) {
+      errors.push({
+        code: "aura.activity.load.contradictory",
+        message:
+          "A named sustained activity and a raw load per hour must agree; supply one or the other.",
+        audience: "developer",
+        required: `${activity.activity} costs ${named} per hour`,
+        actual: `${where}: ${activity.activity} with ${String(load)} per hour`,
+      });
+    }
+  }
 
   if (load !== undefined && (!Number.isFinite(load) || load < 0)) {
     errors.push({

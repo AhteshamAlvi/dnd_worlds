@@ -83,6 +83,7 @@ import type { GameTimestamp } from "../../../time/types";
 import {
   deriveFatigue,
   deriveStaminaExpenditureMultiplier,
+  findWakefulnessStateIssues,
   sustainedActivityLoadPerHour,
   WAKING_HOURS_CLEARED_PER_HOUR_SLEPT,
   type CharacterWakefulnessState,
@@ -405,6 +406,18 @@ export function advanceAuraTime(
 
   if (!validInterval.success) return fail(validInterval.errors);
 
+  /*
+   * The stored wakefulness, judged by the same rule the dedicated transition
+   * uses rather than repaired here. Clamping a negative to zero and letting a
+   * NaN through made this the one door into wakefulness that accepted a state
+   * advanceWakefulness refuses — and the NaN came back out on a SUCCESS.
+   */
+  const wakefulnessIssues = findWakefulnessStateIssues(input.wakefulness);
+
+  if (wakefulnessIssues.length > 0) {
+    return fail(wakefulnessIssues as NonEmptyArray<EngineError>);
+  }
+
   const budget = resolveAuraBudget(state.current, context);
 
   root.children.push(budget.trace.root);
@@ -479,7 +492,7 @@ export function advanceAuraTime(
   /* ── Accumulators ─────────────────────────────────────────────────── */
 
   let current = pool.current;
-  let hoursAwake = Math.max(0, input.wakefulness.hoursAwake);
+  let hoursAwake = input.wakefulness.hoursAwake;
   let activity: AuraTimeActivity = timeline.payload.activities[0].activity;
 
   let potentialRecovery = 0;
@@ -701,13 +714,28 @@ export function advanceAuraTime(
         else drain += event.amount;
       }
 
-      /* Recovery lands first, then the drains take what they can from it. */
-      const afterRecovery = Math.min(maximumAura, current + recovery);
-      const discarded = current + recovery - afterRecovery;
-      const paid = Math.min(drain, afterRecovery);
+      /*
+       * One net change, clamped ONCE.
+       *
+       * Sequencing recovery before drain re-introduced the ordering the
+       * gathering above exists to remove — it just moved it from the caller's
+       * array to the two kinds. A character on 49,000 of 50,000 taking 3,000
+       * of recovery and 3,000 of drain at one instant ended on 47,000, because
+       * the cap discarded 2,000 of the recovery before the drain that would
+       * have made room for it was applied. Neither event happened first, so
+       * neither gets to overflow or to starve ahead of the other.
+       */
+      const settled = current + recovery - drain;
+      const next = Math.min(maximumAura, Math.max(0, settled));
 
-      current = afterRecovery - paid;
-      unmetDrain += drain - paid;
+      /*
+       * At most one of these is non-zero: a net result cannot be above the cap
+       * and below zero at once.
+       */
+      const discarded = Math.max(0, settled - maximumAura);
+
+      current = next;
+      unmetDrain += Math.max(0, -settled);
 
       /*
        * Each source is reported in FULL, with the shortfall in unmetDrain —

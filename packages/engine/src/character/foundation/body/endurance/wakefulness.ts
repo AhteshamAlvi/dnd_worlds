@@ -38,7 +38,11 @@
  * exactly as short of sleep, unless some future explicit effect says otherwise.
  */
 
-import type { EngineResult } from "../../../../infrastructure/result";
+import type { EngineError } from "../../../../infrastructure/diagnostics";
+import type {
+  EngineResult,
+  NonEmptyArray,
+} from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 
 import type {
@@ -118,6 +122,32 @@ export function resolveWakefulness(
 
 
 /**
+ * Judge a stored wakefulness value on its own.
+ *
+ * Split out of `advanceWakefulness` so that every caller holding a stored
+ * `hoursAwake` judges it the same way. `advanceAuraTime` used to repair the
+ * number instead — `Math.max(0, hoursAwake)` quietly turned a negative into
+ * zero and let a NaN through untouched, so the same state the dedicated
+ * transition refuses came back out of the Aura solver as a result.
+ */
+export function findWakefulnessStateIssues(
+  state: CharacterWakefulnessState,
+): readonly EngineError[] {
+  if (Number.isFinite(state.hoursAwake) && state.hoursAwake >= 0) return [];
+
+  return [{
+    code: "body.wakefulness.hours_awake.invalid",
+    message: "Accumulated waking hours must be a finite non-negative number.",
+    audience: "developer",
+    required: "finite number >= 0",
+    actual: Number.isFinite(state.hoursAwake)
+      ? state.hoursAwake
+      : String(state.hoursAwake),
+  }];
+}
+
+
+/**
  * Advance wakefulness across an interval spent one way.
  *
  * Ordinary waking and intentional rest both ACCRUE. That is the rule the whole
@@ -151,22 +181,16 @@ export function advanceWakefulness(
     },
   });
 
-  if (!Number.isFinite(state.hoursAwake) || state.hoursAwake < 0) {
+  const stateIssues = findWakefulnessStateIssues(state);
+
+  if (stateIssues.length > 0) {
     traceNode.output = false;
 
     return {
       success: false,
       trace: { root: traceNode },
       warnings: [],
-      errors: [{
-        code: "body.wakefulness.hours_awake.invalid",
-        message: "Accumulated waking hours must be a finite non-negative number.",
-        audience: "developer",
-        required: "finite number >= 0",
-        actual: Number.isFinite(state.hoursAwake)
-          ? state.hoursAwake
-          : String(state.hoursAwake),
-      }],
+      errors: stateIssues as NonEmptyArray<EngineError>,
     };
   }
 

@@ -88,7 +88,7 @@ function at(
   hours: number,
   kind: "physical" | "deliberate" | "forced-drain" | "recovery",
   amount: number,
-  source = kind,
+  source: string = kind,
 ) {
   return { at: T0 + hoursToDuration(hours), kind, source, amount } as const;
 }
@@ -996,5 +996,177 @@ describe("immutability and determinism", () => {
 
     expect(result.trace.root.id).toBe("aura.time.advance");
     expect(result.trace.root.output).toBe(false);
+  });
+});
+
+
+/*
+ * Events sharing one instant are not a tiny sequence.
+ *
+ * The solver already gathered them so the CALLER'S array order could not
+ * change the answer; netting them is the same argument applied to the two
+ * kinds. Recovery clamped before drains were applied still had one of them
+ * going first, and the character paid for it.
+ */
+describe("simultaneous recovery and drain settle together", () => {
+  /*
+   * The reported case. 49,000 of 50,000, taking 3,000 of each at one instant:
+   * the recovery overflows only if the drain that makes room for it is held
+   * back until afterwards.
+   */
+  it("makes an equal heal and drain at one instant cancel out", () => {
+    const result = succeed({
+      state: { current: 49_000, allocations: [] },
+      hours: 1,
+      instantaneous: [at(0.5, "recovery", 3000), at(0.5, "forced-drain", 3000)],
+    });
+
+    expect(result.current).toBe(49_000);
+    expect(result.recovery.discarded).toBe(0);
+    expect(result.unmetDrain).toBe(0);
+    expect(result.balance.recovery).toBe(3000);
+    expect(result.balance.forcedDrain).toBe(3000);
+  });
+
+  it("reaches the same pool whichever kind the caller listed first", () => {
+    const scenario = {
+      state: { current: 49_000, allocations: [] },
+      hours: 1,
+    } as const;
+
+    const healFirst = succeed({
+      ...scenario,
+      instantaneous: [at(0.5, "recovery", 3000), at(0.5, "forced-drain", 3000)],
+    });
+
+    const drainFirst = succeed({
+      ...scenario,
+      instantaneous: [at(0.5, "forced-drain", 3000), at(0.5, "recovery", 3000)],
+    });
+
+    expect(drainFirst.current).toBe(healFirst.current);
+    expect(drainFirst.recovery.discarded).toBe(healFirst.recovery.discarded);
+    expect(drainFirst.unmetDrain).toBe(healFirst.unmetDrain);
+  });
+
+  /*
+   * Netting is not a licence to exceed the cap or to spend an empty pool. The
+   * clamp still happens — once, on the settled figure.
+   */
+  it("still discards recovery the cap has no room for", () => {
+    const result = succeed({
+      state: { current: 49_000, allocations: [] },
+      hours: 1,
+      instantaneous: [at(0.5, "recovery", 3000), at(0.5, "forced-drain", 500)],
+    });
+
+    expect(result.current).toBe(50_000);
+    expect(result.recovery.discarded).toBe(1500);
+    expect(result.unmetDrain).toBe(0);
+  });
+
+  it("still reports drain the netted pool could not pay for", () => {
+    const result = succeed({
+      state: { current: 1000, allocations: [] },
+      hours: 1,
+      instantaneous: [at(0.5, "recovery", 500), at(0.5, "forced-drain", 3000)],
+    });
+
+    expect(result.current).toBe(0);
+    expect(result.recovery.discarded).toBe(0);
+    expect(result.unmetDrain).toBe(1500);
+  });
+
+  /*
+   * Overflow has no owner when two heals arrive together, so it is split in
+   * proportion — but only what the drains left over actually overflows.
+   */
+  it("splits only the surviving overflow across simultaneous heals", () => {
+    const result = succeed({
+      state: { current: 49_000, allocations: [] },
+      hours: 1,
+      instantaneous: [
+        at(0.5, "recovery", 1000, "elixir"),
+        at(0.5, "recovery", 3000, "healer"),
+        at(0.5, "forced-drain", 2000),
+      ],
+    });
+
+    expect(result.current).toBe(50_000);
+    expect(result.recovery.potential).toBe(4000);
+    expect(result.recovery.discarded).toBe(1000);
+
+    const bySource = new Map(
+      result.balance.recoveryBySource.map((one) => [one.context, one]),
+    );
+
+    expect(bySource.get("elixir")?.discarded).toBeCloseTo(250, 8);
+    expect(bySource.get("healer")?.discarded).toBeCloseTo(750, 8);
+  });
+});
+
+
+describe("contradictory and malformed inputs are refused", () => {
+  /*
+   * `activity` and `activityLoadPerHour` are documented as alternatives. The
+   * resolver preferred the raw number in silence, so an "extreme" activity
+   * supplied alongside a load of 0 cost nothing while still reading back as
+   * extreme.
+   */
+  it("rejects a named activity contradicted by a raw load", () => {
+    expect(
+      errorCodes(advance({
+        activity: {
+          mode: "ordinary-waking",
+          activity: "extreme",
+          activityLoadPerHour: 0,
+        },
+      })),
+    ).toContain("aura.activity.load.contradictory");
+  });
+
+  it("rejects the contradiction inside a mid-interval activity change", () => {
+    expect(
+      errorCodes(advance({
+        hours: 2,
+        activityChanges: [{
+          at: T0 + hoursToDuration(1),
+          activity: {
+            mode: "ordinary-waking",
+            activity: "extreme",
+            activityLoadPerHour: 0,
+          },
+        }],
+      })),
+    ).toContain("aura.activity.load.contradictory");
+  });
+
+  /* Redundant but consistent is a caller being explicit, not a mistake. */
+  it("accepts both when the number matches the named level", () => {
+    const result = advance({
+      activity: {
+        mode: "ordinary-waking",
+        activity: "extreme",
+        activityLoadPerHour: 100,
+      },
+    });
+
+    expect(errorCodes(result)).toEqual([]);
+  });
+
+  /*
+   * The solver used to repair stored wakefulness with `Math.max(0, ...)`,
+   * which made it the one door into the number that accepted a state
+   * advanceWakefulness refuses — and NaN walked straight through onto a
+   * successful result.
+   */
+  it("refuses a non-finite stored wakefulness rather than propagating it", () => {
+    expect(errorCodes(advance({ wakefulness: { hoursAwake: Number.NaN } })))
+      .toContain("body.wakefulness.hours_awake.invalid");
+  });
+
+  it("refuses a negative stored wakefulness rather than repairing it", () => {
+    expect(errorCodes(advance({ wakefulness: { hoursAwake: -4 } })))
+      .toContain("body.wakefulness.hours_awake.invalid");
   });
 });

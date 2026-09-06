@@ -50,6 +50,7 @@ export {
   advanceWakefulness,
   deriveMaximumWakefulDays,
   deriveMaximumWakefulHours,
+  findWakefulnessStateIssues,
   resolveWakefulness,
 } from "./wakefulness";
 
