@@ -221,8 +221,12 @@ describe("recovery through an interval", () => {
       expect.objectContaining({
         source: "natural-regeneration",
         context: "intentional-rest",
+        ratePerHour: 5000,
         multiplier: 0.5,
-        amount: 2500,
+        hours: 1,
+        potential: 2500,
+        used: 2500,
+        discarded: 0,
       }),
     ]);
   });
@@ -399,11 +403,11 @@ describe("sustained activity and discrete actions", () => {
 
     expect(errorCodes(advance({
       instantaneous: [at(0.5, "physical", Number.NaN)],
-    }))).toContain("aura.time.event.invalid");
+    }))).toContain("aura.timeline.event.amount.invalid");
 
     expect(errorCodes(advance({
       instantaneous: [at(0.5, "forced-drain", -1)],
-    }))).toContain("aura.time.event.invalid");
+    }))).toContain("aura.timeline.event.amount.invalid");
 
     /* A backwards interval is the Time domain's refusal, not Aura's. */
     expect(errorCodes(advance({ hours: -1 })))

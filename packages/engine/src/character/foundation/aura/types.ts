@@ -583,25 +583,54 @@ export interface AuraRecoveryContext {
  * SOURCE, and natural regeneration will not be the only one for long — a Nen
  * ability, an item or a healer will each want to say what they put back.
  */
-export const AURA_RECOVERY_SOURCES = ["natural-regeneration"] as const;
+/*
+ * What KIND of thing restored Aura.
+ *
+ *   natural-regeneration  the body's own VIT-derived rate, over time
+ *   scheduled-event       something that happened at an instant — a healing
+ *                         ability, an item, an effect
+ *
+ * Closed, and deliberately separate from `context`, which carries the specific
+ * label. Instantaneous recovery used to be reported as natural regeneration
+ * because that was the only member: a healing potion appeared on the sheet as
+ * the character's own metabolism.
+ */
+export const AURA_RECOVERY_SOURCES = [
+  "natural-regeneration",
+  "scheduled-event",
+] as const;
 
 export type AuraRecoverySource = typeof AURA_RECOVERY_SOURCES[number];
 
+/*
+ * One stretch of recovery at one constant rate, from one source.
+ *
+ * Accumulated PER SEGMENT rather than summarised once over an interval, so the
+ * figures describe something that actually happened. Summarising used to
+ * produce contributions like "multiplier 0, hours 4, restored 10,000" for a
+ * character who woke, worked, and then slept — every field true of the
+ * interval's first instant and none of them true of the interval.
+ *
+ * The three amounts are separate because they answer different questions:
+ * `potential` is what the rate was worth, `used` is what the pool absorbed,
+ * and `discarded` is what arrived while already full. They always satisfy
+ * `potential === used + discarded`.
+ */
 export interface AuraRecoveryContribution {
   readonly source: AuraRecoverySource;
 
-  /** Provenance for the multiplier: the mode, or the suppression's label. */
+  /** The specific provenance: the mode, the suppression, or the effect. */
   readonly context: string;
 
   readonly ratePerHour: number;
   readonly multiplier: number;
+
+  /** How long this rate was actually in force. Zero for an instant. */
   readonly hours: number;
 
-  /** Before the missing-Aura cap. */
-  readonly uncappedAmount: number;
-
-  /** What was actually restored. */
-  readonly amount: number;
+  readonly potential: number;
+  readonly used: number;
+  readonly discarded: number;
 }
 
 

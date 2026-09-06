@@ -3,8 +3,8 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
 **Snapshot:** 2026-09-05 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **68 files, 1,824 tests, all passing** (~3.6 s). `tsc --noEmit` → **clean**.
-**Size:** 215 source files / ~61,100 LOC + 72 test files / ~30,000 LOC.
+**Health:** `vitest run` → **69 files, 1,882 tests, all passing** (~4.5 s). `tsc --noEmit` → **clean**.
+**Size:** 216 source files / ~62,000 LOC + 73 test files / ~31,300 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
 The Body refactor (12 phases) is **through Phase 10**, plus the post-refactor integration
@@ -732,7 +732,39 @@ reported as an expiry rather than a shutdown.
 **Instantaneous events** (`ScheduledAuraEvent {at, kind, source, amount}`) resolve at their own
 timestamps — a strike landing in the last minute of an eight-hour advance is charged there, not
 smeared across the night. They replaced the accumulated `discretePhysical` /
-`discreteDeliberate` / `forcedDrain` fields.
+`discreteDeliberate` / `forcedDrain` fields. Events sharing a timestamp are resolved as **one
+instant**: recovery and drain are summed separately and the pool clamped once, so the answer does
+not depend on array order.
+
+### The timeline (`timeline.ts`)
+
+One validator judges the whole of `AdvanceAuraTimeInput` before the solver calculates anything —
+modes and activity levels against their vocabularies, suppression sources and multipliers, event
+kinds, sources, amounts and timestamps, and every upkeep commitment through the shared
+`findAuraUpkeepIssues`. Nothing is partially processed. It also resolves the activity windows and
+groups simultaneous events, so the solver consumes a shape that cannot be malformed.
+
+Ownership is half-open. A caller event at `endedAt` is refused
+(`aura.timeline.event.outside`) and belongs to the next interval; one before `startedAt` is
+refused as `.stale`. Duplicate activity-change timestamps are refused rather than resolved by
+array order. An upkeep commitment whose `startsAt` predates the interval was already running and
+emits no `upkeep-started`.
+
+**Suppression stops leakage** at the instant it begins and leakage resumes when it lifts, because
+`uncontained` (does this character bleed at all) and suppression (are the nodes shut right now)
+are separate facts. A suppressed character cannot collapse from leakage, and recovery continues
+at the supplied multiplier throughout.
+
+**Recovery provenance is per segment.** Each contribution reports its source, context, base rate,
+multiplier, the hours that rate was actually in force, and `potential` / `used` / `discarded`;
+identical stretches merge and a mode or suppression change opens a new one. Instantaneous
+recovery keeps its own source (`scheduled-event`, with the effect's label as context) rather than
+being reported as the character's metabolism. The sums always reconcile with
+`recovery.{potential, used, discarded}`, and `potential = used + discarded`.
+
+**`AuraUpkeepCharge.hours`** is how long that commitment was actually charged, so
+`cost ≈ ratePerHour × hours` holds for late starts, expiries, shutdowns and effects that predate
+the interval.
 
 **Deliberate access is enforced.** `spendAura`, the deliberate half of `spendActionAura` and
 `payAuraUpkeep` all refuse when the character is unawakened or suppressed, keyed off the base Aura
@@ -1099,6 +1131,11 @@ charging a character for the wrong span three domains away. `advanceGameClock` r
 callers that only want the clock. A paused or combat clock crosses a *zero-length* interval
 rather than none at all.
 
+An interval is **half-open**, `[startedAt, endedAt)`, and the two questions have two names so
+they cannot be confused: `intervalOwns` (half-open) for caller-supplied inputs, `intervalReaches`
+(inclusive) for solver outcomes. Two adjacent intervals meet at one timestamp, and an inclusive
+rule for inputs would have both apply the same strike.
+
 **Character time** (`character/time/`) is the coordinator. One interval goes to Aura, to
 wakefulness and to Fatigue together, because the same hours decide all three. Time imports nothing
 from Aura or Body; neither may read or advance the clock.
@@ -1401,7 +1438,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (68 files, 1,824 tests)
+## 14 · Test coverage (69 files, 1,882 tests)
 
 | Area | Files (tests) |
 |---|---|
@@ -1411,7 +1448,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
 | Rules | check-modifiers 29 · requirements 25 · effects 16 — **70** |
-| Aura | time 50 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · control 21 · access-enforcement 16 · interval-invariance 14 · character-state 12 — **385** |
+| Aura | time 51 · timeline 49 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · interval-invariance 22 · control 21 · access-enforcement 16 · character-state 12 — **443** |
 | Endurance & character time | body-endurance 39 · character-time 24 — **63** |
 | Catalogs | 28 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Checks** 6 · **Infra** trace 8 + id 7 — **88** |
 | **Foundation stability** | character-foundation-stability 41 · injury-ownership 17 · architecture 8 — **66** |

@@ -594,7 +594,7 @@ export function rosterReducer(
         { ...state, sheets: { ...state.sheets, [stamped.id]: stamped }, dirty },
         operation,
         "Aura replenished",
-        `${pool.current} → ${result.payload.pool.current} (+${result.payload.contribution.amount})`,
+        `${pool.current} → ${result.payload.pool.current} (+${result.payload.contribution.used})`,
         stamped.id,
         report,
       );

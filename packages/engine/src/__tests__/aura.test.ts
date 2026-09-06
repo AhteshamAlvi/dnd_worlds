@@ -209,8 +209,8 @@ describe("recoverAura", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.payload.pool.current).toBe(20000);
-      expect(result.payload.contribution.uncappedAmount).toBe(700);
-      expect(result.payload.contribution.amount).toBe(200);
+      expect(result.payload.contribution.potential).toBe(700);
+      expect(result.payload.contribution.used).toBe(200);
     }
   });
 

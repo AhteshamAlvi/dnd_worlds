@@ -65,7 +65,7 @@ function recovered(
     );
   }
 
-  return result.payload.contribution.amount;
+  return result.payload.contribution.used;
 }
 
 function errorCodes(
@@ -180,8 +180,9 @@ describe("recovery contexts", () => {
     if (!result.success) return;
 
     expect(result.payload.pool.current).toBe(MAX_AURA);
-    expect(result.payload.contribution.uncappedAmount).toBe(5600);
-    expect(result.payload.contribution.amount).toBe(200);
+    expect(result.payload.contribution.potential).toBe(5600);
+    expect(result.payload.contribution.used).toBe(200);
+    expect(result.payload.contribution.discarded).toBe(5400);
   });
 
   it("reports what it restored, with provenance", () => {
@@ -201,8 +202,9 @@ describe("recovery contexts", () => {
       ratePerHour: 700,
       multiplier: 1.5,
       hours: 2,
-      uncappedAmount: 2100,
-      amount: 2100,
+      potential: 2100,
+      used: 2100,
+      discarded: 0,
     });
   });
 

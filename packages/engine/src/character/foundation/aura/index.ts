@@ -250,6 +250,7 @@ export {
   AURA_UPKEEP_SHUTDOWN_REASONS,
   auraUpkeepSheddingOrder,
   deriveAuraUpkeep,
+  findAuraUpkeepIssues,
   isUpkeepActiveAt,
   payAuraUpkeep,
   upkeepRatePerHour,
@@ -276,6 +277,35 @@ export {
 } from "./leakage";
 
 
+/* ── The timeline ───────────────────────────────────────────────────────── */
+
+/*
+ * What a caller says happened during an interval, and the one validator that
+ * judges all of it before the solver calculates anything.
+ *
+ * An interval OWNS `[startedAt, endedAt)`. Caller-supplied events and activity
+ * changes belong to it only inside that range; an event on the endpoint
+ * belongs to the next interval beginning there, or chained advancement would
+ * apply it twice. Solver outcomes are different and may land on the endpoint,
+ * because they are consequences of the interval rather than inputs to it.
+ */
+export type {
+  AuraActivityChange,
+  AuraActivityWindow,
+  AuraEventInstant,
+  AuraTimeActivity,
+  AuraTimelineInput,
+  ResolvedAuraTimeline,
+  ScheduledAuraEvent,
+  ScheduledAuraEventKind,
+} from "./timeline";
+
+export {
+  SCHEDULED_AURA_EVENT_KINDS,
+  resolveAuraTimeline,
+} from "./timeline";
+
+
 /* ── Time ───────────────────────────────────────────────────────────────── */
 
 /*
@@ -285,22 +315,14 @@ export {
  */
 export type {
   AdvanceAuraTimeInput,
-  AuraActivityChange,
   AuraRecoverySummary,
-  AuraTimeActivity,
   AuraTimelineEvent,
   AuraTimelineEventKind,
   AuraTimeSegment,
   AuraTimeTransition,
-  ScheduledAuraEvent,
-  ScheduledAuraEventKind,
 } from "./time";
 
-export {
-  AURA_TIMELINE_EVENT_KINDS,
-  SCHEDULED_AURA_EVENT_KINDS,
-  advanceAuraTime,
-} from "./time";
+export { AURA_TIMELINE_EVENT_KINDS, advanceAuraTime } from "./time";
 
 
 /* ── State transitions ──────────────────────────────────────────────────── */

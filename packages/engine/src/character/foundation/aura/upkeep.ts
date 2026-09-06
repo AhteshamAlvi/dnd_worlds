@@ -214,7 +214,16 @@ export function upkeepRatePerHour(
 }
 
 
-function commitmentErrors(
+/**
+ * Every way a set of upkeep commitments can be malformed.
+ *
+ * ONE predicate, shared by the transactional payAuraUpkeep, by
+ * deriveAuraUpkeep, and by the timeline validator that runs before the
+ * continuous solver. Three separate checks would be three chances to accept
+ * something one of the others rejects — and the solver had no check at all,
+ * so a pair of commitments sharing an empty id was quietly charged twice.
+ */
+export function findAuraUpkeepIssues(
   commitments: readonly AuraUpkeepCommitment[],
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
@@ -245,6 +254,24 @@ function commitmentErrors(
       seen.add(commitment.id);
     }
 
+    /*
+     * The source is provenance and nothing branches on it, which is exactly
+     * why an empty one has to be caught here: a shutdown that names nothing
+     * cannot be acted on by whoever owns the effect.
+     */
+    if (
+      typeof commitment.source !== "string" ||
+      commitment.source.trim().length === 0
+    ) {
+      errors.push({
+        code: "aura.upkeep.source.missing",
+        message: "Every Aura upkeep commitment must name its source.",
+        audience: "developer",
+        required: "non-empty string",
+        actual: String(commitment.source),
+      });
+    }
+
     if (!Number.isFinite(commitment.baseRate) || commitment.baseRate < 0) {
       errors.push({
         code: "aura.upkeep.rate.invalid",
@@ -267,6 +294,59 @@ function commitmentErrors(
         audience: "developer",
         required: AURA_UPKEEP_PERIODS.join(" | "),
         actual: String(commitment.period),
+      });
+    }
+
+    /*
+     * A non-finite priority would make the shedding order depend on how the
+     * sort happened to compare NaN, which is to say on nothing.
+     */
+    if (
+      commitment.priority !== undefined &&
+      !Number.isFinite(commitment.priority)
+    ) {
+      errors.push({
+        code: "aura.upkeep.priority.invalid",
+        message: "An upkeep priority must be a finite number when supplied.",
+        audience: "developer",
+        required: "finite number",
+        actual: String(commitment.priority),
+      });
+    }
+
+    for (const [name, value] of [
+      ["startsAt", commitment.startsAt],
+      ["endsAt", commitment.endsAt],
+    ] as const) {
+      if (value === undefined || Number.isFinite(value)) continue;
+
+      errors.push({
+        code: "aura.upkeep.window.invalid",
+        message: `An upkeep ${name} must be a finite timestamp when supplied.`,
+        audience: "developer",
+        required: "finite timestamp",
+        actual: String(value),
+      });
+    }
+
+    /*
+     * A window that ends before it begins is active never, which is almost
+     * certainly not what was meant — and is indistinguishable from an effect
+     * that simply never fired, so it is refused rather than ignored.
+     */
+    if (
+      commitment.startsAt !== undefined &&
+      commitment.endsAt !== undefined &&
+      Number.isFinite(commitment.startsAt) &&
+      Number.isFinite(commitment.endsAt) &&
+      commitment.endsAt <= commitment.startsAt
+    ) {
+      errors.push({
+        code: "aura.upkeep.window.reversed",
+        message: "An upkeep window must end after it starts.",
+        audience: "developer",
+        required: `endsAt > ${commitment.startsAt}`,
+        actual: commitment.endsAt,
       });
     }
   });
@@ -299,7 +379,7 @@ export function deriveAuraUpkeep(
     },
   });
 
-  const errors: EngineError[] = [...commitmentErrors(commitments)];
+  const errors: EngineError[] = [...findAuraUpkeepIssues(commitments)];
 
   if (!Number.isFinite(hours) || hours < 0) {
     errors.push({

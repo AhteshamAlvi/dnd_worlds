@@ -466,7 +466,52 @@ interface ScheduledAuraEvent {
 
 They replaced the accumulated `discretePhysical` / `discreteDeliberate` / `forcedDrain` fields, which could only ever be smeared across the whole interval — so a strike landing in the last minute of an eight-hour advance was charged as though it had been happening all night.
 
+Events sharing a timestamp resolve as **one instant**: recovery and drain are summed separately and the pool clamped once, so a 500 drain and a 900 heal at the same moment on a pool of 100 give the same answer whichever the caller listed first. Discarded recovery is split across simultaneous sources in proportion.
+
 The result carries a timestamped `events` list and the `segments` the interval was cut into, plus `unmetDrain` for the drain an empty pool could not pay for.
+
+### The timeline validator (`timeline.ts`)
+
+One validator judges the whole of `AdvanceAuraTimeInput` before the solver calculates anything. The solver used to validate as it went, which meant it validated only what it happened to look at:
+
+| What slipped through | What it did |
+|---|---|
+| an unrecognised event `kind` | fell through the dispatch and became a forced drain |
+| duplicate or empty upkeep ids | charged twice |
+| a `NaN` suppression multiplier | silently ignored; the mode's own rate used instead |
+| a timestamp fifty hours before the interval | applied inside it anyway |
+| an event on `endedAt` | applied here AND by the next interval |
+
+It validates modes and activity levels against their vocabularies, suppression sources and multipliers, event kinds, sources, amounts and timestamps, activity-change timestamps and duplicates, and every upkeep commitment through the shared `findAuraUpkeepIssues` — which `payAuraUpkeep` and `deriveAuraUpkeep` also use, so one predicate decides. **Nothing is partially processed.** It also resolves the activity windows and groups simultaneous events, so the solver consumes a shape that cannot be malformed.
+
+`AuraUpkeepCommitment` gains `endsAt > startsAt` and finite-priority checks. A commitment whose `startsAt` predates the interval was already running and emits no `upkeep-started`; one ending exactly at `endedAt` may emit its expiry there, having been active throughout.
+
+### Suppression and leakage
+
+`uncontained` (does this character bleed at all) and suppression (are the nodes shut right now) are **separate facts**, and conflating them had a character in Zetsu still losing Aura through nodes the Zetsu had closed — and still able to collapse from it.
+
+Leakage is therefore computed per segment as `uncontainedByDefault && !suppressed && !collapsed`. It stops at the instant suppression begins, resumes when suppression lifts if the character is still fundamentally uncontained, and cannot cause a collapse while suppression is active. Recovery continues at the supplied multiplier throughout. Suppression interrupts; it does not cure.
+
+### Recovery provenance
+
+Accumulated **per constant-rate segment**, not summarised over the interval. The summary version reported the interval's initial activity as though it had held throughout, producing contributions like `multiplier: 0, hours: 4, restored: 10,000` for a character who woke, worked and then slept — every field true of the first instant and none true of the interval.
+
+Each `AuraRecoveryContribution` carries `source`, `context`, `ratePerHour`, `multiplier`, `hours`, and `potential` / `used` / `discarded`. Identical stretches merge; a mode or suppression change opens a new one. `AURA_RECOVERY_SOURCES` gained `"scheduled-event"` so a healing potion is no longer reported as the character's own metabolism.
+
+Invariants, to `1e-9` relative:
+
+```
+sum(contribution.potential)  = recovery.potential
+sum(contribution.used)       = recovery.used
+sum(contribution.discarded)  = recovery.discarded
+recovery.potential           = recovery.used + recovery.discarded
+balance.recovery             = recovery.used
+contribution.potential       = ratePerHour × multiplier × hours   (continuous only)
+```
+
+### Charged durations
+
+`AuraUpkeepCharge.hours` is how long that commitment was **actually charged**, not the enclosing interval's length. An effect starting three hours into a four-hour advance used to report four hours against a one-hour cost, breaking its own invariant. Now `cost ≈ ratePerHour × hours` holds for late starts, expiries, insufficient-Aura and access-lost shutdowns, effects that predate the interval, and effects ending exactly on `endedAt`.
 
 ### Deliberate access (§ enforced)
 
@@ -715,6 +760,13 @@ interface GameTimeInterval {
 ```
 
 The redundancy is the point: an interval whose `elapsed` disagrees with its endpoints is refused in `validateGameTimeInterval` rather than charging a mechanic for the wrong span three domains away. Backwards intervals are refused; zero-length ones are legal and mean nothing happened.
+
+**An interval is half-open, `[startedAt, endedAt)`,** and the two questions have two names so they cannot be confused:
+
+- `intervalOwns(interval, at)` — half-open. Whether this interval is responsible for what a CALLER scheduled at that instant.
+- `intervalReaches(interval, at)` — inclusive. Whether an OUTCOME lies in or on the span.
+
+Two adjacent intervals meet at one timestamp. An inclusive rule for inputs would have both apply the same strike, so chained advancement would charge every boundary action twice. Solver outcomes are the other way round: a pool emptying exactly at `endedAt` emptied during this interval and is reported by it, and nothing re-claims that instant because the next interval starts from the state this one left.
 
 `advanceGameClock(clock, duration)` returns `GameClockTransition {previous, clock, interval}`, and `advanceGameClockFromRealTime` does the same from real elapsed time. `advanceGameTime` survives as a wrapper for callers that only want the new clock. A paused or combat clock crosses a **zero-length** interval rather than none at all, so a projection asked to bring a character up to a stopped clock resolves to "nothing happened" instead of failing.
 

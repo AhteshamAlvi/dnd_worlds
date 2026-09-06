@@ -340,8 +340,9 @@ export function recoverAura(
     ratePerHour,
     multiplier: resolved.multiplier,
     hours,
-    uncappedAmount,
-    amount,
+    potential: uncappedAmount,
+    used: amount,
+    discarded: uncappedAmount - amount,
   };
 
   traceNode.output = {

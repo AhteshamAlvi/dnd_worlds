@@ -1162,8 +1162,9 @@ export {
   gameTimeInterval,
   gameTimeIntervalOf,
   hoursToDuration,
-  intervalContains,
   intervalHours,
+  intervalOwns,
+  intervalReaches,
   validateGameTimeInterval,
 } from "./time/interval";
 

@@ -196,8 +196,39 @@ export function hoursToDuration(hours: number): GameDuration {
 }
 
 
-/** Whether a timestamp falls inside the interval, start inclusive. */
-export function intervalContains(
+/*
+ * Whether this interval is RESPONSIBLE for what a caller scheduled at an
+ * instant — half-open, `[startedAt, endedAt)`.
+ *
+ * The endpoint belongs to the NEXT interval, and that is the whole point. Two
+ * adjacent intervals meet at one timestamp, and an inclusive test would have
+ * both of them own an event there: the first would apply it, and the second,
+ * beginning where the first ended, would apply it again. Chained advancement
+ * would charge every boundary action twice.
+ *
+ * This replaced an `intervalContains` that was inclusive at both ends and
+ * named as though the question had one obvious answer. It does not — solver
+ * OUTCOMES may legitimately land on `endedAt`, because they are consequences
+ * of the interval rather than inputs to it — so the two questions now have two
+ * names and cannot be confused for one another.
+ */
+export function intervalOwns(
+  interval: GameTimeInterval,
+  at: GameTimestamp,
+): boolean {
+  return at >= interval.startedAt && at < interval.endedAt;
+}
+
+
+/*
+ * Whether an instant lies anywhere in or on the span — inclusive, `[a, b]`.
+ *
+ * For OUTCOMES rather than inputs. A pool emptying exactly at `endedAt`
+ * emptied during this interval and is reported by it; nothing downstream will
+ * claim that instant a second time, because the next interval's solver starts
+ * from the state this one left.
+ */
+export function intervalReaches(
   interval: GameTimeInterval,
   at: GameTimestamp,
 ): boolean {
