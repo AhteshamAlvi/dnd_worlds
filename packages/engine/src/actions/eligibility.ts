@@ -68,6 +68,16 @@ export interface EligibilityFinding {
 
   /** Human-readable explanation, for a GM reading a proposal. */
   readonly summary?: string;
+
+  /**
+   * The machine-readable reason, when there is one.
+   *
+   * Carried on the finding rather than reported separately so that "out of
+   * Range" and "the host never told us how far away it is" stay attached to
+   * the question they answer. A caller filtering for missing host facts reads
+   * the code here; see spatial/facts.ts for that specific case.
+   */
+  readonly diagnostic?: EngineError;
 }
 
 

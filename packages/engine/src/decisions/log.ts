@@ -437,6 +437,51 @@ export const ENGINE_DECISIONS = {
         rationale:
             "A single throwing path in an otherwise value-returning system is worse than a consistently throwing one, because it is invisible: every caller that handles diagnostics correctly still crashes on the one input nobody wrapped, and 'the host supplied no dice' is an ordinary thing for a host to get wrong rather than an exceptional one. The line drawn for what still throws is caller DATA versus wrong FUNCTION: a mismatched sensory route is two resolutions the caller handed in together and belongs in the result, while reaching the passive resolver with an active request is the dispatch above it having called the wrong function. Returning that second one as a value would let a genuine engine bug be handled as though the character had merely failed to perceive something. The expected roll count also moved into one exported helper both the request validator and the resolver read, because they previously agreed only by coincidence — one computed it inline, the other stated it in a comment — and every sensory resolver calls the resolver directly without going through the validator.",
     },
+    "actions.proposal.preparation-owns-the-preview": {
+        id: "actions.proposal.preparation-owns-the-preview",
+        question:
+            "Turning an intent into something a GM can look at needs a place to live. The candidates were a new orchestration module above everything, Combat (which already schedules things), or actions/ itself.",
+        chosen:
+            "actions/preparation.ts, inside the domain that already owns profiles and intents. One pipeline, no fourth module. It computes the intent-versus-profile check, the Range measurement, the dice requirement, the travel arithmetic, and one conclusion of its own — the disposition — from findings every other domain supplied.",
+        rationale:
+            "A separate orchestration layer would have needed its own copy of what a profile permits in order to say anything useful about an intent, and two descriptions of the same thing drift. Combat was the worse option for the reason this whole phase exists: a proposal that lives in Combat cannot be produced outside one, and most play is outside one. Keeping preparation next to the vocabulary it reads also keeps the dependency list honest — the ONLY things it reaches for are the domains that own the questions it asks, and an architecture test says so.",
+    },
+    "actions.proposal.non-committing-by-construction": {
+        id: "actions.proposal.non-committing-by-construction",
+        question:
+            "A proposal reports what an action would cost, what it would roll, and who it would affect. The cheap version computes that by starting to do it and reporting what happened so far.",
+        chosen:
+            "Preparation is pure. It spends no Aura or Actions, consumes no Items, damages no Body, applies no Condition, moves nothing, advances no clock, emits no committed event, mutates nothing it was handed, and never calls the coordinator. Costs are carried as unsent RuntimeRequests; dice are carried as requirements, not values. Tests deep-freeze every input before calling, so an accidental write throws, and a source-level test fails if preparation ever imports the coordinator.",
+        rationale:
+            "A preview that quietly charges something is the most expensive bug available to this design, because it fires every time a GM looks at an option and decides against it — and the symptom is resources draining with nobody having acted, which reads as a balance problem rather than a bug. Freezing the inputs rather than diffing them afterwards is deliberate: a diff notices a mutation that already happened, while a frozen object turns the write itself into the failure, at the line that did it. The source check on the coordinator import exists because purity here is one convenient refactor away from being lost, and nothing else would notice.",
+    },
+    "actions.proposal.three-resolution-approaches": {
+        id: "actions.proposal.three-resolution-approaches",
+        question:
+            "How an attempt gets settled. The obvious split is two ways — the rules decide, or the GM decides — and the obvious trigger is whether Combat is running.",
+        chosen:
+            "Three approaches, selected per action and never inferred from Combat: mechanical (the rules can propose the result), guided-narrative (the engine gathers every fact and suggestion it can and stops short of deciding), and free-adjudication (the GM supplies the substance, with engine assistance). Both of the latter two produce a requires-adjudication disposition, and neither ever produces an automatic outcome.",
+        rationale:
+            "Tying the approach to Combat is wrong in both directions: an attack roll during a conversation is still an attack roll, and talking a guard into looking away is still a judgement call on someone's Turn. The missing middle is the one that matters — a system with only 'resolve it' and 'the GM decides' drops every unusual attempt into a hole with no Range check, no cost, no facts, and leaves the GM reconstructing by hand what the engine already knew. Guided narrative is most of what a GM actually wants from a tool: all the work, none of the verdict.",
+    },
+    "actions.proposal.disposition-from-aggregated-findings": {
+        id: "actions.proposal.disposition-from-aggregated-findings",
+        question:
+            "A proposal must say whether the action can proceed. Collapsing that to a boolean loses the difference between a rule saying no and the engine not knowing — and the second is usually the GM's cue to supply a fact rather than to refuse anything.",
+        chosen:
+            "Six dispositions — ineligible, spatially-invalid, missing-facts, check-dependent, resolvable, requires-adjudication — computed from findings the owning domains decided. A definite refusal outranks an open question; among refusals the least recoverable one leads, so a character who lacks the requirement AND is out of Range reads as ineligible rather than as spatially-invalid.",
+        rationale:
+            "Every one of the six is a different thing for a GM to do next, and a boolean makes all six look like 'no'. Ranking a refusal above an unresolved question follows the same argument as the eligibility fold: the attempt is blocked either way and answering the open question would not have helped. Ranking ineligibility above Range is what makes spatially-invalid worth having — it then means precisely 'the only thing wrong is where you are standing', rather than 'something spatial was among the problems', and telling a player to move when moving cannot help is worse than saying nothing. Every finding stays on the proposal regardless; the disposition only decides which one leads.",
+    },
+    "actions.proposal.unevaluated-occupancy-is-not-an-empty-area": {
+        id: "actions.proposal.unevaluated-occupancy-is-not-an-empty-area",
+        question:
+            "Suggested affected subjects are supplied by the host, because working out who a blast catches needs occupancy the engine does not own. Carried as a bare array, an empty list means both 'the host looked and the area is empty' and 'nobody ever ran the query'.",
+        chosen:
+            "AffectedSubjectSuggestion carries an explicit `evaluated` flag beside the subjects, and preparation defaults to { evaluated: false, subjects: [] } when the field is omitted. Naming subjects while claiming nothing was evaluated is refused as a structural contradiction.",
+        rationale:
+            "The two states mean opposite things to settlement, and the dangerous one is silent: an unrun geometry query committed as a verified empty area is an action that affects nobody, succeeds, and leaves nothing anywhere saying why. Undefined-versus-empty would have encoded the same distinction, and was rejected because `?? []` is the natural way to write past an optional array and reads as defensive rather than as destroying an answer. The flag has to be looked at. Defaulting to false rather than true is the same instinct as refusing missing state elsewhere: the engine says 'no answer' unless somebody actually supplied one. Note the same absent-versus-empty hazard exists in principle for cost requests; it is not modelled there because those are priced synchronously by engine-owned domains rather than by a host query that may not have run.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;

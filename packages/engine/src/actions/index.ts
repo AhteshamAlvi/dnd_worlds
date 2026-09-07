@@ -87,6 +87,36 @@ export {
   profilePermitsTiming,
 } from "./profile";
 
+export type { ResolutionApproach } from "./approach";
+
+export {
+  RESOLUTION_APPROACHES,
+  findResolutionApproachIssues,
+  isResolutionApproach,
+  requiresAdjudication,
+} from "./approach";
+
+export type {
+  ActionConsequenceSuggestion,
+  ActionOutputFact,
+  ActionProposal,
+  AffectedSubjectSuggestion,
+  ProposalDisposition,
+} from "./proposal";
+
+export {
+  PROPOSAL_DISPOSITIONS,
+  UNEVALUATED_AFFECTED_SUBJECTS,
+} from "./proposal";
+
+export type {
+  ActionPreparationInput,
+  ActionSpatialInput,
+  ActionTargetPlacement,
+} from "./preparation";
+
+export { prepareAction } from "./preparation";
+
 export type { ActionIntent, ActionIntentEvaluation } from "./intent";
 
 export {
