@@ -49,10 +49,12 @@ export const INJURY_REMOVAL_REQUEST = "character-status.remove-injury";
 /**
  * Body asking Character status to drop a fully healed Injury.
  *
- * `requested` is 1 — one Injury — rather than an amount of anything. The field
- * is a magnitude on the shared shape and a removal has no magnitude, so it
- * carries the count it is asking about and the actual comes back as 1 or 0
- * depending on whether the owner agreed.
+ * NOT quantitative, and it no longer pretends to be. It briefly carried
+ * `requested: 1` — "one Injury, I suppose" — because the shared base demanded a
+ * number, which meant every consumer had to know that this particular 1 meant
+ * nothing. A field a request has to lie about is a field on the wrong type, so
+ * amounts moved to `QuantitativeRequest` and this carries the two ids it
+ * actually needs.
  */
 export interface InjuryRemovalRequest extends RuntimeRequest {
   readonly kind: typeof INJURY_REMOVAL_REQUEST;
@@ -100,9 +102,6 @@ export function recoveryRequests(
     occurredAt: context.occurredAt,
     from: "body" as RuntimeDomain,
     to: "character-status" as RuntimeDomain,
-    sourceId: context.subjectId,
-    targetId: removal.characterInjuryId,
-    requested: 1,
     characterInjuryId: removal.characterInjuryId,
     injuryId: removal.injuryId,
   }));

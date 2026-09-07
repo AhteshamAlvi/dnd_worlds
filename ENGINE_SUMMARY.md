@@ -3,7 +3,7 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
 **Snapshot:** Phase 0.2 close · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **72 files, 2,019 tests, all passing**. `tsc --noEmit` → **clean**.
+**Health:** `vitest run` → **72 files, 2,044 tests, all passing**. `tsc --noEmit` → **clean**.
 **Backlog:** [`BACKLOG.md`](BACKLOG.md) is the single authoritative list of what is not done.
 **Ownership:** [`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) is the authoritative state-ownership
 matrix and transition protocol.
@@ -1536,9 +1536,20 @@ Combat type, because runtime sits below `gameplay/`. Permanent `NenState` carrie
 fails with no cost committed; one that begins and misses succeeds, keeps its costs, and reports the
 miss as an event. A resist or cap is an `actual` of zero, never a failure and never a refund.
 
-**Costs commit atomically** through two-phase `prepare`/`commit` handlers — "validate all, then
-commit all" is unimplementable when one call does both. Partial payment is refused unless a request
-declares it.
+**The operation is a transaction.** Everything runs against a discardable **draft** — a map from
+domain to that domain's state. Handlers are pure: they receive the draft's value and return a
+replacement, capturing nothing. On success the completed draft is returned as
+`CoordinatedOutcome.states`, the **only** channel a result arrives through; on any failure it is
+discarded whole and every original is untouched. Costs prepare against the draft **as it stands**,
+so two costs for one owner are cumulative — preparing each against the original let two 60-Aura
+costs both pass against a 100-Aura pool.
+
+**Simultaneous effects settle as a batch.** Everything landing on one owner at one effective time is
+handed over together with one pre-batch state, and the owner returns one combined replacement.
+Ordering fixes the log and the dispatch order; it cannot decide a result.
+
+**The request base carries routing only.** Amounts live on `QuantitativeRequest`; a removal is not a
+quantity and no longer ships `requested: 1` for the type's benefit.
 
 **Determinism**: dice are caller input and validated first, operation ids and timestamps are
 supplied not generated, requests sort by a total stable key, and events carry a coordinator-assigned
@@ -1579,6 +1590,10 @@ rather than an edit to the book.
 21. **`runtime.requests.typed-cross-domain-changes`** — a domain never edits state it does not own; it raises a typed request and the owner decides, reporting requested against actual.
 22. **`runtime.dice.caller-supplied-and-validated-first`** — dice, operation ids and timestamps are all supplied, and dice are validated before any cost commits.
 23. **`runtime.time.single-character-coordinator`** — `character/time/` stays the one character-time integration point, unchanged; legacy transitions migrate incrementally.
+24. **`runtime.operation.discardable-transaction-draft`** — *supersedes part of 20.* Operations run against a discardable draft; the returned state is the only channel, and any failure leaves every original untouched.
+25. **`runtime.costs.cumulative-against-the-draft`** — costs prepare against the draft as it stands, so same-owner costs are cumulative and cannot jointly overspend.
+26. **`runtime.effects.simultaneous-batch-settlement`** — effects on one owner at one instant settle from one pre-state; ordering controls reporting, never results.
+27. **`runtime.requests.routing-base-domain-payloads`** — the shared request carries routing only; amounts and upkeep belong to the domains that mean them.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1587,7 +1602,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (72 files, 2,019 tests)
+## 14 · Test coverage (72 files, 2,044 tests)
 
 Every test file appears in exactly one row, and the rows sum to the suite total. Recounted from
 the runner's own report at Phase 0.2 close — the previous version of this table omitted the whole
@@ -1606,8 +1621,8 @@ Senses category and two Body files, and its Body subtotal was 32 short of its ow
 | Endurance & character time | **63** | body-endurance 39 · character-time 24 |
 | Progression | **58** | progression 58 |
 | Capabilities | **41** | skills 41 |
-| Runtime protocol | **41** | runtime-protocol 25 · runtime-references 16 |
-| **Total** | **2,019** | **72 files** |
+| Runtime protocol | **66** | runtime-protocol 48 · runtime-references 18 |
+| **Total** | **2,044** | **72 files** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1685,7 +1700,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 72 files, 2,019 tests
+cd packages/engine && npx vitest run     # 72 files, 2,044 tests
 ```
 
 ```bash

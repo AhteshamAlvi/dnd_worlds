@@ -257,6 +257,42 @@ export const ENGINE_DECISIONS = {
         rationale:
             "The coordinator already satisfies every property the protocol asks for — deterministic, atomic at a timestamp, immutable in its inputs, interval-invariant across 28,800 one-second steps, rejecting stale and gapped intervals. Reshaping it would therefore change no behaviour while putting a 22-test invariance suite and the half-open ownership rules at risk, which is a poor trade at any time and a particularly poor one in a phase whose purpose is to establish a protocol rather than to move calculations. The same reasoning governs the wider migration: a protocol proves itself on representative operations, and rewriting thirty legacy transitions at once would mix an enormous diff of mechanical churn into the one change where the design still needs to be reviewable.",
     },
+    "runtime.operation.discardable-transaction-draft": {
+        id: "runtime.operation.discardable-transaction-draft",
+        question:
+            "A coordinated operation touches several domains' state. The first coordinator committed each cost as it went and returned only events and outcomes, leaving handlers to publish their results through closures and a committedState() accessor. Where does the new state actually live, and what happens to it when a later step fails?",
+        chosen:
+            "SUPERSEDES the commit-as-you-go half of runtime.costs.invalid-spends-nothing-failed-attempt-pays. The whole operation runs against a DRAFT: a map from domain to that domain's state, seeded from the caller's originals. Handlers are pure — they receive the draft's value for their domain and return a replacement, capturing nothing and writing nothing. On success the completed draft IS the result, returned as CoordinatedOutcome.states. On any failure at any step the draft is discarded and the caller keeps exactly what they had. committedState() and every equivalent side channel are removed.",
+        rationale:
+            "The old shape broke its own headline promise. Costs were committed and THEN effects were routed, so an unhandled effect request returned a FAILURE after the Aura had already left the pool — a failed operation that spent something, which is the single outcome this protocol exists to make impossible. It was not a missing check but a missing capability: with nothing to roll back to, the coordinator could only detect the problem after it had caused it. A draft removes the category, because abandoning an operation costs nothing by construction rather than by remembering to undo. Returning the draft also collapses two sources of truth into one: a side channel put the authoritative Aura state somewhere the coordinator could not see and the type system could not check, so a caller reading `states` and a caller reading `committedState()` could legitimately disagree about what happened.",
+    },
+    "runtime.costs.cumulative-against-the-draft": {
+        id: "runtime.costs.cumulative-against-the-draft",
+        question:
+            "An operation may raise several costs against one owner — two Aura expenditures, two Actions. Each was prepared against the state the operation started with. Is that the same balance every time?",
+        chosen:
+            "No. Each cost prepares against the DRAFT AS IT STANDS, so the second sees the first one's deduction. Costs owned by one domain are cumulative, and an operation whose combined cost exceeds the resource is rejected whole. Partial payment remains prohibited unless a request explicitly allows it.",
+        rationale:
+            "Preparing every cost against the original state made affordability a per-cost question when it is a per-operation one: two 60-Aura costs each validated happily against a 100-Aura pool, and the character spent 120 they did not have. The bug is subtle precisely because each individual check was correct. Chaining the draft is not a special cumulative-cost rule bolted on top — it is what 'the state as it stands' already meant, applied consistently, and it needs no grouping by resource because the draft is the grouping.",
+    },
+    "runtime.effects.simultaneous-batch-settlement": {
+        id: "runtime.effects.simultaneous-batch-settlement",
+        question:
+            "Several effects land on one owner at one instant. The coordinator sorted them deterministically and applied them one at a time, which is reproducible. Is reproducible enough?",
+        chosen:
+            "No. Effects sharing an owner and an effective time are handed to that owner as a BATCH with one pre-batch state, and the owner returns one combined replacement. Every member is calculated from the state handed over, not from a running total. Deterministic ordering still fixes the event log and the order batches are dispatched; it may not decide a mechanical result.",
+        rationale:
+            "Reproducible and correct are different properties. Applying simultaneous effects one at a time lets the second read the first's result, so two effects that genuinely happen at one instant produce an answer that depends on the sort key — stable, but arbitrary, and wrong in the same way the Aura solver was wrong when it applied recovery before drains at a single timestamp. Aura's fix was to net simultaneous contributions and clamp once; this is the same fix at the coordinator level, generalised: the owner is the only thing that knows how its simultaneous changes combine, so it is given all of them and one starting point and asked once.",
+    },
+    "runtime.requests.routing-base-domain-payloads": {
+        id: "runtime.requests.routing-base-domain-payloads",
+        question:
+            "What belongs on the shared request type? The first version put a numeric `requested` on the base, so every request carried an amount.",
+        chosen:
+            "Only routing: request id, kind, phase, operation id, timestamps, source domain and target owner. Amounts move to QuantitativeRequest, which genuinely quantitative requests extend. Domain-specific fields belong to the domain's own request type. `upkeepPerHour` is likewise removed from the shared ActiveApplication shape.",
+        rationale:
+            "A required field that some requests must lie about is a field on the wrong type, and the symptom was visible: removing a fully healed Injury is not a quantity, so it shipped `requested: 1` — a placeholder meaning 'one Injury, I suppose' that every consumer then had to know to ignore. Placeholder values are worse than absent ones because they type-check, read as data, and quietly answer questions nobody asked. Generic upkeep failed the same way from the other direction: whether an upkeep is per hour or per Round, which reserve pays it, whether it scales with Output and what suspension does to it are domain questions, and one shared number silently commits every future domain to one set of answers.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:

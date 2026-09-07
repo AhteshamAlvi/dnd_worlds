@@ -41,8 +41,9 @@
  * shape to violate.
  *
  * The sections below are PROTOCOL-level only. `ActiveApplication` knows an
- * application has a source, a start and possibly an upkeep; it knows nothing
- * about Ren, Output levels or Chū allocation, and it must not learn. Concrete
+ * application has a source, a start and possibly an end; it knows nothing about
+ * Ren, Output levels, Chū allocation or what maintaining it COSTS, and it must
+ * not learn — cost is a domain question with domain-specific answers. Concrete
  * active-Nen and transformation mechanics are a later phase, and they will
  * extend these shapes rather than replace them.
  */
@@ -54,9 +55,10 @@ import type { GameTimestamp } from "../time/types";
  * Something switched on that is still on.
  *
  * The minimum every maintained thing shares, whatever domain owns it: it was
- * started by something, at a time, possibly until a time, possibly at a cost
- * per hour. Ren, a Condition with a duration and a transformation are all this
- * shape at the protocol level even though nothing else about them agrees.
+ * started by something, at a time, and possibly until a time. Ren, a Condition
+ * with a duration and a transformation are all this shape at the protocol level
+ * even though nothing else about them agrees — including what they cost, which
+ * is why cost is not here.
  */
 export interface ActiveApplication {
   /** Stable id, used as the final ordering key for simultaneous changes. */
@@ -73,14 +75,17 @@ export interface ActiveApplication {
   /** Absent for an application with no scheduled end. */
   readonly endsAt?: GameTimestamp;
 
-  /**
-   * Cost per hour while it runs, for the time coordinator to charge.
+  /*
+   * There is deliberately no `upkeepPerHour` here.
    *
-   * The NUMBER only. Which reserve pays it and what happens when it cannot be
-   * paid are the owning domain's rules, and Aura's upkeep model already
-   * answers both.
+   * It was on this shape, as "the number only, the rules stay with the owner".
+   * That does not hold: whether an upkeep is per hour or per Round, which
+   * reserve pays it, whether it scales with Output and what a suspension does
+   * to it are all domain questions, and a single shared number silently
+   * commits every future domain to one answer. Aura's upkeep model already
+   * describes maintained cost properly; a second, thinner description of the
+   * same thing here would be the one that drifts.
    */
-  readonly upkeepPerHour?: number;
 
   /**
    * Temporarily inert without being over.

@@ -12,26 +12,37 @@
  * that disagrees.
  *
  *
+ * THE BASE CARRIES ROUTING, AND NOTHING ELSE
+ *
+ * Only what every request genuinely shares: who asked, who decides, which
+ * operation, when it takes effect, and what kind of thing it is. Anything a
+ * particular request needs belongs on that request's own type.
+ *
+ * `requested` used to be on the base, and it was a mistake with a visible
+ * symptom: removing a fully healed Injury is not a quantity, so it was
+ * shipping `requested: 1` — a placeholder meaning "one Injury, I suppose" that
+ * every consumer had to know to ignore. A field that some requests must lie
+ * about is a field on the wrong type. Quantitative requests extend
+ * `QuantitativeRequest` and carry it honestly; the rest do not carry it at all.
+ *
+ *
  * TWO PHASES, BECAUSE ATOMICITY NEEDS THEM
  *
- * COST requests are gathered and validated BEFORE anything commits, then
- * committed together or not at all. A character who cannot pay the Aura must
- * not have already spent the Action.
+ * COST requests are validated and applied against the transaction draft before
+ * the operation is allowed to succeed, and are discarded whole if anything
+ * later fails.
  *
- * EFFECT requests are produced AFTER the attempt resolves, and each target
- * applies its own rules to it. A resist, an immunity or a cap is an `actual`
- * of zero — a real outcome of a real operation, not a validation failure, and
- * emphatically not a refund of costs already paid.
- *
- * The lifecycle a cost handler implements is prepare-then-commit for exactly
- * this reason: "validate every cost, then commit every cost" is unimplementable
- * if the only entry point a domain offers both validates and applies in one
- * call. See coordinator.ts.
+ * EFFECT requests are produced after the attempt resolves, and are settled in
+ * SIMULTANEOUS BATCHES — every effect landing on one owner at one instant is
+ * calculated from the same pre-batch state. A resist, an immunity or a cap is
+ * an `actual` of zero: a real outcome of a real operation, not a validation
+ * failure, and emphatically not a refund of costs already paid.
  */
 
+import type { EngineError } from "../infrastructure/diagnostics";
 import type { GameTimestamp } from "../time/types";
 
-import type { RuntimeDomain } from "./domains";
+import { isRuntimeDomain, type RuntimeDomain } from "./domains";
 
 
 export const RUNTIME_REQUEST_PHASES = ["cost", "effect"] as const;
@@ -40,9 +51,7 @@ export type RuntimeRequestPhase = typeof RUNTIME_REQUEST_PHASES[number];
 
 
 /**
- * Everything every request carries.
- *
- * Domains extend this with their own `kind` and any fields their rule needs.
+ * Routing. Everything every request shares, and nothing else.
  */
 export interface RuntimeRequest {
   /**
@@ -59,22 +68,38 @@ export interface RuntimeRequest {
   /** Discriminator. The receiving domain owns its own kind strings. */
   readonly kind: string;
 
-  /** Whether this is paid before commitment, or applied after resolution. */
+  /** Whether this is paid before the operation resolves, or applied after. */
   readonly phase: RuntimeRequestPhase;
 
   readonly operationId: string;
   readonly occurredAt: GameTimestamp;
+
+  /**
+   * When this takes effect, if not at the operation's own instant.
+   *
+   * Effects sharing an owner AND an effective time settle as one batch, all
+   * calculated from the same pre-batch state. That is what stops two
+   * simultaneous effects reading each other's results and making the answer
+   * depend on which was listed first.
+   */
+  readonly effectiveAt?: GameTimestamp;
 
   /** Who is asking. */
   readonly from: RuntimeDomain;
 
   /** Who owns the state and therefore decides. */
   readonly to: RuntimeDomain;
+}
 
-  readonly sourceId?: string;
-  readonly targetId?: string;
 
-  /** How much is being asked for. */
+/**
+ * A request for an amount of something.
+ *
+ * Aura to spend, damage to deal, Actions to consume. NOT every request: a
+ * removal, a suppression or a state change with no magnitude is a
+ * `RuntimeRequest` and carries no numbers to misreport.
+ */
+export interface QuantitativeRequest extends RuntimeRequest {
   readonly requested: number;
 
   /**
@@ -84,41 +109,172 @@ export interface RuntimeRequest {
    * designed. A mechanic that genuinely wants partial payment has to say so
    * here, and then report both figures.
    *
-   * Effect requests ignore this — a reduced effect is always legitimate,
-   * because resisting a blow is not the same as half-paying for one.
+   * Effect requests ignore it — a reduced effect is always legitimate, because
+   * resisting a blow is not the same as half-paying for one.
    */
   readonly allowPartial?: boolean;
 }
 
 
-/** What a domain did with a request. */
+export function isQuantitativeRequest(
+  request: RuntimeRequest,
+): request is QuantitativeRequest {
+  return typeof (request as QuantitativeRequest).requested === "number";
+}
+
+
+/** What a domain did with a request. `actual` is absent when nothing is counted. */
 export interface RuntimeRequestOutcome {
   readonly requestId: string;
-  readonly requested: number;
-  readonly actual: number;
+  readonly requested?: number;
+  readonly actual?: number;
+}
+
+
+/** When a request takes effect: its own instant, or the operation's. */
+export function effectiveTimeOf(request: RuntimeRequest): GameTimestamp {
+  return request.effectiveAt ?? request.occurredAt;
+}
+
+
+/**
+ * Judge a request at the boundary, before it is routed anywhere.
+ *
+ * A request that names no operation, or names a DIFFERENT operation, is not a
+ * request this operation may act on — the second case in particular is how a
+ * stale request from an abandoned attempt would get replayed into a live one.
+ */
+export function findRequestIssues(
+  request: RuntimeRequest,
+  operationId: string,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  if (
+    typeof request.requestId !== "string" ||
+    request.requestId.trim().length === 0
+  ) {
+    errors.push({
+      code: "runtime.request.id.invalid",
+      message: "Every request must carry a non-empty id.",
+      audience: "developer",
+      required: "non-empty string",
+      actual: String(request.requestId),
+    });
+  }
+
+  if (typeof request.kind !== "string" || request.kind.trim().length === 0) {
+    errors.push({
+      code: "runtime.request.kind.invalid",
+      message: "Every request must name its kind.",
+      audience: "developer",
+      required: "non-empty string",
+      actual: String(request.kind),
+    });
+  }
+
+  if (!(RUNTIME_REQUEST_PHASES as readonly string[]).includes(request.phase)) {
+    errors.push({
+      code: "runtime.request.phase.invalid",
+      message: `A request phase must be one of: ${RUNTIME_REQUEST_PHASES.join(", ")}.`,
+      audience: "developer",
+      required: RUNTIME_REQUEST_PHASES.join(" | "),
+      actual: String(request.phase),
+    });
+  }
+
+  if (request.operationId !== operationId) {
+    errors.push({
+      code: "runtime.request.operation.mismatch",
+      message:
+        "A request belongs to a different operation than the one resolving it.",
+      audience: "developer",
+      required: operationId,
+      actual: String(request.operationId),
+    });
+  }
+
+  if (!isRuntimeDomain(request.from) || !isRuntimeDomain(request.to)) {
+    errors.push({
+      code: "runtime.request.domain.invalid",
+      message: "A request must name a known source and target domain.",
+      audience: "developer",
+      required: "known RuntimeDomain",
+      actual: `${String(request.from)} -> ${String(request.to)}`,
+    });
+  }
+
+  if (!Number.isFinite(request.occurredAt)) {
+    errors.push({
+      code: "runtime.request.timestamp.invalid",
+      message: "A request must happen at a finite game timestamp.",
+      audience: "developer",
+      required: "finite GameTimestamp",
+      actual: String(request.occurredAt),
+    });
+  }
+
+  if (
+    request.effectiveAt !== undefined &&
+    !Number.isFinite(request.effectiveAt)
+  ) {
+    errors.push({
+      code: "runtime.request.effective-time.invalid",
+      message: "A request's effective time must be a finite game timestamp.",
+      audience: "developer",
+      required: "finite GameTimestamp",
+      actual: String(request.effectiveAt),
+    });
+  }
+
+  if (isQuantitativeRequest(request)) {
+    const { requested } = request;
+
+    /*
+     * Negative is refused rather than treated as a refund. A request to spend
+     * -40 Aura is a caller with a sign error, and honouring it would be the
+     * one place in the engine where asking to pay grants a resource.
+     */
+    if (!Number.isFinite(requested) || requested < 0) {
+      errors.push({
+        code: "runtime.request.amount.invalid",
+        message: "A quantitative request must ask for a finite, non-negative amount.",
+        audience: "developer",
+        required: "finite number >= 0",
+        actual: String(requested),
+      });
+    }
+  }
+
+  return errors;
 }
 
 
 /*
- * The order requests are resolved in.
+ * The order requests are REPORTED and dispatched in.
  *
- * Never the caller's array order. Costs before effects, then by owning domain,
- * then kind, then target, and finally by request id — which is stable and
- * unique, so the comparison is total and two callers who assembled the same
- * requests in different orders resolve them identically.
+ * Never the caller's array order. Note what this does and does not decide: it
+ * fixes the order of a log and the order batches are handed over, and it must
+ * NOT decide a mechanical result — effects landing on one owner at one instant
+ * are settled together from one pre-state precisely so that this comparison
+ * cannot change the answer.
+ *
+ * Ends on the request id, which is unique within an operation, so the
+ * comparison is total and two callers who assembled the same requests
+ * differently order them identically.
  */
 export function compareRuntimeRequests(
   left: RuntimeRequest,
   right: RuntimeRequest,
 ): number {
   if (left.phase !== right.phase) return left.phase === "cost" ? -1 : 1;
+
+  const leftTime = effectiveTimeOf(left);
+  const rightTime = effectiveTimeOf(right);
+
+  if (leftTime !== rightTime) return leftTime - rightTime;
   if (left.to !== right.to) return left.to.localeCompare(right.to);
   if (left.kind !== right.kind) return left.kind.localeCompare(right.kind);
-
-  const leftTarget = left.targetId ?? "";
-  const rightTarget = right.targetId ?? "";
-
-  if (leftTarget !== rightTarget) return leftTarget.localeCompare(rightTarget);
 
   return left.requestId.localeCompare(right.requestId);
 }
@@ -129,4 +285,36 @@ export function orderRuntimeRequests(
   requests: readonly RuntimeRequest[],
 ): readonly RuntimeRequest[] {
   return [...requests].sort(compareRuntimeRequests);
+}
+
+
+/**
+ * Effects that must settle together: one owner, one instant.
+ *
+ * Returned in deterministic batch order, with each batch's members in
+ * deterministic order too — but the members' ORDER within a batch is for the
+ * log only, since the owner is handed all of them and one pre-state.
+ */
+export function groupSimultaneousRequests(
+  requests: readonly RuntimeRequest[],
+): readonly { readonly to: RuntimeDomain; readonly effectiveAt: GameTimestamp; readonly requests: readonly RuntimeRequest[] }[] {
+  const batches = new Map<string, RuntimeRequest[]>();
+
+  for (const request of orderRuntimeRequests(requests)) {
+    const key = `${effectiveTimeOf(request)}|${request.to}`;
+    const existing = batches.get(key);
+
+    if (existing === undefined) batches.set(key, [request]);
+    else existing.push(request);
+  }
+
+  return [...batches.values()].map((members) => ({
+    to: members[0]!.to,
+    effectiveAt: effectiveTimeOf(members[0]!),
+    requests: members,
+  })).sort((left, right) =>
+    left.effectiveAt !== right.effectiveAt
+      ? left.effectiveAt - right.effectiveAt
+      : left.to.localeCompare(right.to)
+  );
 }

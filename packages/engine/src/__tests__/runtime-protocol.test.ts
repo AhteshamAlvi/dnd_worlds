@@ -1,12 +1,14 @@
 /*
- * The shared transition protocol.
+ * The shared transition protocol, as a TRANSACTION.
  *
- * Four properties carry the whole design, and each of them is the sort of
- * thing that stays true right up until somebody adds a feature:
+ * Five properties carry the design, and the first three were all broken in the
+ * version of this coordinator that shipped with Phase 1:
  *
- *   - Temporary state outlives Combat in both directions.
- *   - An operation that cannot begin spends nothing.
- *   - An operation that begins and then goes badly keeps what it spent.
+ *   - A successful operation returns the complete new state, and there is no
+ *     other channel it could arrive through.
+ *   - A failed operation changes nothing, at any point in the lifecycle.
+ *   - Costs owned by one domain are CUMULATIVE against a running draft.
+ *   - Simultaneous effects settle from one pre-batch state.
  *   - Two callers who assemble the same operation differently get one answer.
  *
  * The generic coordinated operation here is TEST-ONLY on purpose. Proving
@@ -27,16 +29,18 @@ import {
   emptyRuntimeState,
   findDiceIssues,
   findOperationContextIssues,
+  findRequestIssues,
+  groupSimultaneousRequests,
   isInCombat,
   orderRuntimeRequests,
   runCoordinatedOperation,
   wasPrevented,
   type CostCommitResult,
   type CostHandler,
-  type EffectApplication,
+  type EffectBatchResult,
   type EffectHandler,
   type PreparedCost,
-  type RuntimeDieRoll,
+  type QuantitativeRequest,
   type RuntimeRequest,
 } from "../runtime";
 
@@ -46,94 +50,86 @@ const OPERATION = { operationId: "op-1", occurredAt: 1_000 } as const;
 /* ── A test-only resource owner ─────────────────────────────────────────── */
 
 /*
- * Two of these stand in for two independent domains. It holds a pool, refuses
- * to overdraw it, and — critically — separates validating from spending, which
- * is the contract that makes multi-domain atomicity possible at all.
+ * Stateless, like every real handler must be. The pool arrives as the draft's
+ * value and leaves in `nextState`; nothing here captures a balance, which is
+ * what makes two costs cumulative and a discarded operation free.
  */
-function resourceOwner(
-  domain: RuntimeRequest["to"],
-  pool: number,
-): { readonly handler: CostHandler; spent(): number; remaining(): number } {
-  let remaining = pool;
-  let spent = 0;
-
+function resourceOwner(domain: RuntimeRequest["to"]): CostHandler {
   return {
-    handler: {
-      domain,
+    domain,
 
-      prepare(request: RuntimeRequest): EngineResult<PreparedCost> {
-        const root = createTraceNode({
-          id: `test.${domain}.prepare`,
-          label: `Validate ${domain} cost`,
-          inputs: { requested: { value: request.requested } },
-        });
+    prepare(
+      request: RuntimeRequest,
+      state: unknown,
+    ): EngineResult<PreparedCost> {
+      const pool = state as number;
+      const { requested } = request as QuantitativeRequest;
 
-        if (request.requested > remaining) {
-          root.output = false;
+      const root = createTraceNode({
+        id: `test.${domain}.prepare`,
+        label: `Price a ${domain} cost`,
+        inputs: { requested: { value: requested }, pool: { value: pool } },
+      });
 
-          return {
-            success: false,
-            trace: { root },
-            warnings: [],
-            errors: [{
-              code: `test.${domain}.insufficient`,
-              message: `Not enough ${domain}.`,
-              audience: "developer",
-              required: request.requested,
-              actual: remaining,
-            }],
-          };
-        }
-
-        root.output = true;
+      if (requested > pool) {
+        root.output = false;
 
         return {
-          success: true,
-          payload: {
-            requestId: request.requestId,
-            domain,
-            actual: request.requested,
-            prepared: { amount: request.requested, request },
-          },
+          success: false,
           trace: { root },
           warnings: [],
-        };
-      },
-
-      commit(cost: PreparedCost): CostCommitResult {
-        const { amount, request } = cost.prepared as {
-          amount: number;
-          request: RuntimeRequest;
-        };
-
-        remaining -= amount;
-        spent += amount;
-
-        return {
-          outcome: {
-            requestId: cost.requestId,
-            requested: request.requested,
-            actual: amount,
-          },
-          events: [{
-            kind: `${domain}-spent`,
-            domain,
-            operationId: request.operationId,
-            occurredAt: request.occurredAt,
-            change: { requested: request.requested, actual: amount },
+          errors: [{
+            code: `test.${domain}.insufficient`,
+            message: `Not enough ${domain}.`,
+            audience: "developer",
+            required: requested,
+            actual: pool,
           }],
         };
-      },
+      }
+
+      root.output = true;
+
+      return {
+        success: true,
+        payload: {
+          requestId: request.requestId,
+          domain,
+          nextState: pool - requested,
+          actual: requested,
+          prepared: { request },
+        },
+        trace: { root },
+        warnings: [],
+      };
     },
 
-    spent: () => spent,
-    remaining: () => remaining,
+    commit(cost: PreparedCost): CostCommitResult {
+      const { request } = cost.prepared as { request: QuantitativeRequest };
+
+      return {
+        outcome: {
+          requestId: cost.requestId,
+          requested: request.requested,
+          actual: cost.actual ?? 0,
+        },
+        events: [{
+          kind: `${domain}-spent`,
+          domain,
+          operationId: request.operationId,
+          occurredAt: request.occurredAt,
+          change: { requested: request.requested, actual: cost.actual ?? 0 },
+        }],
+      };
+    },
   };
 }
 
 function costRequest(
-  overrides: Partial<RuntimeRequest> & Pick<RuntimeRequest, "requestId" | "to">,
-): RuntimeRequest {
+  overrides:
+    & Partial<QuantitativeRequest>
+    & Pick<QuantitativeRequest, "requestId" | "to">,
+): QuantitativeRequest {
   return {
     kind: "test-cost",
     phase: "cost",
@@ -159,7 +155,6 @@ describe("Runtime State exists outside Combat", () => {
           source: "ren",
           subjectId: "kurapika",
           startedAt: 500,
-          upkeepPerHour: 100,
         }],
       },
     };
@@ -172,18 +167,12 @@ describe("Runtime State exists outside Combat", () => {
     expect(state.nen.applications).toHaveLength(1);
   });
 
-  /*
-   * Combat entry is an ATTACHMENT. If it copied active applications into
-   * Combat there would be two of each, and they would disagree the first time
-   * one of them was updated.
-   */
   it("neither moves nor duplicates active state when Combat starts", () => {
     const before = withRen();
     const during = attachCombat(before, { round: 1 });
 
     expect(isInCombat(during)).toBe(true);
     expect(during.nen).toBe(before.nen);
-    expect(during.nen.applications).toHaveLength(1);
     expect(during.transformations).toBe(before.transformations);
     expect(during.activity).toBe(before.activity);
   });
@@ -197,523 +186,236 @@ describe("Runtime State exists outside Combat", () => {
     expect(after.nen.applications[0]!.id).toBe("ren-1");
   });
 
-  /*
-   * The rule that keeps permanent data permanent. An activation flag on the
-   * character is a field every save has to interpret and every migration has
-   * to carry, for a fact that stops being true when the scene ends.
-   */
   it("keeps activation off permanent Nen state", async () => {
     const { createUnawakenedNenState } = await import(
       "../character/foundation/nen/nen"
     );
 
-    const nen = createUnawakenedNenState();
-    const keys = Object.keys(nen);
-
-    expect(keys).not.toContain("tenActive");
-    expect(keys).not.toContain("renActive");
-    expect(keys).not.toContain("zetsuActive");
+    const keys = Object.keys(createUnawakenedNenState());
 
     for (const key of keys) {
       expect(key.toLowerCase()).not.toMatch(/active$/);
     }
   });
-});
-
-
-describe("an operation that cannot begin spends nothing", () => {
-  it("refuses an operation with no id and commits no cost", () => {
-    const aura = resourceOwner("aura", 100);
-
-    const result = runCoordinatedOperation(
-      {
-        context: { operationId: "  ", occurredAt: 1_000 },
-        costs: [costRequest({ requestId: "r1", to: "aura", requested: 10 })],
-        resolve: () => ({ result: "done" }),
-      },
-      { costs: [aura.handler], effects: [] },
-    );
-
-    expect(result.success).toBe(false);
-    expect(aura.spent()).toBe(0);
-  });
-
-  it("refuses a non-finite timestamp", () => {
-    const issues = findOperationContextIssues({
-      operationId: "op",
-      occurredAt: Number.NaN,
-    });
-
-    expect(issues.map((one) => one.code))
-      .toContain("runtime.operation.timestamp.invalid");
-  });
 
   /*
-   * Dice are validated before commitment for exactly this reason: a caller who
-   * forgot to supply the attack roll must not have paid for the swing.
+   * Upkeep is not on the shared shape. Whether it is per hour or per Round,
+   * which reserve pays it and what suspension does to it are domain questions,
+   * and one shared number would commit every future domain to one answer.
    */
-  it("spends nothing when a required die is missing", () => {
-    const aura = resourceOwner("aura", 100);
+  it("carries no generic upkeep on the shared application shape", () => {
+    const application = withRen().nen.applications[0]!;
 
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        requiredDice: [{ purpose: "attack", sides: 20 }],
-        dice: [],
-        costs: [costRequest({ requestId: "r1", to: "aura", requested: 10 })],
-        resolve: () => ({ result: "hit" }),
-      },
-      { costs: [aura.handler], effects: [] },
-    );
-
-    expect(result.success).toBe(false);
-    expect(aura.spent()).toBe(0);
-  });
-
-  it("spends nothing when a die is out of its range", () => {
-    const aura = resourceOwner("aura", 100);
-
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        requiredDice: [{ purpose: "attack", sides: 20 }],
-        dice: [{ purpose: "attack", value: 21, sides: 20 }],
-        costs: [costRequest({ requestId: "r1", to: "aura", requested: 10 })],
-        resolve: () => ({ result: "hit" }),
-      },
-      { costs: [aura.handler], effects: [] },
-    );
-
-    expect(result.success).toBe(false);
-    expect(aura.spent()).toBe(0);
-  });
-
-  it("refuses two dice for one purpose rather than picking one", () => {
-    const issues = findDiceIssues(
-      [
-        { purpose: "attack", value: 3, sides: 20 },
-        { purpose: "attack", value: 19, sides: 20 },
-      ],
-      [{ purpose: "attack", sides: 20 }],
-    );
-
-    expect(issues.map((one) => one.code)).toContain("runtime.dice.duplicate");
+    expect(Object.keys(application)).not.toContain("upkeepPerHour");
   });
 });
 
 
-describe("mandatory costs commit atomically", () => {
-  it("commits both when both validate", () => {
-    const aura = resourceOwner("aura", 100);
-    const combat = resourceOwner("combat", 2);
-
+describe("a successful operation returns the whole new state", () => {
+  it("returns every participating domain's final state", () => {
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
+        states: { aura: 100, combat: 2 },
         costs: [
           costRequest({ requestId: "r-aura", to: "aura", requested: 40 }),
           costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
         ],
         resolve: () => ({ result: "done" }),
       },
-      { costs: [aura.handler, combat.handler], effects: [] },
-    );
-
-    expect(result.success).toBe(true);
-    expect(aura.spent()).toBe(40);
-    expect(combat.spent()).toBe(1);
-  });
-
-  /*
-   * The property the two-phase handler exists for. The Aura is affordable and
-   * the Action is not, and the character must not end up having paid the Aura.
-   */
-  it("commits neither when the second cost cannot be paid", () => {
-    const aura = resourceOwner("aura", 100);
-    const combat = resourceOwner("combat", 0);
-
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [
-          costRequest({ requestId: "r-aura", to: "aura", requested: 40 }),
-          costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
-        ],
-        resolve: () => ({ result: "done" }),
-      },
-      { costs: [aura.handler, combat.handler], effects: [] },
-    );
-
-    expect(result.success).toBe(false);
-    expect(aura.spent()).toBe(0);
-    expect(aura.remaining()).toBe(100);
-    expect(combat.spent()).toBe(0);
-  });
-
-  it("commits neither when the FIRST cost cannot be paid", () => {
-    const aura = resourceOwner("aura", 10);
-    const combat = resourceOwner("combat", 2);
-
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [
-          costRequest({ requestId: "r-aura", to: "aura", requested: 40 }),
-          costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
-        ],
-        resolve: () => ({ result: "done" }),
-      },
-      { costs: [aura.handler, combat.handler], effects: [] },
-    );
-
-    expect(result.success).toBe(false);
-    expect(aura.spent()).toBe(0);
-    expect(combat.spent()).toBe(0);
-  });
-
-  /*
-   * A valid attempt that goes badly keeps what it paid. The swing happened;
-   * refunding it would make missing free.
-   */
-  it("keeps committed costs when the roll fails", () => {
-    const aura = resourceOwner("aura", 100);
-    const combat = resourceOwner("combat", 2);
-
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        requiredDice: [{ purpose: "attack", sides: 20 }],
-        dice: [{ purpose: "attack", value: 1, sides: 20 }],
-        costs: [
-          costRequest({ requestId: "r-aura", to: "aura", requested: 40 }),
-          costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
-        ],
-        resolve: (dice) => ({
-          result: { hit: dice[0]!.value >= 10 },
-          events: [{
-            kind: "check-failed",
-            domain: "caller",
-            operationId: OPERATION.operationId,
-            occurredAt: OPERATION.occurredAt,
-          }],
-        }),
-      },
-      { costs: [aura.handler, combat.handler], effects: [] },
+      { costs: [resourceOwner("aura"), resourceOwner("combat")], effects: [] },
     );
 
     expect(result.success).toBe(true);
 
     if (!result.success) throw new Error("unreachable");
 
-    expect(result.payload.result).toEqual({ hit: false });
-    expect(aura.spent()).toBe(40);
-    expect(combat.spent()).toBe(1);
-    expect(result.payload.events.map((one) => one.kind))
-      .toContain("check-failed");
+    expect(result.payload.states).toEqual({ aura: 60, combat: 1 });
   });
 
-  /* Partial payment is refused unless the request says otherwise. */
-  it("refuses a short payment by default", () => {
-    const partialOwner: CostHandler = {
-      domain: "aura",
-      prepare: (request) => ({
-        success: true,
-        payload: {
-          requestId: request.requestId,
-          domain: "aura",
-          actual: request.requested - 1,
-          prepared: {},
-        },
-        trace: { root: createTraceNode({ id: "t", label: "t" }) },
-        warnings: [],
-      }),
-      commit: (cost) => ({
-        outcome: { requestId: cost.requestId, requested: 0, actual: cost.actual },
-        events: [],
-      }),
-    };
+  /*
+   * There is no other way for a result to arrive. The handler captures nothing
+   * and exposes nothing, so a caller that ignored `states` would have no second
+   * place to look — which is the point of removing `committedState()`.
+   */
+  it("gives handlers no channel other than the return value", () => {
+    const handler = resourceOwner("aura");
 
-    const refused = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [costRequest({ requestId: "r1", to: "aura", requested: 10 })],
-        resolve: () => ({ result: "done" }),
-      },
-      { costs: [partialOwner], effects: [] },
-    );
-
-    expect(refused.success).toBe(false);
-
-    if (refused.success) throw new Error("unreachable");
-
-    expect(refused.errors.map((one) => one.code))
-      .toContain("runtime.cost.partial-payment-refused");
+    expect(Object.keys(handler).sort()).toEqual(["commit", "domain", "prepare"]);
   });
 
-  it("permits a short payment when the request explicitly allows it", () => {
-    const partialOwner: CostHandler = {
-      domain: "aura",
-      prepare: (request) => ({
-        success: true,
-        payload: {
-          requestId: request.requestId,
-          domain: "aura",
-          actual: request.requested - 1,
-          prepared: {},
-        },
-        trace: { root: createTraceNode({ id: "t", label: "t" }) },
-        warnings: [],
-      }),
-      commit: (cost) => ({
-        outcome: { requestId: cost.requestId, requested: 10, actual: cost.actual },
-        events: [],
-      }),
-    };
+  it("hands the post-cost draft to the operation's own rules", () => {
+    let seen: unknown;
 
-    const allowed = runCoordinatedOperation(
+    runCoordinatedOperation(
       {
         context: OPERATION,
-        costs: [costRequest({
-          requestId: "r1",
-          to: "aura",
-          requested: 10,
-          allowPartial: true,
-        })],
-        resolve: () => ({ result: "done" }),
+        states: { aura: 100 },
+        costs: [costRequest({ requestId: "r1", to: "aura", requested: 40 })],
+        resolve: (_dice, states) => {
+          seen = states.aura;
+
+          return { result: "done" };
+        },
       },
-      { costs: [partialOwner], effects: [] },
+      { costs: [resourceOwner("aura")], effects: [] },
     );
 
-    expect(allowed.success).toBe(true);
-
-    if (!allowed.success) throw new Error("unreachable");
-
-    expect(allowed.payload.costOutcomes[0]).toEqual({
-      requestId: "r1",
-      requested: 10,
-      actual: 9,
-    });
+    expect(seen).toBe(60);
   });
 });
 
 
-describe("cross-domain requests reach their owner", () => {
-  const damageHandler = (
-    applied: { value: number },
-    cap = Number.POSITIVE_INFINITY,
-  ): EffectHandler => ({
-    domain: "body",
-    apply: (request): EffectApplication => {
-      const actual = Math.min(request.requested, cap);
+describe("costs owned by one domain are cumulative", () => {
+  /*
+   * The reported defect. Two 60-Aura costs each validated against the same
+   * untouched 100-Aura pool, and a character spent 120 they did not have.
+   */
+  it("rejects two same-owner costs that jointly overspend", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: 100 },
+        costs: [
+          costRequest({ requestId: "r1", to: "aura", requested: 60 }),
+          costRequest({ requestId: "r2", to: "aura", requested: 60 }),
+        ],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [resourceOwner("aura")], effects: [] },
+    );
 
-      applied.value += actual;
+    expect(result.success).toBe(false);
+  });
 
-      return {
-        outcome: {
-          requestId: request.requestId,
-          requested: request.requested,
-          actual,
-        },
-        events: [{
-          kind: "damage-taken",
-          domain: "body",
-          operationId: request.operationId,
-          occurredAt: request.occurredAt,
-          change: { requested: request.requested, actual },
-        }],
-      };
+  it("deducts the combined amount when both are affordable", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: 100 },
+        costs: [
+          costRequest({ requestId: "r1", to: "aura", requested: 30 }),
+          costRequest({ requestId: "r2", to: "aura", requested: 25 }),
+        ],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [resourceOwner("aura")], effects: [] },
+    );
+
+    if (!result.success) throw new Error("expected success");
+
+    expect(result.payload.states.aura).toBe(45);
+  });
+
+  it("still commits nothing when one of two owners cannot pay", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: 100, combat: 0 },
+        costs: [
+          costRequest({ requestId: "r-aura", to: "aura", requested: 40 }),
+          costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
+        ],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [resourceOwner("aura"), resourceOwner("combat")], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+  });
+});
+
+
+describe("a failure changes nothing, wherever it happens", () => {
+  const original = Object.freeze({ aura: 100, combat: 2 });
+
+  const attempt = (
+    resolve: () => {
+      readonly result: string;
+      readonly requests?: readonly RuntimeRequest[];
     },
-  });
-
-  it("routes an effect to the domain that owns the state", () => {
-    const applied = { value: 0 };
-
-    const result = runCoordinatedOperation(
+    effects: readonly EffectHandler[] = [],
+  ) =>
+    runCoordinatedOperation(
       {
         context: OPERATION,
-        costs: [],
-        resolve: () => ({
-          result: "hit",
-          requests: [{
-            requestId: "dmg-1",
-            kind: "damage",
-            phase: "effect" as const,
-            operationId: OPERATION.operationId,
-            occurredAt: OPERATION.occurredAt,
-            from: "caller" as const,
-            to: "body" as const,
-            requested: 12,
-          }],
-        }),
+        states: original,
+        costs: [
+          costRequest({ requestId: "r-aura", to: "aura", requested: 40 }),
+          costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
+        ],
+        resolve,
       },
-      { costs: [], effects: [damageHandler(applied)] },
+      { costs: [resourceOwner("aura"), resourceOwner("combat")], effects },
     );
 
-    expect(result.success).toBe(true);
-    expect(applied.value).toBe(12);
+  const effectRequest = (requestId: string): RuntimeRequest => ({
+    requestId,
+    kind: "damage",
+    phase: "effect",
+    operationId: OPERATION.operationId,
+    occurredAt: OPERATION.occurredAt,
+    from: "caller",
+    to: "body",
   });
 
   /*
-   * A resist is an outcome, not an error. Turning it into one would refund the
-   * Aura and the Action every time somebody blocked.
+   * The second reported defect. Costs used to commit and THEN effects were
+   * routed, so an unhandled effect returned a failure with the Aura already
+   * gone — a failed operation that spent something.
    */
-  it("reports full prevention as an actual of zero, not a failure", () => {
-    const applied = { value: 0 };
+  it("preserves state when an effect has no handler", () => {
+    const result = attempt(() => ({
+      result: "hit",
+      requests: [effectRequest("dmg-1")],
+    }));
 
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [],
-        resolve: () => ({
-          result: "hit",
-          requests: [{
-            requestId: "dmg-1",
-            kind: "damage",
-            phase: "effect" as const,
-            operationId: OPERATION.operationId,
-            occurredAt: OPERATION.occurredAt,
-            from: "caller" as const,
-            to: "body" as const,
-            requested: 12,
-          }],
-        }),
-      },
-      { costs: [], effects: [damageHandler(applied, 0)] },
-    );
-
-    expect(result.success).toBe(true);
-
-    if (!result.success) throw new Error("unreachable");
-
-    expect(result.payload.effectOutcomes[0]).toEqual({
-      requestId: "dmg-1",
-      requested: 12,
-      actual: 0,
-    });
-
-    const event = result.payload.events.find((one) => one.kind === "damage-taken");
-
-    expect(event).toBeDefined();
-    expect(wasPrevented(event!)).toBe(true);
+    expect(result.success).toBe(false);
+    expect(original).toEqual({ aura: 100, combat: 2 });
   });
 
-  it("rejects a request id raised twice", () => {
-    const applied = { value: 0 };
+  it("preserves state when a request id repeats", () => {
+    const passthrough: EffectHandler = {
+      domain: "body",
+      applyBatch: (requests, state) => ({
+        state,
+        outcomes: requests.map((one) => ({ requestId: one.requestId })),
+        events: [],
+      }),
+    };
 
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [],
-        resolve: () => ({
-          result: "hit",
-          requests: [
-            {
-              requestId: "dmg-1",
-              kind: "damage",
-              phase: "effect" as const,
-              operationId: OPERATION.operationId,
-              occurredAt: OPERATION.occurredAt,
-              from: "caller" as const,
-              to: "body" as const,
-              requested: 4,
-            },
-            {
-              requestId: "dmg-1",
-              kind: "damage",
-              phase: "effect" as const,
-              operationId: OPERATION.operationId,
-              occurredAt: OPERATION.occurredAt,
-              from: "caller" as const,
-              to: "body" as const,
-              requested: 4,
-            },
-          ],
-        }),
-      },
-      { costs: [], effects: [damageHandler(applied)] },
+    const result = attempt(
+      () => ({
+        result: "hit",
+        requests: [effectRequest("dmg-1"), effectRequest("dmg-1")],
+      }),
+      [passthrough],
     );
 
     expect(result.success).toBe(false);
-
-    if (result.success) throw new Error("unreachable");
-
-    expect(result.errors.map((one) => one.code))
-      .toContain("runtime.request.duplicate-id");
+    expect(original).toEqual({ aura: 100, combat: 2 });
   });
 
-  /* Repeated CONTENT is legitimate; only repeated identity is a bug. */
-  it("allows two distinct requests with identical content", () => {
-    const applied = { value: 0 };
-
-    const request = (requestId: string) => ({
-      requestId,
-      kind: "damage",
-      phase: "effect" as const,
-      operationId: OPERATION.operationId,
-      occurredAt: OPERATION.occurredAt,
-      from: "caller" as const,
-      to: "body" as const,
-      requested: 4,
-    });
-
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [],
-        resolve: () => ({
-          result: "hit",
-          requests: [request("dmg-1"), request("dmg-2")],
-        }),
-      },
-      { costs: [], effects: [damageHandler(applied)] },
-    );
-
-    expect(result.success).toBe(true);
-    expect(applied.value).toBe(8);
-  });
-
-  it("stops a request cycle instead of running forever", () => {
+  it("preserves state when consequences never settle", () => {
     let issued = 0;
 
     const looping: EffectHandler = {
       domain: "body",
-      apply: (request) => {
+      applyBatch: (requests, state) => {
         issued += 1;
 
         return {
-          outcome: {
-            requestId: request.requestId,
-            requested: request.requested,
-            actual: request.requested,
-          },
+          state,
+          outcomes: requests.map((one) => ({ requestId: one.requestId })),
           events: [],
-          requests: [{
-            ...request,
-            requestId: `loop-${issued}`,
-          }],
+          requests: [effectRequest(`loop-${issued}`)],
         };
       },
     };
 
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [],
-        resolve: () => ({
-          result: "hit",
-          requests: [{
-            requestId: "start",
-            kind: "damage",
-            phase: "effect" as const,
-            operationId: OPERATION.operationId,
-            occurredAt: OPERATION.occurredAt,
-            from: "caller" as const,
-            to: "body" as const,
-            requested: 1,
-          }],
-        }),
-      },
-      { costs: [], effects: [looping] },
+    const result = attempt(
+      () => ({ result: "hit", requests: [effectRequest("start")] }),
+      [looping],
     );
 
     expect(result.success).toBe(false);
@@ -724,12 +426,421 @@ describe("cross-domain requests reach their owner", () => {
       .toContain("runtime.consequences.too-deep");
 
     expect(issued).toBeLessThanOrEqual(MAXIMUM_CONSEQUENCE_DEPTH);
+    expect(original).toEqual({ aura: 100, combat: 2 });
+  });
+
+  it("preserves state when the dice are malformed", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        requiredDice: [{ purpose: "attack", sides: 20 }],
+        dice: [{ purpose: "attack", value: 21, sides: 20 }],
+        costs: [costRequest({ requestId: "r1", to: "aura", requested: 40 })],
+        resolve: () => ({ result: "hit" }),
+      },
+      { costs: [resourceOwner("aura")], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+    expect(original).toEqual({ aura: 100, combat: 2 });
+  });
+
+  /* A valid attempt that goes badly is not a failure and keeps what it paid. */
+  it("keeps committed costs when the roll fails", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        requiredDice: [{ purpose: "attack", sides: 20 }],
+        dice: [{ purpose: "attack", value: 1, sides: 20 }],
+        costs: [costRequest({ requestId: "r1", to: "aura", requested: 40 })],
+        resolve: (dice) => ({
+          result: { hit: dice[0]!.value >= 10 },
+          events: [{
+            kind: "check-failed",
+            domain: "caller",
+            operationId: OPERATION.operationId,
+            occurredAt: OPERATION.occurredAt,
+          }],
+        }),
+      },
+      { costs: [resourceOwner("aura")], effects: [] },
+    );
+
+    if (!result.success) throw new Error("expected success");
+
+    expect(result.payload.result).toEqual({ hit: false });
+    expect(result.payload.states.aura).toBe(60);
+    expect(result.payload.events.map((one) => one.kind))
+      .toContain("check-failed");
+  });
+});
+
+
+describe("simultaneous effects settle from one pre-batch state", () => {
+  /*
+   * The owner is handed the whole batch and ONE state, and calculates every
+   * member from it. Applying them one at a time would let the second read the
+   * first's result and make the answer depend on sort order.
+   */
+  const halvingOwner: EffectHandler = {
+    domain: "body",
+    applyBatch: (requests, state): EffectBatchResult => {
+      const before = state as number;
+
+      /* Each request takes half of the PRE-BATCH pool, not of the running one. */
+      const outcomes = requests.map((request) => {
+        const asked = (request as QuantitativeRequest).requested;
+        const actual = Math.min(asked, before / 2);
+
+        return { requestId: request.requestId, requested: asked, actual };
+      });
+
+      const total = outcomes.reduce((sum, one) => sum + (one.actual ?? 0), 0);
+
+      return {
+        state: Math.max(0, before - total),
+        outcomes,
+        events: outcomes.map((one) => ({
+          kind: "damage-taken",
+          domain: "body" as const,
+          operationId: OPERATION.operationId,
+          occurredAt: OPERATION.occurredAt,
+          change: { requested: one.requested!, actual: one.actual! },
+        })),
+      };
+    },
+  };
+
+  const damage = (requestId: string, requested: number): QuantitativeRequest => ({
+    requestId,
+    kind: "damage",
+    phase: "effect",
+    operationId: OPERATION.operationId,
+    occurredAt: OPERATION.occurredAt,
+    from: "caller",
+    to: "body",
+    requested,
+  });
+
+  const run = (requests: readonly RuntimeRequest[]) =>
+    runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { body: 100 },
+        costs: [],
+        resolve: () => ({ result: "hit", requests }),
+      },
+      { costs: [], effects: [halvingOwner] },
+    );
+
+  it("produces the same state whichever order the effects arrived in", () => {
+    const forward = run([damage("d1", 30), damage("d2", 80)]);
+    const reversed = run([damage("d2", 80), damage("d1", 30)]);
+
+    if (!forward.success || !reversed.success) throw new Error("expected success");
+
+    expect(reversed.payload.states).toEqual(forward.payload.states);
+  });
+
+  it("gives every effect in the batch the same starting state", () => {
+    const result = run([damage("d1", 80), damage("d2", 80)]);
+
+    if (!result.success) throw new Error("expected success");
+
+    /* Both capped at half of 100, not at half of a dwindling pool. */
+    for (const outcome of result.payload.effectOutcomes) {
+      expect(outcome.actual).toBe(50);
+    }
+
+    expect(result.payload.states.body).toBe(0);
+  });
+
+  it("groups by owner and effective time", () => {
+    const later = { ...damage("d3", 10), effectiveAt: 2_000 };
+    const batches = groupSimultaneousRequests([damage("d1", 1), later, damage("d2", 1)]);
+
+    expect(batches).toHaveLength(2);
+    expect(batches[0]!.requests.map((one) => one.requestId)).toEqual(["d1", "d2"]);
+    expect(batches[1]!.requests.map((one) => one.requestId)).toEqual(["d3"]);
+  });
+
+  /*
+   * Ordering still controls the LOG. What it must not do — and no longer can —
+   * is decide the mechanical result.
+   */
+  it("keeps the event log deterministic without controlling the result", () => {
+    const forward = run([damage("d1", 30), damage("d2", 80)]);
+    const reversed = run([damage("d2", 80), damage("d1", 30)]);
+
+    if (!forward.success || !reversed.success) throw new Error("expected success");
+
+    expect(reversed.payload.events.map((one) => one.sequence))
+      .toEqual(forward.payload.events.map((one) => one.sequence));
+
+    expect(reversed.payload.effectOutcomes).toEqual(forward.payload.effectOutcomes);
+  });
+
+  it("reports full prevention as an actual of zero, not a failure", () => {
+    const immune: EffectHandler = {
+      domain: "body",
+      applyBatch: (requests, state) => ({
+        state,
+        outcomes: requests.map((one) => ({
+          requestId: one.requestId,
+          requested: (one as QuantitativeRequest).requested,
+          actual: 0,
+        })),
+        events: requests.map((one) => ({
+          kind: "damage-taken",
+          domain: "body" as const,
+          operationId: OPERATION.operationId,
+          occurredAt: OPERATION.occurredAt,
+          change: { requested: (one as QuantitativeRequest).requested, actual: 0 },
+        })),
+      }),
+    };
+
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { body: 100 },
+        costs: [],
+        resolve: () => ({ result: "hit", requests: [damage("d1", 40)] }),
+      },
+      { costs: [], effects: [immune] },
+    );
+
+    if (!result.success) throw new Error("expected success");
+
+    expect(result.payload.states.body).toBe(100);
+    expect(result.payload.effectOutcomes[0]!.actual).toBe(0);
+    expect(wasPrevented(result.payload.events[0]!)).toBe(true);
+  });
+});
+
+
+describe("the boundary refuses malformed protocol input", () => {
+  const base = {
+    requestId: "r1",
+    kind: "test",
+    phase: "cost" as const,
+    operationId: OPERATION.operationId,
+    occurredAt: OPERATION.occurredAt,
+    from: "caller" as const,
+    to: "aura" as const,
+  };
+
+  it.each([
+    ["an empty request id", { ...base, requestId: "  " }, "runtime.request.id.invalid"],
+    ["a missing kind", { ...base, kind: "" }, "runtime.request.kind.invalid"],
+    ["an unknown phase", { ...base, phase: "later" as never }, "runtime.request.phase.invalid"],
+    ["another operation", { ...base, operationId: "op-9" }, "runtime.request.operation.mismatch"],
+    ["an unknown domain", { ...base, to: "wizardry" as never }, "runtime.request.domain.invalid"],
+    ["a non-finite time", { ...base, occurredAt: Number.NaN }, "runtime.request.timestamp.invalid"],
+    ["a bad effective time", { ...base, effectiveAt: Number.NaN }, "runtime.request.effective-time.invalid"],
+    ["a negative amount", { ...base, requested: -5 }, "runtime.request.amount.invalid"],
+    ["a non-finite amount", { ...base, requested: Number.NaN }, "runtime.request.amount.invalid"],
+  ])("rejects %s", (_name, request, code) => {
+    expect(findRequestIssues(request, OPERATION.operationId).map((one) => one.code))
+      .toContain(code);
+  });
+
+  /* A removal is not a quantity, and is not asked to pretend to be one. */
+  it("accepts a non-quantitative request with no amount at all", () => {
+    expect(findRequestIssues(base, OPERATION.operationId)).toEqual([]);
+    expect("requested" in base).toBe(false);
+  });
+
+  it("refuses two handlers claiming one domain", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: 100 },
+        costs: [],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [resourceOwner("aura"), resourceOwner("aura")], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code))
+      .toContain("runtime.handler.duplicate");
+  });
+
+  it("refuses a prepared cost that does not match its request", () => {
+    const liar: CostHandler = {
+      domain: "aura",
+      prepare: (request) => ({
+        success: true,
+        payload: {
+          requestId: "some-other-request",
+          domain: "aura",
+          nextState: 0,
+          actual: 0,
+          prepared: {},
+        },
+        trace: { root: createTraceNode({ id: "t", label: "t" }) },
+        warnings: [],
+      }),
+      commit: (cost) => ({
+        outcome: { requestId: cost.requestId },
+        events: [],
+      }),
+    };
+
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: 100 },
+        costs: [costRequest({ requestId: "r1", to: "aura", requested: 10 })],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [liar], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code))
+      .toContain("runtime.cost.prepared-mismatch");
+  });
+
+  it("refuses an effect handler that answers the wrong number of requests", () => {
+    const sloppy: EffectHandler = {
+      domain: "body",
+      applyBatch: (_requests, state) => ({
+        state,
+        outcomes: [],
+        events: [],
+      }),
+    };
+
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { body: 10 },
+        costs: [],
+        resolve: () => ({
+          result: "hit",
+          requests: [{
+            requestId: "d1",
+            kind: "damage",
+            phase: "effect" as const,
+            operationId: OPERATION.operationId,
+            occurredAt: OPERATION.occurredAt,
+            from: "caller" as const,
+            to: "body" as const,
+          }],
+        }),
+      },
+      { costs: [], effects: [sloppy] },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code))
+      .toContain("runtime.effect.outcome-count-mismatch");
+  });
+
+  it("refuses a non-finite operation timestamp", () => {
+    expect(
+      findOperationContextIssues({ operationId: "op", occurredAt: Number.NaN })
+        .map((one) => one.code),
+    ).toContain("runtime.operation.timestamp.invalid");
+  });
+});
+
+
+describe("dice are validated at the boundary", () => {
+  it.each([
+    [
+      "a die with no purpose",
+      [{ purpose: "  ", value: 3, sides: 20 }],
+      [{ purpose: "attack", sides: 20 }],
+      "runtime.dice.purpose.missing",
+    ],
+    [
+      "two dice for one purpose",
+      [
+        { purpose: "attack", value: 3, sides: 20 },
+        { purpose: "attack", value: 19, sides: 20 },
+      ],
+      [{ purpose: "attack", sides: 20 }],
+      "runtime.dice.duplicate",
+    ],
+    [
+      "a missing die",
+      [],
+      [{ purpose: "attack", sides: 20 }],
+      "runtime.dice.missing",
+    ],
+    [
+      "a fractional face",
+      [{ purpose: "attack", value: 3.5, sides: 20 }],
+      [{ purpose: "attack", sides: 20 }],
+      "runtime.dice.value.invalid",
+    ],
+    [
+      "a face outside the range",
+      [{ purpose: "attack", value: 0, sides: 20 }],
+      [{ purpose: "attack", sides: 20 }],
+      "runtime.dice.value.out-of-range",
+    ],
+    [
+      "a die nothing asked for",
+      [
+        { purpose: "attack", value: 3, sides: 20 },
+        { purpose: "gossip", value: 3, sides: 6 },
+      ],
+      [{ purpose: "attack", sides: 20 }],
+      "runtime.dice.unexpected",
+    ],
+  ])("rejects %s", (_name, supplied, required, code) => {
+    expect(findDiceIssues(supplied, required).map((one) => one.code))
+      .toContain(code);
+  });
+
+  /*
+   * A malformed REQUIREMENT is caught first, because a d0 or a d2.5 has no
+   * valid face and would report every roll out of range — sending the caller
+   * to look at their dice instead of at their requirement.
+   */
+  it.each([
+    [0, "a zero-sided die"],
+    [-4, "a negative die"],
+    [2.5, "a fractional die"],
+  ])("rejects %s as a requirement (%s)", (sides) => {
+    const issues = findDiceIssues(
+      [{ purpose: "attack", value: 1, sides }],
+      [{ purpose: "attack", sides }],
+    );
+
+    expect(issues.map((one) => one.code))
+      .toContain("runtime.dice.requirement.sides.invalid");
+  });
+
+  it("rejects one purpose required twice", () => {
+    const issues = findDiceIssues(
+      [{ purpose: "attack", value: 3, sides: 20 }],
+      [{ purpose: "attack", sides: 20 }, { purpose: "attack", sides: 6 }],
+    );
+
+    expect(issues.map((one) => one.code))
+      .toContain("runtime.dice.requirement.duplicate");
   });
 });
 
 
 describe("order does not decide outcomes", () => {
-  const requests = (): RuntimeRequest[] => [
+  const requests = (): QuantitativeRequest[] => [
     costRequest({ requestId: "b", to: "combat", requested: 1 }),
     costRequest({ requestId: "a", to: "aura", requested: 10 }),
     costRequest({ requestId: "c", to: "aura", requested: 5 }),
@@ -737,41 +848,22 @@ describe("order does not decide outcomes", () => {
 
   it("resolves the same set the same way whatever order it arrived in", () => {
     const run = (order: readonly RuntimeRequest[]) => {
-      const aura = resourceOwner("aura", 100);
-      const combat = resourceOwner("combat", 2);
-
       const result = runCoordinatedOperation(
         {
           context: OPERATION,
+          states: { aura: 100, combat: 2 },
           costs: order,
           resolve: () => ({ result: "done" }),
         },
-        { costs: [aura.handler, combat.handler], effects: [] },
+        { costs: [resourceOwner("aura"), resourceOwner("combat")], effects: [] },
       );
 
       if (!result.success) throw new Error("expected success");
 
-      return {
-        aura: aura.spent(),
-        combat: combat.spent(),
-        outcomes: result.payload.costOutcomes,
-        events: result.payload.events.map((one) => `${one.kind}:${one.sequence}`),
-      };
+      return result.payload;
     };
 
-    const forward = run(requests());
-    const reversed = run([...requests()].reverse());
-
-    expect(reversed).toEqual(forward);
-  });
-
-  it("orders requests by a total, stable key rather than by arrival", () => {
-    const ordered = orderRuntimeRequests(requests()).map((one) => one.requestId);
-    const reordered = orderRuntimeRequests([...requests()].reverse())
-      .map((one) => one.requestId);
-
-    expect(reordered).toEqual(ordered);
-    expect(ordered).toEqual(["a", "c", "b"]);
+    expect(run([...requests()].reverse())).toEqual(run(requests()));
   });
 
   it("does not mutate the caller's request array", () => {
@@ -782,48 +874,20 @@ describe("order does not decide outcomes", () => {
 
     expect(original.map((one) => one.requestId)).toEqual(snapshot);
   });
-});
 
-
-describe("results are deterministic and serializable", () => {
   it("survives a JSON round trip unchanged", () => {
-    const aura = resourceOwner("aura", 100);
-
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
+        states: { aura: 100 },
         costs: [costRequest({ requestId: "r1", to: "aura", requested: 10 })],
         resolve: () => ({ result: { hit: true } }),
       },
-      { costs: [aura.handler], effects: [] },
+      { costs: [resourceOwner("aura")], effects: [] },
     );
 
     if (!result.success) throw new Error("expected success");
 
-    const { events, costOutcomes, effectOutcomes } = result.payload;
-
-    expect(JSON.parse(JSON.stringify({ events, costOutcomes, effectOutcomes })))
-      .toEqual({ events, costOutcomes, effectOutcomes });
-  });
-
-  it("numbers its events in resolution order", () => {
-    const aura = resourceOwner("aura", 100);
-    const combat = resourceOwner("combat", 2);
-
-    const result = runCoordinatedOperation(
-      {
-        context: OPERATION,
-        costs: [
-          costRequest({ requestId: "r-action", to: "combat", requested: 1 }),
-          costRequest({ requestId: "r-aura", to: "aura", requested: 10 }),
-        ],
-        resolve: () => ({ result: "done" }),
-      },
-      { costs: [aura.handler, combat.handler], effects: [] },
-    );
-
-    if (!result.success) throw new Error("expected success");
-
-    expect(result.payload.events.map((one) => one.sequence)).toEqual([0, 1]);
+    expect(JSON.parse(JSON.stringify(result.payload))).toEqual(result.payload);
   });
 });

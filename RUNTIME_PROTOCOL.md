@@ -79,7 +79,7 @@ checking two shapes and every helper written twice.
 
 | Field | Meaning |
 |---|---|
-| `state` | The new authoritative value. **The answer.** |
+| `state` | The new authoritative value. **The answer, and the only channel it arrives through.** |
 | `events` | Facts that already happened. Explanatory, never authoritative. |
 | `requests` | Typed work another owner must resolve. Not yet done. |
 | `changes` | What was asked for against what was got. |
@@ -122,25 +122,44 @@ never a validation failure and never a refund.
 
 ---
 
-## 4 · Costs commit atomically
+## 4 · The operation is a transaction
+
+Everything runs against a **draft** — a map from domain to that domain's state, seeded from the
+caller's originals.
 
 ```
-collect every mandatory cost
-  → ask each owning domain to PREPARE it        (nothing changes)
-  → if any preparation fails, commit nothing
-  → otherwise COMMIT every prepared cost
+seed the draft from the caller's states
+  → PREPARE each cost against the draft AS IT STANDS   (cumulative)
+  → commit prepared costs into events
+  → resolve the operation's own rules on the draft
+  → settle effects in simultaneous batches
+  → return the completed draft
 ```
 
-Cost handlers are **two-phase**, and they have to be: "validate every cost, then commit every cost"
-is unimplementable when a domain's only entry point validates and applies in one call — by the time
-the second cost refuses, the first is spent and there is nothing the coordinator is allowed to roll
-back to. `prepare` returns an opaque token; `commit` takes it. Both see one calculation, so
-committing cannot disagree with what was validated.
+Handlers are **pure**: they receive the draft's value for their domain and return a replacement.
+They capture nothing, write nothing, and perform no external side effect. On success the completed
+draft is the result. **On any failure at any step the draft is discarded** and the caller keeps
+exactly what they had.
+
+The first version of this had neither property, and both mattered:
+
+- It returned events and outcomes but **no state**, so handlers published results through closures
+  and a `committedState()` accessor — two sources of truth, one invisible to the type system.
+- It committed costs and *then* routed effects, so an unhandled effect returned a **failure after
+  the Aura had already left the pool**. That is the one outcome the protocol exists to prevent, and
+  it was not a missing check but a missing capability: with nothing to roll back to, the coordinator
+  could only notice after the damage.
+
+### Costs are cumulative
+
+Each cost prepares against the draft as it stands, so a second cost for one owner sees the first's
+deduction. Preparing every cost against the *original* state made affordability a per-cost question
+when it is a per-operation one — two 60-Aura costs each validated against a 100-Aura pool, and the
+character spent 120 they did not have. Each individual check was correct, which is what made it
+hard to see.
 
 **Partial payment is refused by default.** A half-paid cost is a mechanic nobody designed. A request
 that genuinely wants it sets `allowPartial` and reports both figures.
-
----
 
 ## 5 · Cross-domain requests
 
@@ -148,15 +167,36 @@ A request asks the authoritative owner to resolve a change. Nen does not subtrac
 an expenditure and Aura decides. Without that indirection, every domain needing Aura ends up
 carrying part of the Aura rules, and the fourth copy is the one that disagrees.
 
-Two phases: **cost** requests are validated before commitment and committed all-or-nothing; **effect**
-requests are produced after resolution and each target applies its own rules.
+**The base carries routing and nothing else** — request id, kind, phase, operation id, timestamps,
+source domain, target owner. Amounts live on `QuantitativeRequest`, which quantitative requests
+extend. A required field that some requests must lie about is a field on the wrong type, and the
+symptom was visible: removing a healed Injury is not a quantity, so it shipped `requested: 1`, a
+placeholder every consumer had to know to ignore. `ActiveApplication` lost `upkeepPerHour` for the
+same reason — whether an upkeep is per hour or per Round and which reserve pays it are domain
+questions that one shared number would answer for everybody.
+
+**Cost** requests are priced against the draft before the operation may succeed. **Effect** requests
+are settled after resolution, in **simultaneous batches**: everything landing on one owner at one
+effective time is handed over together with *one pre-batch state*, and the owner returns one
+combined replacement.
+
+Applying simultaneous effects one at a time is reproducible but not correct — the second reads the
+first's result, so the answer depends on the sort key. This is the same defect the Aura solver had
+when it applied recovery before drains at a single timestamp, and the same fix: the owner is the
+only thing that knows how its simultaneous changes combine, so it gets all of them and one starting
+point.
 
 `requestId` is **identity, not content**. Two separate 10-damage requests to one target are
 legitimate and both are honoured; the same id twice is a cycle or a routing bug and is refused.
-Consequence depth is bounded at `MAXIMUM_CONSEQUENCE_DEPTH = 8` — hitting it is an engine bug, and is
-reported as one.
+Consequence depth is bounded at `MAXIMUM_CONSEQUENCE_DEPTH = 8`.
 
----
+### Validated at the boundary
+
+Empty or duplicate request ids · requests belonging to another operation · unknown phases, domains
+or non-finite times · negative or non-finite amounts · missing or duplicate handlers · a prepared
+cost that does not match its request · an effect handler answering the wrong number of requests ·
+empty, duplicate or malformed dice purposes, faces and requirements. Every one of them discards the
+draft.
 
 ## 6 · Determinism
 
@@ -166,8 +206,10 @@ same state, events, changes, warnings, errors and trace.
 - **Dice are caller input.** No gameplay outcome is randomly generated. (The one `Math.random` in
   the tree is a UUID fallback in `infrastructure/id.ts` — an identity, not a result.) Rolls are identified by purpose,
   validated before any cost commits, and a malformed roll costs nothing.
-- **Array order never decides an outcome.** Requests sort by phase, owner, kind, target and finally
-  `requestId` — a total, stable key.
+- **Array order never decides an outcome.** Requests sort by phase, effective time, owner, kind and
+  finally `requestId` — a total, stable key. Ordering controls **reporting and dispatch, not
+  results**: simultaneous effects settle from one pre-batch state, so the sort cannot change the
+  answer even in principle.
 - **Events carry a `sequence`** assigned by the coordinator in resolution order, not by the caller.
 - Operation ids and timestamps are **supplied**, never generated, or a session cannot be replayed
   and a bug report cannot be reproduced.
@@ -190,7 +232,7 @@ character's stored `resolvedAt`.
 
 | Reference | Proves | Status |
 |---|---|---|
-| `aura/runtime.ts` | a domain owning a **spendable resource** others need | migrated |
+| `aura/runtime.ts` | a domain owning a **spendable resource** others need | migrated; stateless handler |
 | `body/recovery/runtime.ts` | a domain that must **ask another owner** to change something | migrated |
 | test-only coordinated operation | atomicity across **two independent owners** | in `runtime-protocol.test.ts` |
 
@@ -202,6 +244,10 @@ shape for the answer. No formula, rate, ceiling or balance figure moved.
 One additive change was needed: `BodyPartRecoveryOutcome.bpRequested` now surfaces the tick's
 uncapped amount, which the calculation always had but never returned. Without it "requested versus
 actual recovery" could not be reported, and a recovery ceiling was invisible downstream.
+
+The Aura handler holds the resolution **context** — Attributes, access, the things that decide what
+a cost *is* — and never the pool. The pool arrives with each call and leaves in the return value,
+which is what makes two costs in one operation cumulative and a discarded operation genuinely free.
 
 The generic reference is **test-only** on purpose. Proving atomicity needs two independent resource
 owners, and inventing a production Item or Nen mechanic to supply the second would be shipping a

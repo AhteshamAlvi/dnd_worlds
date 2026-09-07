@@ -62,6 +62,55 @@ export function findDiceIssues(
   const errors: EngineError[] = [];
   const byPurpose = new Map<string, RuntimeDieRoll[]>();
 
+  /*
+   * The REQUIREMENT list is checked first, because a malformed requirement
+   * makes every check below meaningless: a d0 or a d2.5 has no valid face, so
+   * every roll against it would be reported out of range and the caller would
+   * go looking at their dice instead of at their requirement.
+   */
+  const requiredPurposesSeen = new Set<string>();
+
+  for (const requirement of required) {
+    if (
+      typeof requirement.purpose !== "string" ||
+      requirement.purpose.trim().length === 0
+    ) {
+      errors.push({
+        code: "runtime.dice.requirement.purpose.missing",
+        message: "Every required die must name what it is rolled for.",
+        audience: "developer",
+        required: "non-empty purpose",
+        actual: String(requirement.purpose),
+      });
+
+      continue;
+    }
+
+    if (requiredPurposesSeen.has(requirement.purpose)) {
+      errors.push({
+        code: "runtime.dice.requirement.duplicate",
+        message: `"${requirement.purpose}" is required more than once.`,
+        audience: "developer",
+        required: "one requirement per purpose",
+        actual: requirement.purpose,
+      });
+    }
+
+    requiredPurposesSeen.add(requirement.purpose);
+
+    if (!Number.isInteger(requirement.sides) || requirement.sides < 1) {
+      errors.push({
+        code: "runtime.dice.requirement.sides.invalid",
+        message: `The die required for "${requirement.purpose}" has no valid faces.`,
+        audience: "developer",
+        required: "integer >= 1",
+        actual: String(requirement.sides),
+      });
+    }
+  }
+
+  if (errors.length > 0) return errors;
+
   for (const roll of supplied) {
     if (typeof roll.purpose !== "string" || roll.purpose.trim().length === 0) {
       errors.push({
@@ -122,6 +171,18 @@ export function findDiceIssues(
         actual: Number.isFinite(roll.value)
           ? String(roll.value)
           : String(roll.value),
+      });
+
+      continue;
+    }
+
+    if (!Number.isInteger(roll.sides) || roll.sides < 1) {
+      errors.push({
+        code: "runtime.dice.sides.invalid",
+        message: `The die supplied for "${requirement.purpose}" has no valid faces.`,
+        audience: "developer",
+        required: "integer >= 1",
+        actual: String(roll.sides),
       });
 
       continue;

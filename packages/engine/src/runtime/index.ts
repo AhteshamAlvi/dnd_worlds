@@ -32,9 +32,14 @@ export type { RuntimeEvent, RuntimeValueChange } from "./events";
 export {
   RUNTIME_REQUEST_PHASES,
   compareRuntimeRequests,
+  effectiveTimeOf,
+  findRequestIssues,
+  groupSimultaneousRequests,
+  isQuantitativeRequest,
   orderRuntimeRequests,
 } from "./requests";
 export type {
+  QuantitativeRequest,
   RuntimeRequest,
   RuntimeRequestOutcome,
   RuntimeRequestPhase,
@@ -72,7 +77,8 @@ export type {
   CoordinatorHandlers,
   CostCommitResult,
   CostHandler,
-  EffectApplication,
+  DomainStates,
+  EffectBatchResult,
   EffectHandler,
   PreparedCost,
 } from "./coordinator";

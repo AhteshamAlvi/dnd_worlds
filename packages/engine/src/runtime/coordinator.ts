@@ -2,11 +2,11 @@
  * The coordinator: procedure, never rules.
  *
  * It runs the lifecycle every coordinated operation shares — validate, price,
- * commit, resolve, consequence — and it knows nothing about what any of those
- * steps mean. It cannot tell an Aura cost from an ammunition cost, and it must
- * not learn: the moment it knows that Ren costs Output or that a shove is
- * resisted by Strength, every domain's rules start migrating into one file and
- * the domains stop owning their own mechanics.
+ * resolve, settle — and it knows nothing about what any of those steps mean.
+ * It cannot tell an Aura cost from an ammunition cost, and it must not learn:
+ * the moment it knows that Ren costs Output or that a shove is resisted by
+ * Strength, every domain's rules start migrating into one file and the domains
+ * stop owning their own mechanics.
  *
  * So this file imports NO gameplay domain. Not Aura, not Body, not Nen, not
  * Combat. It talks to handler interfaces that domains implement, and a
@@ -14,30 +14,46 @@
  * would take to turn this into the universal resolver it exists to prevent.
  *
  *
- * WHY COST HANDLERS ARE TWO-PHASE
+ * THE OPERATION IS A TRANSACTION
  *
- * The rule is "validate every mandatory cost, and if any fails commit none".
- * That is unimplementable when a domain's only entry point validates and
- * applies in one call: by the time the second cost refuses, the first is
- * already spent and there is nothing to roll back to that the coordinator is
- * allowed to construct.
+ * Everything happens against a DRAFT — a map from domain to that domain's
+ * state, seeded from the caller's originals. Handlers receive the draft's
+ * value for their domain and RETURN A REPLACEMENT; they never write to
+ * anything they captured. On success the completed draft is the answer. On any
+ * failure the draft is discarded and the caller keeps exactly what they had.
  *
- * So a cost handler offers `prepare` and `commit`. `prepare` validates against
- * current state and returns an opaque token holding whatever the domain needs;
- * it changes nothing. `commit` takes the token and produces the new state. The
- * coordinator prepares everything, and only then commits anything.
+ * The first version of this had neither property, and both were wrong in ways
+ * that only showed up under load:
+ *
+ *   - It returned events and outcomes but no state, so handlers smuggled their
+ *     results out through closures and a `committedState()` side channel. Two
+ *     sources of truth, one of them invisible to the type system.
+ *   - It committed costs and THEN routed effects, so an unhandled effect
+ *     request returned a failure after the Aura had already left the pool. A
+ *     failed operation that spent something is the one outcome the protocol
+ *     exists to make impossible.
  *
  *
- * VALIDATION FAILURE VERSUS FAILED ATTEMPT
+ * COSTS ARE CUMULATIVE
  *
- * These are different outcomes and the whole protocol turns on keeping them
- * apart. An operation that cannot BEGIN — unknown target, missing mastery,
- * unaffordable, malformed dice — fails, and spends nothing. An operation that
- * begins and then goes badly — the attack misses, the technique is resisted —
- * SUCCEEDS, keeps its committed costs, and reports the miss as an event.
+ * Each cost prepares against the DRAFT AS IT STANDS, not against the original.
+ * Preparing every cost against the original state is how two 60-Aura costs
+ * both validated against a 100-Aura pool and a character spent 120 they did
+ * not have. Chaining the draft makes the second cost see the first one's
+ * deduction, which is simply what "cumulative" means.
  *
- * Merging them either refunds the Aura and the Action every time someone
- * misses, or makes a wiring bug indistinguishable from bad luck.
+ *
+ * SIMULTANEOUS EFFECTS SETTLE TOGETHER
+ *
+ * Effects landing on one owner at one instant are handed over as a BATCH with
+ * one pre-batch state, and the owner returns one combined replacement. Applying
+ * them one at a time lets the second read the first's result, which makes the
+ * answer depend on the order the coordinator happened to sort them into — the
+ * same defect the Aura solver had for simultaneous events, in a new place.
+ *
+ * Ordering still exists, and still matters: it fixes the order of the event log
+ * and the order batches are handed over. It must not decide a mechanical
+ * result, and after this change it cannot.
  */
 
 import type { EngineError } from "../infrastructure/diagnostics";
@@ -52,6 +68,10 @@ import type { RuntimeDomain } from "./domains";
 import { findDiceIssues, type RuntimeDieRequirement, type RuntimeDieRoll } from "./dice";
 import type { RuntimeEvent } from "./events";
 import {
+  effectiveTimeOf,
+  findRequestIssues,
+  groupSimultaneousRequests,
+  isQuantitativeRequest,
   orderRuntimeRequests,
   type RuntimeRequest,
   type RuntimeRequestOutcome,
@@ -61,31 +81,43 @@ import {
 /**
  * How deep a chain of consequences may run.
  *
- * Effects produce requests, and a request's outcome may produce further
- * requests — damage causes an Injury which causes a Condition. That is
- * legitimate and finite in every mechanic anybody has designed, so the bound
- * exists to catch the case where it is NOT finite rather than to constrain
- * design. Hitting it is an engine bug, and is reported as one.
+ * Effects produce requests, and a batch's outcome may produce further requests
+ * — damage causes an Injury which causes a Condition. That is legitimate and
+ * finite in every mechanic anybody has designed, so the bound exists to catch
+ * the case where it is NOT finite rather than to constrain design. Hitting it
+ * is an engine bug, and is reported as one.
  */
 export const MAXIMUM_CONSEQUENCE_DEPTH = 8;
 
 
 /**
- * A validated, not-yet-applied cost.
+ * The transaction draft: every participating domain's state.
  *
- * Opaque to the coordinator on purpose. Whatever the domain needs to carry
- * from `prepare` to `commit` goes in `prepared`, and the coordinator only ever
- * hands it back.
+ * Opaque values on purpose. The coordinator routes them and never inspects
+ * them, which is what keeps it free of every domain it serves.
+ */
+export type DomainStates = Readonly<Partial<Record<RuntimeDomain, unknown>>>;
+
+
+/**
+ * A validated cost and the draft state that paying it produces.
+ *
+ * `nextState` is the whole point: preparation is where the arithmetic happens,
+ * against the draft as it stands, so the next cost for the same owner sees
+ * this one's deduction. Nothing is committed by producing it — the draft is
+ * discardable right up until the operation succeeds.
  */
 export interface PreparedCost {
   readonly requestId: string;
   readonly domain: RuntimeDomain;
 
-  /** What will actually be paid, which may be under `requested` only when
-   * the request allowed partial payment. */
-  readonly actual: number;
+  /** The owner's state after this cost. Replaces the draft's value. */
+  readonly nextState: unknown;
 
-  /** The domain's own business. */
+  /** What will be paid. Absent for a cost with no magnitude. */
+  readonly actual?: number;
+
+  /** The domain's own business, handed back to `commit` untouched. */
   readonly prepared: unknown;
 }
 
@@ -99,24 +131,34 @@ export interface CostCommitResult {
 /**
  * A domain that owns a resource an operation can spend.
  *
- * `prepare` must not change anything. `commit` is only ever called with a
- * token `prepare` returned, and only after every other cost in the operation
- * has prepared successfully.
+ * `prepare` receives the draft's current value for this domain and returns the
+ * replacement. It must be pure: no captured variable is written, no external
+ * side effect is performed, and nothing outside the returned state changes.
+ * `commit` turns a prepared cost into its outcome and events, and is only ever
+ * called after every cost in the operation prepared successfully.
  */
 export interface CostHandler {
   readonly domain: RuntimeDomain;
 
-  prepare(request: RuntimeRequest): EngineResult<PreparedCost>;
+  prepare(
+    request: RuntimeRequest,
+    state: unknown,
+  ): EngineResult<PreparedCost>;
 
   commit(prepared: PreparedCost): CostCommitResult;
 }
 
 
-export interface EffectApplication {
-  readonly outcome: RuntimeRequestOutcome;
+export interface EffectBatchResult {
+  /** One combined replacement for this owner, covering the whole batch. */
+  readonly state: unknown;
+
+  /** One outcome per request in the batch. */
+  readonly outcomes: readonly RuntimeRequestOutcome[];
+
   readonly events: readonly Omit<RuntimeEvent, "sequence">[];
 
-  /** Consequences of applying this effect, resolved on the next depth. */
+  /** Consequences, resolved at the next depth. */
   readonly requests?: readonly RuntimeRequest[];
 }
 
@@ -124,35 +166,49 @@ export interface EffectApplication {
 /**
  * A domain that owns state an operation can affect.
  *
- * A resist, an immunity or a cap is an `actual` below `requested` — a real
- * result of a real operation. Returning a FAILURE for one would retroactively
- * turn a successful attack into a validation error and refund what it cost.
+ * Receives the WHOLE simultaneous batch and one pre-batch state, and returns
+ * one combined result. It must calculate every member of the batch from the
+ * state it was handed rather than from its own running total, because that is
+ * exactly what makes the answer independent of the order within the batch.
+ *
+ * A resist, an immunity or a cap is an `actual` below `requested`. Returning a
+ * failure for one would retroactively turn a successful attack into a
+ * validation error and refund what it cost.
  */
 export interface EffectHandler {
   readonly domain: RuntimeDomain;
 
-  apply(request: RuntimeRequest): EffectApplication;
+  applyBatch(
+    requests: readonly RuntimeRequest[],
+    state: unknown,
+  ): EffectBatchResult;
 }
 
 
 export interface CoordinatedOperation<TResult> {
   readonly context: RuntimeOperationContext;
 
-  /** Dice the operation needs, checked before anything commits. */
+  /** The starting state of every domain that participates. */
+  readonly states: DomainStates;
+
+  /** Dice the operation needs, checked before anything is priced. */
   readonly requiredDice?: readonly RuntimeDieRequirement[];
   readonly dice?: readonly RuntimeDieRoll[];
 
-  /** Mandatory costs. All prepare, or none commits. */
+  /** Mandatory costs. All prepare against the running draft, or none apply. */
   readonly costs: readonly RuntimeRequest[];
 
   /**
-   * The operation's own resolution, run after costs are committed.
+   * The operation's own resolution, run against the post-cost draft.
    *
    * This is where the caller's rules live — the check, the outcome, the effect
    * requests it produces. It may report a FAILED attempt; that is a successful
-   * transition with a failed-check event, not an error.
+   * transition containing a failed-check event, not an error.
    */
-  resolve(dice: readonly RuntimeDieRoll[]): {
+  resolve(
+    dice: readonly RuntimeDieRoll[],
+    states: DomainStates,
+  ): {
     readonly result: TResult;
     readonly events?: readonly Omit<RuntimeEvent, "sequence">[];
     readonly requests?: readonly RuntimeRequest[];
@@ -162,6 +218,16 @@ export interface CoordinatedOperation<TResult> {
 
 export interface CoordinatedOutcome<TResult> {
   readonly result: TResult;
+
+  /**
+   * The authoritative new state of every participating domain.
+   *
+   * THE answer. Not a convenience beside a side channel — there is no side
+   * channel, and a handler that kept one would be returning a state nobody
+   * reads while the caller stored a different one.
+   */
+  readonly states: DomainStates;
+
   readonly events: readonly RuntimeEvent[];
   readonly costOutcomes: readonly RuntimeRequestOutcome[];
   readonly effectOutcomes: readonly RuntimeRequestOutcome[];
@@ -190,20 +256,55 @@ function fail(
 
 
 /**
- * Run one coordinated operation.
+ * Index handlers by the domain they own.
  *
- * The lifecycle, in the order the protocol fixes:
+ * Two handlers claiming one domain is refused rather than last-one-wins: two
+ * owners of one state is not a thing the ownership matrix can express, and
+ * silently picking one would make the answer depend on array order in the one
+ * place that decides who owns what.
+ */
+function indexHandlers<THandler extends { readonly domain: RuntimeDomain }>(
+  handlers: readonly THandler[],
+  what: string,
+): { readonly index: Map<RuntimeDomain, THandler>; readonly errors: readonly EngineError[] } {
+  const index = new Map<RuntimeDomain, THandler>();
+  const errors: EngineError[] = [];
+
+  for (const handler of handlers) {
+    if (index.has(handler.domain)) {
+      errors.push({
+        code: "runtime.handler.duplicate",
+        message: `Two ${what} handlers claim to own "${handler.domain}".`,
+        audience: "developer",
+        required: "one handler per domain",
+        actual: handler.domain,
+      });
+
+      continue;
+    }
+
+    index.set(handler.domain, handler);
+  }
+
+  return { index, errors };
+}
+
+
+/**
+ * Run one coordinated operation as a transaction.
  *
  *   1. validate the operation context
  *   2. validate the dice
- *   3. PREPARE every mandatory cost           <- nothing has changed yet
- *   4. commit every prepared cost atomically  <- the point of no refund
- *   5. resolve the operation's own rules
- *   6. route effect requests to their owners, bounded and cycle-checked
- *   7. return state, events and outcomes
+ *   3. validate and index the handlers
+ *   4. validate every request at the boundary
+ *   5. PREPARE every cost against the running draft   <- cumulative
+ *   6. commit the prepared costs into events
+ *   7. resolve the operation's own rules on the draft
+ *   8. settle effects in simultaneous batches, bounded and cycle-checked
+ *   9. return the completed draft
  *
- * Steps 1 to 3 can fail the operation. From step 4 onward it has happened, and
- * anything that goes wrong is an event rather than an error.
+ * Any failure at any step discards the draft entirely. There is no step after
+ * which a failure can still have spent something.
  */
 export function runCoordinatedOperation<TResult>(
   operation: CoordinatedOperation<TResult>,
@@ -231,7 +332,7 @@ export function runCoordinatedOperation<TResult>(
 
   if (contextIssues.length > 0) return fail(root, contextIssues);
 
-  /* ── 2. Dice, before anything is spent ────────────────────────────── */
+  /* ── 2. Dice, before anything is priced ───────────────────────────── */
 
   const dice = operation.dice ?? [];
   const requiredDice = operation.requiredDice ?? [];
@@ -240,7 +341,10 @@ export function runCoordinatedOperation<TResult>(
     id: "runtime.operation.dice",
     label: "Validate supplied dice",
     inputs: Object.fromEntries(
-      dice.map((roll) => [roll.purpose, { value: `d${roll.sides}=${roll.value}` }]),
+      dice.map((roll, index) => [
+        `${roll.purpose || `roll-${index}`}`,
+        { value: `d${roll.sides}=${roll.value}` },
+      ]),
     ),
   });
 
@@ -256,27 +360,58 @@ export function runCoordinatedOperation<TResult>(
 
   diceNode.output = true;
 
-  /* ── 3. Prepare every cost. Nothing commits here. ─────────────────── */
+  /* ── 3. Handlers ──────────────────────────────────────────────────── */
 
-  const costHandlers = new Map(handlers.costs.map((one) => [one.domain, one]));
+  const costs = indexHandlers(handlers.costs, "cost");
+  const effects = indexHandlers(handlers.effects, "effect");
+  const handlerIssues = [...costs.errors, ...effects.errors];
+
+  if (handlerIssues.length > 0) return fail(root, handlerIssues);
+
+  const costIndex = costs.index;
+  const effectIndex = effects.index;
+
+  /* ── 4. Requests, at the boundary ─────────────────────────────────── */
+
   const orderedCosts = orderRuntimeRequests(operation.costs);
+  const seenRequestIds = new Set<string>();
+  const requestIssues: EngineError[] = [];
 
-  const duplicateIssues = findDuplicateRequestIds(orderedCosts);
+  for (const request of orderedCosts) {
+    requestIssues.push(...findRequestIssues(request, context.operationId));
 
-  if (duplicateIssues.length > 0) return fail(root, duplicateIssues);
+    if (seenRequestIds.has(request.requestId)) {
+      requestIssues.push({
+        code: "runtime.request.duplicate-id",
+        message: `Request "${request.requestId}" was supplied more than once.`,
+        audience: "developer",
+        required: "unique request ids within an operation",
+        actual: request.requestId,
+      });
+
+      continue;
+    }
+
+    seenRequestIds.add(request.requestId);
+  }
+
+  if (requestIssues.length > 0) return fail(root, requestIssues);
+
+  /* ── 5. Prepare every cost against the RUNNING draft ──────────────── */
 
   const prepareNode = createTraceNode({
     id: "runtime.operation.costs.prepare",
-    label: "Validate every mandatory cost",
+    label: "Price every mandatory cost against the draft",
     inputs: { count: { value: orderedCosts.length } },
   });
 
   root.children.push(prepareNode);
 
+  let draft: DomainStates = { ...operation.states };
   const prepared: PreparedCost[] = [];
 
   for (const request of orderedCosts) {
-    const handler = costHandlers.get(request.to);
+    const handler = costIndex.get(request.to);
 
     if (handler === undefined) {
       prepareNode.output = false;
@@ -290,22 +425,40 @@ export function runCoordinatedOperation<TResult>(
       }]);
     }
 
-    const attempt = handler.prepare(request);
+    /*
+     * The draft as it stands, so a second cost for this owner sees the first
+     * one's deduction. Preparing against `operation.states` here is the bug
+     * that let two 60-Aura costs both pass against 100 Aura.
+     */
+    const attempt = handler.prepare(request, draft[request.to]);
 
     prepareNode.children.push(attempt.trace.root);
 
     if (!attempt.success) {
-      /*
-       * One refusal ends the operation and NOTHING has been committed, which
-       * is the entire reason preparation is a separate pass.
-       */
       prepareNode.output = false;
 
       return fail(root, attempt.errors);
     }
 
+    const cost = attempt.payload;
+
+    if (cost.domain !== request.to || cost.requestId !== request.requestId) {
+      prepareNode.output = false;
+
+      return fail(root, [{
+        code: "runtime.cost.prepared-mismatch",
+        message:
+          "A prepared cost does not match the request it was prepared for.",
+        audience: "developer",
+        required: `${request.to}/${request.requestId}`,
+        actual: `${String(cost.domain)}/${String(cost.requestId)}`,
+      }]);
+    }
+
     if (
-      attempt.payload.actual < request.requested &&
+      isQuantitativeRequest(request) &&
+      cost.actual !== undefined &&
+      cost.actual < request.requested &&
       request.allowPartial !== true
     ) {
       prepareNode.output = false;
@@ -317,25 +470,24 @@ export function runCoordinatedOperation<TResult>(
           "operation does not permit partial payment.",
         audience: "developer",
         required: String(request.requested),
-        actual: String(attempt.payload.actual),
+        actual: String(cost.actual),
       }]);
     }
 
-    prepared.push(attempt.payload);
+    draft = { ...draft, [request.to]: cost.nextState };
+    prepared.push(cost);
   }
 
   prepareNode.output = true;
 
-  /* ── 4. Commit. Past this line the operation has happened. ────────── */
+  /* ── 6. Turn prepared costs into events. ──────────────────────────── */
 
   const events: RuntimeEvent[] = [];
   const costOutcomes: RuntimeRequestOutcome[] = [];
 
   let sequence = 0;
 
-  const record = (
-    partial: readonly Omit<RuntimeEvent, "sequence">[],
-  ): void => {
+  const record = (partial: readonly Omit<RuntimeEvent, "sequence">[]): void => {
     for (const event of partial) {
       events.push({ ...event, sequence });
       sequence += 1;
@@ -343,28 +495,23 @@ export function runCoordinatedOperation<TResult>(
   };
 
   for (const cost of prepared) {
-    const committed = costHandlers.get(cost.domain)!.commit(cost);
+    const committed = costIndex.get(cost.domain)!.commit(cost);
 
     costOutcomes.push(committed.outcome);
     record(committed.events);
   }
 
-  /* ── 5. The operation's own rules. ────────────────────────────────── */
+  /* ── 7. The operation's own rules, on the post-cost draft. ────────── */
 
-  const resolved = operation.resolve(dice);
+  const resolved = operation.resolve(dice, draft);
 
   record(resolved.events ?? []);
 
-  /* ── 6. Consequences, bounded and cycle-checked. ──────────────────── */
-
-  const effectHandlers = new Map(
-    handlers.effects.map((one) => [one.domain, one]),
-  );
+  /* ── 8. Effects, settled in simultaneous batches. ─────────────────── */
 
   const effectOutcomes: RuntimeRequestOutcome[] = [];
-  const seenRequestIds = new Set(orderedCosts.map((one) => one.requestId));
 
-  let pending = orderRuntimeRequests(resolved.requests ?? []);
+  let pending: readonly RuntimeRequest[] = resolved.requests ?? [];
   let depth = 0;
 
   while (pending.length > 0) {
@@ -380,9 +527,11 @@ export function runCoordinatedOperation<TResult>(
       }]);
     }
 
-    const next: RuntimeRequest[] = [];
+    const boundaryIssues: EngineError[] = [];
 
     for (const request of pending) {
+      boundaryIssues.push(...findRequestIssues(request, context.operationId));
+
       if (seenRequestIds.has(request.requestId)) {
         /*
          * The same request id twice is a cycle or a routing bug. Repeated
@@ -390,38 +539,67 @@ export function runCoordinatedOperation<TResult>(
          * two real requests — which is why identity is explicit rather than
          * hashed from the fields.
          */
-        return fail(root, [{
+        boundaryIssues.push({
           code: "runtime.request.duplicate-id",
           message: `Request "${request.requestId}" was raised more than once.`,
           audience: "developer",
           required: "one resolution per request id",
           actual: request.requestId,
-        }]);
+        });
+
+        continue;
       }
 
       seenRequestIds.add(request.requestId);
+    }
 
-      const handler = effectHandlers.get(request.to);
+    if (boundaryIssues.length > 0) return fail(root, boundaryIssues);
+
+    const next: RuntimeRequest[] = [];
+
+    for (const batch of groupSimultaneousRequests(pending)) {
+      const handler = effectIndex.get(batch.to);
 
       if (handler === undefined) {
         return fail(root, [{
           code: "runtime.request.unhandled",
-          message: `No handler owns "${request.to}" to apply ${request.kind}.`,
+          message:
+            `No handler owns "${batch.to}" to apply ` +
+            `${batch.requests.map((one) => one.kind).join(", ")}.`,
           audience: "developer",
-          required: `an effect handler for ${request.to}`,
+          required: `an effect handler for ${batch.to}`,
           actual: handlers.effects.map((one) => one.domain).join(", ") || "none",
         }]);
       }
 
-      const applied = handler.apply(request);
+      /*
+       * The whole batch, and ONE pre-batch state. Everything in it is
+       * calculated from what the owner is handed here, so the order within the
+       * batch cannot change the result.
+       */
+      const applied = handler.applyBatch(batch.requests, draft[batch.to]);
 
-      effectOutcomes.push(applied.outcome);
+      if (applied.outcomes.length !== batch.requests.length) {
+        return fail(root, [{
+          code: "runtime.effect.outcome-count-mismatch",
+          message:
+            `The "${batch.to}" handler returned ${applied.outcomes.length} ` +
+            `outcomes for ${batch.requests.length} requests.`,
+          audience: "developer",
+          required: String(batch.requests.length),
+          actual: String(applied.outcomes.length),
+        }]);
+      }
+
+      draft = { ...draft, [batch.to]: applied.state };
+
+      effectOutcomes.push(...applied.outcomes);
       record(applied.events);
 
       next.push(...(applied.requests ?? []));
     }
 
-    pending = orderRuntimeRequests(next);
+    pending = next;
     depth += 1;
   }
 
@@ -436,6 +614,7 @@ export function runCoordinatedOperation<TResult>(
     success: true,
     payload: {
       result: resolved.result,
+      states: draft,
       events,
       costOutcomes,
       effectOutcomes,
@@ -446,27 +625,5 @@ export function runCoordinatedOperation<TResult>(
 }
 
 
-function findDuplicateRequestIds(
-  requests: readonly RuntimeRequest[],
-): readonly EngineError[] {
-  const seen = new Set<string>();
-  const errors: EngineError[] = [];
-
-  for (const request of requests) {
-    if (seen.has(request.requestId)) {
-      errors.push({
-        code: "runtime.request.duplicate-id",
-        message: `Request "${request.requestId}" was supplied more than once.`,
-        audience: "developer",
-        required: "unique request ids within an operation",
-        actual: request.requestId,
-      });
-
-      continue;
-    }
-
-    seen.add(request.requestId);
-  }
-
-  return errors;
-}
+/** Re-exported for handlers that need to read a batch's instant. */
+export { effectiveTimeOf };

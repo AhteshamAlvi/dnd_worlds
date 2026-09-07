@@ -18,11 +18,19 @@
  * that is not Aura to ask for that behaviour, and a shared shape for the answer.
  *
  * So no formula, threshold or balance figure moves here. `prepare` calls the
- * existing transition and keeps its result; `commit` hands back the state that
- * was already computed. The two phases exist because atomicity across several
- * domains needs them — the Aura must be known payable before the Action is
- * spent, and the Action before the Aura — and because they see ONE calculation
- * rather than two, committing cannot disagree with what was validated.
+ * existing transition against THE STATE IT IS HANDED and returns the resulting
+ * state; `commit` turns that into an outcome and an event.
+ *
+ * Two things about that are corrections to how this file first worked, and
+ * both were wrong in the same direction — a handler keeping state of its own:
+ *
+ *   - It closed over one starting state and prepared every cost against it, so
+ *     two 60-Aura costs both validated against a 100-Aura pool. Preparing
+ *     against the draft is what makes costs cumulative.
+ *   - It published the result through a `committedState()` side channel rather
+ *     than returning it, which meant the authoritative Aura state lived
+ *     somewhere the coordinator could not see and the type system could not
+ *     check. The returned state is now the only answer.
  */
 
 import type { EngineResult } from "../../../infrastructure/result";
@@ -33,7 +41,10 @@ import type {
 } from "../../../runtime/coordinator";
 import type { RuntimeEvent } from "../../../runtime/events";
 import type { RuntimeDomain } from "../../../runtime/domains";
-import type { RuntimeRequest } from "../../../runtime/requests";
+import type {
+  QuantitativeRequest,
+  RuntimeRequest,
+} from "../../../runtime/requests";
 import type { GameTimestamp } from "../../../time/types";
 
 import type { AuraTransitionContext } from "./budget";
@@ -54,8 +65,11 @@ export const AURA_ACTION_COST = "aura.action-cost";
  * told. Exertion load is relative to the actor and must be supplied, because
  * Aura may never infer whether a blow was strenuous for the body that threw it.
  */
-export interface AuraCostRequest extends RuntimeRequest {
+export interface AuraCostRequest extends QuantitativeRequest {
   readonly kind: typeof AURA_ACTION_COST;
+
+  /** Whose Aura, for the event's source. Aura's own payload, not the base's. */
+  readonly sourceId?: string;
   readonly exertionLoad?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
@@ -75,39 +89,37 @@ interface PreparedAuraCost {
 
 
 /**
- * Aura as a cost handler, plus the state it has committed.
+ * Aura as a cost handler.
  *
- * The committed state is read back from the handler rather than pushed through
- * a callback, because a callback fires during the coordinator's commit pass and
- * makes the order of side effects part of the protocol. Reading afterwards
- * keeps the handler's only externally visible behaviour a value.
+ * Stateless: it holds the resolution CONTEXT — Attributes, access, the things
+ * that decide what a cost is — and never the pool. The pool arrives with each
+ * call and leaves in the return value, which is what makes two costs in one
+ * operation cumulative and a discarded operation genuinely free.
  */
-export interface AuraCostHandler {
-  readonly handler: CostHandler;
-
-  /** The Aura state after commitment, or the original if nothing committed. */
-  committedState(): CharacterAuraState;
-}
-
-
 export function createAuraCostHandler(
-  state: CharacterAuraState,
   context: AuraTransitionContext,
-): AuraCostHandler {
-  let committed = state;
-
-  const handler: CostHandler = {
+): CostHandler {
+  return {
     domain: "aura",
 
-    prepare(request: RuntimeRequest): EngineResult<PreparedCost> {
+    /*
+     * Pure. It reads the state it is handed, returns the state that paying
+     * would produce, and writes nothing anywhere — so the coordinator can
+     * discard the whole attempt and Aura is exactly where it was.
+     */
+    prepare(
+      request: RuntimeRequest,
+      state: unknown,
+    ): EngineResult<PreparedCost> {
       const auraRequest = request as AuraCostRequest;
+      const current = state as CharacterAuraState;
 
       /*
        * The existing transition IS the validation. Re-deriving affordability
        * here would be a second opinion about the same question, free to drift
        * from the one that actually charges.
        */
-      const attempt = spendActionAura(state, context, {
+      const attempt = spendActionAura(current, context, {
         ...(auraRequest.exertionLoad === undefined
           ? {}
           : { exertionLoad: auraRequest.exertionLoad }),
@@ -138,6 +150,7 @@ export function createAuraCostHandler(
         payload: {
           requestId: request.requestId,
           domain: "aura",
+          nextState: attempt.payload.state,
           actual: -attempt.payload.currentChange,
           prepared,
         },
@@ -148,8 +161,6 @@ export function createAuraCostHandler(
 
     commit(cost: PreparedCost): CostCommitResult {
       const { transition, request } = cost.prepared as PreparedAuraCost;
-
-      committed = transition.state;
 
       const actual = -transition.currentChange;
 
@@ -172,8 +183,6 @@ export function createAuraCostHandler(
       };
     },
   };
-
-  return { handler, committedState: () => committed };
 }
 
 

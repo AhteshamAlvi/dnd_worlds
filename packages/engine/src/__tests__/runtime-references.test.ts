@@ -31,7 +31,11 @@ import {
   recoveryRequests,
 } from "../character/foundation/body/recovery/runtime";
 import type { ResolveRecoveryOutcome } from "../character/foundation/body/recovery/types";
-import { runCoordinatedOperation } from "../runtime";
+import {
+  findRequestIssues,
+  runCoordinatedOperation,
+  type QuantitativeRequest,
+} from "../runtime";
 
 import { auraContext, auraTestAttributes, WITH_TEN } from "./fixtures/aura";
 
@@ -61,13 +65,13 @@ function auraSetup(current: number) {
 
 
 describe("Aura as a cost handler", () => {
-  it("pays a valid action cost and reports requested against actual", () => {
+  it("pays a valid action cost and returns the new pool as the answer", () => {
     const { state, context } = auraSetup(20_000);
-    const aura = createAuraCostHandler(state, context);
 
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
+        states: { aura: state },
         costs: [auraCostRequest({
           requestId: "r-aura",
           operationId: OPERATION.operationId,
@@ -78,7 +82,7 @@ describe("Aura as a cost handler", () => {
         })],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [aura.handler], effects: [] },
+      { costs: [createAuraCostHandler(context)], effects: [] },
     );
 
     expect(result.success).toBe(true);
@@ -86,27 +90,88 @@ describe("Aura as a cost handler", () => {
     if (!result.success) throw new Error("unreachable");
 
     const outcome = result.payload.costOutcomes[0]!;
+    const after = result.payload.states.aura as CharacterAuraState;
 
     /* Aura's rules decide the figure; the requester's estimate does not win. */
-    expect(outcome.actual).toBeGreaterThan(0);
-    expect(aura.committedState().current)
-      .toBeCloseTo(20_000 - outcome.actual, 8);
+    expect(outcome.actual!).toBeGreaterThan(0);
+    expect(after.current).toBeCloseTo(20_000 - outcome.actual!, 8);
 
     const event = result.payload.events.find((one) => one.kind === "aura-spent");
 
     expect(event?.domain).toBe("aura");
     expect(event?.operationId).toBe(OPERATION.operationId);
-    expect(event?.change?.actual).toBeCloseTo(outcome.actual, 8);
+    expect(event?.change?.actual).toBeCloseTo(outcome.actual!, 8);
+  });
+
+  /*
+   * The handler holds the resolution CONTEXT and never the pool, so there is
+   * nowhere for a committed state to hide. `committedState()` used to be that
+   * hiding place, and it meant the authoritative Aura lived somewhere the
+   * coordinator could not see.
+   */
+  it("keeps no state of its own", () => {
+    const { context } = auraSetup(20_000);
+    const handler = createAuraCostHandler(context);
+
+    expect(Object.keys(handler).sort()).toEqual(["commit", "domain", "prepare"]);
+    expect("committedState" in handler).toBe(false);
+  });
+
+  /*
+   * Two costs against one pool. Preparing each against the ORIGINAL state let
+   * a character spend more Aura than they had; preparing against the running
+   * draft is what makes the second see the first.
+   */
+  it("charges two costs in one operation cumulatively", () => {
+    const { state, context } = auraSetup(20_000);
+
+    const cost = (requestId: string) => auraCostRequest({
+      requestId,
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: "caller",
+      requested: 0,
+      exertionLoad: 2,
+    });
+
+    const one = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: state },
+        costs: [cost("r1")],
+        resolve: () => ({ result: "swung" }),
+      },
+      { costs: [createAuraCostHandler(context)], effects: [] },
+    );
+
+    const two = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: state },
+        costs: [cost("r1"), cost("r2")],
+        resolve: () => ({ result: "swung twice" }),
+      },
+      { costs: [createAuraCostHandler(context)], effects: [] },
+    );
+
+    if (!one.success || !two.success) throw new Error("expected success");
+
+    const afterOne = (one.payload.states.aura as CharacterAuraState).current;
+    const afterTwo = (two.payload.states.aura as CharacterAuraState).current;
+    const single = 20_000 - afterOne;
+
+    expect(single).toBeGreaterThan(0);
+    expect(afterTwo).toBeCloseTo(20_000 - single * 2, 6);
   });
 
   /* Unaffordable is a validation failure: nothing happened at all. */
   it("changes nothing when the character cannot afford the cost", () => {
     const { state, context } = auraSetup(1);
-    const aura = createAuraCostHandler(state, context);
 
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
+        states: { aura: state },
         costs: [auraCostRequest({
           requestId: "r-aura",
           operationId: OPERATION.operationId,
@@ -117,25 +182,24 @@ describe("Aura as a cost handler", () => {
         })],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [aura.handler], effects: [] },
+      { costs: [createAuraCostHandler(context)], effects: [] },
     );
 
     expect(result.success).toBe(false);
-    expect(aura.committedState()).toBe(state);
     expect(state.current).toBe(1);
   });
 
   /*
-   * The multi-domain case the two-phase handler exists for: the Aura is
-   * affordable and the Action is not, so the Aura must not leave the pool.
+   * The multi-domain case: the Aura is affordable and the Action is not, so
+   * the Aura must not leave the pool.
    */
   it("keeps its Aura when another domain's cost refuses", () => {
     const { state, context } = auraSetup(20_000);
-    const aura = createAuraCostHandler(state, context);
 
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
+        states: { aura: state, combat: 0 },
         costs: [
           auraCostRequest({
             requestId: "r-aura",
@@ -154,13 +218,13 @@ describe("Aura as a cost handler", () => {
             from: "caller",
             to: "combat",
             requested: 1,
-          },
+          } as QuantitativeRequest,
         ],
         resolve: () => ({ result: "swung" }),
       },
       {
         costs: [
-          aura.handler,
+          createAuraCostHandler(context),
           {
             domain: "combat",
             prepare: () => ({
@@ -183,28 +247,44 @@ describe("Aura as a cost handler", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(aura.committedState().current).toBe(20_000);
+    expect(state.current).toBe(20_000);
   });
 
-  it("leaves the frozen input state untouched", () => {
+  it("leaves the frozen input state untouched on success and on failure", () => {
     const { state, context } = auraSetup(20_000);
-    const aura = createAuraCostHandler(state, context);
 
-    runCoordinatedOperation(
+    const request = (requestId: string, exertionLoad: number) =>
+      auraCostRequest({
+        requestId,
+        operationId: OPERATION.operationId,
+        occurredAt: OPERATION.occurredAt,
+        from: "caller",
+        requested: 0,
+        exertionLoad,
+      });
+
+    const succeeded = runCoordinatedOperation(
       {
         context: OPERATION,
-        costs: [auraCostRequest({
-          requestId: "r-aura",
-          operationId: OPERATION.operationId,
-          occurredAt: OPERATION.occurredAt,
-          from: "caller",
-          requested: 0,
-          exertionLoad: 2,
-        })],
+        states: { aura: state },
+        costs: [request("r1", 2)],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [aura.handler], effects: [] },
+      { costs: [createAuraCostHandler(context)], effects: [] },
     );
+
+    const failed = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { aura: state },
+        costs: [request("r1", 100_000)],
+        resolve: () => ({ result: "swung" }),
+      },
+      { costs: [createAuraCostHandler(context)], effects: [] },
+    );
+
+    expect(succeeded.success).toBe(true);
+    expect(failed.success).toBe(false);
 
     expect(state.current).toBe(20_000);
     expect(state.allocations).toHaveLength(0);
@@ -251,6 +331,14 @@ describe("Body recovery asks rather than reaches", () => {
       expect(request.to).toBe("character-status");
       expect(request.phase).toBe("effect");
       expect(request.operationId).toBe(OPERATION.operationId);
+
+      /*
+       * A removal is not a quantity. It briefly carried `requested: 1` because
+       * the shared base demanded a number, which every consumer then had to
+       * know to ignore.
+       */
+      expect("requested" in request).toBe(false);
+      expect(findRequestIssues(request, OPERATION.operationId)).toEqual([]);
     }
   });
 

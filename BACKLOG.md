@@ -7,8 +7,8 @@ to say something is missing, it links here rather than keeping its own list. Two
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: Stage II Phase 1 close.
-Suite at that point: **72 files, 2,019 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: Stage II Phase 1.1 close.
+Suite at that point: **72 files, 2,044 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
@@ -72,8 +72,8 @@ section is the difference.
 
 | Mechanic | State | Detail |
 |---|---|---|
-| **Runtime ownership and transition protocol** | Complete | Ownership matrix, `TransitionResult`, typed events and requests, two-phase atomic costs, dice validation, generic coordinator, deterministic ordering. `runtime/`. Exported. Dependency-tested to contain no gameplay. |
-| **Aura cost-handler reference** | Complete | `aura/runtime.ts`. A domain owning a spendable resource others need. |
+| **Runtime ownership and transition protocol** | Complete | Ownership matrix, `TransitionResult`, routing-only request base with `QuantitativeRequest` for amounts, discardable transaction draft, cumulative same-owner costs, simultaneous batch settlement, boundary validation, generic coordinator. `runtime/`. Exported. Dependency-tested to contain no gameplay. |
+| **Aura cost-handler reference** | Complete | `aura/runtime.ts`. A domain owning a spendable resource others need. Stateless — it holds the resolution context, never the pool. |
 | **Body recovery request reference** | Complete | `body/recovery/runtime.ts`. A domain asking another owner to change something. |
 | **Active Nen runtime implementation** | **Specified but absent** | The `nen` runtime section exists and holds protocol-level `ActiveApplication`s. Nothing populates it: no activation, no deactivation, no Output level, no Chū allocation, no per-Round cost, no suspension rules. Ten, Ren, Zetsu and Chū combat contracts remain absent (§3). |
 | **Transformation runtime implementation** | **Specified but absent** | The `transformations` section exists. Nothing projects a transformed Body from it, and no transformation is authored. The projection boundary is decided — project, never overwrite — and unimplemented. |
