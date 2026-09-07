@@ -1,60 +1,67 @@
 /*
- * Scheduling a neutral action inside Combat.
+ * Scheduling an already-authorized neutral action inside Combat.
  *
  * This is the whole of what the encounter layer adds. A neutral action
  * already knows what it is, what it costs, who it points at, how far it
- * reaches and what decides it. None of that becomes Combat's when a fight
- * starts. What Combat adds is: whose turn it is, whether this actor may act
- * right now, what the Action economy charges, and who was endangered enough
- * to be offered a Reaction.
- *
- * So a CombatAction REFERENCES the intent rather than copying it. Combat
- * stores an intent id, a cost and a threat list, and asks the neutral layer
- * for everything else. Copying the targets in was the old design, and it is
- * what made Combat the second authority on who an action affects.
+ * reaches, what decides it, and what the GM ruled about all of that. None of
+ * it becomes Combat's when a fight starts. Combat adds: whose turn it is,
+ * whether this actor may act right now, what the Action economy charges, and
+ * who was endangered enough to be offered a Reaction.
  *
  *
- * WHY A THREAT LIST AND NOT A TARGET LIST
+ * WHY AN AUTHORIZATION AND NOT A PROFILE
  *
- * The replaced rule was "you may react to an Action that targets you". It is
- * wrong in both directions. A heal names a recipient and endangers nobody,
- * so being named is not enough; and a hazard endangers whoever is under it
- * while naming nobody, so being named is not necessary either.
+ * Combat used to take the raw profile and intent and re-check them. That
+ * meant a GM who overruled "you cannot use that as a Reaction" was overruled
+ * back by the scheduler, and it meant nothing anywhere proved that
+ * preparation or adjudication had happened at all.
  *
- * The profile declares whether using it threatens what it points at. This
- * module maps those declared targets onto participating Combatants and hands
- * Combat a list of who was actually endangered. Everything else — the
- * Detection gate, the miss, the collateral damage — happens downstream of
- * that list and cannot change it.
+ * It now takes a ScheduledActionAuthorization, which is evidence: it exists
+ * only because adjudication produced it, it carries the FINALIZED timing and
+ * cost rather than the authored ones, and it carries nothing private. So
+ * this module checks only Combat-owned facts — is there an active state, is
+ * this the combatant whose state it is, does the finalized timing match it,
+ * and does the finalized cost fit the economy. Neutral eligibility and
+ * allowedTimings are settled upstream and are not re-litigated here.
+ *
+ *
+ * WHY THREATS COME ONLY FROM DECLARED TARGETS
+ *
+ * The replaced rule was "you may react to an Action that targets you", wrong
+ * in both directions: a heal names a recipient and endangers nobody, and a
+ * hazard endangers whoever is under it while naming nobody.
+ *
+ * The authorization declares whether using this endangers the subjects it
+ * declared. This module maps exactly those onto participating Combatants.
+ * There is deliberately no way for a caller to add anybody else — an earlier
+ * version had one, and it was an unauthored threat rule wearing a parameter.
+ * An action that endangers subjects it did not declare needs an authored
+ * threat rule, which is a rules ticket rather than a caller's argument.
+ * Hazards with no actor go through CredibleThreat instead.
  */
 
-import {
-  profileThreatensDeclaredTargets,
-  structuredActionCostFor,
-  type ActionIntent,
-  type ActionProfile,
-} from "../../actions";
+import type { ActorRef, ScheduledActionAuthorization } from "../../actions";
 import type { TargetRef } from "../../targeting";
 
-import { isValidActionCost } from "./actions";
+import { activeStateCombatantId, isValidActionCost } from "./actions";
 import type {
-  CombatAction,
   CombatActionId,
-  CombatActionSource,
   CombatantId,
   CombatRound,
+  NeutralCombatAction,
 } from "./types";
-import { activeStateCombatantId } from "./actions";
 
 
 export const ACTION_SCHEDULE_FAILURE_REASONS = [
   "no-active-state",
+  "combat-action-id-missing",
+  "operation-mismatch",
+  "actor-not-resolvable",
+  "actor-not-a-participant",
   "not-the-active-combatant",
-  "execution-context-not-structured",
   "timing-mismatch",
-  "timing-not-permitted",
   "invalid-action-cost",
-  "threat-not-permitted",
+  "threatened-combatant-unknown",
 ] as const;
 
 export type ActionScheduleFailureReason =
@@ -64,7 +71,7 @@ export type ActionScheduleFailureReason =
 export interface ActionScheduleSuccess {
   readonly success: true;
 
-  readonly action: CombatAction;
+  readonly action: NeutralCombatAction;
 }
 
 
@@ -85,160 +92,166 @@ export type ActionScheduleResult =
 export interface ScheduleNeutralActionInput {
   readonly actionId: CombatActionId;
 
-  readonly profile: ActionProfile;
+  /** Produced by actions/ after adjudication. See authorization.ts. */
+  readonly authorization: ScheduledActionAuthorization;
 
-  readonly intent: ActionIntent;
-
-  /** Which participating Combatant is performing this. */
-  readonly actorCombatantId: CombatantId;
-
-  /*
-   * Which Combatant a declared target refers to, if any.
+  /**
+   * Which participant is performing this.
    *
-   * Supplied by the host, because the mapping between a neutral target and a
-   * participant is host bookkeeping: a target may be an object, a place, or
-   * a creature that is not in this fight, and Combat has no way to tell.
+   * Supplied rather than asserted. The old input took an actorCombatantId
+   * beside the intent and never checked that the two described the same
+   * creature, so a caller could schedule Gon's punch as Killua's. Combat
+   * cannot map an actor itself — an actor may be a Character, an Item, a
+   * summon or a construct, and Combat imports none of those — so the host
+   * that owns the mapping states it and Combat verifies the result.
+   */
+  readonly resolveActorCombatant: (
+    actor: ActorRef,
+  ) => CombatantId | undefined;
+
+  /**
+   * Which participant a declared target refers to, if any.
+   *
+   * A target may be an object, a place, or a creature not in this fight, so
+   * "not a participant" is an ordinary answer rather than an error.
    */
   readonly resolveCombatant: (
     target: TargetRef,
   ) => CombatantId | undefined;
 
-  /*
-   * Combatants a threatening action endangers WITHOUT having declared them.
-   *
-   * This is how a position-focused action threatens anybody: the punch at
-   * the ground declares nothing, and whoever was standing on that ground is
-   * named here by whatever worked that out. Only a profile that already
-   * declares itself threatening may carry these — a harmless capability
-   * cannot be made dangerous by supplying a list.
-   */
-  readonly additionalThreatenedCombatantIds?: readonly CombatantId[];
-
-  /*
-   * How the Action is recorded. Defaults to the profile's own source.
-   */
-  readonly source?: CombatActionSource;
+  /** Verifies that a mapping named somebody actually in the Round. */
+  readonly operationId: string;
 }
 
 
-function uniqueIds(
-  ids: readonly CombatantId[],
-): readonly CombatantId[] {
-  return Array.from(new Set(ids));
+function isParticipant(
+  round: CombatRound,
+  combatantId: CombatantId,
+): boolean {
+  return round.combatants.some(
+    (combatant) => combatant.combatantId === combatantId,
+  );
 }
 
 
 /*
  * Resolves who this action threatens.
  *
- * Exported because a caller preparing a Reaction opportunity before
- * scheduling needs the same answer, and two implementations of "who is
- * endangered" is exactly the duplication this ticket removes.
+ * Declared targets only, and only when the authorization says using it
+ * endangers them. Deduplicated, because one creature may be declared twice
+ * — through itself and through one of its Body Parts — and two opportunities
+ * for one Reaction is a second Gate nobody triggered.
  */
 export function resolveThreatenedCombatants(
-  profile: ActionProfile,
-  intent: ActionIntent,
+  authorization: ScheduledActionAuthorization,
   resolveCombatant: (target: TargetRef) => CombatantId | undefined,
-  additionalThreatenedCombatantIds: readonly CombatantId[] = [],
 ): readonly CombatantId[] {
-  if (!profileThreatensDeclaredTargets(profile)) return [];
+  if (authorization.threatens !== "declared-targets") return [];
 
-  const declared = intent.targets
+  const declared = authorization.declaredTargets
     .map((target) => resolveCombatant(target))
-    .filter((id): id is CombatantId => id !== undefined);
+    .filter((id): id is CombatantId => id !== undefined && id.trim().length > 0);
 
-  return uniqueIds([
-    ...declared,
-    ...additionalThreatenedCombatantIds,
-  ]);
+  return Array.from(new Set(declared));
 }
 
 
 /*
- * Turns one neutral intent into the Combat Action that schedules it.
+ * Turns one authorized action into the Combat Action that schedules it.
  *
- * Authorization only. Whether the Skill exists, whether its requirements are
- * met, whether the target is in Range and whether the check succeeds are all
- * settled before this is called and are none of Combat's business.
+ * Authorization only, and Combat-owned facts only. Whether the Skill exists,
+ * whether its requirements are met, whether the target is in Range, whether
+ * the check succeeded and whether the GM overruled any of it are all settled
+ * before this is called.
  */
 export function scheduleNeutralAction(
   round: CombatRound,
   input: ScheduleNeutralActionInput,
 ): ActionScheduleResult {
+  const { authorization } = input;
+
+  if (
+    typeof input.actionId !== "string" ||
+    input.actionId.trim().length === 0
+  ) {
+    return { success: false, reason: "combat-action-id-missing" };
+  }
+
+  if (input.operationId !== authorization.operationId) {
+    return { success: false, reason: "operation-mismatch" };
+  }
+
   const state = round.activeState;
 
   if (state === null) {
     return { success: false, reason: "no-active-state" };
   }
 
-  const activeCombatantId = activeStateCombatantId(state);
+  const actorCombatantId = input.resolveActorCombatant(authorization.actor);
 
-  if (input.actorCombatantId !== activeCombatantId) {
+  if (
+    actorCombatantId === undefined ||
+    actorCombatantId.trim().length === 0
+  ) {
+    return { success: false, reason: "actor-not-resolvable" };
+  }
+
+  if (!isParticipant(round, actorCombatantId)) {
+    return {
+      success: false,
+      reason: "actor-not-a-participant",
+      combatantId: actorCombatantId,
+    };
+  }
+
+  if (actorCombatantId !== activeStateCombatantId(state)) {
     return {
       success: false,
       reason: "not-the-active-combatant",
-      combatantId: input.actorCombatantId,
-    };
-  }
-
-  const context = input.intent.executionContext;
-
-  if (context.kind !== "structured") {
-    /*
-     * The same intent is perfectly resolvable outside Combat; it simply is
-     * not the thing being scheduled here. An unstructured context reaching
-     * this function means the caller built the intent for one world and
-     * handed it to the other.
-     */
-    return {
-      success: false,
-      reason: "execution-context-not-structured",
-      combatantId: input.actorCombatantId,
-    };
-  }
-
-  const expectedTiming = state.kind === "turn" ? "action" : "reaction";
-
-  if (context.timing !== expectedTiming) {
-    return {
-      success: false,
-      reason: "timing-mismatch",
-      combatantId: input.actorCombatantId,
-    };
-  }
-
-  if (!input.profile.allowedTimings.includes(expectedTiming)) {
-    return {
-      success: false,
-      reason: "timing-not-permitted",
-      combatantId: input.actorCombatantId,
-    };
-  }
-
-  const additional = input.additionalThreatenedCombatantIds ?? [];
-
-  if (
-    additional.length > 0 &&
-    !profileThreatensDeclaredTargets(input.profile)
-  ) {
-    return {
-      success: false,
-      reason: "threat-not-permitted",
-      combatantId: input.actorCombatantId,
+      combatantId: actorCombatantId,
     };
   }
 
   /*
-   * Charged through the neutral accessor, so the "only inside structured
-   * time" rule has one implementation rather than a Combat-shaped copy.
+   * The one timing rule Combat owns: a Reaction-timed action belongs in a
+   * Reaction and an Action-timed one in a Turn. Whether the capability was
+   * ALLOWED at that timing was decided upstream and may have been overruled;
+   * re-deciding it here is what overrode the GM.
    */
-  const actionCost = structuredActionCostFor(input.profile, context).actions;
+  const expectedTiming = state.kind === "turn" ? "action" : "reaction";
+
+  if (authorization.timing !== expectedTiming) {
+    return {
+      success: false,
+      reason: "timing-mismatch",
+      combatantId: actorCombatantId,
+    };
+  }
+
+  const actionCost = authorization.structuredActionCost.actions;
 
   if (!isValidActionCost(actionCost)) {
     return {
       success: false,
       reason: "invalid-action-cost",
-      combatantId: input.actorCombatantId,
+      combatantId: actorCombatantId,
+    };
+  }
+
+  const threatenedCombatantIds = resolveThreatenedCombatants(
+    authorization,
+    input.resolveCombatant,
+  );
+
+  const unknown = threatenedCombatantIds.find(
+    (combatantId) => !isParticipant(round, combatantId),
+  );
+
+  if (unknown !== undefined) {
+    return {
+      success: false,
+      reason: "threatened-combatant-unknown",
+      combatantId: unknown,
     };
   }
 
@@ -246,20 +259,12 @@ export function scheduleNeutralAction(
     success: true,
 
     action: {
+      kind: "neutral",
       id: input.actionId,
-      actorCombatantId: input.actorCombatantId,
+      actorCombatantId,
       actionCost,
-      source: input.source ?? {
-        kind: "skill",
-        skillId: input.profile.source.id,
-      },
-      intentId: input.intent.id,
-      threatenedCombatantIds: resolveThreatenedCombatants(
-        input.profile,
-        input.intent,
-        input.resolveCombatant,
-        additional,
-      ),
+      intentId: authorization.intentId,
+      threatenedCombatantIds,
     },
   };
 }

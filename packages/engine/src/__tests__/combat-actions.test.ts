@@ -250,7 +250,8 @@ describe("Bonus Actions are gone from the model", () => {
       "actionCost",
       "actorCombatantId",
       "id",
-      "source",
+      "intentId",
+      "kind",
       "threatenedCombatantIds",
     ]);
   });
@@ -267,10 +268,11 @@ describe("Inaction and Hesitation", () => {
     const action = createInactionAction("i-1", "a");
 
     expect(action).toEqual({
+      kind: "combat-native",
       id: "i-1",
       actorCombatantId: "a",
       actionCost: 1,
-      source: { kind: "inaction" },
+      source: "inaction",
       threatenedCombatantIds: [],
     });
   });
@@ -283,7 +285,9 @@ describe("Inaction and Hesitation", () => {
      */
     const hesitation = createHesitationAction("h-1", "a");
 
-    expect(hesitation.source).toEqual({ kind: "hesitation" });
+    expect(hesitation.source).toBe("hesitation");
+    expect(hesitation.kind).toBe("combat-native");
+    expect(hesitation).not.toHaveProperty("intentId");
     expect(hesitation.actionCost).toBe(createInactionAction("i-1", "a").actionCost);
   });
 

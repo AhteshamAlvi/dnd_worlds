@@ -55,44 +55,39 @@ export type CombatStateKind = typeof COMBAT_STATE_KINDS[number];
 
 
 // ---------------------------------------------------------------------------
-// Action sources
-// ---------------------------------------------------------------------------
-
-/*
- * Most Actions originate from Skills.
- *
- * Combat references the source by id rather than owning the Skill
- * definition itself. Character/capabilities remains authoritative over
- * what the Skill is and how its own check resolves.
- *
- * Object interactions are included because a GM may rule that a
- * sufficiently significant interaction consumes an Action.
- *
- * Inaction and Hesitation consume Actions but do not originate from a
- * Skill.
- */
-export type CombatActionSource =
-  | {
-      readonly kind: "skill";
-      readonly skillId: string;
-    }
-  | {
-      readonly kind: "object-interaction";
-      readonly interactionId?: string;
-    }
-  | {
-      readonly kind: "inaction";
-    }
-  | {
-      readonly kind: "hesitation";
-    };
-
-
-// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
-export interface CombatAction {
+/*
+ * Two kinds of Action, and they are genuinely different things.
+ *
+ * A NEUTRAL Action schedules something the neutral layer already authorized:
+ * a Skill, an Item use, a movement, an En expansion, a thrown rock, a
+ * Technique. Combat references it by intent id and knows nothing else about
+ * it — deliberately. The previous model recorded every one of these as
+ * `{ kind: "skill", skillId }`, which relabelled a thrown rock and a
+ * Technique as Skills and gave Combat a second, narrower source vocabulary
+ * competing with the neutral one.
+ *
+ * A COMBAT-NATIVE Action is one the encounter layer itself owns. There are
+ * exactly two: Inaction, chosen, and Hesitation, imposed by a timeout the
+ * host reported. Neither schedules anything; both consume an Action.
+ *
+ * They are a discriminated union rather than one shape with optional fields
+ * so that a consumer cannot read an intent id off a Hesitation or ask a
+ * scheduled Skill what its Combat-native source was.
+ */
+
+export const COMBAT_NATIVE_ACTION_KINDS = [
+  "inaction",
+  "hesitation",
+] as const;
+
+export type CombatNativeActionKind =
+  typeof COMBAT_NATIVE_ACTION_KINDS[number];
+
+
+interface CombatActionBase {
   readonly id: CombatActionId;
 
   readonly actorCombatantId: CombatantId;
@@ -100,38 +95,55 @@ export interface CombatAction {
   /*
    * Number of normal Actions consumed from the combatant's remaining
    * Round Action pool.
-   *
-   * Most Skills will cost 1, but some may cost multiple Actions.
    */
   readonly actionCost: number;
-
-  readonly source: CombatActionSource;
-
-  /*
-   * The neutral intent this Action schedules, when it schedules one.
-   *
-   * A REFERENCE, not a copy. Combat does not own the Skill, the targets,
-   * the geometry, the check or the consequences — it owns when this
-   * combatant may act and what it costs the Action economy. Absent for
-   * Inaction and Hesitation, which schedule nothing.
-   */
-  readonly intentId?: string;
 
   /*
    * Combatants this Action explicitly endangers.
    *
-   * NOT the declared targets. A target list answers "who is this pointed
-   * at", and pointing at somebody is not always dangerous — a heal declares
-   * a recipient and threatens nobody. This list is derived above Combat
-   * from the action profile's own threat declaration, and it is the ONLY
-   * thing that opens a Reaction opportunity.
+   * NOT the declared targets, and not the subjects it turns out to affect.
+   * A target list answers "who is this pointed at", and pointing at somebody
+   * is not always dangerous — a heal names a recipient and threatens nobody.
+   * Final affectedness answers "who did it catch", which is known only after
+   * resolution and therefore far too late to offer anyone a Reaction.
    *
-   * Being on it is not being hit: a threatened combatant may react to a
-   * blow that ultimately misses, and a combatant the blow ultimately
-   * catches gets nothing from this list unless they were on it first.
+   * This list is derived above Combat from the authorized threat
+   * declaration, from the DECLARED TARGETS alone, and nothing downstream
+   * edits it. A threatened combatant keeps their opportunity when the blow
+   * misses, and a combatant the blow catches gets nothing from this list
+   * unless they were on it first.
    */
   readonly threatenedCombatantIds: readonly CombatantId[];
 }
+
+
+export interface NeutralCombatAction extends CombatActionBase {
+  readonly kind: "neutral";
+
+  /*
+   * The authorized neutral intent this schedules.
+   *
+   * A REFERENCE. Combat does not own the Skill, the targets, the geometry,
+   * the check or the consequences — it owns when this combatant may act and
+   * what it costs the Action economy.
+   */
+  readonly intentId: string;
+}
+
+
+export interface CombatNativeAction extends CombatActionBase {
+  readonly kind: "combat-native";
+
+  readonly source: CombatNativeActionKind;
+
+  /* Doing nothing, and failing to decide, endanger nobody. */
+  readonly threatenedCombatantIds: readonly [];
+}
+
+
+export type CombatAction =
+  | NeutralCombatAction
+  | CombatNativeAction;
 
 
 // ---------------------------------------------------------------------------

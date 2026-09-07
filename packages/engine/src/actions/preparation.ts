@@ -600,6 +600,7 @@ export function prepareAction(
     costRequests: [...(input.costRequests ?? [])],
 
     ...(profile.check === undefined ? {} : { check: profile.check }),
+    threatens: profile.threatens ?? "none",
     requiredDice: diceRequirements(profile, advantage),
 
     executionDuration: profile.executionDuration,

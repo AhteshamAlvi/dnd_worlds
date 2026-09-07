@@ -744,10 +744,15 @@ describe("GM adjudication is not scattered", () => {
      * Carrying the two views is fine; DECIDING what goes in them is not.
      *
      * Settlement holds both views and passes them through untouched, so it may
-     * name the types. What it may not do — what nothing but adjudication may
-     * do — is consult the reveal ladder, because that is the function that
-     * decides what a player is shown, and a second caller of it would be a
-     * second policy.
+     * name the types. Authorization READS the GM view in order to narrow it
+     * down to the handful of finalized facts a scheduler may see — narrowing
+     * is the opposite of leaking, and a test asserts the result carries no
+     * rolls, overrides, findings or consequences.
+     *
+     * What none of them may do — what nothing but adjudication may do — is
+     * consult the reveal ladder, because that is the function that decides
+     * what a player is shown, and a second caller of it would be a second
+     * policy.
      */
     const actionFiles = sourceFilesUnder(join(SRC, "actions"));
     const relative = (path: string) =>
@@ -760,7 +765,12 @@ describe("GM adjudication is not scattered", () => {
     );
 
     expect(importers.map(relative).sort())
-      .toEqual(["adjudication.ts", "index.ts", "settlement.ts"]);
+      .toEqual([
+        "adjudication.ts",
+        "authorization.ts",
+        "index.ts",
+        "settlement.ts",
+      ]);
 
     const deciders = actionFiles.filter((path) =>
       /\brevealsAtLeast\b/.test(readFileSync(path, "utf8")),
@@ -831,6 +841,54 @@ describe("Combat schedules neutral actions without owning them", () => {
   it("keeps the inert Bonus Action field out of the model", () => {
     const offenders = combatFiles.filter((path) =>
       /\bbonusAction\b|\bCombatBonusAction\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("gives no caller a way to add an undeclared threat", () => {
+    /*
+     * `additionalThreatenedCombatantIds` let a caller name anybody as
+     * endangered, which is an unauthored threat rule wearing a parameter. An
+     * action that threatens subjects it did not declare needs a real rule,
+     * and until one exists the escape hatch must not come back.
+     */
+    const everySource = sourceFilesUnder(SRC).filter(
+      (path) => !path.includes("__tests__"),
+    );
+
+    const offenders = everySource.filter((path) =>
+      /additionalThreatened/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never lets neutral actions/ import Combat", () => {
+    const actionFiles = sourceFilesUnder(join(SRC, "actions"));
+
+    const offenders = actionFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "gameplay"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps Combat out of GM-private views and settlement internals", () => {
+    /*
+     * Combat consumes a ScheduledActionAuthorization, which is narrow by
+     * construction. Reaching past it for the adjudication or settlement
+     * modules would hand a scheduler the private half of the split those
+     * tickets built.
+     */
+    const forbidden = ["visibility", "adjudication", "settlement"];
+
+    const offenders = combatFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        forbidden.some((module) => specifier.endsWith(`actions/${module}`)),
+      ),
     );
 
     expect(offenders).toEqual([]);

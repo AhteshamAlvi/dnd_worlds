@@ -642,14 +642,14 @@ export const ENGINE_DECISIONS = {
         chosen:
             "A CombatAction REFERENCES a neutral intent by id and keeps only what the encounter layer adds: which Combatant is acting, what the Action economy charges, and who was explicitly endangered. Skills, goals, focus, targeting validity, Range, checks, resource mutation, adjudication and consequences all stay in the layers that already own them. The structured cost is read through the neutral accessor rather than recomputed, so the 'charged only inside structured time' rule has one implementation.",
         rationale:
-            "Copying the targets into Combat was what made Combat a second authority on who an action affects, and a second authority is the thing this whole phase existed to remove. Referencing the intent also settles a subtler question the old shape could not answer: the same intent is resolvable outside a fight with no wrapper at all, which is only demonstrable if Combat adds something rather than duplicating something. An architecture test now fails if any file under gameplay/ imports character/, mentions targetCombatantIds, or mentions bonusAction — the three ways this boundary would quietly come back.",
+            "Copying the targets into Combat was what made Combat a second authority on who an action affects, and a second authority is the thing this whole phase existed to remove. Referencing the intent also settles a subtler question the old shape could not answer: the same intent is resolvable outside a fight with no wrapper at all, which is only demonstrable if Combat adds something rather than duplicating something. AMENDED by combat.scheduling.authorization-is-evidence: the first version handed Combat a raw profile and intent, which meant Combat re-decided rules the GM had already settled and nothing proved adjudication had run at all. Architecture tests fail if any file under gameplay/ imports character/, reaches past the authorization into the adjudication or settlement modules, or mentions targetCombatantIds or bonusAction.",
     },
     "combat.reactions.threat-not-target": {
         id: "combat.reactions.threat-not-target",
         question:
             "A Reaction opportunity was created for any combatant named in an Action's targetCombatantIds. That rule is wrong in both directions and the wrapper had to replace it with something.",
         chosen:
-            "Reactions read an explicit THREAT list and nothing else. An action profile declares whether using it endangers its declared targets (`threatens`, default \"none\"); the wrapper maps those targets onto participating Combatants and hands Combat the result. A position-focused action threatens nobody unless somebody explicitly names who is endangered, and only a profile that already declares itself threatening may carry such names. Hazards with no actor supply a CredibleThreat directly and open Reactions through their own path.",
+            "Reactions read an explicit THREAT list and nothing else. An action profile declares whether using it endangers its declared targets (`threatens`, default \"none\"); the wrapper maps those targets onto participating Combatants and hands Combat the result. A position-focused action threatens nobody at all: threats come from DECLARED TARGETS only. An earlier version let a caller name additional endangered combatants, which was an unauthored threat rule wearing a parameter; it is removed, and an action that endangers subjects it did not declare needs a real authored rule in a later ticket. Hazards with no actor supply a CredibleThreat directly and open Reactions through their own path, which is also why they are not forced through the target model: describing a boulder as an Action with a target list would invent a combatant who threw it.",
         rationale:
             "Being pointed at is not being endangered: a heal names a recipient and provokes no dodge, which the old rule could not express at all. Being endangered does not require being pointed at either: a boulder threatens whoever is under it and declares nothing, and forcing it through the target model would mean inventing a combatant who threw it. The three lists stay distinct for the reason the earlier tickets separated them — declared targets are what a player chose, credible threats are what warrants a Reaction, and finalized affected subjects are what settlement decided. Notably a collateral combatant gets NO Reaction from being affected: affectedness is known after resolution, and a Reaction exists to be taken before it. A threatened combatant keeps their opportunity even when the blow misses, because you duck what was coming rather than what landed.",
     },
@@ -670,6 +670,42 @@ export const ENGINE_DECISIONS = {
             "It stays internal. src/index.ts continues to export Combat Ability and the Round duration and nothing else from gameplay/. No internal helper was exported to make testing convenient; the characterization and integration suites import module paths directly, as every other suite in this repo does.",
         rationale:
             "Nothing outside the engine consumes Combat yet, and an exported surface is a promise that is cheaper to make than to withdraw — the same reasoning that kept progression unexported until a consumer asked for it. The specific temptation this records refusing is exporting helpers purely so a test can reach them: tests here reach modules by path, so the public barrel stays a statement about what hosts may rely on rather than a byproduct of how the suite is written. When a host needs Combat, the surface gets chosen deliberately and this entry gets superseded.",
+    },
+    "combat.scheduling.authorization-is-evidence": {
+        id: "combat.scheduling.authorization-is-evidence",
+        question:
+            "Combat's scheduler took a raw ActionProfile and ActionIntent. It therefore re-checked allowedTimings and eligibility that preparation had already decided and adjudication may have overruled, it had no evidence that either had run, and it was handed the goal, focus, check and consequences it has no business reading.",
+        chosen:
+            "actions/ produces a ScheduledActionAuthorization after adjudication, carrying only operation and intent identity, profile identity, the actor, the FINALIZED timing, the FINALIZED structured Action cost, the declared targets needed for participant mapping, and the finalized threat declaration. Combat consumes that and enforces only Combat-owned facts: an active state exists, the actor maps to the active Combatant, the timing matches the active Turn or Reaction, and the cost fits the economy.",
+        rationale:
+            "The re-check was not merely redundant, it was a contradiction: a GM who overruled 'you cannot use that as a Reaction' watched the scheduler overrule them back, which makes the adjudication layer decorative. The authorization also solves the evidence problem — it cannot be constructed without an adjudicated action, so 'was this prepared and ruled on' stops being something a caller promises. Keeping it narrow is the third job: a scheduler that cannot see rolls, overrides, findings or consequences cannot leak them, and the visibility work is worth nothing if the next layer down receives the private view wholesale. Authorization READS the GM view to narrow it, which is the opposite of leaking, and a test asserts the result carries none of it.",
+    },
+    "combat.scheduling.actor-is-mapped-not-asserted": {
+        id: "combat.scheduling.actor-is-mapped-not-asserted",
+        question:
+            "The scheduler took an actorCombatantId beside the intent and never checked that the two described the same creature, so Gon's punch could be scheduled as Killua's and nothing would object.",
+        chosen:
+            "The host supplies resolveActorCombatant(actor): CombatantId | undefined. Combat derives the acting participant through it and requires the result to be a known participant AND the combatant whose Turn or Reaction is active. Absent, empty, unknown and contradictory mappings are all refused before anything is spent.",
+        rationale:
+            "Combat cannot map an actor itself: an actor may be a Character, an Item, a summon or a construct, and Combat imports none of those — which is exactly why the old code took the answer on trust instead. Making the mapping an explicit input keeps the boundary intact while removing the unchecked assertion, and it extends to future actor kinds without Combat learning what any of them are. Refusing rather than defaulting follows the same rule the runtime coordinator applies to missing state: an unresolvable actor is a caller bug, and inventing a participant would spend somebody's Actions.",
+    },
+    "combat.actions.no-source-relabelling": {
+        id: "combat.actions.no-source-relabelling",
+        question:
+            "Combat recorded every scheduled neutral action as `{ kind: \"skill\", skillId }`, including Items, movement, En, projectiles and Techniques, and let the caller override the source outright.",
+        chosen:
+            "CombatAction is a discriminated union. A neutral Action carries `kind: \"neutral\"` and an intent id and no source vocabulary at all; a Combat-native Action carries `kind: \"combat-native\"` and one of exactly two sources, Inaction and Hesitation. The caller-supplied source override is gone.",
+        rationale:
+            "A thrown rock is not a Skill, and a Combat that says otherwise is maintaining a second, narrower source vocabulary that disagrees with the neutral one — the same duplication this phase removed for targets. Referencing the intent means provenance lives in exactly one place. The union rather than optional fields is what stops a consumer reading an intent id off a Hesitation or asking a scheduled Technique for its Combat-native source, and it makes the two genuinely Combat-owned Actions explicit rather than hiding them among content-driven ones.",
+    },
+    "combat.reactions.queued-in-initiative-order": {
+        id: "combat.reactions.queued-in-initiative-order",
+        question:
+            "One Action can endanger several participants, and the single-opportunity model served only the first: a sweep threatening three combatants offered one of them a Reaction Gate and resolved through the other two.",
+        chosen:
+            "A ReactionQueue. Threatened participants are deduplicated, the actor is excluded, and everybody is ordered by the Round's own Initiative. Gates resolve one at a time in that order; a failed or declined gate advances and spends nothing; successful gates queue in the same order. The FIRST opening ends the triggering Turn, once, and it never resumes. Finishing one queued Reaction opens the next rather than starting a Turn, and only an empty queue lets Initiative continue — from the interrupted combatant, where it was parked the whole time.",
+        rationale:
+            "Initiative order is the point. Something has to decide who answers first, and using the order a host listed its targets in would let presentation decide a mechanical outcome; the Round already has an authority for 'who goes first' and it costs nothing to reuse. Ending the Turn exactly once matters because the Turn can only be ended once and later openings have nothing left to close — carrying that as queue state is cheaper than inferring it. Eligibility is checked when a Reaction OPENS rather than when its gate passed, because the shared Round pool is the only Reaction limit and a combatant can be emptied between the two. There is still no per-Round Reaction count: a combatant may answer later threats in the same Round while Actions remain.",
     },
 } as const satisfies Record<string, EngineDecision>;
 

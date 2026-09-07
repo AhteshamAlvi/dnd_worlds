@@ -1,14 +1,17 @@
 /*
  * Reaction-state lifecycle for Combat.
  *
- * A Reaction is a responsive Combat state that may be entered when another
- * combatant's Action attacks or otherwise affects the reacting combatant.
+ * A Reaction is a responsive Combat state that may be entered when the
+ * reacting combatant is explicitly THREATENED — by an Action that declared
+ * them and declares itself dangerous, or by a hazard the host reports.
  *
- * Being affected does NOT automatically create a Reaction state.
+ * Being threatened does NOT automatically create a Reaction state, and being
+ * AFFECTED never creates one at all: affectedness is settled after
+ * resolution, which is far too late to offer anybody the chance to respond.
  *
  * The flow is:
  *
- *   Action affects another combatant
+ *   Action explicitly threatens another combatant
  *        ↓
  *   Reaction opportunity
  *        ↓
@@ -24,7 +27,8 @@
  *
  * - the triggering combatant's Turn ends immediately,
  * - the reacting combatant may spend Actions up to their resolved Reaction
- *   Action cap,
+ *   Action cap, which limits Actions WITHIN one Reaction and never the
+ *   number of separate Reactions in a Round,
  * - those Actions come from the SAME Round Action pool used during Turns,
  * - the triggering Turn is never resumed,
  * - after the Reaction ends, Combat proceeds to the next combatant in
@@ -152,10 +156,16 @@ export function createReactionOpportunity(
     };
   }
 
+  /*
+   * Widened deliberately. A Combat-native Action's threat list is typed as
+   * the empty tuple — Inaction endangers nobody, and saying so in the type
+   * is worth more than the one cast it costs here.
+   */
+  const threatened: readonly CombatantId[] =
+    action.threatenedCombatantIds;
+
   if (
-    !action.threatenedCombatantIds.includes(
-      reactingCombatantId,
-    )
+    !threatened.includes(reactingCombatantId)
   ) {
     return {
       success: false,
@@ -334,31 +344,20 @@ export function isValidReactionActionCap(
  *
  * Opening the Reaction immediately terminates that Turn.
  */
-export function openReactionAfterGateSuccess(
+/*
+ * Builds the Reaction state itself, without ending anything.
+ *
+ * Split out because a queue of Reactions from ONE trigger ends the Turn
+ * exactly once, on the first opening. The second and later ones have no Turn
+ * left to end, and must still be validated identically — so the validation
+ * lives here and both callers use it rather than one of them growing a
+ * looser copy.
+ */
+export function buildQueuedReaction(
   opportunity: ReactionOpportunity,
-  interruptedTurn: TurnState,
+  interruptedCombatantId: CombatantId,
   combatants: readonly CombatantRoundState[],
-): ReactionStartResult {
-  /*
-   * An ACTION trigger must interrupt the Turn of the combatant who acted:
-   * a Reaction to Gon's punch cannot interrupt somebody else's Turn.
-   *
-   * An EVENT trigger has no actor, so there is nothing to match against. A
-   * hazard interrupts whichever Turn is in progress when it lands, which is
-   * the only Turn it could interrupt.
-   */
-  if (
-    opportunity.trigger.kind === "action" &&
-    interruptedTurn.combatantId !==
-      opportunity.trigger.actorCombatantId
-  ) {
-    return {
-      success: false,
-      opportunity,
-      reason: "triggering-turn-mismatch",
-    };
-  }
-
+): ReactionStartResult | { readonly success: true; readonly reaction: ReactionState } {
   const reactingCombatant =
     findCombatantRoundState(
       combatants,
@@ -395,21 +394,59 @@ export function openReactionAfterGateSuccess(
     };
   }
 
-  const reaction: ReactionState = {
-    kind: "reaction",
+  return {
+    success: true,
 
-    reactingCombatantId:
-      opportunity.reactingCombatantId,
+    reaction: {
+      kind: "reaction",
 
-    trigger: opportunity.trigger,
+      reactingCombatantId:
+        opportunity.reactingCombatantId,
 
-    interruptedCombatantId:
-      interruptedTurn.combatantId,
+      trigger: opportunity.trigger,
 
-    actionCap,
+      interruptedCombatantId,
 
-    actionsSpent: 0,
+      actionCap,
+
+      actionsSpent: 0,
+    },
   };
+}
+
+
+export function openReactionAfterGateSuccess(
+  opportunity: ReactionOpportunity,
+  interruptedTurn: TurnState,
+  combatants: readonly CombatantRoundState[],
+): ReactionStartResult {
+  /*
+   * An ACTION trigger must interrupt the Turn of the combatant who acted:
+   * a Reaction to Gon's punch cannot interrupt somebody else's Turn.
+   *
+   * An EVENT trigger has no actor, so there is nothing to match against. A
+   * hazard interrupts whichever Turn is in progress when it lands, which is
+   * the only Turn it could interrupt.
+   */
+  if (
+    opportunity.trigger.kind === "action" &&
+    interruptedTurn.combatantId !==
+      opportunity.trigger.actorCombatantId
+  ) {
+    return {
+      success: false,
+      opportunity,
+      reason: "triggering-turn-mismatch",
+    };
+  }
+
+  const built = buildQueuedReaction(
+    opportunity,
+    interruptedTurn.combatantId,
+    combatants,
+  );
+
+  if (!built.success) return built;
 
   /*
    * This is deliberately part of opening the Reaction rather than a
@@ -424,7 +461,7 @@ export function openReactionAfterGateSuccess(
 
   return {
     success: true,
-    reaction,
+    reaction: built.reaction,
     triggeringTurnEnd,
   };
 }

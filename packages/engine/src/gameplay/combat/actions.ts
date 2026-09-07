@@ -29,7 +29,7 @@ import type {
   ActiveCombatState,
   CombatAction,
   CombatActionId,
-  CombatActionSource,
+  CombatNativeAction,
   CombatantId,
   CombatantRoundState,
   ReactionState,
@@ -205,8 +205,10 @@ export function canAffordRoundActionCost(
 /*
  * Every normal Action must consume at least one whole Action.
  *
- * Bonus Actions are represented separately and therefore do not use an
- * actionCost of zero.
+ * A cost of zero is refused rather than treated as free. Bonus Actions were
+ * the reason the old comment gave for allowing one, and they are removed:
+ * they were dead data read by nothing, and authorization, limits and cost
+ * semantics for them are a rules design nobody has done.
  */
 export function isValidActionCost(
   actionCost: number,
@@ -360,7 +362,8 @@ function spendRoundActions(
  *   Round Actions remaining = 5
  *   Turn Actions spent      = 1 / 2
  *
- * Bonus Actions do not consume additional normal Actions here.
+ * Bonus Actions do not appear here at all. They were removed from the model
+ * as dead data; there is nothing to not-consume.
  */
 export function spendCombatAction(
   action: CombatAction,
@@ -412,18 +415,13 @@ export function spendCombatAction(
 export function createInactionAction(
   id: CombatActionId,
   combatantId: CombatantId,
-): CombatAction {
-  const source: CombatActionSource = {
-    kind: "inaction",
-  };
-
+): CombatNativeAction {
   return {
+    kind: "combat-native",
     id,
     actorCombatantId: combatantId,
     actionCost: INACTION_ACTION_COST,
-    source,
-
-    /* Doing nothing endangers nobody. */
+    source: "inaction",
     threatenedCombatantIds: [],
   };
 }
@@ -463,18 +461,13 @@ export function spendInaction(
 export function createHesitationAction(
   id: CombatActionId,
   combatantId: CombatantId,
-): CombatAction {
-  const source: CombatActionSource = {
-    kind: "hesitation",
-  };
-
+): CombatNativeAction {
   return {
+    kind: "combat-native",
     id,
     actorCombatantId: combatantId,
     actionCost: HESITATION_ACTION_COST,
-    source,
-
-    /* Failing to decide endangers nobody either. */
+    source: "hesitation",
     threatenedCombatantIds: [],
   };
 }

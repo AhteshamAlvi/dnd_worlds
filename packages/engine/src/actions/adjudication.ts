@@ -62,6 +62,10 @@ import type { RuntimeRequest } from "../runtime/requests";
 import { isQuantitativeRequest } from "../runtime/requests";
 import type { TargetRef } from "../targeting";
 import type { ResolutionApproach } from "./approach";
+import {
+  findStructuredActionCostIssues,
+  type StructuredActionCost,
+} from "./cost";
 import type { EligibilityFinding, EligibilityStatus } from "./eligibility";
 import { isEligibilityStatus } from "./eligibility";
 import { resolveDisposition } from "./preparation";
@@ -112,6 +116,13 @@ export interface CostOverride {
 }
 
 
+/** Replace what the Action economy charges, before Combat charges it. */
+export interface StructuredActionCostOverride {
+  readonly actions: number;
+  readonly reason?: string;
+}
+
+
 export interface OutcomeOverride {
   readonly succeeded?: boolean;
   readonly total?: number;
@@ -142,6 +153,16 @@ export interface AdjudicationDecision {
   readonly findings?: readonly FindingOverride[];
   readonly costs?: readonly CostOverride[];
   readonly outcome?: OutcomeOverride;
+
+  /*
+   * The Action economy's price, as the GM leaves it.
+   *
+   * Separate from the cost REQUESTS above, which are Aura, ammunition and
+   * the rest. This is the structured Action cost, and it is here because a
+   * GM ruling "that's free, you were already moving" has to survive into
+   * Combat rather than being re-read from the authored profile.
+   */
+  readonly structuredActionCost?: StructuredActionCostOverride;
 
   readonly executionDuration?: number;
   readonly travelDuration?: number;
@@ -255,6 +276,7 @@ function integrityIssues(
     if (
       changes ||
       decision.outcome !== undefined ||
+      decision.structuredActionCost !== undefined ||
       decision.executionDuration !== undefined ||
       decision.travelDuration !== undefined
     ) {
@@ -289,6 +311,24 @@ function integrityIssues(
     const issue = finiteIssue(value, code, what);
 
     if (issue !== undefined) errors.push(issue);
+  }
+
+  if (decision.structuredActionCost !== undefined) {
+    /*
+     * Validated through the canonical structured-cost validator rather than
+     * by a second inline check, so a GM cannot set a price the Action
+     * economy could never charge.
+     */
+    const costIssues = findStructuredActionCostIssues({
+      actions: decision.structuredActionCost.actions,
+    });
+
+    for (const issue of costIssues) {
+      errors.push({
+        ...issue,
+        code: "actions.adjudication.structured-cost.invalid",
+      });
+    }
   }
 
   for (const override of decision.findings ?? []) {
@@ -741,6 +781,24 @@ export function adjudicateAction(
     });
   }
 
+  const costOverride = decision.structuredActionCost;
+
+  const structuredActionCost: StructuredActionCost =
+    costOverride === undefined
+      ? proposal.structuredActionCost
+      : { actions: costOverride.actions };
+
+  if (costOverride !== undefined) {
+    outcomeRecords.push({
+      subject: "structured-action-cost",
+      from: String(proposal.structuredActionCost.actions),
+      to: String(costOverride.actions),
+      ...(costOverride.reason === undefined
+        ? {}
+        : { reason: costOverride.reason }),
+    });
+  }
+
   const succeeded = override?.succeeded ?? check.succeeded;
   const total = override?.total ?? check.total;
   const margin = override?.margin ?? check.margin;
@@ -833,6 +891,7 @@ export function adjudicateAction(
     rolls: dice.rolls,
     findings: findings.findings,
     costRequests: costs.costRequests,
+    structuredActionCost,
     disposition: resolveDisposition(
       input.approach,
       proposal.check !== undefined,

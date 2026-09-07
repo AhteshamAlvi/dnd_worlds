@@ -43,7 +43,7 @@ import type {
   ActorRef,
 } from "./identity";
 import type { ExecutionContext } from "./timing";
-import type { ActionCheckProfile } from "./profile";
+import type { ActionCheckProfile, ThreatDeclaration } from "./profile";
 
 
 /**
@@ -194,6 +194,15 @@ export interface ActionProposal {
   /* ── What has to be rolled ──────────────────────────────────────────── */
 
   readonly check?: ActionCheckProfile;
+
+  /**
+   * Whether using this endangers its declared targets.
+   *
+   * Carried onto the proposal from the profile so that everything downstream
+   * — adjudication, authorization, a scheduler — reads one finalized value
+   * rather than reaching back for the authored definition.
+   */
+  readonly threatens: ThreatDeclaration;
 
   /** Expressed in the runtime dice model, so no third dice vocabulary exists. */
   readonly requiredDice: readonly RuntimeDieRequirement[];

@@ -9,12 +9,12 @@
 
 import {
   startRound,
-  type CombatAction,
   type CombatActionCapacity,
   type CombatantId,
   type CombatantRoundState,
   type CombatRound,
   type InitiativeEntry,
+  type NeutralCombatAction,
   type ReactionState,
   type RoundCombatantInput,
   type TurnState,
@@ -96,14 +96,16 @@ export function eventReactionState(
   };
 }
 
+/** A scheduled neutral Action, as the wrapper produces one. */
 export function skillAction(
-  overrides: Partial<CombatAction> = {},
-): CombatAction {
+  overrides: Partial<NeutralCombatAction> = {},
+): NeutralCombatAction {
   return {
+    kind: "neutral",
     id: "action-1",
     actorCombatantId: "a",
     actionCost: 1,
-    source: { kind: "skill", skillId: "strike" },
+    intentId: "intent-1",
     threatenedCombatantIds: [],
     ...overrides,
   };

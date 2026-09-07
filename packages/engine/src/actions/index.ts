@@ -174,6 +174,15 @@ export {
   worldChangeConsequence,
 } from "./consequences";
 
+export type {
+  AuthorizeActionInput,
+  ScheduledActionAuthorization,
+} from "./authorization";
+
+export { authorizeScheduledAction } from "./authorization";
+
+export type { StructuredActionCostOverride } from "./adjudication";
+
 export type { SettledAction, SettlementInput } from "./settlement";
 
 export { settleAction } from "./settlement";

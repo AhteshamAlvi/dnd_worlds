@@ -30,6 +30,7 @@ import type { Warning } from "../infrastructure/diagnostics";
 import type { TraceNode } from "../infrastructure/trace";
 import type { RuntimeRequest } from "../runtime/requests";
 import type { TargetRef } from "../targeting";
+import type { StructuredActionCost } from "./cost";
 import type { EligibilityFinding } from "./eligibility";
 import type { ActionProposal, ProposalDisposition } from "./proposal";
 
@@ -188,6 +189,14 @@ export interface GmActionView {
 
   /** What the action would now cost. Still requests; still unsent. */
   readonly costRequests: readonly RuntimeRequest[];
+
+  /**
+   * The Action economy's price, as the GM left it.
+   *
+   * The authored profile's value unless the GM changed it. Combat spends
+   * exactly this rather than rereading the profile, so a ruling survives.
+   */
+  readonly structuredActionCost: StructuredActionCost;
 
   /** Recomputed from the findings the GM left standing. */
   readonly disposition: ProposalDisposition;

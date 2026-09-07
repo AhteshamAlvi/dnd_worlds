@@ -1,49 +1,59 @@
 /*
- * Combat scheduling neutral actions.
+ * Combat scheduling authorized neutral actions.
  *
- * The claim under test is that Combat adds authorization and an Action
- * economy to an action it does not otherwise own. The same intent resolves
- * outside a fight with no wrapper at all; inside one it additionally has to
- * be this combatant's turn, and it costs the Round pool.
- *
- * The other half is who may react. The replaced rule was "you may react to
- * an Action that targets you", which is wrong twice over: a heal names a
- * recipient and endangers nobody, and a boulder endangers whoever is under
- * it while naming nobody.
+ * Two claims under test. The first is that Combat adds authorization and an
+ * Action economy to an action it does not otherwise own — the same intent
+ * resolves outside a fight with no wrapper at all. The second is that what
+ * reaches Combat is EVIDENCE: an authorization exists only because
+ * preparation and adjudication produced one, it carries the finalized timing
+ * and cost rather than the authored ones, and it carries nothing private.
  */
 
 import { describe, expect, it } from "vitest";
 
 import {
   NO_FOCUS,
-  ONE_ACTION,
   NO_STRUCTURED_ACTION_COST,
+  ONE_ACTION,
   UNSTRUCTURED_EXECUTION,
+  adjudicateAction,
+  authorizeScheduledAction,
   prepareAction,
   profileThreatensDeclaredTargets,
   structuredActionCostFor,
   type ActionIntent,
   type ActionProfile,
+  type AdjudicationDecision,
+  type ActorRef,
+  type ScheduledActionAuthorization,
 } from "../actions";
 import {
   ANY_NUMBER_OF_TARGETS,
   EXACTLY_ONE_TARGET,
   NO_TARGETS,
+  ONE_OR_MORE_TARGETS,
   type TargetRef,
 } from "../targeting";
 import {
+  continueReactionQueue,
   createEventReactionOpportunity,
   createReactionOpportunity,
   findRoundCombatant,
+  nextReactionOpportunity,
+  openNextQueuedReaction,
+  openReactionQueue,
+  queueReactionAfterGateSuccess,
   resolveCombatAction,
   resolveSuccessfulReactionGate,
   resolveVoluntaryReactionEnd,
   scheduleNeutralAction,
   settleActiveStateAfterAction,
+  skipReactionOpportunity,
   type CombatRound,
+  type ReactionQueue,
 } from "../gameplay/combat";
 import { seconds } from "../time/duration";
-import { payloadOf } from "./fixtures/result";
+import { errorCodesOf, payloadOf } from "./fixtures/result";
 import {
   combatantInput,
   startedRound,
@@ -56,48 +66,48 @@ function resolveCombatant(target: TargetRef): string | undefined {
   return target.kind === "entity" ? target.entityId : undefined;
 }
 
-const STRIKE: ActionProfile = {
-  id: "aura-strike",
-  source: { type: "skill", id: "aura-strike" },
-  allowedTimings: ["action", "reaction"],
-  structuredActionCost: ONE_ACTION,
-  targets: { cardinality: EXACTLY_ONE_TARGET },
-  permittedFocusKinds: ["none"],
-  executionDuration: seconds(1),
+function resolveActorCombatant(actor: ActorRef): string | undefined {
+  return actor.id;
+}
+
+function profile(
+  id: string,
+  overrides: Partial<ActionProfile> = {},
+): ActionProfile {
+  return {
+    id,
+    source: { type: "skill", id },
+    allowedTimings: ["action", "reaction"],
+    structuredActionCost: ONE_ACTION,
+    targets: { cardinality: EXACTLY_ONE_TARGET },
+    permittedFocusKinds: ["none"],
+    executionDuration: seconds(1),
+    ...overrides,
+  };
+}
+
+const STRIKE = profile("aura-strike", { threatens: "declared-targets" });
+
+const SWEEP = profile("aura-sweep", {
   threatens: "declared-targets",
-};
+  targets: { cardinality: ONE_OR_MORE_TARGETS },
+});
 
-const HEAL: ActionProfile = {
-  id: "field-treatment",
-  source: { type: "skill", id: "field-treatment" },
-  allowedTimings: ["action"],
-  structuredActionCost: ONE_ACTION,
-  targets: { cardinality: EXACTLY_ONE_TARGET },
-  permittedFocusKinds: ["none"],
-  executionDuration: seconds(1),
-  /* threatens omitted: healing an ally endangers nobody. */
-};
+/* Healing declares a recipient and threatens nobody. */
+const HEAL = profile("field-treatment", { allowedTimings: ["action"] });
 
-const STANCE: ActionProfile = {
-  id: "defensive-stance",
+const STANCE = profile("defensive-stance", {
   source: { type: "technique", id: "defensive-stance" },
   allowedTimings: ["action"],
-  structuredActionCost: ONE_ACTION,
   targets: { cardinality: NO_TARGETS },
-  permittedFocusKinds: ["none"],
-  executionDuration: seconds(1),
-};
+});
 
-const GROUND_PUNCH: ActionProfile = {
-  id: "ground-punch",
-  source: { type: "skill", id: "ground-punch" },
+const GROUND_PUNCH = profile("ground-punch", {
   allowedTimings: ["action"],
-  structuredActionCost: ONE_ACTION,
   targets: { cardinality: ANY_NUMBER_OF_TARGETS },
   permittedFocusKinds: ["none", "position"],
-  executionDuration: seconds(1),
   threatens: "declared-targets",
-};
+});
 
 function intent(overrides: Partial<ActionIntent> = {}): ActionIntent {
   return {
@@ -111,7 +121,39 @@ function intent(overrides: Partial<ActionIntent> = {}): ActionIntent {
   };
 }
 
+const AT_B: TargetRef = { kind: "entity", entityId: "b" };
 const AT_C: TargetRef = { kind: "entity", entityId: "c" };
+
+/**
+ * Prepare, adjudicate and authorize — the only route into Combat.
+ *
+ * Producing an authorization requires the whole pipeline to have run, which
+ * is exactly what the old raw-profile boundary could not prove.
+ */
+function authorize(
+  actionProfile: ActionProfile,
+  actionIntent: ActionIntent,
+  decision: AdjudicationDecision = { kind: "accept" },
+): ScheduledActionAuthorization {
+  const proposal = payloadOf(prepareAction({
+    operationId: "op-1",
+    profile: actionProfile,
+    intent: actionIntent,
+    approach: "mechanical",
+  }));
+
+  const adjudicated = payloadOf(adjudicateAction({
+    operationId: "op-1",
+    proposal,
+    approach: "mechanical",
+    decision,
+  }));
+
+  return payloadOf(authorizeScheduledAction({
+    adjudicated,
+    operationId: "op-1",
+  }));
+}
 
 function schedule(
   round: CombatRound,
@@ -119,9 +161,9 @@ function schedule(
 ) {
   return scheduleNeutralAction(round, {
     actionId: "combat-action-1",
-    profile: STRIKE,
-    intent: intent({ targets: [AT_C] }),
-    actorCombatantId: "a",
+    operationId: "op-1",
+    authorization: authorize(STRIKE, intent({ targets: [AT_C] })),
+    resolveActorCombatant,
     resolveCombatant,
     ...overrides,
   });
@@ -158,10 +200,6 @@ describe("the same intent needs no wrapper outside Combat", () => {
   });
 
   it("charges the Action economy only once a Round is running", () => {
-    /*
-     * The profile's price never changes. What changes is whether there is a
-     * Round to charge it against.
-     */
     expect(structuredActionCostFor(STRIKE, UNSTRUCTURED_EXECUTION))
       .toEqual(NO_STRUCTURED_ACTION_COST);
 
@@ -169,155 +207,406 @@ describe("the same intent needs no wrapper outside Combat", () => {
     expect(STRIKE.structuredActionCost).toEqual(ONE_ACTION);
   });
 
-  it("refuses to schedule an intent built for unstructured time", () => {
-    const result = schedule(threeCombatantRound(), {
+  it("cannot authorize an action prepared for unstructured time", () => {
+    const proposal = payloadOf(prepareAction({
+      operationId: "op-1",
+      profile: STRIKE,
       intent: intent({
         targets: [AT_C],
         executionContext: UNSTRUCTURED_EXECUTION,
       }),
-    });
+      approach: "mechanical",
+    }));
 
-    if (result.success) throw new Error("unreachable");
+    const adjudicated = payloadOf(adjudicateAction({
+      operationId: "op-1",
+      proposal,
+      approach: "mechanical",
+      decision: { kind: "accept" },
+    }));
 
-    expect(result.reason).toBe("execution-context-not-structured");
+    expect(errorCodesOf(authorizeScheduledAction({
+      adjudicated,
+      operationId: "op-1",
+    }))).toContain("actions.authorization.timing.unstructured");
   });
 });
 
 
-describe("Combat authorizes; it does not own the action", () => {
-  it("schedules an eligible intent for the combatant whose Turn it is", () => {
-    const action = scheduled(threeCombatantRound());
+describe("the authorization is narrow evidence", () => {
+  it("carries the finalized facts and nothing private", () => {
+    const authorization = authorize(STRIKE, intent({ targets: [AT_C] }));
 
-    expect(action.actorCombatantId).toBe("a");
-    expect(action.intentId).toBe("intent-1");
-    expect(action.actionCost).toBe(1);
-    expect(action.threatenedCombatantIds).toEqual(["c"]);
+    expect(Object.keys(authorization).sort()).toEqual([
+      "actor",
+      "declaredTargets",
+      "intentId",
+      "operationId",
+      "profileId",
+      "structuredActionCost",
+      "threatens",
+      "timing",
+    ]);
+
+    const serialized = JSON.stringify(authorization);
+
+    expect(serialized).not.toContain("rolls");
+    expect(serialized).not.toContain("overrides");
+    expect(serialized).not.toContain("findings");
+    expect(serialized).not.toContain("consequences");
   });
 
-  it("references the intent rather than copying its targets", () => {
+  it("refuses an adjudication for a different operation", () => {
+    const proposal = payloadOf(prepareAction({
+      operationId: "op-1",
+      profile: STRIKE,
+      intent: intent({ targets: [AT_C] }),
+      approach: "mechanical",
+    }));
+
+    const adjudicated = payloadOf(adjudicateAction({
+      operationId: "op-1",
+      proposal,
+      approach: "mechanical",
+      decision: { kind: "accept" },
+    }));
+
+    expect(errorCodesOf(authorizeScheduledAction({
+      adjudicated,
+      operationId: "op-99",
+    }))).toContain("actions.authorization.operation.mismatch");
+  });
+
+  it("refuses an action nobody may schedule", () => {
+    const blocked = payloadOf(prepareAction({
+      operationId: "op-1",
+      profile: STRIKE,
+      intent: intent({ targets: [AT_C] }),
+      approach: "mechanical",
+      eligibility: [{
+        id: "character.requirement.mastery",
+        status: "unsatisfied",
+        decidedBy: "character",
+      }],
+    }));
+
+    const adjudicated = payloadOf(adjudicateAction({
+      operationId: "op-1",
+      proposal: blocked,
+      approach: "mechanical",
+      decision: { kind: "accept" },
+    }));
+
+    expect(errorCodesOf(authorizeScheduledAction({
+      adjudicated,
+      operationId: "op-1",
+    }))).toContain("actions.authorization.disposition.not-schedulable");
+  });
+
+  it("carries a GM timing ruling that Combat then does not re-reject", () => {
     /*
-     * The CombatAction carries an id and a threat list. The goal, the focus,
-     * the Range, the check and the consequences stay in the neutral layer,
-     * where exactly one thing owns them.
+     * The profile forbids Reaction timing. Preparation says so, the GM
+     * overrules it, and the scheduler must not overrule them back — which is
+     * exactly what re-reading allowedTimings inside Combat used to do.
      */
-    const action = scheduled(threeCombatantRound());
-
-    expect(action).not.toHaveProperty("targets");
-    expect(action).not.toHaveProperty("declaredGoal");
-    expect(action).not.toHaveProperty("focus");
-    expect(action).not.toHaveProperty("check");
-  });
-
-  it("refuses an actor who is not the one acting", () => {
-    const result = schedule(threeCombatantRound(), {
-      actorCombatantId: "b",
-      intent: intent({ targets: [AT_C], actor: { type: "character", id: "b" } }),
+    const reactionOnly = intent({
+      profileId: HEAL.id,
+      targets: [AT_C],
+      executionContext: { kind: "structured", timing: "reaction" },
     });
 
-    if (result.success) throw new Error("unreachable");
+    const proposal = payloadOf(prepareAction({
+      operationId: "op-1",
+      profile: HEAL,
+      intent: reactionOnly,
+      approach: "mechanical",
+    }));
 
-    expect(result.reason).toBe("not-the-active-combatant");
+    expect(proposal.disposition).toBe("ineligible");
+
+    const adjudicated = payloadOf(adjudicateAction({
+      operationId: "op-1",
+      proposal,
+      approach: "mechanical",
+      decision: {
+        kind: "modify",
+        findings: [{
+          id: "actions.timing",
+          status: "satisfied",
+          reason: "He is already braced; let him do it on the interrupt.",
+        }],
+      },
+    }));
+
+    const authorization = payloadOf(authorizeScheduledAction({
+      adjudicated,
+      operationId: "op-1",
+    }));
+
+    expect(authorization.timing).toBe("reaction");
+
+    /* And it schedules inside a Reaction without being re-checked. */
+    const round = threeCombatantRound();
+    const attack = scheduled(round);
+    const spent = resolveCombatAction(round, attack);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const gate = createReactionOpportunity(attack, "c");
+
+    if (!gate.success) throw new Error("unreachable");
+
+    const opened = resolveSuccessfulReactionGate(spent.round, gate.opportunity);
+
+    if (!opened.success) throw new Error("unreachable");
+
+    const result = scheduleNeutralAction(opened.round, {
+      actionId: "combat-action-2",
+      operationId: "op-1",
+      authorization: {
+        ...authorization,
+        actor: { type: "character", id: "c" },
+      },
+      resolveActorCombatant,
+      resolveCombatant,
+    });
+
+    expect(result.success).toBe(true);
+  });
+});
+
+
+describe("GM authority over the structured Action cost", () => {
+  function costOf(decision: AdjudicationDecision) {
+    return authorize(STRIKE, intent({ targets: [AT_C] }), decision)
+      .structuredActionCost.actions;
+  }
+
+  it("preserves the authored cost on an accepted proposal", () => {
+    expect(costOf({ kind: "accept" })).toBe(1);
   });
 
-  it("refuses a timing the profile does not allow", () => {
-    const result = schedule(threeCombatantRound(), {
-      profile: HEAL,
-      intent: intent({
-        profileId: HEAL.id,
-        targets: [AT_C],
-        executionContext: { kind: "structured", timing: "reaction" },
+  it("lets a modify change it before Combat spends anything", () => {
+    expect(costOf({
+      kind: "modify",
+      structuredActionCost: { actions: 2, reason: "He telegraphed it." },
+    })).toBe(2);
+  });
+
+  it("lets a modify waive it entirely", () => {
+    expect(costOf({
+      kind: "modify",
+      structuredActionCost: { actions: 0, reason: "Already in motion." },
+    })).toBe(0);
+  });
+
+  it("spends exactly the finalized cost, not the authored one", () => {
+    const round = threeCombatantRound();
+
+    const action = scheduled(round, {
+      authorization: authorize(STRIKE, intent({ targets: [AT_C] }), {
+        kind: "modify",
+        structuredActionCost: { actions: 2 },
       }),
     });
 
-    if (result.success) throw new Error("unreachable");
-
-    /* The active state is a Turn, so the intent's Reaction timing mismatches. */
-    expect(result.reason).toBe("timing-mismatch");
-  });
-
-  it("schedules a Reaction-timed intent inside a Reaction", () => {
-    const round = threeCombatantRound();
-    const action = scheduled(round, { intent: intent({ targets: [AT_C] }) });
+    expect(action.actionCost).toBe(2);
 
     const spent = resolveCombatAction(round, action);
 
     if (!spent.success) throw new Error("unreachable");
 
-    const opportunity = createReactionOpportunity(action, "c");
+    expect(findRoundCombatant(spent.round, "a")?.remainingActions).toBe(2);
+  });
 
-    if (!opportunity.success) throw new Error("unreachable");
-
-    const opened = resolveSuccessfulReactionGate(
-      spent.round,
-      opportunity.opportunity,
-    );
-
-    if (!opened.success) throw new Error("unreachable");
-
-    const reactionAction = scheduleNeutralAction(opened.round, {
-      actionId: "combat-action-2",
+  it("rejects a technically invalid cost rather than honouring it", () => {
+    const proposal = payloadOf(prepareAction({
+      operationId: "op-1",
       profile: STRIKE,
-      intent: {
-        ...intent({ targets: [{ kind: "entity", entityId: "a" }] }),
-        id: "intent-2",
-        actor: { type: "character", id: "c" },
-        executionContext: { kind: "structured", timing: "reaction" },
-      },
-      actorCombatantId: "c",
-      resolveCombatant,
-    });
+      intent: intent({ targets: [AT_C] }),
+      approach: "mechanical",
+    }));
 
-    expect(reactionAction.success).toBe(true);
-
-    if (!reactionAction.success) throw new Error("unreachable");
-
-    expect(reactionAction.action.threatenedCombatantIds).toEqual(["a"]);
+    for (const actions of [-1, 1.5, Number.NaN]) {
+      expect(errorCodesOf(adjudicateAction({
+        operationId: "op-1",
+        proposal,
+        approach: "mechanical",
+        decision: { kind: "modify", structuredActionCost: { actions } },
+      }))).toContain("actions.adjudication.structured-cost.invalid");
+    }
   });
 
-  it("schedules a targetless action where the profile permits one", () => {
-    const action = scheduled(threeCombatantRound(), {
-      profile: STANCE,
-      intent: intent({ profileId: STANCE.id, targets: [] }),
-    });
-
-    expect(action.threatenedCombatantIds).toEqual([]);
-
-    const spent = resolveCombatAction(threeCombatantRound(), action);
-
-    expect(spent.success).toBe(true);
-  });
-
-  it("keeps mechanical costs out of the Action economy entirely", () => {
+  it("refuses a waived cost at the Combat boundary, where zero cannot spend", () => {
     /*
-     * The Aura this Skill burns is priced by the resource domain and
-     * committed through settlement. Combat charges one thing: an Action.
+     * A waived cost authorizes fine — the GM may rule an act free — and the
+     * Action economy still cannot charge zero. The refusal happens where the
+     * rule lives rather than being pre-empted upstream.
      */
+    const result = schedule(threeCombatantRound(), {
+      authorization: authorize(STRIKE, intent({ targets: [AT_C] }), {
+        kind: "modify",
+        structuredActionCost: { actions: 0 },
+      }),
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("invalid-action-cost");
+  });
+});
+
+
+describe("the actor is mapped, never asserted", () => {
+  it("derives the acting Combatant through the host's resolver", () => {
+    expect(scheduled(threeCombatantRound()).actorCombatantId).toBe("a");
+  });
+
+  it("refuses an actor the host cannot map", () => {
+    const result = schedule(threeCombatantRound(), {
+      resolveActorCombatant: () => undefined,
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("actor-not-resolvable");
+  });
+
+  it("refuses an empty mapping", () => {
+    const result = schedule(threeCombatantRound(), {
+      resolveActorCombatant: () => "   ",
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("actor-not-resolvable");
+  });
+
+  it("refuses an actor who is not in this fight", () => {
+    const result = schedule(threeCombatantRound(), {
+      resolveActorCombatant: () => "z",
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("actor-not-a-participant");
+  });
+
+  it("refuses an actor who is not the one acting", () => {
+    /*
+     * The defect this closes: the old input took an actorCombatantId beside
+     * the intent and never checked they described the same creature, so
+     * Gon's punch could be scheduled as Killua's.
+     */
+    const result = schedule(threeCombatantRound(), {
+      resolveActorCombatant: () => "b",
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("not-the-active-combatant");
+    expect(result.combatantId).toBe("b");
+  });
+
+  it("refuses a scheduling for a different operation", () => {
+    const result = schedule(threeCombatantRound(), { operationId: "op-99" });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("operation-mismatch");
+  });
+
+  it("refuses an empty Combat Action id", () => {
+    const result = schedule(threeCombatantRound(), { actionId: "  " });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("combat-action-id-missing");
+  });
+
+  it("refuses a threatened combatant who is not in this fight", () => {
+    const result = schedule(threeCombatantRound(), {
+      resolveCombatant: () => "z",
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("threatened-combatant-unknown");
+  });
+
+  it("spends nothing and changes nothing when it refuses", () => {
+    const round = threeCombatantRound();
+
+    schedule(round, { resolveActorCombatant: () => "b" });
+    schedule(round, { actionId: "" });
+
+    expect(round.combatants.map((one) => one.remainingActions))
+      .toEqual([4, 4, 4]);
+    expect(round.activeState).toEqual(turnState("a", 2));
+  });
+});
+
+
+describe("no source is relabelled as a Skill", () => {
+  it("records an intent reference rather than a Combat source vocabulary", () => {
     const action = scheduled(threeCombatantRound());
 
-    expect(action.actionCost).toBe(1);
-    expect(action).not.toHaveProperty("costRequests");
-    expect(action).not.toHaveProperty("requested");
+    expect(action.kind).toBe("neutral");
+    expect(action.intentId).toBe("intent-1");
+    expect(action).not.toHaveProperty("source");
+    expect(action).not.toHaveProperty("skillId");
+  });
+
+  it.each([
+    ["skill", { type: "skill", id: "aura-strike" }],
+    ["item", { type: "item", id: "throwing-knife" }],
+    ["movement", { type: "movement", id: "walk" }],
+    ["technique", { type: "technique", id: "en" }],
+    ["projectile", { type: "projectile", id: "thrown-rock" }],
+  ] as const)("schedules a %s without renaming it", (_name, source) => {
+    /*
+     * Every one of these used to be recorded as `{ kind: "skill", skillId }`.
+     * A thrown rock is not a Skill, and Combat maintaining a second, narrower
+     * source vocabulary meant it disagreed with the neutral one.
+     */
+    const action = scheduled(threeCombatantRound(), {
+      authorization: authorize(
+        profile("varied", { source, threatens: "declared-targets" }),
+        intent({ profileId: "varied", targets: [AT_C] }),
+      ),
+    });
+
+    expect(action.kind).toBe("neutral");
+    expect(JSON.stringify(action)).not.toContain("skill");
+  });
+
+  it("keeps Combat-native Actions explicit and distinguishable", () => {
+    const action = scheduled(threeCombatantRound());
+
+    expect(action).not.toHaveProperty("source");
+
+    /* A consumer cannot read an intent id off a Hesitation, or vice versa. */
+    if (action.kind === "neutral") {
+      expect(action.intentId).toBeDefined();
+    }
   });
 });
 
 
 describe("who may react", () => {
   it("offers a Reaction to a combatant a threatening action declared", () => {
-    const action = scheduled(threeCombatantRound());
-
-    expect(createReactionOpportunity(action, "c").success).toBe(true);
+    expect(createReactionOpportunity(scheduled(threeCombatantRound()), "c")
+      .success).toBe(true);
   });
 
   it("offers none for a harmless ability that named the same combatant", () => {
-    /*
-     * The rule the old model got wrong. Being pointed at is not being
-     * endangered, and a healer does not provoke a dodge.
-     */
     expect(profileThreatensDeclaredTargets(HEAL)).toBe(false);
 
     const heal = scheduled(threeCombatantRound(), {
-      profile: HEAL,
-      intent: intent({ profileId: HEAL.id, targets: [AT_C] }),
+      authorization: authorize(HEAL, intent({
+        profileId: HEAL.id,
+        targets: [AT_C],
+      })),
     });
 
     expect(heal.threatenedCombatantIds).toEqual([]);
@@ -330,29 +619,28 @@ describe("who may react", () => {
   });
 
   it("still offers one when the blow ultimately misses", () => {
-    /*
-     * The threat list is fixed before resolution and nothing downstream
-     * edits it. You duck the blow that was coming, not the one that landed.
-     */
     const action = scheduled(threeCombatantRound());
-    const opportunity = createReactionOpportunity(action, "c");
 
-    expect(opportunity.success).toBe(true);
-
-    /* No outcome has been resolved at all at this point. */
+    expect(createReactionOpportunity(action, "c").success).toBe(true);
     expect(action).not.toHaveProperty("succeeded");
   });
 
-  it("offers none to a collateral combatant who was merely affected", () => {
-    /*
-     * A position-focused punch declares nobody. Whoever the blast catches
-     * becomes an affected subject during settlement, and that is far too
-     * late to have offered them a Reaction — the Reaction exists to be taken
-     * BEFORE the thing resolves.
-     */
+  it("offers none for a targetless position-focused action", () => {
     const punch = scheduled(threeCombatantRound(), {
-      profile: GROUND_PUNCH,
-      intent: intent({ profileId: GROUND_PUNCH.id, targets: [] }),
+      authorization: authorize(GROUND_PUNCH, intent({
+        profileId: GROUND_PUNCH.id,
+        targets: [],
+        focus: {
+          kind: "position",
+          position: {
+            kind: "metric",
+            contextId: "yard",
+            xMetres: 1,
+            yMetres: 0,
+            zMetres: 0,
+          },
+        },
+      })),
     });
 
     expect(punch.threatenedCombatantIds).toEqual([]);
@@ -364,32 +652,47 @@ describe("who may react", () => {
     expect(result.reason).toBe("combatant-not-threatened");
   });
 
-  it("offers one to a bystander who WAS named as explicitly threatened", () => {
+  it("offers none to a collateral combatant who was merely affected", () => {
     /*
-     * The same position-focused punch, with whoever worked out that B is
-     * standing on that ground naming them ahead of resolution. Combat does
-     * not compute this; it is told.
+     * Affectedness is known only after resolution, which is far too late to
+     * have offered anyone a Reaction — the Reaction exists to be taken
+     * before the thing resolves.
      */
     const punch = scheduled(threeCombatantRound(), {
-      profile: GROUND_PUNCH,
-      intent: intent({ profileId: GROUND_PUNCH.id, targets: [] }),
-      additionalThreatenedCombatantIds: ["b"],
+      authorization: authorize(GROUND_PUNCH, intent({
+        profileId: GROUND_PUNCH.id,
+        targets: [],
+      })),
     });
 
-    expect(punch.threatenedCombatantIds).toEqual(["b"]);
-    expect(createReactionOpportunity(punch, "b").success).toBe(true);
+    expect(createReactionOpportunity(punch, "b").success).toBe(false);
   });
 
-  it("refuses to let a harmless profile carry an explicit threat", () => {
-    const result = schedule(threeCombatantRound(), {
-      profile: HEAL,
-      intent: intent({ profileId: HEAL.id, targets: [AT_C] }),
-      additionalThreatenedCombatantIds: ["b"],
-    });
+  it("has no way for a caller to add an undeclared threat", () => {
+    /*
+     * `additionalThreatenedCombatantIds` was an unauthored threat rule
+     * wearing a parameter, and it is gone. An action that endangers subjects
+     * it did not declare needs an authored rule, not a caller's argument.
+     */
+    const keys = [
+      "actionId",
+      "authorization",
+      "operationId",
+      "resolveActorCombatant",
+      "resolveCombatant",
+    ];
 
-    if (result.success) throw new Error("unreachable");
+    const input = {
+      actionId: "combat-action-1",
+      operationId: "op-1",
+      authorization: authorize(STRIKE, intent({ targets: [AT_C] })),
+      resolveActorCombatant,
+      resolveCombatant,
+    };
 
-    expect(result.reason).toBe("threat-not-permitted");
+    expect(Object.keys(input).sort()).toEqual(keys.sort());
+    expect(input).not.toHaveProperty("additionalThreatenedCombatantIds");
+    expect(input).not.toHaveProperty("source");
   });
 
   it("offers one for a hazard that no combatant performed", () => {
@@ -410,8 +713,6 @@ describe("who may react", () => {
   });
 
   it("interrupts the Turn in progress when a hazard opens a Reaction", () => {
-    const round = threeCombatantRound();
-
     const threat = createEventReactionOpportunity(
       { eventId: "boulder-1", threatenedCombatantIds: ["c"] },
       "c",
@@ -419,37 +720,297 @@ describe("who may react", () => {
 
     if (!threat.success) throw new Error("unreachable");
 
-    const opened = resolveSuccessfulReactionGate(round, threat.opportunity);
-
-    expect(opened.success).toBe(true);
+    const opened = resolveSuccessfulReactionGate(
+      threeCombatantRound(),
+      threat.opportunity,
+    );
 
     if (!opened.success) throw new Error("unreachable");
 
-    /* A's Turn ends even though A did nothing. */
     expect(opened.triggeringTurnEnd.combatantId).toBe("a");
     expect(opened.round.initiativeIndex).toBe(0);
   });
 });
 
 
-describe("Reactions are limited only by the shared Round pool", () => {
-  it("lets one combatant react repeatedly while Actions remain", () => {
+describe("every threatened combatant gets their turn to answer", () => {
+  /* A sweeps B and C. Initiative is A, B, C. */
+  function sweep(round: CombatRound) {
+    return scheduled(round, {
+      authorization: authorize(SWEEP, intent({
+        profileId: SWEEP.id,
+        targets: [AT_C, AT_B],
+      })),
+    });
+  }
+
+  function queueFor(round: CombatRound): {
+    readonly round: CombatRound;
+    readonly queue: ReactionQueue;
+  } {
+    const action = sweep(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const opened = openReactionQueue(
+      spent.round,
+      { kind: "action", actionId: action.id, actorCombatantId: "a" },
+      action.threatenedCombatantIds,
+    );
+
+    if (!opened.success) throw new Error("unreachable");
+
+    return { round: spent.round, queue: opened.queue };
+  }
+
+  it("threatens both declared combatants, deduplicated", () => {
+    const action = sweep(threeCombatantRound());
+
+    expect([...action.threatenedCombatantIds].sort()).toEqual(["b", "c"]);
+  });
+
+  it("orders opportunities by Initiative, not by target order", () => {
     /*
-     * There is no per-Round Reaction limit. The Reaction cap governs how
-     * many Actions may be spent INSIDE one Reaction; the Round pool governs
-     * how many Reactions a combatant can afford at all.
+     * The intent declared C first. B acts before C, so B is asked first —
+     * who answers first is decided by the same rule that decides who acts
+     * first.
      */
+    const { queue } = queueFor(threeCombatantRound());
+
+    expect(queue.pendingOpportunities).toEqual(["b", "c"]);
+    expect(nextReactionOpportunity(queue)?.reactingCombatantId).toBe("b");
+  });
+
+  it("excludes the actor from their own sweep", () => {
+    const round = threeCombatantRound();
+
+    const opened = openReactionQueue(
+      { ...round },
+      { kind: "action", actionId: "combat-action-1", actorCombatantId: "a" },
+      ["a", "b"],
+    );
+
+    if (!opened.success) throw new Error("unreachable");
+
+    expect(opened.queue.pendingOpportunities).toEqual(["b"]);
+  });
+
+  it("lets a failed or declined gate advance without spending anything", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const afterSkip = skipReactionOpportunity(queue);
+
+    expect(afterSkip.pendingOpportunities).toEqual(["c"]);
+    expect(afterSkip.queuedReactions).toEqual([]);
+    expect(afterSkip.turnEnded).toBe(false);
+
+    /* Nothing was spent and the Turn is still open. */
+    expect(findRoundCombatant(round, "b")?.remainingActions).toBe(4);
+    expect(round.activeState?.kind).toBe("turn");
+  });
+
+  it("still offers the later combatant after an earlier gate fails", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const afterSkip = skipReactionOpportunity(queue);
+    const queued = queueReactionAfterGateSuccess(afterSkip);
+
+    expect(queued.queuedReactions).toEqual(["c"]);
+
+    const opened = openNextQueuedReaction(round, queued);
+
+    expect(opened.success).toBe(true);
+
+    if (!opened.success) throw new Error("unreachable");
+
+    expect(opened.round.activeState?.kind).toBe("reaction");
+  });
+
+  it("ends the triggering Turn once, on the first opening", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const both = queueReactionAfterGateSuccess(
+      queueReactionAfterGateSuccess(queue),
+    );
+
+    expect(both.queuedReactions).toEqual(["b", "c"]);
+
+    const first = openNextQueuedReaction(round, both);
+
+    if (!first.success) throw new Error("unreachable");
+
+    expect(first.triggeringTurnEnd).toEqual({
+      combatantId: "a",
+      reason: "reaction-opened",
+      actionsSpent: 1,
+    });
+    expect(first.queue.turnEnded).toBe(true);
+
+    const second = openNextQueuedReaction(first.round, first.queue);
+
+    if (!second.success) throw new Error("unreachable");
+
+    /* No second Turn ending: there is no Turn left to end. */
+    expect(second.triggeringTurnEnd).toBeUndefined();
+  });
+
+  it("advances to the next queued Reaction, not to the next Turn", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const both = queueReactionAfterGateSuccess(
+      queueReactionAfterGateSuccess(queue),
+    );
+
+    const first = openNextQueuedReaction(round, both);
+
+    if (!first.success) throw new Error("unreachable");
+
+    const continued = continueReactionQueue(first.round, first.queue);
+
+    if (!continued.success) throw new Error("unreachable");
+
+    expect(continued.reactionOpened).toBe(true);
+    expect(continued.round.activeState?.kind).toBe("reaction");
+
+    const active = continued.round.activeState;
+
+    if (active?.kind !== "reaction") throw new Error("unreachable");
+
+    expect(active.reactingCombatantId).toBe("c");
+    expect(active.interruptedCombatantId).toBe("a");
+  });
+
+  it("keeps one coherent trigger across every queued Reaction", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const both = queueReactionAfterGateSuccess(
+      queueReactionAfterGateSuccess(queue),
+    );
+
+    const first = openNextQueuedReaction(round, both);
+
+    if (!first.success) throw new Error("unreachable");
+
+    const continued = continueReactionQueue(first.round, first.queue);
+
+    if (!continued.success) throw new Error("unreachable");
+
+    const firstState = first.round.activeState;
+    const secondState = continued.round.activeState;
+
+    if (firstState?.kind !== "reaction") throw new Error("unreachable");
+    if (secondState?.kind !== "reaction") throw new Error("unreachable");
+
+    expect(secondState.trigger).toEqual(firstState.trigger);
+    expect(secondState.interruptedCombatantId)
+      .toBe(firstState.interruptedCombatantId);
+  });
+
+  it("continues after the interrupted combatant once the queue empties", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const queued = queueReactionAfterGateSuccess(
+      skipReactionOpportunity(queue),
+    );
+
+    const opened = openNextQueuedReaction(round, queued);
+
+    if (!opened.success) throw new Error("unreachable");
+
+    const continued = continueReactionQueue(opened.round, opened.queue);
+
+    if (!continued.success) throw new Error("unreachable");
+
+    expect(continued.reactionOpened).toBe(false);
+
+    /* A was interrupted at Initiative 0, so the Round resumes at B. */
+    expect(continued.round.initiativeIndex).toBe(1);
+    expect(continued.round.activeState).toEqual(turnState("b", 2));
+  });
+
+  it("cannot open a queued Reaction for an exhausted combatant", () => {
+    /*
+     * The shared Round pool is the only Reaction limit there is, and it is
+     * checked when the Reaction opens rather than when the Gate was passed.
+     */
+    let round = startedRound([
+      combatantInput("a", { round: 4 }),
+      combatantInput("b", { round: 1 }),
+      combatantInput("c", { round: 4 }),
+    ]);
+
+    const action = sweep(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    round = spent.round;
+
+    const opened = openReactionQueue(
+      round,
+      { kind: "action", actionId: action.id, actorCombatantId: "a" },
+      action.threatenedCombatantIds,
+    );
+
+    if (!opened.success) throw new Error("unreachable");
+
+    const queued = queueReactionAfterGateSuccess(opened.queue);
+
+    /* B spends their only Round Action elsewhere before the queue reaches them. */
+    const drained = {
+      ...round,
+      combatants: round.combatants.map((combatant) =>
+        combatant.combatantId === "b"
+          ? { ...combatant, remainingActions: 0 }
+          : combatant
+      ),
+    };
+
+    const result = openNextQueuedReaction(drained, queued);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-open-failed");
+    expect(result.reactionStartFailureReason)
+      .toBe("reacting-combatant-not-round-eligible");
+  });
+
+  it("refuses a queue naming somebody outside the fight", () => {
+    const result = openReactionQueue(
+      threeCombatantRound(),
+      { kind: "action", actionId: "combat-action-1", actorCombatantId: "a" },
+      ["z"],
+    );
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("threatened-combatant-unknown");
+  });
+
+  it("refuses a queue with no trigger identity", () => {
+    const result = openReactionQueue(
+      threeCombatantRound(),
+      { kind: "event", eventId: "   " },
+      ["b"],
+    );
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("trigger-id-missing");
+  });
+});
+
+
+describe("Reactions are limited only by the shared Round pool", () => {
+  it("lets one combatant react to several threats in a Round", () => {
     let round = startedRound([
       combatantInput("a", { round: 4 }),
       combatantInput("b", { round: 4 }),
       combatantInput("c", { round: 4, reaction: 1 }),
     ]);
 
-    /*
-     * A attacks C, C reacts; the Round then moves on to B, who attacks C
-     * again. C reacts a second time in the same Round, which nothing stops.
-     */
-    for (const actionId of ["r-1", "r-2"]) {
+    for (const [index, actionId] of ["r-1", "r-2"].entries()) {
       const actor = round.activeState?.kind === "turn"
         ? round.activeState.combatantId
         : undefined;
@@ -458,10 +1019,11 @@ describe("Reactions are limited only by the shared Round pool", () => {
 
       const action = scheduled(round, {
         actionId,
-        actorCombatantId: actor,
-        intent: {
-          ...intent({ targets: [AT_C] }),
-          id: `intent-${actionId}`,
+        authorization: {
+          ...authorize(STRIKE, intent({
+            id: `intent-${index}`,
+            targets: [AT_C],
+          })),
           actor: { type: "character", id: actor },
         },
       });
@@ -470,64 +1032,26 @@ describe("Reactions are limited only by the shared Round pool", () => {
 
       if (!spent.success) throw new Error("unreachable");
 
-      const opportunity = createReactionOpportunity(action, "c");
+      const gate = createReactionOpportunity(action, "c");
 
-      if (!opportunity.success) throw new Error("unreachable");
+      if (!gate.success) throw new Error("unreachable");
 
       const opened = resolveSuccessfulReactionGate(
         spent.round,
-        opportunity.opportunity,
+        gate.opportunity,
       );
 
       if (!opened.success) throw new Error("unreachable");
 
-      const reacted = resolveVoluntaryReactionEnd(opened.round);
+      const ended = resolveVoluntaryReactionEnd(opened.round);
 
-      if (!reacted.success) throw new Error("unreachable");
+      if (!ended.success) throw new Error("unreachable");
 
-      round = reacted.round;
+      round = ended.round;
     }
 
-    /* C reacted twice and has spent nothing, having declined both times. */
+    /* C answered twice, declining both times, so nothing was spent. */
     expect(findRoundCombatant(round, "c")?.remainingActions).toBe(4);
-  });
-
-  it("caps Actions within one Reaction without capping Reactions", () => {
-    const round = threeCombatantRound({ reaction: 1 });
-    const action = scheduled(round);
-    const spent = resolveCombatAction(round, action);
-
-    if (!spent.success) throw new Error("unreachable");
-
-    const opportunity = createReactionOpportunity(action, "c");
-
-    if (!opportunity.success) throw new Error("unreachable");
-
-    const opened = resolveSuccessfulReactionGate(
-      spent.round,
-      opportunity.opportunity,
-    );
-
-    if (!opened.success) throw new Error("unreachable");
-
-    const reactionAction = scheduled(opened.round, {
-      actionId: "combat-action-2",
-      intent: {
-        ...intent({ targets: [{ kind: "entity", entityId: "a" }] }),
-        id: "intent-2",
-        actor: { type: "character", id: "c" },
-        executionContext: { kind: "structured", timing: "reaction" },
-      },
-      actorCombatantId: "c",
-    });
-
-    const reacted = resolveCombatAction(opened.round, reactionAction);
-
-    if (!reacted.success) throw new Error("unreachable");
-
-    /* The cap of 1 is now reached, and the Reaction must end. */
-    expect(reacted.stateMustEnd).toBe(true);
-    expect(findRoundCombatant(reacted.round, "c")?.remainingActions).toBe(3);
   });
 });
 
@@ -544,15 +1068,12 @@ describe("the delayed transition survives the wrapper", () => {
     expect(spent.stateMustEnd).toBe(true);
     expect(spent.round.activeState).toEqual(turnState("a", 1, 1));
 
-    /* The Gate can still be resolved against a Turn that is still open. */
-    const opportunity = createReactionOpportunity(action, "c");
+    const gate = createReactionOpportunity(action, "c");
 
-    if (!opportunity.success) throw new Error("unreachable");
+    if (!gate.success) throw new Error("unreachable");
 
-    expect(resolveSuccessfulReactionGate(
-      spent.round,
-      opportunity.opportunity,
-    ).success).toBe(true);
+    expect(resolveSuccessfulReactionGate(spent.round, gate.opportunity).success)
+      .toBe(true);
   });
 
   it("advances only once the state is settled", () => {

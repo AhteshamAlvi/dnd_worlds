@@ -40,6 +40,7 @@
 
 export {
   COMBAT_STATE_KINDS,
+  COMBAT_NATIVE_ACTION_KINDS,
 } from "./types";
 
 export type {
@@ -48,8 +49,10 @@ export type {
 
   CombatStateKind,
 
-  CombatActionSource,
   CombatAction,
+  NeutralCombatAction,
+  CombatNativeAction,
+  CombatNativeActionKind,
 
   CombatActionCapacity,
   CombatantRoundState,
@@ -208,6 +211,29 @@ export type {
 // ---------------------------------------------------------------------------
 
 export {
+  REACTION_QUEUE_FAILURE_REASONS,
+
+  continueReactionQueue,
+  nextReactionOpportunity,
+  openNextQueuedReaction,
+  openReactionQueue,
+  queueReactionAfterGateSuccess,
+  skipReactionOpportunity,
+} from "./reaction-queue";
+
+export type {
+  ReactionQueue,
+  ReactionQueueFailure,
+  ReactionQueueFailureReason,
+  ReactionQueueOpened,
+  ReactionQueueResult,
+  ReactionQueueContinued,
+  ReactionQueueContinueResult,
+  QueuedReactionOpened,
+  QueuedReactionOpenResult,
+} from "./reaction-queue";
+
+export {
   REACTION_DECISION_LIMIT_SECONDS,
 
   REACTION_OPPORTUNITY_FAILURE_REASONS,
@@ -216,6 +242,7 @@ export {
 
   createReactionOpportunity,
   createEventReactionOpportunity,
+  buildQueuedReaction,
 
   isValidReactionActionCap,
 
