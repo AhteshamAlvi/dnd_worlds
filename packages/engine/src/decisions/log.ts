@@ -293,6 +293,24 @@ export const ENGINE_DECISIONS = {
         rationale:
             "A required field that some requests must lie about is a field on the wrong type, and the symptom was visible: removing a fully healed Injury is not a quantity, so it shipped `requested: 1` — a placeholder meaning 'one Injury, I suppose' that every consumer then had to know to ignore. Placeholder values are worse than absent ones because they type-check, read as data, and quietly answer questions nobody asked. Generic upkeep failed the same way from the other direction: whether an upkeep is per hour or per Round, which reserve pays it, whether it scales with Output and what suspension does to it are domain questions, and one shared number silently commits every future domain to one set of answers.",
     },
+    "runtime.ownership.domain-and-entity-id": {
+        id: "runtime.ownership.domain-and-entity-id",
+        question:
+            "The ownership matrix names domains — aura, body, character-status, combat — and the first coordinator keyed requests, events and the transaction draft by domain alone. Is a domain enough to address a piece of state?",
+        chosen:
+            "SUPERSEDES the domain-only routing in runtime.requests.typed-cross-domain-changes and the domain-keyed draft in runtime.operation.discardable-transaction-draft. Every request, event and stored state names a RuntimeOwnerRef — a domain AND a stable entity id — and the draft is keyed by ownerKey(), \"aura:gon\". Simultaneous effects group by effective time and COMPLETE target owner. Handlers stay registered per domain, because the rules are per domain; what differs is the state each call is handed.",
+        rationale:
+            "A domain names a KIND of state, not an instance of one, and almost every interesting operation involves two characters. Keyed by domain alone, Gon's Aura and Killua's Aura shared one slot: the second write won, and a fight between two people resolved as though one person were hitting themselves. The batching consequence was worse than the storage one, because it was silent — two characters' damage grouped into one batch and applied to whichever Body the coordinator fetched, producing a plausible number attributed to the wrong person. Keeping handlers per domain is the other half of the decision: duplicating the Aura mechanic per character would be the multi-copy failure the request system exists to prevent, so there is one handler and it is handed whichever pool the request names.",
+    },
+    "runtime.validation.phases-and-handler-outcomes": {
+        id: "runtime.validation.phases-and-handler-outcomes",
+        question:
+            "The coordinator trusted its callers and its handlers about two things: that a request in the cost list was a cost, and that a handler's reported outcomes corresponded to the requests it was given. Both were checked loosely or not at all.",
+        chosen:
+            "Both are enforced. Only \"cost\" requests may appear in operation.costs and only \"effect\" requests may enter settlement; a misplaced one discards the draft. Outcome ids must match their requests EXACTLY — missing, duplicated, unexpected and mismatched ids are all refused — and any reported amount must be finite and non-negative. A malformed prepared cost is reported rather than thrown on.",
+        rationale:
+            "The phases carry different atomicity guarantees, so running one as the other is not a harmless mix-up: an effect priced as a cost becomes refusable when it was never meant to be, and a cost settled as an effect applies before anything has been priced. Outcome checking by COUNT rather than identity was the subtler gap — a handler that answered one request twice and dropped another had the right total and the wrong answer, and the dropped request reported nothing at all while the operation succeeded. Amounts are checked because a NaN or negative actual flows straight into an event and a caller's arithmetic without ever being questioned, and \"healed -3 Body Points\" reads as data rather than as the bug it is. The malformed-prepared-cost guard exists because a throw escapes the transaction and takes the trace with it, which is strictly worse than a reported failure that leaves every original state intact.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:

@@ -32,7 +32,6 @@
  * owner has acted.
  */
 
-import type { RuntimeDomain } from "../../../../runtime/domains";
 import type { RuntimeEvent } from "../../../../runtime/events";
 import type { RuntimeRequest } from "../../../../runtime/requests";
 import type { GameTimestamp } from "../../../../time/types";
@@ -100,8 +99,8 @@ export function recoveryRequests(
     phase: "effect" as const,
     operationId: context.operationId,
     occurredAt: context.occurredAt,
-    from: "body" as RuntimeDomain,
-    to: "character-status" as RuntimeDomain,
+    from: { domain: "body" as const, id: context.subjectId },
+    to: { domain: "character-status" as const, id: context.subjectId },
     characterInjuryId: removal.characterInjuryId,
     injuryId: removal.injuryId,
   }));
@@ -140,7 +139,7 @@ export function recoveryEvent(
     domain: "body",
     operationId: context.operationId,
     occurredAt: context.occurredAt,
-    target: { domain: "body", id: context.subjectId },
+    target: { domain: "body" as const, id: context.subjectId },
     change: { requested, actual },
   };
 }

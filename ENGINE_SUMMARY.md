@@ -3,7 +3,7 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
 **Snapshot:** Phase 0.2 close · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **72 files, 2,044 tests, all passing**. `tsc --noEmit` → **clean**.
+**Health:** `vitest run` → **72 files, 2,059 tests, all passing**. `tsc --noEmit` → **clean**.
 **Backlog:** [`BACKLOG.md`](BACKLOG.md) is the single authoritative list of what is not done.
 **Ownership:** [`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) is the authoritative state-ownership
 matrix and transition protocol.
@@ -1527,6 +1527,12 @@ runtime/
 └── coordinator.ts  procedure only — imports NO gameplay domain
 ```
 
+**Ownership is a domain *and* an id.** `RuntimeOwnerRef { domain, id }` — a domain names a *kind*
+of state, and Gon's Aura and Killua's Aura are two of them. The draft is keyed by `ownerKey()`
+(`"aura:gon"`), and simultaneous effects group by effective time and **complete owner**. Handlers
+stay registered per domain, because the rules are per domain; what differs is the state handed over.
+Keyed by domain alone, a fight between two people resolved as one person hitting themselves.
+
 **Runtime State exists outside Combat.** Ren goes up in a corridor, survives Combat starting, and
 is still up when it ends. Combat *attaches* through a generic slot — this layer never names a
 Combat type, because runtime sits below `gameplay/`. Permanent `NenState` carries no
@@ -1550,6 +1556,11 @@ Ordering fixes the log and the dispatch order; it cannot decide a result.
 
 **The request base carries routing only.** Amounts live on `QuantitativeRequest`; a removal is not a
 quantity and no longer ships `requested: 1` for the type's benefit.
+
+**Phases and handler outcomes are enforced.** Only costs may be costs and only effects may be
+effects; outcome ids must match their requests exactly — missing, duplicated and unexpected are all
+refused, because counting alone passes a handler that answered one request twice and dropped
+another. Reported amounts must be finite and non-negative.
 
 **Determinism**: dice are caller input and validated first, operation ids and timestamps are
 supplied not generated, requests sort by a total stable key, and events carry a coordinator-assigned
@@ -1594,6 +1605,8 @@ rather than an edit to the book.
 25. **`runtime.costs.cumulative-against-the-draft`** — costs prepare against the draft as it stands, so same-owner costs are cumulative and cannot jointly overspend.
 26. **`runtime.effects.simultaneous-batch-settlement`** — effects on one owner at one instant settle from one pre-state; ordering controls reporting, never results.
 27. **`runtime.requests.routing-base-domain-payloads`** — the shared request carries routing only; amounts and upkeep belong to the domains that mean them.
+28. **`runtime.ownership.domain-and-entity-id`** — *supersedes the domain-only routing in 21 and 24.* Ownership is a domain and a stable id; the draft is keyed by owner and batches group by complete owner.
+29. **`runtime.validation.phases-and-handler-outcomes`** — request phases are enforced and handler outcomes are checked by identity, not by count.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1602,7 +1615,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (72 files, 2,044 tests)
+## 14 · Test coverage (72 files, 2,059 tests)
 
 Every test file appears in exactly one row, and the rows sum to the suite total. Recounted from
 the runner's own report at Phase 0.2 close — the previous version of this table omitted the whole
@@ -1621,8 +1634,8 @@ Senses category and two Body files, and its Body subtotal was 32 short of its ow
 | Endurance & character time | **63** | body-endurance 39 · character-time 24 |
 | Progression | **58** | progression 58 |
 | Capabilities | **41** | skills 41 |
-| Runtime protocol | **66** | runtime-protocol 48 · runtime-references 18 |
-| **Total** | **2,044** | **72 files** |
+| Runtime protocol | **81** | runtime-protocol 63 · runtime-references 18 |
+| **Total** | **2,059** | **72 files** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1700,7 +1713,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 72 files, 2,044 tests
+cd packages/engine && npx vitest run     # 72 files, 2,059 tests
 ```
 
 ```bash

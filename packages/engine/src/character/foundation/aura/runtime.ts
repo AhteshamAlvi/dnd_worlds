@@ -40,7 +40,7 @@ import type {
   PreparedCost,
 } from "../../../runtime/coordinator";
 import type { RuntimeEvent } from "../../../runtime/events";
-import type { RuntimeDomain } from "../../../runtime/domains";
+import type { RuntimeOwnerRef } from "../../../runtime/domains";
 import type {
   QuantitativeRequest,
   RuntimeRequest,
@@ -68,8 +68,6 @@ export const AURA_ACTION_COST = "aura.action-cost";
 export interface AuraCostRequest extends QuantitativeRequest {
   readonly kind: typeof AURA_ACTION_COST;
 
-  /** Whose Aura, for the event's source. Aura's own payload, not the base's. */
-  readonly sourceId?: string;
   readonly exertionLoad?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
@@ -149,7 +147,7 @@ export function createAuraCostHandler(
         success: true,
         payload: {
           requestId: request.requestId,
-          domain: "aura",
+          owner: request.to,
           nextState: attempt.payload.state,
           actual: -attempt.payload.currentChange,
           prepared,
@@ -169,7 +167,8 @@ export function createAuraCostHandler(
         domain: "aura",
         operationId: request.operationId,
         occurredAt: request.occurredAt,
-        source: { domain: request.from, id: request.sourceId ?? "" },
+        source: request.from,
+        target: request.to,
         change: { requested: request.requested, actual },
       };
 
@@ -197,9 +196,12 @@ export function auraCostRequest(input: {
   readonly requestId: string;
   readonly operationId: string;
   readonly occurredAt: GameTimestamp;
-  readonly from: RuntimeDomain;
+  readonly from: RuntimeOwnerRef;
+
+  /** Whose Aura. The owner this cost is priced and charged against. */
+  readonly to: RuntimeOwnerRef;
+
   readonly requested: number;
-  readonly sourceId?: string;
   readonly exertionLoad?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
@@ -211,10 +213,9 @@ export function auraCostRequest(input: {
     operationId: input.operationId,
     occurredAt: input.occurredAt,
     from: input.from,
-    to: "aura",
+    to: input.to,
     requested: input.requested,
     allowPartial: false,
-    ...(input.sourceId === undefined ? {} : { sourceId: input.sourceId }),
     ...(input.exertionLoad === undefined
       ? {}
       : { exertionLoad: input.exertionLoad }),

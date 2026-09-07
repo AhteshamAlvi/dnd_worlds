@@ -30,6 +30,21 @@ merging into one resolver, and a dependency test enforces the emptiness.
 The vocabulary is `RuntimeDomain` in `runtime/domains.ts`, so an event naming its producer and a
 request naming its target are checked by the type system rather than by review.
 
+### Ownership is a domain **and** an id
+
+```ts
+interface RuntimeOwnerRef { domain: RuntimeDomain; id: string }
+```
+
+A domain names a *kind* of state. `"aura"` is not a thing you can address in a scene with two
+characters in it — Gon's Aura and Killua's Aura are two states, and an operation where one strikes
+the other touches both. Requests, events and the transaction draft all carry the full owner, and the
+draft is keyed by `ownerKey()` (`"aura:gon"`). Keying by domain alone silently merged them: the
+second write won, and a fight between two people resolved as though one were hitting themselves.
+
+Handlers are still registered **per domain**, because the rules are per domain — there is one Aura
+mechanic and it applies to everybody. What differs is the state it is handed.
+
 ### Runtime State is not a chapter
 
 It means *temporary facts currently true*. Ren goes up in a corridor, stays up when Combat starts,
@@ -46,8 +61,10 @@ ownership tests assert.
 Each domain owns a section (`nen`, `transformations`, `activity`, `spatial`). A single untyped
 object would let any domain write any other's data — invisibly, because a bag has no shape to
 violate. The sections declared today are **protocol-level only**: `ActiveApplication` knows a
-maintained thing has a source, a start, maybe an end and maybe an upkeep. It knows nothing about
-Output levels or Chū allocation and must not learn.
+maintained thing has a source, a start and possibly an end. It knows nothing about Output levels,
+Chū allocation or **what maintaining it costs** — whether an upkeep is per hour or per Round and
+which reserve pays it are domain questions, so upkeep stays with the domain that defines the
+application.
 
 ### Permanent Nen versus active Nen
 
@@ -176,9 +193,15 @@ same reason — whether an upkeep is per hour or per Round and which reserve pay
 questions that one shared number would answer for everybody.
 
 **Cost** requests are priced against the draft before the operation may succeed. **Effect** requests
-are settled after resolution, in **simultaneous batches**: everything landing on one owner at one
-effective time is handed over together with *one pre-batch state*, and the owner returns one
-combined replacement.
+are settled after resolution, in **simultaneous batches**: everything landing on one *complete
+owner* at one effective time is handed over together with *one pre-batch state*, and the owner
+returns one combined replacement. Grouping by domain would put two characters' damage in one batch
+and apply it to whichever Body was fetched.
+
+The phases are enforced, not merely documented: only `"cost"` requests may appear in
+`operation.costs`, only `"effect"` requests may enter settlement, and a misplaced one discards the
+draft. They carry different atomicity guarantees, so running one as the other would apply an effect
+before costs were priced, or price an effect that was never meant to be refusable.
 
 Applying simultaneous effects one at a time is reproducible but not correct — the second reads the
 first's result, so the answer depends on the sort key. This is the same defect the Aura solver had
@@ -192,11 +215,16 @@ Consequence depth is bounded at `MAXIMUM_CONSEQUENCE_DEPTH = 8`.
 
 ### Validated at the boundary
 
-Empty or duplicate request ids · requests belonging to another operation · unknown phases, domains
-or non-finite times · negative or non-finite amounts · missing or duplicate handlers · a prepared
-cost that does not match its request · an effect handler answering the wrong number of requests ·
-empty, duplicate or malformed dice purposes, faces and requirements. Every one of them discards the
-draft.
+Empty or duplicate request ids · requests belonging to another operation · misplaced phases ·
+unknown phases, owners (domain **and** id) or non-finite times · negative or non-finite requested
+amounts · missing or duplicate handlers · a prepared cost that does not match its request's owner ·
+a cost outcome reported against a different request · an effect outcome that is missing, duplicated
+or unexpected · a handler-reported amount that is negative or non-finite · empty, duplicate or
+malformed dice purposes, faces and requirements. Every one of them discards the draft.
+
+Outcome checking is by **identity**, not by count: a handler that answered one request twice and
+dropped another has the right total and the wrong answer, and the dropped request would silently
+report nothing.
 
 ## 6 · Determinism
 

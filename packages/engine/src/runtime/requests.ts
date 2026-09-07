@@ -42,7 +42,11 @@
 import type { EngineError } from "../infrastructure/diagnostics";
 import type { GameTimestamp } from "../time/types";
 
-import { isRuntimeDomain, type RuntimeDomain } from "./domains";
+import {
+  isRuntimeOwnerRef,
+  ownerKey,
+  type RuntimeOwnerRef,
+} from "./domains";
 
 
 export const RUNTIME_REQUEST_PHASES = ["cost", "effect"] as const;
@@ -84,11 +88,13 @@ export interface RuntimeRequest {
    */
   readonly effectiveAt?: GameTimestamp;
 
-  /** Who is asking. */
-  readonly from: RuntimeDomain;
-
-  /** Who owns the state and therefore decides. */
-  readonly to: RuntimeDomain;
+  /**
+   * Who is asking, and who owns the state that decides — both as domain AND
+   * id, because "aura" names a kind of state and an operation between two
+   * characters touches two of them.
+   */
+  readonly from: RuntimeOwnerRef;
+  readonly to: RuntimeOwnerRef;
 }
 
 
@@ -147,6 +153,7 @@ export function effectiveTimeOf(request: RuntimeRequest): GameTimestamp {
 export function findRequestIssues(
   request: RuntimeRequest,
   operationId: string,
+  expectedPhase?: RuntimeRequestPhase,
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
 
@@ -183,6 +190,25 @@ export function findRequestIssues(
     });
   }
 
+  /*
+   * A cost in the effect list, or an effect handed in as a cost, is a caller
+   * confusion the coordinator must not paper over: the two phases have
+   * different atomicity guarantees, so silently running one as the other would
+   * apply an effect before costs had been priced, or price an effect that was
+   * never meant to be refusable.
+   */
+  if (expectedPhase !== undefined && request.phase !== expectedPhase) {
+    errors.push({
+      code: "runtime.request.phase.misplaced",
+      message:
+        `A "${String(request.phase)}" request was supplied where a ` +
+        `"${expectedPhase}" request belongs.`,
+      audience: "developer",
+      required: expectedPhase,
+      actual: String(request.phase),
+    });
+  }
+
   if (request.operationId !== operationId) {
     errors.push({
       code: "runtime.request.operation.mismatch",
@@ -194,13 +220,15 @@ export function findRequestIssues(
     });
   }
 
-  if (!isRuntimeDomain(request.from) || !isRuntimeDomain(request.to)) {
+  if (!isRuntimeOwnerRef(request.from) || !isRuntimeOwnerRef(request.to)) {
     errors.push({
-      code: "runtime.request.domain.invalid",
-      message: "A request must name a known source and target domain.",
+      code: "runtime.request.owner.invalid",
+      message:
+        "A request must name a known source and target owner, each a domain " +
+        "and a non-empty id.",
       audience: "developer",
-      required: "known RuntimeDomain",
-      actual: `${String(request.from)} -> ${String(request.to)}`,
+      required: "{ domain, id } for both",
+      actual: `${describeOwner(request.from)} -> ${describeOwner(request.to)}`,
     });
   }
 
@@ -273,10 +301,20 @@ export function compareRuntimeRequests(
   const rightTime = effectiveTimeOf(right);
 
   if (leftTime !== rightTime) return leftTime - rightTime;
-  if (left.to !== right.to) return left.to.localeCompare(right.to);
+
+  const leftOwner = ownerKey(left.to);
+  const rightOwner = ownerKey(right.to);
+
+  if (leftOwner !== rightOwner) return leftOwner.localeCompare(rightOwner);
   if (left.kind !== right.kind) return left.kind.localeCompare(right.kind);
 
   return left.requestId.localeCompare(right.requestId);
+}
+
+
+/** Readable in an error when the value is not an owner ref at all. */
+function describeOwner(owner: unknown): string {
+  return isRuntimeOwnerRef(owner) ? ownerKey(owner) : String(owner);
 }
 
 
@@ -297,24 +335,36 @@ export function orderRuntimeRequests(
  */
 export function groupSimultaneousRequests(
   requests: readonly RuntimeRequest[],
-): readonly { readonly to: RuntimeDomain; readonly effectiveAt: GameTimestamp; readonly requests: readonly RuntimeRequest[] }[] {
+): readonly {
+  readonly to: RuntimeOwnerRef;
+  readonly effectiveAt: GameTimestamp;
+  readonly requests: readonly RuntimeRequest[];
+}[] {
   const batches = new Map<string, RuntimeRequest[]>();
 
   for (const request of orderRuntimeRequests(requests)) {
-    const key = `${effectiveTimeOf(request)}|${request.to}`;
+    /*
+     * The COMPLETE owner, not the domain. Grouping by domain alone would put
+     * two characters' damage in one batch and hand it to one of their bodies —
+     * so a blow struck at Killua would land on whichever Body the coordinator
+     * happened to fetch.
+     */
+    const key = `${effectiveTimeOf(request)}|${ownerKey(request.to)}`;
     const existing = batches.get(key);
 
     if (existing === undefined) batches.set(key, [request]);
     else existing.push(request);
   }
 
-  return [...batches.values()].map((members) => ({
-    to: members[0]!.to,
-    effectiveAt: effectiveTimeOf(members[0]!),
-    requests: members,
-  })).sort((left, right) =>
-    left.effectiveAt !== right.effectiveAt
-      ? left.effectiveAt - right.effectiveAt
-      : left.to.localeCompare(right.to)
-  );
+  return [...batches.values()]
+    .map((members) => ({
+      to: members[0]!.to,
+      effectiveAt: effectiveTimeOf(members[0]!),
+      requests: members as readonly RuntimeRequest[],
+    }))
+    .sort((left, right) =>
+      left.effectiveAt !== right.effectiveAt
+        ? left.effectiveAt - right.effectiveAt
+        : ownerKey(left.to).localeCompare(ownerKey(right.to))
+    );
 }

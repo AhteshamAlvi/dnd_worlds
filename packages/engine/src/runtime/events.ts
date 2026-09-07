@@ -29,7 +29,7 @@
 
 import type { GameTimestamp } from "../time/types";
 
-import type { RuntimeActorRef, RuntimeDomain } from "./domains";
+import type { RuntimeDomain, RuntimeOwnerRef } from "./domains";
 
 
 /**
@@ -74,10 +74,10 @@ export interface RuntimeEvent {
   readonly sequence: number;
 
   /** What caused it, when there is a meaningful actor. */
-  readonly source?: RuntimeActorRef;
+  readonly source?: RuntimeOwnerRef;
 
   /** What it happened to, when that differs from the source. */
-  readonly target?: RuntimeActorRef;
+  readonly target?: RuntimeOwnerRef;
 
   /** Present when the operation asked for more than it got. */
   readonly change?: RuntimeValueChange;

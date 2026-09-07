@@ -64,7 +64,13 @@ import type {
 import { createTraceNode, type TraceNode } from "../infrastructure/trace";
 
 import { findOperationContextIssues, type RuntimeOperationContext } from "./context";
-import type { RuntimeDomain } from "./domains";
+import {
+  isRuntimeOwnerRef,
+  ownerKey,
+  sameOwner,
+  type RuntimeDomain,
+  type RuntimeOwnerRef,
+} from "./domains";
 import { findDiceIssues, type RuntimeDieRequirement, type RuntimeDieRoll } from "./dice";
 import type { RuntimeEvent } from "./events";
 import {
@@ -91,12 +97,18 @@ export const MAXIMUM_CONSEQUENCE_DEPTH = 8;
 
 
 /**
- * The transaction draft: every participating domain's state.
+ * The transaction draft: every participating OWNER's state.
+ *
+ * Keyed by `ownerKey()` — "aura:gon", "body:killua" — rather than by domain,
+ * because a domain names a KIND of state and an operation between two
+ * characters touches two of them. Keying by domain alone silently merged them:
+ * the second write won, and a fight resolved as though one person were hitting
+ * themselves.
  *
  * Opaque values on purpose. The coordinator routes them and never inspects
  * them, which is what keeps it free of every domain it serves.
  */
-export type DomainStates = Readonly<Partial<Record<RuntimeDomain, unknown>>>;
+export type OwnerStates = Readonly<Record<string, unknown>>;
 
 
 /**
@@ -109,7 +121,9 @@ export type DomainStates = Readonly<Partial<Record<RuntimeDomain, unknown>>>;
  */
 export interface PreparedCost {
   readonly requestId: string;
-  readonly domain: RuntimeDomain;
+
+  /** The owner whose state this was priced against, domain and id. */
+  readonly owner: RuntimeOwnerRef;
 
   /** The owner's state after this cost. Replaces the draft's value. */
   readonly nextState: unknown;
@@ -188,8 +202,8 @@ export interface EffectHandler {
 export interface CoordinatedOperation<TResult> {
   readonly context: RuntimeOperationContext;
 
-  /** The starting state of every domain that participates. */
-  readonly states: DomainStates;
+  /** The starting state of every owner that participates, by `ownerKey()`. */
+  readonly states: OwnerStates;
 
   /** Dice the operation needs, checked before anything is priced. */
   readonly requiredDice?: readonly RuntimeDieRequirement[];
@@ -207,7 +221,7 @@ export interface CoordinatedOperation<TResult> {
    */
   resolve(
     dice: readonly RuntimeDieRoll[],
-    states: DomainStates,
+    states: OwnerStates,
   ): {
     readonly result: TResult;
     readonly events?: readonly Omit<RuntimeEvent, "sequence">[];
@@ -226,7 +240,7 @@ export interface CoordinatedOutcome<TResult> {
    * channel, and a handler that kept one would be returning a state nobody
    * reads while the caller stored a different one.
    */
-  readonly states: DomainStates;
+  readonly states: OwnerStates;
 
   readonly events: readonly RuntimeEvent[];
   readonly costOutcomes: readonly RuntimeRequestOutcome[];
@@ -237,6 +251,110 @@ export interface CoordinatedOutcome<TResult> {
 export interface CoordinatorHandlers {
   readonly costs: readonly CostHandler[];
   readonly effects: readonly EffectHandler[];
+}
+
+
+/**
+ * An amount a handler reported has to be a real amount.
+ *
+ * A NaN or a negative `actual` would flow straight into an event and a caller's
+ * arithmetic without ever being questioned, and "healed -3 Body Points" reads
+ * as data rather than as the bug it is.
+ */
+function findOutcomeAmountIssue(
+  outcome: RuntimeRequestOutcome,
+  domain: RuntimeDomain,
+): EngineError | null {
+  for (const [field, value] of [
+    ["requested", outcome.requested],
+    ["actual", outcome.actual],
+  ] as const) {
+    if (value === undefined) continue;
+
+    if (!Number.isFinite(value) || value < 0) {
+      return {
+        code: "runtime.outcome.amount.invalid",
+        message:
+          `The "${domain}" handler reported a ${field} amount that is not a ` +
+          "finite, non-negative number.",
+        audience: "developer",
+        required: "finite number >= 0",
+        actual: String(value),
+      };
+    }
+  }
+
+  return null;
+}
+
+
+/**
+ * Every request in a batch gets exactly one outcome, and no others appear.
+ *
+ * Counting alone is not enough: a handler that answered one request twice and
+ * ignored another would have the right total and the wrong answer, and the
+ * request it dropped would silently report nothing at all.
+ */
+function findBatchOutcomeIssues(
+  requests: readonly RuntimeRequest[],
+  outcomes: readonly RuntimeRequestOutcome[],
+  owner: RuntimeOwnerRef,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+  const expected = new Set(requests.map((one) => one.requestId));
+  const answered = new Set<string>();
+
+  for (const outcome of outcomes) {
+    if (!expected.has(outcome.requestId)) {
+      errors.push({
+        code: "runtime.effect.outcome-unexpected",
+        message:
+          `The "${owner.domain}" handler reported an outcome for ` +
+          `"${String(outcome.requestId)}", which was not in its batch.`,
+        audience: "developer",
+        required: [...expected].join(", "),
+        actual: String(outcome.requestId),
+      });
+
+      continue;
+    }
+
+    if (answered.has(outcome.requestId)) {
+      errors.push({
+        code: "runtime.effect.outcome-duplicate",
+        message:
+          `The "${owner.domain}" handler answered ` +
+          `"${outcome.requestId}" more than once.`,
+        audience: "developer",
+        required: "one outcome per request",
+        actual: outcome.requestId,
+      });
+
+      continue;
+    }
+
+    answered.add(outcome.requestId);
+
+    const amountIssue = findOutcomeAmountIssue(outcome, owner.domain);
+
+    if (amountIssue !== null) errors.push(amountIssue);
+  }
+
+  for (const requestId of expected) {
+    if (!answered.has(requestId)) {
+      errors.push({
+        code: "runtime.effect.outcome-missing",
+        message:
+          `The "${owner.domain}" handler returned no outcome for ` +
+          `"${requestId}".`,
+        audience: "developer",
+        required: requestId,
+        actual: "absent",
+      });
+    }
+  }
+
+  return errors;
 }
 
 
@@ -378,7 +496,9 @@ export function runCoordinatedOperation<TResult>(
   const requestIssues: EngineError[] = [];
 
   for (const request of orderedCosts) {
-    requestIssues.push(...findRequestIssues(request, context.operationId));
+    requestIssues.push(
+      ...findRequestIssues(request, context.operationId, "cost"),
+    );
 
     if (seenRequestIds.has(request.requestId)) {
       requestIssues.push({
@@ -407,20 +527,21 @@ export function runCoordinatedOperation<TResult>(
 
   root.children.push(prepareNode);
 
-  let draft: DomainStates = { ...operation.states };
+  let draft: OwnerStates = { ...operation.states };
   const prepared: PreparedCost[] = [];
 
   for (const request of orderedCosts) {
-    const handler = costIndex.get(request.to);
+    const handler = costIndex.get(request.to.domain);
 
     if (handler === undefined) {
       prepareNode.output = false;
 
       return fail(root, [{
         code: "runtime.request.unhandled",
-        message: `No handler owns "${request.to}" to pay a ${request.kind} cost.`,
+        message:
+          `No handler owns "${request.to.domain}" to pay a ${request.kind} cost.`,
         audience: "developer",
-        required: `a cost handler for ${request.to}`,
+        required: `a cost handler for ${request.to.domain}`,
         actual: handlers.costs.map((one) => one.domain).join(", ") || "none",
       }]);
     }
@@ -430,7 +551,7 @@ export function runCoordinatedOperation<TResult>(
      * one's deduction. Preparing against `operation.states` here is the bug
      * that let two 60-Aura costs both pass against 100 Aura.
      */
-    const attempt = handler.prepare(request, draft[request.to]);
+    const attempt = handler.prepare(request, draft[ownerKey(request.to)]);
 
     prepareNode.children.push(attempt.trace.root);
 
@@ -442,7 +563,17 @@ export function runCoordinatedOperation<TResult>(
 
     const cost = attempt.payload;
 
-    if (cost.domain !== request.to || cost.requestId !== request.requestId) {
+    /*
+     * `isRuntimeOwnerRef` first, because a handler that returned no owner at
+     * all would otherwise crash the comparison — and an engine that throws on
+     * malformed handler output is worse than one that reports it, since the
+     * throw escapes the transaction and takes the trace with it.
+     */
+    if (
+      !isRuntimeOwnerRef(cost.owner) ||
+      !sameOwner(cost.owner, request.to) ||
+      cost.requestId !== request.requestId
+    ) {
       prepareNode.output = false;
 
       return fail(root, [{
@@ -450,8 +581,8 @@ export function runCoordinatedOperation<TResult>(
         message:
           "A prepared cost does not match the request it was prepared for.",
         audience: "developer",
-        required: `${request.to}/${request.requestId}`,
-        actual: `${String(cost.domain)}/${String(cost.requestId)}`,
+        required: `${ownerKey(request.to)}/${request.requestId}`,
+        actual: `${String(cost.owner?.domain)}:${String(cost.owner?.id)}/${String(cost.requestId)}`,
       }]);
     }
 
@@ -474,7 +605,7 @@ export function runCoordinatedOperation<TResult>(
       }]);
     }
 
-    draft = { ...draft, [request.to]: cost.nextState };
+    draft = { ...draft, [ownerKey(request.to)]: cost.nextState };
     prepared.push(cost);
   }
 
@@ -495,7 +626,26 @@ export function runCoordinatedOperation<TResult>(
   };
 
   for (const cost of prepared) {
-    const committed = costIndex.get(cost.domain)!.commit(cost);
+    const committed = costIndex.get(cost.owner.domain)!.commit(cost);
+
+    if (committed.outcome.requestId !== cost.requestId) {
+      return fail(root, [{
+        code: "runtime.cost.outcome-mismatch",
+        message:
+          `The "${cost.owner.domain}" handler reported an outcome for a ` +
+          "different request than the one it committed.",
+        audience: "developer",
+        required: cost.requestId,
+        actual: String(committed.outcome.requestId),
+      }]);
+    }
+
+    const amountIssue = findOutcomeAmountIssue(
+      committed.outcome,
+      cost.owner.domain,
+    );
+
+    if (amountIssue !== null) return fail(root, [amountIssue]);
 
     costOutcomes.push(committed.outcome);
     record(committed.events);
@@ -530,7 +680,9 @@ export function runCoordinatedOperation<TResult>(
     const boundaryIssues: EngineError[] = [];
 
     for (const request of pending) {
-      boundaryIssues.push(...findRequestIssues(request, context.operationId));
+      boundaryIssues.push(
+        ...findRequestIssues(request, context.operationId, "effect"),
+      );
 
       if (seenRequestIds.has(request.requestId)) {
         /*
@@ -558,16 +710,16 @@ export function runCoordinatedOperation<TResult>(
     const next: RuntimeRequest[] = [];
 
     for (const batch of groupSimultaneousRequests(pending)) {
-      const handler = effectIndex.get(batch.to);
+      const handler = effectIndex.get(batch.to.domain);
 
       if (handler === undefined) {
         return fail(root, [{
           code: "runtime.request.unhandled",
           message:
-            `No handler owns "${batch.to}" to apply ` +
+            `No handler owns "${batch.to.domain}" to apply ` +
             `${batch.requests.map((one) => one.kind).join(", ")}.`,
           audience: "developer",
-          required: `an effect handler for ${batch.to}`,
+          required: `an effect handler for ${batch.to.domain}`,
           actual: handlers.effects.map((one) => one.domain).join(", ") || "none",
         }]);
       }
@@ -577,21 +729,20 @@ export function runCoordinatedOperation<TResult>(
        * calculated from what the owner is handed here, so the order within the
        * batch cannot change the result.
        */
-      const applied = handler.applyBatch(batch.requests, draft[batch.to]);
+      const applied = handler.applyBatch(
+        batch.requests,
+        draft[ownerKey(batch.to)],
+      );
 
-      if (applied.outcomes.length !== batch.requests.length) {
-        return fail(root, [{
-          code: "runtime.effect.outcome-count-mismatch",
-          message:
-            `The "${batch.to}" handler returned ${applied.outcomes.length} ` +
-            `outcomes for ${batch.requests.length} requests.`,
-          audience: "developer",
-          required: String(batch.requests.length),
-          actual: String(applied.outcomes.length),
-        }]);
-      }
+      const outcomeIssues = findBatchOutcomeIssues(
+        batch.requests,
+        applied.outcomes,
+        batch.to,
+      );
 
-      draft = { ...draft, [batch.to]: applied.state };
+      if (outcomeIssues.length > 0) return fail(root, outcomeIssues);
+
+      draft = { ...draft, [ownerKey(batch.to)]: applied.state };
 
       effectOutcomes.push(...applied.outcomes);
       record(applied.events);

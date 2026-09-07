@@ -19,8 +19,11 @@ export type { RuntimeOperationContext } from "./context";
 export {
   RUNTIME_DOMAINS,
   isRuntimeDomain,
+  isRuntimeOwnerRef,
+  ownerKey,
+  sameOwner,
 } from "./domains";
-export type { RuntimeActorRef, RuntimeDomain } from "./domains";
+export type { RuntimeDomain, RuntimeOwnerRef } from "./domains";
 
 export {
   compareRuntimeEvents,
@@ -77,7 +80,7 @@ export type {
   CoordinatorHandlers,
   CostCommitResult,
   CostHandler,
-  DomainStates,
+  OwnerStates,
   EffectBatchResult,
   EffectHandler,
   PreparedCost,

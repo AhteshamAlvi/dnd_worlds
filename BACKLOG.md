@@ -7,8 +7,8 @@ to say something is missing, it links here rather than keeping its own list. Two
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: Stage II Phase 1.1 close.
-Suite at that point: **72 files, 2,044 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: Stage II Phase 1.2 close.
+Suite at that point: **72 files, 2,059 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
@@ -72,14 +72,14 @@ section is the difference.
 
 | Mechanic | State | Detail |
 |---|---|---|
-| **Runtime ownership and transition protocol** | Complete | Ownership matrix, `TransitionResult`, routing-only request base with `QuantitativeRequest` for amounts, discardable transaction draft, cumulative same-owner costs, simultaneous batch settlement, boundary validation, generic coordinator. `runtime/`. Exported. Dependency-tested to contain no gameplay. |
+| **Runtime ownership and transition protocol** | Complete | Ownership matrix, `TransitionResult`, routing-only request base with `QuantitativeRequest` for amounts, owner refs (domain + id) supporting multi-character operations, discardable transaction draft keyed by owner, cumulative same-owner costs, simultaneous batch settlement by complete owner, phase and handler-outcome validation, generic coordinator. `runtime/`. Exported. Dependency-tested to contain no gameplay. |
 | **Aura cost-handler reference** | Complete | `aura/runtime.ts`. A domain owning a spendable resource others need. Stateless — it holds the resolution context, never the pool. |
 | **Body recovery request reference** | Complete | `body/recovery/runtime.ts`. A domain asking another owner to change something. |
 | **Active Nen runtime implementation** | **Specified but absent** | The `nen` runtime section exists and holds protocol-level `ActiveApplication`s. Nothing populates it: no activation, no deactivation, no Output level, no Chū allocation, no per-Round cost, no suspension rules. Ten, Ren, Zetsu and Chū combat contracts remain absent (§3). |
 | **Transformation runtime implementation** | **Specified but absent** | The `transformations` section exists. Nothing projects a transformed Body from it, and no transformation is authored. The projection boundary is decided — project, never overwrite — and unimplemented. |
 | **Injury transfer between forms** | **Specified but absent** | Explicitly not decided in Phase 1. When a character transforms with a broken arm, what happens to the Injury in the new form — carried, suppressed, remapped, or ignored — has no answer yet. It needs the transformation runtime and the anatomy-mapping question answered together. |
 | **Runtime spatial state** | **Specified but absent** | The `spatial` section is a declared placeholder with no fields, because there is no spatial vocabulary in the engine to put in it (§1). |
-| **Combat integration** | **Specified but absent** | `RuntimeState` has a generic Combat slot and `attachCombat`/`detachCombat` are tested. Nothing in `gameplay/combat/` uses either, and no Combat Action raises a cost request. |
+| **Combat integration** | **Specified but absent** | `RuntimeState` has a generic Combat slot and `attachCombat`/`detachCombat` are tested, and the protocol now addresses several characters' Combat states in one operation. Nothing in `gameplay/combat/` uses any of it, and no Combat Action raises a cost request. |
 | **Dynamic or multi-stage dice requests** | **Specified but absent** | Dice are validated once, up front, against a fixed requirement list. An operation that cannot know what it needs to roll until part-way through — a reroll, an escalating contest, a damage die whose size depends on the attack result — is not supported. |
 | **Legacy transition migrations** | **Partially implemented** | Two references migrated. The remaining exported state-changing operations are listed below and migrate as their domains are developed, not in a repository-wide rewrite (decision `runtime.time.single-character-coordinator`). |
 

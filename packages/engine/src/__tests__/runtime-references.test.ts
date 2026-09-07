@@ -42,6 +42,9 @@ import { auraContext, auraTestAttributes, WITH_TEN } from "./fixtures/aura";
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 const OPERATION = { operationId: "op-1", occurredAt: 5_000 } as const;
 
+const CALLER = { domain: "caller", id: "host" } as const;
+const GON_AURA = { domain: "aura", id: "gon" } as const;
+
 
 /** Freeze an object graph, so a write is a runtime fact rather than a claim. */
 function deepFreeze<T>(value: T): T {
@@ -71,12 +74,13 @@ describe("Aura as a cost handler", () => {
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state },
+        states: { "aura:gon": state },
         costs: [auraCostRequest({
           requestId: "r-aura",
           operationId: OPERATION.operationId,
           occurredAt: OPERATION.occurredAt,
-          from: "caller",
+          from: CALLER,
+          to: GON_AURA,
           requested: 0,
           exertionLoad: 2,
         })],
@@ -90,7 +94,7 @@ describe("Aura as a cost handler", () => {
     if (!result.success) throw new Error("unreachable");
 
     const outcome = result.payload.costOutcomes[0]!;
-    const after = result.payload.states.aura as CharacterAuraState;
+    const after = result.payload.states["aura:gon"] as CharacterAuraState;
 
     /* Aura's rules decide the figure; the requester's estimate does not win. */
     expect(outcome.actual!).toBeGreaterThan(0);
@@ -129,7 +133,8 @@ describe("Aura as a cost handler", () => {
       requestId,
       operationId: OPERATION.operationId,
       occurredAt: OPERATION.occurredAt,
-      from: "caller",
+      from: CALLER,
+      to: GON_AURA,
       requested: 0,
       exertionLoad: 2,
     });
@@ -137,7 +142,7 @@ describe("Aura as a cost handler", () => {
     const one = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state },
+        states: { "aura:gon": state },
         costs: [cost("r1")],
         resolve: () => ({ result: "swung" }),
       },
@@ -147,7 +152,7 @@ describe("Aura as a cost handler", () => {
     const two = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state },
+        states: { "aura:gon": state },
         costs: [cost("r1"), cost("r2")],
         resolve: () => ({ result: "swung twice" }),
       },
@@ -156,8 +161,8 @@ describe("Aura as a cost handler", () => {
 
     if (!one.success || !two.success) throw new Error("expected success");
 
-    const afterOne = (one.payload.states.aura as CharacterAuraState).current;
-    const afterTwo = (two.payload.states.aura as CharacterAuraState).current;
+    const afterOne = (one.payload.states["aura:gon"] as CharacterAuraState).current;
+    const afterTwo = (two.payload.states["aura:gon"] as CharacterAuraState).current;
     const single = 20_000 - afterOne;
 
     expect(single).toBeGreaterThan(0);
@@ -171,12 +176,13 @@ describe("Aura as a cost handler", () => {
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state },
+        states: { "aura:gon": state },
         costs: [auraCostRequest({
           requestId: "r-aura",
           operationId: OPERATION.operationId,
           occurredAt: OPERATION.occurredAt,
-          from: "caller",
+          from: CALLER,
+          to: GON_AURA,
           requested: 0,
           exertionLoad: 10,
         })],
@@ -199,13 +205,14 @@ describe("Aura as a cost handler", () => {
     const result = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state, combat: 0 },
+        states: { "aura:gon": state, "combat:gon": 0 },
         costs: [
           auraCostRequest({
             requestId: "r-aura",
             operationId: OPERATION.operationId,
             occurredAt: OPERATION.occurredAt,
-            from: "caller",
+            from: CALLER,
+            to: GON_AURA,
             requested: 0,
             exertionLoad: 2,
           }),
@@ -215,8 +222,8 @@ describe("Aura as a cost handler", () => {
             phase: "cost",
             operationId: OPERATION.operationId,
             occurredAt: OPERATION.occurredAt,
-            from: "caller",
-            to: "combat",
+            from: CALLER,
+            to: { domain: "combat", id: "gon" },
             requested: 1,
           } as QuantitativeRequest,
         ],
@@ -258,7 +265,8 @@ describe("Aura as a cost handler", () => {
         requestId,
         operationId: OPERATION.operationId,
         occurredAt: OPERATION.occurredAt,
-        from: "caller",
+        from: CALLER,
+        to: GON_AURA,
         requested: 0,
         exertionLoad,
       });
@@ -266,7 +274,7 @@ describe("Aura as a cost handler", () => {
     const succeeded = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state },
+        states: { "aura:gon": state },
         costs: [request("r1", 2)],
         resolve: () => ({ result: "swung" }),
       },
@@ -276,7 +284,7 @@ describe("Aura as a cost handler", () => {
     const failed = runCoordinatedOperation(
       {
         context: OPERATION,
-        states: { aura: state },
+        states: { "aura:gon": state },
         costs: [request("r1", 100_000)],
         resolve: () => ({ result: "swung" }),
       },
@@ -327,8 +335,8 @@ describe("Body recovery asks rather than reaches", () => {
     expect(requests).toHaveLength(2);
 
     for (const request of requests) {
-      expect(request.from).toBe("body");
-      expect(request.to).toBe("character-status");
+      expect(request.from).toEqual({ domain: "body", id: "gon" });
+      expect(request.to).toEqual({ domain: "character-status", id: "gon" });
       expect(request.phase).toBe("effect");
       expect(request.operationId).toBe(OPERATION.operationId);
 
