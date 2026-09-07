@@ -255,6 +255,97 @@ export interface CoordinatorHandlers {
 
 
 /**
+ * A handler may only be called about state that exists.
+ *
+ * Passing `undefined` through would put every handler one step from inventing
+ * a pool out of nothing — `(state as number) ?? 100` is the natural way to
+ * write past a missing value, and it would create a character's Aura by
+ * accident on the first typo in an owner id. State creation has to be a
+ * deliberate operation somebody wrote, never a side effect of addressing
+ * something that was not there.
+ */
+function findMissingStateIssue(
+  states: OwnerStates,
+  owner: RuntimeOwnerRef,
+  what: string,
+): EngineError | null {
+  const key = ownerKey(owner);
+
+  if (
+    Object.prototype.hasOwnProperty.call(states, key) &&
+    states[key] !== undefined
+  ) {
+    return null;
+  }
+
+  return {
+    code: "runtime.state.missing",
+    message:
+      `This operation has no state for "${key}", which ${what} is addressed to.`,
+    audience: "developer",
+    required: key,
+    actual: Object.keys(states).sort().join(", ") || "no states supplied",
+  };
+}
+
+
+/**
+ * One outcome, judged against the request it answers.
+ *
+ * A quantitative request gets a complete answer or none is accepted: both
+ * figures present, both real, and `requested` echoing what was actually asked.
+ * A handler quietly reporting a different `requested` than it was given would
+ * make the log describe an operation nobody performed, and an absent figure
+ * makes "how much of this landed" unanswerable by anything downstream.
+ *
+ * A NON-quantitative request has no amounts to report, and is not asked to
+ * invent any — that is the whole reason amounts left the shared base.
+ */
+function findOutcomeIssue(
+  outcome: RuntimeRequestOutcome,
+  request: RuntimeRequest,
+  owner: RuntimeOwnerRef,
+): EngineError | null {
+  const amountIssue = findOutcomeAmountIssue(outcome, owner.domain);
+
+  if (amountIssue !== null) return amountIssue;
+
+  if (!isQuantitativeRequest(request)) return null;
+
+  for (const [field, value] of [
+    ["requested", outcome.requested],
+    ["actual", outcome.actual],
+  ] as const) {
+    if (value === undefined) {
+      return {
+        code: "runtime.outcome.amount.missing",
+        message:
+          `The "${owner.domain}" handler answered the quantitative request ` +
+          `"${request.requestId}" without reporting ${field}.`,
+        audience: "developer",
+        required: `a ${field} amount`,
+        actual: "absent",
+      };
+    }
+  }
+
+  if (outcome.requested !== request.requested) {
+    return {
+      code: "runtime.outcome.requested.mismatch",
+      message:
+        `The "${owner.domain}" handler reported a different requested amount ` +
+        `than "${request.requestId}" asked for.`,
+      audience: "developer",
+      required: String(request.requested),
+      actual: String(outcome.requested),
+    };
+  }
+
+  return null;
+}
+
+
+/**
  * An amount a handler reported has to be a real amount.
  *
  * A NaN or a negative `actual` would flow straight into an event and a caller's
@@ -301,7 +392,8 @@ function findBatchOutcomeIssues(
   owner: RuntimeOwnerRef,
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
-  const expected = new Set(requests.map((one) => one.requestId));
+  const byRequestId = new Map(requests.map((one) => [one.requestId, one]));
+  const expected = new Set(byRequestId.keys());
   const answered = new Set<string>();
 
   for (const outcome of outcomes) {
@@ -335,9 +427,13 @@ function findBatchOutcomeIssues(
 
     answered.add(outcome.requestId);
 
-    const amountIssue = findOutcomeAmountIssue(outcome, owner.domain);
+    const issue = findOutcomeIssue(
+      outcome,
+      byRequestId.get(outcome.requestId)!,
+      owner,
+    );
 
-    if (amountIssue !== null) errors.push(amountIssue);
+    if (issue !== null) errors.push(issue);
   }
 
   for (const requestId of expected) {
@@ -551,6 +647,14 @@ export function runCoordinatedOperation<TResult>(
      * one's deduction. Preparing against `operation.states` here is the bug
      * that let two 60-Aura costs both pass against 100 Aura.
      */
+    const stateIssue = findMissingStateIssue(draft, request.to, request.kind);
+
+    if (stateIssue !== null) {
+      prepareNode.output = false;
+
+      return fail(root, [stateIssue]);
+    }
+
     const attempt = handler.prepare(request, draft[ownerKey(request.to)]);
 
     prepareNode.children.push(attempt.trace.root);
@@ -586,23 +690,54 @@ export function runCoordinatedOperation<TResult>(
       }]);
     }
 
-    if (
-      isQuantitativeRequest(request) &&
-      cost.actual !== undefined &&
-      cost.actual < request.requested &&
-      request.allowPartial !== true
-    ) {
-      prepareNode.output = false;
+    if (isQuantitativeRequest(request)) {
+      /*
+       * A quantitative cost MUST say what it will pay.
+       *
+       * The full-payment check used to skip when `actual` was absent, which
+       * made omitting it a way past the very rule it guards: a handler that
+       * reported no figure could underpay a cost that forbids underpaying, and
+       * nothing downstream would know how much had actually left the pool.
+       */
+      if (cost.actual === undefined) {
+        prepareNode.output = false;
 
-      return fail(root, [{
-        code: "runtime.cost.partial-payment-refused",
-        message:
-          `A ${request.kind} cost could not be paid in full, and this ` +
-          "operation does not permit partial payment.",
-        audience: "developer",
-        required: String(request.requested),
-        actual: String(cost.actual),
-      }]);
+        return fail(root, [{
+          code: "runtime.cost.actual.missing",
+          message:
+            `A quantitative ${request.kind} cost was prepared without saying ` +
+            "how much it will pay.",
+          audience: "developer",
+          required: "an actual amount",
+          actual: "absent",
+        }]);
+      }
+
+      if (!Number.isFinite(cost.actual) || cost.actual < 0) {
+        prepareNode.output = false;
+
+        return fail(root, [{
+          code: "runtime.outcome.amount.invalid",
+          message: `A ${request.kind} cost prepared an impossible amount.`,
+          audience: "developer",
+          required: "finite number >= 0",
+          actual: String(cost.actual),
+        }]);
+      }
+
+      if (cost.actual < request.requested && request.allowPartial !== true) {
+        prepareNode.output = false;
+
+        return fail(root, [{
+          code: "runtime.cost.partial-payment-refused",
+          message:
+            `A ${request.kind} cost could not be paid in full, and this ` +
+            "operation does not permit partial payment.",
+          audience: "developer",
+          required: String(request.requested),
+          actual: String(cost.actual),
+        }]);
+      }
     }
 
     draft = { ...draft, [ownerKey(request.to)]: cost.nextState };
@@ -615,6 +750,10 @@ export function runCoordinatedOperation<TResult>(
 
   const events: RuntimeEvent[] = [];
   const costOutcomes: RuntimeRequestOutcome[] = [];
+
+  const costsByRequestId = new Map(
+    orderedCosts.map((one) => [one.requestId, one]),
+  );
 
   let sequence = 0;
 
@@ -640,12 +779,13 @@ export function runCoordinatedOperation<TResult>(
       }]);
     }
 
-    const amountIssue = findOutcomeAmountIssue(
+    const outcomeIssue = findOutcomeIssue(
       committed.outcome,
-      cost.owner.domain,
+      costsByRequestId.get(cost.requestId)!,
+      cost.owner,
     );
 
-    if (amountIssue !== null) return fail(root, [amountIssue]);
+    if (outcomeIssue !== null) return fail(root, [outcomeIssue]);
 
     costOutcomes.push(committed.outcome);
     record(committed.events);
@@ -729,6 +869,14 @@ export function runCoordinatedOperation<TResult>(
        * calculated from what the owner is handed here, so the order within the
        * batch cannot change the result.
        */
+      const stateIssue = findMissingStateIssue(
+        draft,
+        batch.to,
+        batch.requests.map((one) => one.kind).join(", "),
+      );
+
+      if (stateIssue !== null) return fail(root, [stateIssue]);
+
       const applied = handler.applyBatch(
         batch.requests,
         draft[ownerKey(batch.to)],

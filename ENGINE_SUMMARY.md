@@ -3,7 +3,7 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
 **Snapshot:** Phase 0.2 close · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **72 files, 2,059 tests, all passing**. `tsc --noEmit` → **clean**.
+**Health:** `vitest run` → **72 files, 2,074 tests, all passing**. `tsc --noEmit` → **clean**.
 **Backlog:** [`BACKLOG.md`](BACKLOG.md) is the single authoritative list of what is not done.
 **Ownership:** [`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) is the authoritative state-ownership
 matrix and transition protocol.
@@ -1533,6 +1533,15 @@ of state, and Gon's Aura and Killua's Aura are two of them. The draft is keyed b
 stay registered per domain, because the rules are per domain; what differs is the state handed over.
 Keyed by domain alone, a fight between two people resolved as one person hitting themselves.
 
+**Calculation context is per owner too.** `createAuraCostHandler` takes a `(owner) => context`
+lookup rather than one character's context. Owner-keyed *state* alone was not enough: two characters
+had separate pools both charged using the first one's Attributes, which is worse than sharing a
+pool because the numbers look individual. A missing context refuses rather than falling back.
+
+**State is addressed, never created.** A request naming an owner with no supplied state is refused
+*before* its handler runs — `undefined` never reaches a handler, because `(state as number) ?? 100`
+is one keystroke away and would create a pool on the first typo in an owner id.
+
 **Runtime State exists outside Combat.** Ren goes up in a corridor, survives Combat starting, and
 is still up when it ends. Combat *attaches* through a generic slot — this layer never names a
 Combat type, because runtime sits below `gameplay/`. Permanent `NenState` carries no
@@ -1560,7 +1569,9 @@ quantity and no longer ships `requested: 1` for the type's benefit.
 **Phases and handler outcomes are enforced.** Only costs may be costs and only effects may be
 effects; outcome ids must match their requests exactly — missing, duplicated and unexpected are all
 refused, because counting alone passes a handler that answered one request twice and dropped
-another. Reported amounts must be finite and non-negative.
+another. A **quantitative** request gets a complete answer — both figures present, both finite and
+non-negative, and the reported `requested` equal to what was asked. Optionality had made omission a
+way *past* the full-payment rule, which only ran when `actual` happened to be present.
 
 **Determinism**: dice are caller input and validated first, operation ids and timestamps are
 supplied not generated, requests sort by a total stable key, and events carry a coordinator-assigned
@@ -1607,6 +1618,9 @@ rather than an edit to the book.
 27. **`runtime.requests.routing-base-domain-payloads`** — the shared request carries routing only; amounts and upkeep belong to the domains that mean them.
 28. **`runtime.ownership.domain-and-entity-id`** — *supersedes the domain-only routing in 21 and 24.* Ownership is a domain and a stable id; the draft is keyed by owner and batches group by complete owner.
 29. **`runtime.validation.phases-and-handler-outcomes`** — request phases are enforced and handler outcomes are checked by identity, not by count.
+30. **`runtime.context.resolved-per-owner`** — a domain handler resolves each owner's calculation context from the request; a missing one refuses rather than borrowing another character's body.
+31. **`runtime.state.addressed-never-created`** — a request naming an owner with no state is refused before its handler runs; `undefined` never reaches a handler.
+32. **`runtime.outcomes.quantitative-must-be-complete`** — a quantitative request must report both figures, real and matching what was asked; omission was a bypass of full-payment validation.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1615,7 +1629,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (72 files, 2,059 tests)
+## 14 · Test coverage (72 files, 2,074 tests)
 
 Every test file appears in exactly one row, and the rows sum to the suite total. Recounted from
 the runner's own report at Phase 0.2 close — the previous version of this table omitted the whole
@@ -1634,8 +1648,8 @@ Senses category and two Body files, and its Body subtotal was 32 short of its ow
 | Endurance & character time | **63** | body-endurance 39 · character-time 24 |
 | Progression | **58** | progression 58 |
 | Capabilities | **41** | skills 41 |
-| Runtime protocol | **81** | runtime-protocol 63 · runtime-references 18 |
-| **Total** | **2,059** | **72 files** |
+| Runtime protocol | **96** | runtime-protocol 75 · runtime-references 21 |
+| **Total** | **2,074** | **72 files** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1713,7 +1727,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 72 files, 2,059 tests
+cd packages/engine && npx vitest run     # 72 files, 2,074 tests
 ```
 
 ```bash

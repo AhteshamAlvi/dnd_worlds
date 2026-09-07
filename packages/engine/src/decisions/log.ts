@@ -311,6 +311,33 @@ export const ENGINE_DECISIONS = {
         rationale:
             "The phases carry different atomicity guarantees, so running one as the other is not a harmless mix-up: an effect priced as a cost becomes refusable when it was never meant to be, and a cost settled as an effect applies before anything has been priced. Outcome checking by COUNT rather than identity was the subtler gap — a handler that answered one request twice and dropped another had the right total and the wrong answer, and the dropped request reported nothing at all while the operation succeeded. Amounts are checked because a NaN or negative actual flows straight into an event and a caller's arithmetic without ever being questioned, and \"healed -3 Body Points\" reads as data rather than as the bug it is. The malformed-prepared-cost guard exists because a throw escapes the transaction and takes the trace with it, which is strictly worse than a reported failure that leaves every original state intact.",
     },
+    "runtime.context.resolved-per-owner": {
+        id: "runtime.context.resolved-per-owner",
+        question:
+            "Owner-keyed state gave each character their own Aura pool, and the Aura cost handler was still constructed with ONE character's resolution context — their Attributes, their Aura access, their Control multiplier. Whose body is a cost calculated against?",
+        chosen:
+            "The owner the request names. createAuraCostHandler takes a lookup, (owner) => AuraTransitionContext | undefined, resolved from request.to at prepare time. One handler stays registered for the domain. A missing context REFUSES the operation and never falls back to another owner's. The lookup must be a pure read: returning a different context for one owner within an operation, or mutating anything reachable through it, would be the state side channel the returned draft exists to replace.",
+        rationale:
+            "Separate pools with a shared calculation is arguably worse than a shared pool, because the numbers look individual and are not: Killua's Aura was debited using Gon's Maximum Aura, and the result was a confident, plausible, wrong figure with nothing anywhere to contradict it. It survived the owner-keying pass precisely because that pass fixed WHERE state lived without asking what the arithmetic read. Refusing a missing context rather than defaulting is the same argument as refusing missing state: a fallback that silently substitutes somebody else's body is indistinguishable from a correct answer at the call site, and the first symptom would be a balance query months later. One handler rather than one per character is deliberate — duplicating the Aura mechanic per owner is the multi-copy failure the request system exists to prevent.",
+    },
+    "runtime.state.addressed-never-created": {
+        id: "runtime.state.addressed-never-created",
+        question:
+            "A request names an owner the operation supplied no state for. The coordinator passed the resulting `undefined` to the handler and let it decide.",
+        chosen:
+            "The coordinator refuses before the handler is called, with a typed failure naming the missing owner key and listing the ones it does have. `undefined` never reaches a handler, and an explicitly-undefined entry counts as absent rather than as empty state. Creating state must be an operation somebody wrote.",
+        rationale:
+            "Handing `undefined` to a handler puts every one of them one step from inventing a resource out of nothing, because `(state as number) ?? 100` is the natural way to write past a missing value and it reads as defensive rather than as dangerous. A character's Aura would then spring into existence on the first typo in an owner id, with a plausible default, and the operation would succeed. Refusing early also gets the diagnosis right: the error names the owner that was addressed and the owners that exist, which is the actual bug, rather than surfacing later as an arithmetic oddity inside a domain that was handed nothing.",
+    },
+    "runtime.outcomes.quantitative-must-be-complete": {
+        id: "runtime.outcomes.quantitative-must-be-complete",
+        question:
+            "Handlers report requested-versus-actual so that caps, resists and shortfalls are visible. Both figures were optional, and the full-payment check only ran when `actual` happened to be present.",
+        chosen:
+            "A QuantitativeRequest gets a complete answer or the operation is refused: both figures present, both finite and non-negative, and the reported `requested` equal to what was asked. A quantitative prepared cost must state what it will pay. Non-quantitative requests continue to report no amounts at all.",
+        rationale:
+            "Optionality made omission a way PAST the rule it guarded. The partial-payment check was written as 'if an amount was reported and it is short, refuse', so a handler that reported no amount could underpay a cost that explicitly forbids underpayment, and nothing downstream could say how much had actually left the pool. Requiring the echo of `requested` closes the quieter half: a handler reporting a figure other than the one it was given makes the log describe an operation nobody performed, and requested-versus-actual is worthless if the left-hand side is also the handler's opinion. Non-quantitative requests stay exempt because that is the entire reason amounts left the shared base — a removal has nothing to count, and demanding a number would reintroduce the placeholder the base was cleaned of.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:

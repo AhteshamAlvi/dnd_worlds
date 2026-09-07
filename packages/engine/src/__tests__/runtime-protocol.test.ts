@@ -42,6 +42,7 @@ import {
   type PreparedCost,
   type QuantitativeRequest,
   type RuntimeRequest,
+  type RuntimeRequestOutcome,
 } from "../runtime";
 
 const OPERATION = { operationId: "op-1", occurredAt: 1_000 } as const;
@@ -331,7 +332,11 @@ describe("costs owned by one domain are cumulative", () => {
 
 
 describe("a failure changes nothing, wherever it happens", () => {
-  const original = Object.freeze({ "aura:gon": 100, "combat:gon": 2 });
+  const original = Object.freeze({
+    "aura:gon": 100,
+    "combat:gon": 2,
+    "body:gon": 50,
+  });
 
   const attempt = (
     resolve: () => {
@@ -375,7 +380,11 @@ describe("a failure changes nothing, wherever it happens", () => {
     }));
 
     expect(result.success).toBe(false);
-    expect(original).toEqual({ "aura:gon": 100, "combat:gon": 2 });
+    expect(original).toEqual({
+      "aura:gon": 100,
+      "combat:gon": 2,
+      "body:gon": 50,
+    });
   });
 
   it("preserves state when a request id repeats", () => {
@@ -397,7 +406,11 @@ describe("a failure changes nothing, wherever it happens", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(original).toEqual({ "aura:gon": 100, "combat:gon": 2 });
+    expect(original).toEqual({
+      "aura:gon": 100,
+      "combat:gon": 2,
+      "body:gon": 50,
+    });
   });
 
   it("preserves state when consequences never settle", () => {
@@ -430,7 +443,11 @@ describe("a failure changes nothing, wherever it happens", () => {
       .toContain("runtime.consequences.too-deep");
 
     expect(issued).toBeLessThanOrEqual(MAXIMUM_CONSEQUENCE_DEPTH);
-    expect(original).toEqual({ "aura:gon": 100, "combat:gon": 2 });
+    expect(original).toEqual({
+      "aura:gon": 100,
+      "combat:gon": 2,
+      "body:gon": 50,
+    });
   });
 
   it("preserves state when the dice are malformed", () => {
@@ -447,7 +464,11 @@ describe("a failure changes nothing, wherever it happens", () => {
     );
 
     expect(result.success).toBe(false);
-    expect(original).toEqual({ "aura:gon": 100, "combat:gon": 2 });
+    expect(original).toEqual({
+      "aura:gon": 100,
+      "combat:gon": 2,
+      "body:gon": 50,
+    });
   });
 
   /* A valid attempt that goes badly is not a failure and keeps what it paid. */
@@ -1331,5 +1352,316 @@ describe("phases and handler outcomes are enforced", () => {
       .toContain("runtime.cost.outcome-mismatch");
 
     expect(original).toEqual({ "aura:gon": 100, "body:gon": 50 });
+  });
+});
+
+
+/*
+ * State is addressed, never created.
+ *
+ * A handler handed `undefined` is one step from inventing a pool out of
+ * nothing — `(state as number) ?? 100` is the natural way to write past a
+ * missing value — so a character's Aura would spring into existence on the
+ * first typo in an owner id.
+ */
+describe("a handler is only called about state that exists", () => {
+  const original = Object.freeze({ "aura:gon": 100 });
+
+  it("refuses a cost addressed to an owner with no state", () => {
+    let called = false;
+
+    const watching: CostHandler = {
+      domain: "aura",
+      prepare: (...args) => {
+        called = true;
+
+        return resourceOwner("aura").prepare(...args);
+      },
+      commit: (cost) => resourceOwner("aura").commit(cost),
+    };
+
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        costs: [costRequest({
+          requestId: "r1",
+          to: owner("aura", "killua"),
+          requested: 10,
+        })],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [watching], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code)).toContain("runtime.state.missing");
+
+    /* Refused BEFORE the handler ran, not after it improvised. */
+    expect(called).toBe(false);
+    expect(original).toEqual({ "aura:gon": 100 });
+  });
+
+  it("refuses an effect addressed to an owner with no state", () => {
+    let called = false;
+
+    const watching: EffectHandler = {
+      domain: "body",
+      applyBatch: (requests, state) => {
+        called = true;
+
+        return {
+          state,
+          outcomes: requests.map((one) => ({ requestId: one.requestId })),
+          events: [],
+        };
+      },
+    };
+
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        costs: [],
+        resolve: () => ({
+          result: "hit",
+          requests: [{
+            requestId: "e1",
+            kind: "damage",
+            phase: "effect" as const,
+            operationId: OPERATION.operationId,
+            occurredAt: OPERATION.occurredAt,
+            from: CALLER,
+            to: owner("body", "gon"),
+          }],
+        }),
+      },
+      { costs: [], effects: [watching] },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code)).toContain("runtime.state.missing");
+    expect(called).toBe(false);
+    expect(original).toEqual({ "aura:gon": 100 });
+  });
+
+  /* An explicitly-undefined value is still no state, not an empty one. */
+  it("treats an undefined entry as absent", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: { "aura:gon": undefined },
+        costs: [costRequest({
+          requestId: "r1",
+          to: owner("aura", "gon"),
+          requested: 10,
+        })],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [resourceOwner("aura")], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+  });
+});
+
+
+/*
+ * A quantitative request gets a complete answer or the operation is refused.
+ *
+ * The full-payment check used to skip whenever `actual` was absent, which made
+ * omitting it a way PAST the very rule it guards.
+ */
+describe("quantitative outcomes must be complete", () => {
+  const original = Object.freeze({ "aura:gon": 100, "body:gon": 50 });
+
+  const withCostHandler = (handler: CostHandler) =>
+    runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        costs: [costRequest({
+          requestId: "r1",
+          to: owner("aura", "gon"),
+          requested: 10,
+        })],
+        resolve: () => ({ result: "done" }),
+      },
+      { costs: [handler], effects: [] },
+    );
+
+  /* Deliberately loose, so a test may omit a field the type marks required. */
+  const preparing = (payload: Record<string, unknown>): CostHandler => ({
+    domain: "aura",
+    prepare: (request, state) => ({
+      success: true,
+      payload: {
+        requestId: request.requestId,
+        owner: request.to,
+        nextState: (state as number) - 10,
+        actual: 10,
+        prepared: {},
+        ...payload,
+      },
+      trace: { root: createTraceNode({ id: "t", label: "t" }) },
+      warnings: [],
+    }),
+    commit: (cost) => ({
+      outcome: { requestId: cost.requestId, requested: 10, actual: cost.actual! },
+      events: [],
+    }),
+  });
+
+  it("refuses a quantitative cost prepared without an actual", () => {
+    const result = withCostHandler(preparing({ actual: undefined }));
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code))
+      .toContain("runtime.cost.actual.missing");
+
+    expect(original).toEqual({ "aura:gon": 100, "body:gon": 50 });
+  });
+
+  /*
+   * The bypass itself: underpaying a cost that forbids underpayment, by
+   * declining to say how much was paid.
+   */
+  it("cannot dodge full-payment validation by omitting the amount", () => {
+    const underpaying = withCostHandler(preparing({ actual: 4 }));
+    const silent = withCostHandler(preparing({ actual: undefined }));
+
+    expect(underpaying.success).toBe(false);
+    expect(silent.success).toBe(false);
+  });
+
+  it.each([
+    ["a missing requested", { requested: undefined, actual: 10 }, "runtime.outcome.amount.missing"],
+    ["a missing actual", { requested: 10, actual: undefined }, "runtime.outcome.amount.missing"],
+    ["a mismatched requested", { requested: 99, actual: 10 }, "runtime.outcome.requested.mismatch"],
+  ])("refuses a cost outcome with %s", (_name, outcome: Record<string, unknown>, code) => {
+    const result = withCostHandler({
+      domain: "aura",
+      prepare: (request, state) => ({
+        success: true,
+        payload: {
+          requestId: request.requestId,
+          owner: request.to,
+          nextState: (state as number) - 10,
+          actual: 10,
+          prepared: {},
+        },
+        trace: { root: createTraceNode({ id: "t", label: "t" }) },
+        warnings: [],
+      }),
+      commit: (cost) => ({
+        outcome: {
+          requestId: cost.requestId,
+          ...outcome,
+        } as RuntimeRequestOutcome,
+        events: [],
+      }),
+    });
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code)).toContain(code);
+    expect(original).toEqual({ "aura:gon": 100, "body:gon": 50 });
+  });
+
+  const quantitativeEffect = (requestId: string): QuantitativeRequest => ({
+    requestId,
+    kind: "damage",
+    phase: "effect",
+    operationId: OPERATION.operationId,
+    occurredAt: OPERATION.occurredAt,
+    from: CALLER,
+    to: owner("body", "gon"),
+    requested: 12,
+  });
+
+  it.each([
+    ["no amounts at all", {}, "runtime.outcome.amount.missing"],
+    ["only an actual", { actual: 5 }, "runtime.outcome.amount.missing"],
+    ["a mismatched requested", { requested: 3, actual: 3 }, "runtime.outcome.requested.mismatch"],
+  ])("refuses a quantitative effect outcome with %s", (_name, fields, code) => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        costs: [],
+        resolve: () => ({
+          result: "hit",
+          requests: [quantitativeEffect("e1")],
+        }),
+      },
+      {
+        costs: [],
+        effects: [{
+          domain: "body",
+          applyBatch: (requests, state) => ({
+            state,
+            outcomes: requests.map((one) => ({
+              requestId: one.requestId,
+              ...fields,
+            }) as RuntimeRequestOutcome),
+            events: [],
+          }),
+        }],
+      },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code)).toContain(code);
+    expect(original).toEqual({ "aura:gon": 100, "body:gon": 50 });
+  });
+
+  /* A removal has nothing to count, and is not asked to invent a figure. */
+  it("still accepts a non-quantitative outcome with no amounts", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        costs: [],
+        resolve: () => ({
+          result: "healed",
+          requests: [{
+            requestId: "e1",
+            kind: "character-status.remove-injury",
+            phase: "effect" as const,
+            operationId: OPERATION.operationId,
+            occurredAt: OPERATION.occurredAt,
+            from: CALLER,
+            to: owner("body", "gon"),
+          }],
+        }),
+      },
+      {
+        costs: [],
+        effects: [{
+          domain: "body",
+          applyBatch: (requests, state) => ({
+            state,
+            outcomes: requests.map((one) => ({ requestId: one.requestId })),
+            events: [],
+          }),
+        }],
+      },
+    );
+
+    expect(result.success).toBe(true);
   });
 });

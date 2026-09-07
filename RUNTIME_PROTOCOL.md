@@ -43,7 +43,17 @@ draft is keyed by `ownerKey()` (`"aura:gon"`). Keying by domain alone silently m
 second write won, and a fight between two people resolved as though one were hitting themselves.
 
 Handlers are still registered **per domain**, because the rules are per domain — there is one Aura
-mechanic and it applies to everybody. What differs is the state it is handed.
+mechanic and it applies to everybody. What differs is the state it is handed *and the context it
+calculates against*: `createAuraCostHandler` takes a `(owner) => context | undefined` lookup and
+resolves it from `request.to`. Owner-keyed state alone was not enough — two characters had separate
+pools that were both charged using the first one's Attributes, which is arguably worse than sharing
+a pool, because the numbers look individual and are not. A missing context refuses the operation and
+never falls back to another owner's.
+
+**State is addressed, never created.** A request naming an owner the operation supplied no state for
+is refused *before* its handler runs. Passing `undefined` through would put every handler one step
+from `(state as number) ?? 100`, and a character's Aura would spring into existence on the first
+typo in an owner id.
 
 ### Runtime State is not a chapter
 
@@ -225,6 +235,12 @@ malformed dice purposes, faces and requirements. Every one of them discards the 
 Outcome checking is by **identity**, not by count: a handler that answered one request twice and
 dropped another has the right total and the wrong answer, and the dropped request would silently
 report nothing.
+
+A **quantitative** request gets a complete answer or the operation is refused — both figures
+present, both real, and the reported `requested` equal to what was asked. Optionality had made
+omission a way *past* the rule it guarded: the full-payment check only ran when `actual` happened to
+be present, so a handler reporting no figure could underpay a cost that forbids underpaying.
+Non-quantitative requests report no amounts, which is the whole reason amounts left the shared base.
 
 ## 6 · Determinism
 

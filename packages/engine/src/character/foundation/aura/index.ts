@@ -337,6 +337,7 @@ export {
   createAuraCostHandler,
 } from "./runtime";
 export type {
+  AuraContextLookup,
   AuraCostRequest,
   AuraSpentEvent,
 } from "./runtime";

@@ -35,6 +35,7 @@ import {
   findRequestIssues,
   runCoordinatedOperation,
   type QuantitativeRequest,
+  type RuntimeOwnerRef,
 } from "../runtime";
 
 import { auraContext, auraTestAttributes, WITH_TEN } from "./fixtures/aura";
@@ -86,7 +87,7 @@ describe("Aura as a cost handler", () => {
         })],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [createAuraCostHandler(context)], effects: [] },
+      { costs: [createAuraCostHandler(() => context)], effects: [] },
     );
 
     expect(result.success).toBe(true);
@@ -115,7 +116,7 @@ describe("Aura as a cost handler", () => {
    */
   it("keeps no state of its own", () => {
     const { context } = auraSetup(20_000);
-    const handler = createAuraCostHandler(context);
+    const handler = createAuraCostHandler(() => context);
 
     expect(Object.keys(handler).sort()).toEqual(["commit", "domain", "prepare"]);
     expect("committedState" in handler).toBe(false);
@@ -146,7 +147,7 @@ describe("Aura as a cost handler", () => {
         costs: [cost("r1")],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [createAuraCostHandler(context)], effects: [] },
+      { costs: [createAuraCostHandler(() => context)], effects: [] },
     );
 
     const two = runCoordinatedOperation(
@@ -156,7 +157,7 @@ describe("Aura as a cost handler", () => {
         costs: [cost("r1"), cost("r2")],
         resolve: () => ({ result: "swung twice" }),
       },
-      { costs: [createAuraCostHandler(context)], effects: [] },
+      { costs: [createAuraCostHandler(() => context)], effects: [] },
     );
 
     if (!one.success || !two.success) throw new Error("expected success");
@@ -188,7 +189,7 @@ describe("Aura as a cost handler", () => {
         })],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [createAuraCostHandler(context)], effects: [] },
+      { costs: [createAuraCostHandler(() => context)], effects: [] },
     );
 
     expect(result.success).toBe(false);
@@ -231,7 +232,7 @@ describe("Aura as a cost handler", () => {
       },
       {
         costs: [
-          createAuraCostHandler(context),
+          createAuraCostHandler(() => context),
           {
             domain: "combat",
             prepare: () => ({
@@ -278,7 +279,7 @@ describe("Aura as a cost handler", () => {
         costs: [request("r1", 2)],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [createAuraCostHandler(context)], effects: [] },
+      { costs: [createAuraCostHandler(() => context)], effects: [] },
     );
 
     const failed = runCoordinatedOperation(
@@ -288,7 +289,7 @@ describe("Aura as a cost handler", () => {
         costs: [request("r1", 100_000)],
         resolve: () => ({ result: "swung" }),
       },
-      { costs: [createAuraCostHandler(context)], effects: [] },
+      { costs: [createAuraCostHandler(() => context)], effects: [] },
     );
 
     expect(succeeded.success).toBe(true);
@@ -498,5 +499,147 @@ describe("the protocol is a shared layer, not a domain", () => {
     );
 
     expect(offenders).toEqual([]);
+  });
+});
+
+
+/*
+ * One Aura handler, two characters, two bodies.
+ *
+ * Owner-keyed STATE was only half the problem. The handler still closed over
+ * one character's context — their Attributes, their access, their Control
+ * multiplier — so two characters had separate pools that were both charged
+ * using the first one's body. Separate pools with a shared calculation is
+ * arguably worse than a shared pool, because the numbers look individual.
+ */
+describe("Aura resolves its context per owner", () => {
+  const GON: RuntimeOwnerRef = { domain: "aura", id: "gon" };
+  const KILLUA: RuntimeOwnerRef = { domain: "aura", id: "killua" };
+  const STRANGER: RuntimeOwnerRef = { domain: "aura", id: "stranger" };
+
+  /*
+   * Different bodies. CON/VIT drive Maximum Aura — 50,000 against 20,000 here
+   * — and physical cost scales with it, which is what makes one exertion cost
+   * these two different amounts.
+   */
+  const gonContext = auraContext({
+    attributes: auraTestAttributes({ con: 20, vit: 20, dex: 22 }),
+    access: WITH_TEN,
+  });
+
+  const killuaContext = auraContext({
+    attributes: auraTestAttributes({ con: 20, vit: 18, dex: 22 }),
+    access: WITH_TEN,
+  });
+
+  const contexts = new Map([
+    ["aura:gon", gonContext],
+    ["aura:killua", killuaContext],
+  ]);
+
+  const lookup = (owner: RuntimeOwnerRef) =>
+    contexts.get(`${owner.domain}:${owner.id}`);
+
+  const strike = (requestId: string, to: RuntimeOwnerRef) =>
+    auraCostRequest({
+      requestId,
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: CALLER,
+      to,
+      requested: 0,
+      exertionLoad: 2,
+    });
+
+  it("charges each character against their own body", () => {
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: {
+          "aura:gon": deepFreeze<CharacterAuraState>({
+            current: 10_000,
+            allocations: [],
+          }),
+          "aura:killua": deepFreeze<CharacterAuraState>({
+            current: 10_000,
+            allocations: [],
+          }),
+        },
+        costs: [strike("r-gon", GON), strike("r-killua", KILLUA)],
+        resolve: () => ({ result: "clash" }),
+      },
+      { costs: [createAuraCostHandler(lookup)], effects: [] },
+    );
+
+    expect(result.success).toBe(true);
+
+    if (!result.success) throw new Error("unreachable");
+
+    const byRequest = new Map(
+      result.payload.costOutcomes.map((one) => [one.requestId, one.actual!]),
+    );
+
+    const gonPaid = byRequest.get("r-gon")!;
+    const killuaPaid = byRequest.get("r-killua")!;
+
+    /*
+     * The whole point: the same exertion costs the two of them DIFFERENT
+     * amounts, because physical cost scales with Maximum Aura and their
+     * Maximum Aura differs. A shared context would have made these equal.
+     */
+    expect(gonPaid).toBeGreaterThan(0);
+    expect(killuaPaid).toBeGreaterThan(0);
+    expect(gonPaid).not.toBeCloseTo(killuaPaid, 6);
+
+    const gonAfter = result.payload.states["aura:gon"] as CharacterAuraState;
+    const killuaAfter = result.payload.states["aura:killua"] as CharacterAuraState;
+
+    expect(gonAfter.current).toBeCloseTo(10_000 - gonPaid, 6);
+    expect(killuaAfter.current).toBeCloseTo(10_000 - killuaPaid, 6);
+  });
+
+  /* A missing context refuses; it never falls back to somebody else's. */
+  it("refuses an owner it has no context for", () => {
+    const original = {
+      "aura:gon": deepFreeze<CharacterAuraState>({
+        current: 10_000,
+        allocations: [],
+      }),
+      "aura:stranger": deepFreeze<CharacterAuraState>({
+        current: 10_000,
+        allocations: [],
+      }),
+    };
+
+    const result = runCoordinatedOperation(
+      {
+        context: OPERATION,
+        states: original,
+        costs: [
+          strike("r-gon", GON),
+          strike("r-stranger", STRANGER),
+        ],
+        resolve: () => ({ result: "clash" }),
+      },
+      { costs: [createAuraCostHandler(lookup)], effects: [] },
+    );
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((one) => one.code))
+      .toContain("aura.runtime.context.missing");
+
+    /* And Gon, whose cost was perfectly payable, still has all his Aura. */
+    expect(original["aura:gon"].current).toBe(10_000);
+    expect(original["aura:stranger"].current).toBe(10_000);
+  });
+
+  it("is one handler serving both owners", () => {
+    const handler = createAuraCostHandler(lookup);
+
+    expect(handler.domain).toBe("aura");
+    expect(Object.keys(handler).sort()).toEqual(["commit", "domain", "prepare"]);
   });
 });

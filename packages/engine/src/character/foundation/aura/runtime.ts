@@ -31,16 +31,26 @@
  *     than returning it, which meant the authoritative Aura state lived
  *     somewhere the coordinator could not see and the type system could not
  *     check. The returned state is now the only answer.
+ *
+ * And a third, which survived the first two fixes. It closed over ONE
+ * character's context — their Attributes, their Aura access, their Control
+ * multiplier — so once states became owner-keyed, two characters had separate
+ * pools that were both charged using the first one's body. Separate pools and
+ * a shared calculation is arguably worse than a shared pool, because the
+ * numbers look individual and are not. Context is now resolved per owner from
+ * `request.to`, with a missing one refusing the operation rather than falling
+ * back to anybody else's.
  */
 
 import type { EngineResult } from "../../../infrastructure/result";
+import { createTraceNode } from "../../../infrastructure/trace";
 import type {
   CostCommitResult,
   CostHandler,
   PreparedCost,
 } from "../../../runtime/coordinator";
 import type { RuntimeEvent } from "../../../runtime/events";
-import type { RuntimeOwnerRef } from "../../../runtime/domains";
+import { ownerKey, type RuntimeOwnerRef } from "../../../runtime/domains";
 import type {
   QuantitativeRequest,
   RuntimeRequest,
@@ -87,15 +97,34 @@ interface PreparedAuraCost {
 
 
 /**
+ * How a caller supplies each Aura owner's resolution context.
+ *
+ * A lookup rather than a map so a host may resolve lazily from whatever it
+ * already holds. It must be a pure read: returning a different context for the
+ * same owner within one operation would make the answer depend on call order,
+ * and mutating anything inside it would be the state side channel the returned
+ * draft exists to replace.
+ *
+ * `undefined` means "this engine does not know that character", which refuses
+ * the operation. It must never mean "use somebody else's".
+ */
+export type AuraContextLookup = (
+  owner: RuntimeOwnerRef,
+) => AuraTransitionContext | undefined;
+
+
+/**
  * Aura as a cost handler.
  *
- * Stateless: it holds the resolution CONTEXT — Attributes, access, the things
- * that decide what a cost is — and never the pool. The pool arrives with each
- * call and leaves in the return value, which is what makes two costs in one
- * operation cumulative and a discarded operation genuinely free.
+ * Stateless in both senses that matter: it holds no pool, and it holds no
+ * single character's context. The pool arrives with each call and leaves in the
+ * return value; the context is looked up from the owner the request names. One
+ * handler serves every Aura owner in an operation, because there is one Aura
+ * mechanic and it applies to everybody — what differs is whose body it is
+ * applied to.
  */
 export function createAuraCostHandler(
-  context: AuraTransitionContext,
+  contextForOwner: AuraContextLookup,
 ): CostHandler {
   return {
     domain: "aura",
@@ -111,6 +140,36 @@ export function createAuraCostHandler(
     ): EngineResult<PreparedCost> {
       const auraRequest = request as AuraCostRequest;
       const current = state as CharacterAuraState;
+
+      /*
+       * THIS owner's context. Falling back to a default here would charge
+       * Killua's pool using Gon's Attributes and report a confident figure.
+       */
+      const context = contextForOwner(request.to);
+
+      if (context === undefined) {
+        const root = createTraceNode({
+          id: "aura.transition.action",
+          label: "Spend Aura on an action",
+          inputs: { owner: { value: ownerKey(request.to) } },
+        });
+
+        root.output = false;
+
+        return {
+          success: false,
+          trace: { root },
+          warnings: [],
+          errors: [{
+            code: "aura.runtime.context.missing",
+            message:
+              `No Aura resolution context was supplied for "${ownerKey(request.to)}".`,
+            audience: "developer",
+            required: "an AuraTransitionContext for this owner",
+            actual: "absent",
+          }],
+        };
+      }
 
       /*
        * The existing transition IS the validation. Re-deriving affordability
