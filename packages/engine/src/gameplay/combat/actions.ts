@@ -185,14 +185,17 @@ export function hasExhaustedRoundActions(
 /*
  * Returns whether the combatant has enough remaining Round Actions to pay
  * the supplied Action cost.
+ *
+ * A cost of zero is affordable by anybody, including a combatant with an
+ * empty pool: there is nothing to pay. See isValidActionCost() for why zero
+ * is a legal cost at all.
  */
 export function canAffordRoundActionCost(
   combatant: CombatantRoundState,
   actionCost: number,
 ): boolean {
   return (
-    Number.isInteger(actionCost) &&
-    actionCost > 0 &&
+    isValidActionCost(actionCost) &&
     combatant.remainingActions >= actionCost
   );
 }
@@ -203,19 +206,32 @@ export function canAffordRoundActionCost(
 // ---------------------------------------------------------------------------
 
 /*
- * Every normal Action must consume at least one whole Action.
+ * An Action cost is a whole, non-negative number of Actions.
  *
- * A cost of zero is refused rather than treated as free. Bonus Actions were
- * the reason the old comment gave for allowing one, and they are removed:
- * they were dead data read by nothing, and authorization, limits and cost
- * semantics for them are a rules design nobody has done.
+ * ZERO IS LEGAL, and it is not a Bonus Action.
+ *
+ * StructuredActionCost has always defined zero as meaningful — a free
+ * interjection, a purely declarative act — and GM adjudication may waive a
+ * cost outright. Refusing zero here meant a GM ruling "that is free, you
+ * were already moving" produced an authorization Combat then rejected, which
+ * made the ruling unusable at the only place it mattered.
+ *
+ * A zero-cost Action spends nothing from the Round pool and adds nothing to
+ * the state's spent count. That is all it does. It grants no extra Action,
+ * is not limited to one per Turn, and is not the deferred Bonus Action
+ * mechanic wearing a different name — Bonus Actions remain removed and
+ * undesigned, and reading this as an implementation of them would be
+ * inventing the thing that ticket exists to define.
+ *
+ * Inaction and Hesitation stay fixed at one Action: deliberately doing
+ * nothing, and failing to decide in time, both cost you the Action.
  */
 export function isValidActionCost(
   actionCost: number,
 ): boolean {
   return (
     Number.isInteger(actionCost) &&
-    actionCost > 0
+    actionCost >= 0
   );
 }
 

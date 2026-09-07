@@ -179,7 +179,10 @@ export type {
   ScheduledActionAuthorization,
 } from "./authorization";
 
-export { authorizeScheduledAction } from "./authorization";
+export {
+  authorizeScheduledAction,
+  findAuthorizationIssues,
+} from "./authorization";
 
 export type { StructuredActionCostOverride } from "./adjudication";
 

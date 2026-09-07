@@ -1,86 +1,79 @@
 /*
- * One threat, several people who may answer it.
+ * One threat, several people who may answer it — as a state machine.
  *
  * An Action can endanger more than one participant, and every one of them is
  * entitled to their Reaction Gate. The single-opportunity model silently
- * dropped everybody after the first: a sweep that threatened three combatants
- * offered one of them a chance to react and resolved through the other two.
+ * dropped everybody after the first.
  *
- * A queue fixes that, and the ORDER it imposes is the interesting part.
- * Everything runs in the Round's own Initiative order, so who gets to answer
- * first is decided by the same rule that decides who acts first, rather than
- * by the order a host happened to list its targets in.
+ * The first fix for that was a record of two mutable arrays and a boolean,
+ * and it let a caller do things no sequence of play could: open a second
+ * Reaction while the first was still running, discard an active Reaction by
+ * calling "continue" twice, or advance Initiative after a queue in which
+ * every Gate had failed and the Turn was therefore still alive. None of
+ * those were reachable through the intended call order, and all of them were
+ * reachable.
+ *
+ * So the queue is a discriminated state machine instead. Gates are resolved
+ * in one phase and Reactions in another; the transition between them happens
+ * once, when the last Gate is answered; and an open Reaction is named in the
+ * state, so opening another before it ends is refusable rather than merely
+ * discouraged.
  *
  *
  * THE SEQUENCE
  *
- *   threatened participants, deduplicated and initiative-ordered
- *        ↓  one at a time
- *   external Reaction Gate
- *        ↓  failed or declined            ↓  passed
- *   next opportunity, nothing spent       queued, still in initiative order
- *        ↓
- *   queued Reactions resolve one at a time
- *        ↓
- *   the FIRST one to open ends the triggering Turn, once and for good
- *        ↓
- *   when the queue empties, Initiative continues after the interrupted
- *   combatant — which is where it has been parked the whole time
+ *   resolving-gates
+ *     threatened participants, deduplicated, in the Round's Initiative order
+ *     each Gate answered in turn; a refusal spends nothing and opens nothing
+ *        ↓  when the last Gate is answered
+ *   resolving-reactions          (only if at least one Gate passed)
+ *     one Reaction at a time; the FIRST opening ends the triggering Turn,
+ *     once and for good; each must be finished through a canonical Reaction
+ *     end before the next may open; a responder who has run out of Actions
+ *     in the meantime is skipped without cancelling anybody after them
+ *        ↓  when the last queued Reaction finishes
+ *   complete
+ *     Initiative continues from the interrupted combatant — but only if a
+ *     Reaction actually opened. If every Gate failed, the Turn was never
+ *     ended and belongs to the ordinary no-Reaction settlement path.
  *
- * The Gate itself is not resolved here and is not resolved by Combat at all:
- * it is a Detection question, and this module is told the answer.
+ * The Gate itself is not resolved here, and not by Combat at all: it is a
+ * Detection question, and this module is told the answer.
  */
 
 import {
   buildQueuedReaction,
+  type ReactionEnd,
   type ReactionStartFailureReason,
 } from "./reaction";
 import { activateReaction, advanceToNextTurn } from "./round";
 import { endTurnForReaction, type TurnEnd } from "./turn";
 import { findInitiativeIndex } from "./initiative";
+import { currentInitiativeCombatantId } from "./round";
 import type {
   CombatantId,
   CombatRound,
   ReactionOpportunity,
+  ReactionState,
   ReactionTrigger,
 } from "./types";
-import type { RoundProgressResult } from "./round";
 
 
 export const REACTION_QUEUE_FAILURE_REASONS = [
   "no-active-turn",
   "trigger-id-missing",
-  "threatened-combatant-unknown",
-  "queue-empty",
   "queue-trigger-mismatch",
+  "threatened-combatant-unknown",
+  "wrong-phase",
+  "gates-unresolved",
+  "reaction-still-active",
+  "no-active-reaction",
+  "queue-empty",
   "reaction-open-failed",
 ] as const;
 
 export type ReactionQueueFailureReason =
   typeof REACTION_QUEUE_FAILURE_REASONS[number];
-
-
-/**
- * Who still has to be asked, and who is waiting to act.
- *
- * Both lists hold Combatant ids in Initiative order. `turnEnded` records
- * that the triggering Turn has already been closed by an earlier opening, so
- * the second and later Reactions in one queue do not try to close it again.
- */
-export interface ReactionQueue {
-  readonly trigger: ReactionTrigger;
-
-  /** Whose Turn this queue interrupts. Initiative stays parked here. */
-  readonly interruptedCombatantId: CombatantId;
-
-  /** Threatened participants whose Gate has not been resolved yet. */
-  readonly pendingOpportunities: readonly CombatantId[];
-
-  /** Gate-passed participants waiting to take their Reaction. */
-  readonly queuedReactions: readonly CombatantId[];
-
-  readonly turnEnded: boolean;
-}
 
 
 export interface ReactionQueueFailure {
@@ -91,9 +84,73 @@ export interface ReactionQueueFailure {
 }
 
 
+interface ReactionQueueIdentity {
+  readonly trigger: ReactionTrigger;
+
+  /** Whose Turn this queue interrupts. Initiative stays parked here. */
+  readonly interruptedCombatantId: CombatantId;
+
+  /** Guards against a queue outliving the Round that produced it. */
+  readonly roundNumber: number;
+}
+
+
+export interface GateResolvingQueue extends ReactionQueueIdentity {
+  readonly phase: "resolving-gates";
+
+  /** Threatened participants whose Gate has not been answered yet. */
+  readonly pending: readonly CombatantId[];
+
+  /** Gate-passed participants, in the order they will act. */
+  readonly queued: readonly CombatantId[];
+}
+
+
+export interface ReactionResolvingQueue extends ReactionQueueIdentity {
+  readonly phase: "resolving-reactions";
+
+  readonly queued: readonly CombatantId[];
+
+  /**
+   * The responder whose Reaction is open right now.
+   *
+   * Named in the state rather than inferred, so opening another while one is
+   * running is a refusable transition instead of an accident.
+   */
+  readonly activeResponder: CombatantId | null;
+
+  /** Responders who lost their Actions before the queue reached them. */
+  readonly skipped: readonly CombatantId[];
+
+  readonly openedAny: boolean;
+}
+
+
+export interface CompleteQueue extends ReactionQueueIdentity {
+  readonly phase: "complete";
+
+  /**
+   * Whether any Reaction actually opened.
+   *
+   * False means every Gate failed or was declined, the triggering Turn was
+   * never ended, and Initiative must NOT advance — the caller settles the
+   * Action normally instead.
+   */
+  readonly openedAny: boolean;
+
+  readonly skipped: readonly CombatantId[];
+}
+
+
+export type ReactionQueue =
+  | GateResolvingQueue
+  | ReactionResolvingQueue
+  | CompleteQueue;
+
+
 export interface ReactionQueueOpened {
   readonly success: true;
-  readonly queue: ReactionQueue;
+  readonly queue: GateResolvingQueue;
 }
 
 
@@ -112,12 +169,17 @@ function actorOf(trigger: ReactionTrigger): CombatantId | undefined {
 }
 
 
-/**
- * Order threatened combatants by the Round's own Initiative.
- *
- * Anybody absent from the order sorts last, which cannot happen in a valid
- * Round and is preferable to dropping them silently if it ever does.
- */
+function sameTrigger(
+  left: ReactionTrigger,
+  right: ReactionTrigger,
+): boolean {
+  if (left.kind !== right.kind) return false;
+
+  return triggerId(left) === triggerId(right) &&
+    actorOf(left) === actorOf(right);
+}
+
+
 function inInitiativeOrder(
   round: CombatRound,
   combatantIds: readonly CombatantId[],
@@ -134,11 +196,37 @@ function inInitiativeOrder(
 
 
 /**
+ * Whether this queue still describes the Round in front of it.
+ *
+ * A queue is a small record a caller holds across several calls, so the
+ * cheapest way to corrupt Combat is to keep one and use it against a later
+ * Round, a different trigger, or after Initiative has moved. Every transition
+ * checks this first.
+ */
+function findStalenessReason(
+  round: CombatRound,
+  queue: ReactionQueueIdentity,
+): ReactionQueueFailureReason | null {
+  if (queue.roundNumber !== round.number) return "queue-trigger-mismatch";
+
+  if (currentInitiativeCombatantId(round) !== queue.interruptedCombatantId) {
+    return "queue-trigger-mismatch";
+  }
+
+  if (triggerId(queue.trigger).trim().length === 0) {
+    return "trigger-id-missing";
+  }
+
+  return null;
+}
+
+
+/**
  * Opens a queue of Reaction opportunities for one trigger.
  *
- * Nothing is spent and no state changes: this only decides who is going to
- * be asked, and in what order. The triggering Turn stays open, which is the
- * delayed transition the Action path depends on.
+ * Nothing is spent and no state changes: this decides who will be asked, and
+ * in what order. The triggering Turn stays open, which is the delayed
+ * transition the Action path depends on.
  */
 export function openReactionQueue(
   round: CombatRound,
@@ -156,6 +244,19 @@ export function openReactionQueue(
   }
 
   const actor = actorOf(trigger);
+
+  /*
+   * An Action trigger must belong to the combatant whose Turn is being
+   * interrupted. A Reaction to Gon's punch cannot interrupt Killua's Turn,
+   * and a queue built that way would park Initiative on the wrong person.
+   */
+  if (actor !== undefined && actor !== state.combatantId) {
+    return { success: false, reason: "queue-trigger-mismatch", combatantId: actor };
+  }
+
+  if (currentInitiativeCombatantId(round) !== state.combatantId) {
+    return { success: false, reason: "queue-trigger-mismatch" };
+  }
 
   const distinct = Array.from(new Set(threatenedCombatantIds))
     /* Nobody reacts to their own Action. A hazard has no actor to exclude. */
@@ -179,11 +280,12 @@ export function openReactionQueue(
     success: true,
 
     queue: {
+      phase: "resolving-gates",
       trigger,
       interruptedCombatantId: state.combatantId,
-      pendingOpportunities: inInitiativeOrder(round, distinct),
-      queuedReactions: [],
-      turnEnded: false,
+      roundNumber: round.number,
+      pending: inInitiativeOrder(round, distinct),
+      queued: [],
     },
   };
 }
@@ -193,7 +295,9 @@ export function openReactionQueue(
 export function nextReactionOpportunity(
   queue: ReactionQueue,
 ): ReactionOpportunity | null {
-  const next = queue.pendingOpportunities[0];
+  if (queue.phase !== "resolving-gates") return null;
+
+  const next = queue.pending[0];
 
   if (next === undefined) return null;
 
@@ -201,16 +305,58 @@ export function nextReactionOpportunity(
 }
 
 
+/*
+ * Moves out of the Gate phase once the last one has been answered.
+ *
+ * Splitting the transition out is what makes "no Reaction may open while a
+ * Gate is unresolved" a property of the type rather than a rule callers are
+ * asked to remember.
+ */
+function afterGate(
+  queue: GateResolvingQueue,
+  pending: readonly CombatantId[],
+  queued: readonly CombatantId[],
+): ReactionQueue {
+  if (pending.length > 0) {
+    return { ...queue, pending, queued };
+  }
+
+  if (queued.length === 0) {
+    return {
+      phase: "complete",
+      trigger: queue.trigger,
+      interruptedCombatantId: queue.interruptedCombatantId,
+      roundNumber: queue.roundNumber,
+      openedAny: false,
+      skipped: [],
+    };
+  }
+
+  return {
+    phase: "resolving-reactions",
+    trigger: queue.trigger,
+    interruptedCombatantId: queue.interruptedCombatantId,
+    roundNumber: queue.roundNumber,
+    queued,
+    activeResponder: null,
+    skipped: [],
+    openedAny: false,
+  };
+}
+
+
 /**
  * Records that a Gate failed, or that the combatant declined.
  *
- * Both spend nothing and open nothing. The queue simply moves on, which is
- * what stops one refusal from silently cancelling everybody else's chance.
+ * Both spend nothing and open nothing. The queue moves on, which is what
+ * stops one refusal from cancelling everybody else's chance.
  */
 export function skipReactionOpportunity(
   queue: ReactionQueue,
 ): ReactionQueue {
-  return { ...queue, pendingOpportunities: queue.pendingOpportunities.slice(1) };
+  if (queue.phase !== "resolving-gates") return queue;
+
+  return afterGate(queue, queue.pending.slice(1), queue.queued);
 }
 
 
@@ -218,25 +364,30 @@ export function skipReactionOpportunity(
 export function queueReactionAfterGateSuccess(
   queue: ReactionQueue,
 ): ReactionQueue {
-  const next = queue.pendingOpportunities[0];
+  if (queue.phase !== "resolving-gates") return queue;
+
+  const next = queue.pending[0];
 
   if (next === undefined) return queue;
 
-  return {
-    ...queue,
-    pendingOpportunities: queue.pendingOpportunities.slice(1),
-    queuedReactions: [...queue.queuedReactions, next],
-  };
+  return afterGate(
+    queue,
+    queue.pending.slice(1),
+    [...queue.queued, next],
+  );
 }
 
 
 export interface QueuedReactionOpened {
   readonly success: true;
   readonly round: CombatRound;
-  readonly queue: ReactionQueue;
+  readonly queue: ReactionResolvingQueue;
 
   /** Present only on the FIRST opening: the Turn ends once. */
   readonly triggeringTurnEnd?: TurnEnd;
+
+  /** Responders passed over because they had no Actions left. */
+  readonly skipped: readonly CombatantId[];
 }
 
 
@@ -248,124 +399,324 @@ export type QueuedReactionOpenResult =
 /**
  * Opens the next queued Reaction.
  *
- * The first successful opening ends the triggering Turn and it is never
- * resumed. Later ones replace the finished Reaction directly, because there
- * is no Turn left to end.
- *
- * A combatant who has run out of Round Actions between passing their Gate
- * and reaching the front of the queue cannot open theirs — the shared pool
- * is the only Reaction limit there is, and it is checked when the Reaction
- * actually opens rather than when the Gate was passed.
+ * A responder who has lost their Round Actions between passing their Gate
+ * and reaching the front of the queue is SKIPPED rather than failing the
+ * whole queue — the shared pool is the only Reaction limit there is, and one
+ * responder running out is not a reason to silence everybody behind them.
+ * Eligibility is therefore checked here, at the moment the Reaction opens,
+ * rather than when the Gate was answered.
  */
 export function openNextQueuedReaction(
   round: CombatRound,
   queue: ReactionQueue,
 ): QueuedReactionOpenResult {
-  const reactingCombatantId = queue.queuedReactions[0];
-
-  if (reactingCombatantId === undefined) {
-    return { success: false, reason: "queue-empty" };
-  }
-
-  const built = buildQueuedReaction(
-    { trigger: queue.trigger, reactingCombatantId },
-    queue.interruptedCombatantId,
-    round.combatants,
-  );
-
-  if (!built.success) {
+  if (queue.phase !== "resolving-reactions") {
     return {
       success: false,
-      reason: "reaction-open-failed",
-      combatantId: reactingCombatantId,
-      reactionStartFailureReason: built.reason,
+      reason: queue.phase === "resolving-gates" ? "gates-unresolved" : "wrong-phase",
     };
   }
 
-  const remaining: ReactionQueue = {
-    ...queue,
-    queuedReactions: queue.queuedReactions.slice(1),
-    turnEnded: true,
-  };
-
-  const opened = activateReaction(round, built.reaction);
-
-  if (queue.turnEnded) {
-    return { success: true, round: opened, queue: remaining };
+  if (queue.activeResponder !== null) {
+    return {
+      success: false,
+      reason: "reaction-still-active",
+      combatantId: queue.activeResponder,
+    };
   }
 
-  const state = round.activeState;
+  const stale = findStalenessReason(round, queue);
 
-  if (state === null || state.kind !== "turn") {
-    return { success: false, reason: "no-active-turn" };
+  if (stale !== null) return { success: false, reason: stale };
+
+  const skipped: CombatantId[] = [];
+  let remaining = queue.queued;
+
+  while (remaining.length > 0) {
+    const reactingCombatantId = remaining[0]!;
+
+    const built = buildQueuedReaction(
+      { trigger: queue.trigger, reactingCombatantId },
+      queue.interruptedCombatantId,
+      round.combatants,
+    );
+
+    if (!built.success) {
+      if (built.reason === "reacting-combatant-not-round-eligible") {
+        skipped.push(reactingCombatantId);
+        remaining = remaining.slice(1);
+
+        continue;
+      }
+
+      return {
+        success: false,
+        reason: "reaction-open-failed",
+        combatantId: reactingCombatantId,
+        reactionStartFailureReason: built.reason,
+      };
+    }
+
+    const opened = activateReaction(round, built.reaction);
+
+    const next: ReactionResolvingQueue = {
+      ...queue,
+      queued: remaining.slice(1),
+      activeResponder: reactingCombatantId,
+      skipped: [...queue.skipped, ...skipped],
+      openedAny: true,
+    };
+
+    if (queue.openedAny) {
+      return { success: true, round: opened, queue: next, skipped };
+    }
+
+    /*
+     * The first opening, and the only one that ends anything. A Reaction
+     * cannot exist while the triggering Turn is still active, and the Turn
+     * can only be ended once.
+     */
+    const state = round.activeState;
+
+    if (state === null || state.kind !== "turn") {
+      return { success: false, reason: "no-active-turn" };
+    }
+
+    return {
+      success: true,
+      round: opened,
+      queue: next,
+      triggeringTurnEnd: endTurnForReaction(state),
+      skipped,
+    };
   }
 
   return {
-    success: true,
-    round: opened,
-    queue: remaining,
-    triggeringTurnEnd: endTurnForReaction(state),
+    success: false,
+    reason: "queue-empty",
   };
 }
 
 
-export interface ReactionQueueContinued {
+export interface QueuedReactionFinished {
   readonly success: true;
-
-  /** True while another queued Reaction is now active. */
-  readonly reactionOpened: boolean;
-
-  readonly round: CombatRound;
   readonly queue: ReactionQueue;
-
-  /** Only set once the queue is exhausted and Initiative moved on. */
-  readonly roundComplete?: boolean;
 }
 
 
-export type ReactionQueueContinueResult =
-  | ReactionQueueContinued
+export type QueuedReactionFinishResult =
+  | QueuedReactionFinished
   | ReactionQueueFailure;
 
 
 /**
- * Advances after one queued Reaction has finished.
+ * Closes the Reaction that is currently open.
  *
- * While the queue holds anybody, the next Reaction opens — NOT the next
- * Turn. Only once it is empty does Initiative continue, and because it was
- * never moved, it continues from the interrupted combatant to whoever comes
- * after them.
+ * Takes the ReactionEnd produced by one of the canonical ending operations
+ * rather than ending it here, so there is one place a Reaction can end and
+ * this is not a second one. The end is checked against the queue: a
+ * ReactionEnd from a different trigger, a different interrupted combatant or
+ * a different responder is refused rather than silently accepted, because
+ * accepting it would close a Reaction that is still running.
+ */
+export function finishQueuedReaction(
+  round: CombatRound,
+  queue: ReactionQueue,
+  end: ReactionEnd,
+): QueuedReactionFinishResult {
+  if (queue.phase !== "resolving-reactions") {
+    return { success: false, reason: "wrong-phase" };
+  }
+
+  if (queue.activeResponder === null) {
+    return { success: false, reason: "no-active-reaction" };
+  }
+
+  const stale = findStalenessReason(round, queue);
+
+  if (stale !== null) return { success: false, reason: stale };
+
+  if (
+    end.combatantId !== queue.activeResponder ||
+    end.interruptedCombatantId !== queue.interruptedCombatantId ||
+    !sameTrigger(end.trigger, queue.trigger)
+  ) {
+    return {
+      success: false,
+      reason: "queue-trigger-mismatch",
+      combatantId: end.combatantId,
+    };
+  }
+
+  const closed: ReactionResolvingQueue = {
+    ...queue,
+    activeResponder: null,
+  };
+
+  if (closed.queued.length > 0) return { success: true, queue: closed };
+
+  return {
+    success: true,
+    queue: {
+      phase: "complete",
+      trigger: closed.trigger,
+      interruptedCombatantId: closed.interruptedCombatantId,
+      roundNumber: closed.roundNumber,
+      openedAny: closed.openedAny,
+      skipped: closed.skipped,
+    },
+  };
+}
+
+
+export type ReactionQueueContinuation =
+  | {
+    /* Another queued Reaction is now active. */
+    readonly outcome: "reaction-opened";
+    readonly round: CombatRound;
+    readonly queue: ReactionResolvingQueue;
+    readonly skipped: readonly CombatantId[];
+  }
+  | {
+    /*
+     * The queue is done and a Reaction did open, so the Turn is gone and
+     * Initiative continues from the interrupted combatant.
+     */
+    readonly outcome: "initiative-advanced";
+    readonly round: CombatRound;
+    readonly queue: CompleteQueue;
+    readonly roundComplete: boolean;
+  }
+  | {
+    /*
+     * Every Gate failed or was declined. Nothing opened, the triggering Turn
+     * was never ended, and the caller settles the Action normally.
+     */
+    readonly outcome: "no-reactions";
+    readonly round: CombatRound;
+    readonly queue: CompleteQueue;
+  };
+
+
+export type ReactionQueueContinueResult =
+  | ({ readonly success: true } & ReactionQueueContinuation)
+  | ReactionQueueFailure;
+
+
+/**
+ * Advances the queue.
+ *
+ * Refuses while a Reaction is still open, which is the transition the old
+ * shape allowed and should not have: calling continue twice used to replace
+ * the running Reaction with the next one and lose it.
  */
 export function continueReactionQueue(
   round: CombatRound,
   queue: ReactionQueue,
 ): ReactionQueueContinueResult {
-  if (queue.queuedReactions.length > 0) {
+  if (queue.phase === "resolving-gates") {
+    return { success: false, reason: "gates-unresolved" };
+  }
+
+  if (queue.phase === "resolving-reactions") {
+    if (queue.activeResponder !== null) {
+      return {
+        success: false,
+        reason: "reaction-still-active",
+        combatantId: queue.activeResponder,
+      };
+    }
+
     const opened = openNextQueuedReaction(
       { ...round, activeState: null },
-      { ...queue, turnEnded: true },
+      queue,
     );
 
-    if (!opened.success) return opened;
+    if (!opened.success) {
+      /*
+       * Every remaining responder turned out to be ineligible. That is not a
+       * failure of the queue; it simply has nobody left, so it completes.
+       */
+      if (opened.reason !== "queue-empty") return opened;
+
+      return {
+        success: true,
+        outcome: "initiative-advanced",
+        ...advanceAfterQueue(round, queue),
+      };
+    }
 
     return {
       success: true,
-      reactionOpened: true,
+      outcome: "reaction-opened",
       round: opened.round,
       queue: opened.queue,
+      skipped: opened.skipped,
     };
   }
 
-  const progress: RoundProgressResult = advanceToNextTurn({
-    ...round,
-    activeState: null,
-  });
+  if (!queue.openedAny) {
+    return { success: true, outcome: "no-reactions", round, queue };
+  }
 
   return {
     success: true,
-    reactionOpened: false,
-    round: progress.round,
-    queue,
-    roundComplete: progress.complete,
+    outcome: "initiative-advanced",
+    ...advanceAfterQueue(round, queue),
   };
+}
+
+
+function advanceAfterQueue(
+  round: CombatRound,
+  queue: ReactionResolvingQueue | CompleteQueue,
+): {
+  readonly round: CombatRound;
+  readonly queue: CompleteQueue;
+  readonly roundComplete: boolean;
+} {
+  const progress = advanceToNextTurn({ ...round, activeState: null });
+
+  return {
+    round: progress.round,
+    roundComplete: progress.complete,
+    queue: {
+      phase: "complete",
+      trigger: queue.trigger,
+      interruptedCombatantId: queue.interruptedCombatantId,
+      roundNumber: queue.roundNumber,
+      openedAny: queue.openedAny,
+      skipped: queue.skipped,
+    },
+  };
+}
+
+
+/**
+ * Whether the Reaction currently active in the Round is the one the queue
+ * believes is running.
+ *
+ * Exported so a caller ending a Reaction can check before it does, rather
+ * than discovering the mismatch from a refusal afterwards.
+ */
+export function queueMatchesActiveReaction(
+  round: CombatRound,
+  queue: ReactionQueue,
+): boolean {
+  const state = round.activeState;
+
+  if (state === null || state.kind !== "reaction") return false;
+  if (queue.phase !== "resolving-reactions") return false;
+
+  return matchesReaction(state, queue);
+}
+
+
+function matchesReaction(
+  state: ReactionState,
+  queue: ReactionResolvingQueue,
+): boolean {
+  return state.reactingCombatantId === queue.activeResponder &&
+    state.interruptedCombatantId === queue.interruptedCombatantId &&
+    sameTrigger(state.trigger, queue.trigger);
 }

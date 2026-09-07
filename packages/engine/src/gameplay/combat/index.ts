@@ -214,23 +214,30 @@ export {
   REACTION_QUEUE_FAILURE_REASONS,
 
   continueReactionQueue,
+  finishQueuedReaction,
   nextReactionOpportunity,
   openNextQueuedReaction,
   openReactionQueue,
+  queueMatchesActiveReaction,
   queueReactionAfterGateSuccess,
   skipReactionOpportunity,
 } from "./reaction-queue";
 
 export type {
   ReactionQueue,
+  GateResolvingQueue,
+  ReactionResolvingQueue,
+  CompleteQueue,
   ReactionQueueFailure,
   ReactionQueueFailureReason,
   ReactionQueueOpened,
   ReactionQueueResult,
-  ReactionQueueContinued,
+  ReactionQueueContinuation,
   ReactionQueueContinueResult,
   QueuedReactionOpened,
   QueuedReactionOpenResult,
+  QueuedReactionFinished,
+  QueuedReactionFinishResult,
 } from "./reaction-queue";
 
 export {

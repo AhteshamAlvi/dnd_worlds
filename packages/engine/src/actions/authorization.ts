@@ -17,6 +17,22 @@
  * action, because only this layer knows what the GM settled.
  *
  *
+ * WHAT IT IS AND IS NOT
+ *
+ * It is VALIDATED DATA, not unforgeable evidence. It is a plain readonly
+ * object so it can cross a serialization boundary — a host may persist one,
+ * send it over a wire, and hand it back — and anything a caller can build by
+ * hand, a caller can build wrong. Producing one through this function is
+ * therefore not a proof that adjudication ran; it is a proof that whatever
+ * arrived here was internally consistent when it did.
+ *
+ * That is why the consumer validates too. The scheduler re-checks the
+ * authorization's identifiers, actor, timing, cost, targets and threat
+ * declaration at its own boundary rather than trusting the type. Two
+ * independent checks on a mutable record is the honest arrangement; a single
+ * check plus a comment claiming the object cannot be forged is not.
+ *
+ *
  * WHAT IS DELIBERATELY ABSENT
  *
  * No secret rolls, no GM reasoning, no private diagnostics, no consequences,
@@ -33,7 +49,7 @@ import {
   type NonEmptyArray,
 } from "../infrastructure/result";
 import { createTraceNode } from "../infrastructure/trace";
-import type { TargetRef } from "../targeting";
+import { findTargetIssues, type TargetRef } from "../targeting";
 
 import {
   findStructuredActionCostIssues,
@@ -114,6 +130,78 @@ export interface AuthorizeActionInput {
 }
 
 
+/**
+ * Everything wrong with an authorization, if anything is.
+ *
+ * Exported so a consumer can re-validate one it was handed rather than
+ * trusting the type — see the header on why that matters.
+ */
+export function findAuthorizationIssues(
+  authorization: ScheduledActionAuthorization,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  for (
+    const [value, code, what] of [
+      [authorization.operationId, "actions.authorization.operation.missing", "An authorization's operation"],
+      [authorization.intentId, "actions.authorization.intent.missing", "The intent"],
+      [authorization.profileId, "actions.authorization.profile.missing", "The profile"],
+    ] as const
+  ) {
+    const issue = identifierIssue(value, code, what);
+
+    if (issue !== undefined) errors.push(issue);
+  }
+
+  errors.push(...findActorIssues(authorization.actor));
+
+  if (!isActionTiming(authorization.timing)) {
+    errors.push({
+      code: "actions.authorization.timing.invalid",
+      message: "The finalized timing is not a known Action timing.",
+      audience: "developer",
+      required: "action or reaction",
+      actual: String(authorization.timing),
+    });
+  }
+
+  errors.push(...findStructuredActionCostIssues(
+    authorization.structuredActionCost,
+  ).map((issue) => ({
+    ...issue,
+    code: "actions.authorization.cost.invalid",
+  })));
+
+  if (!isThreatDeclaration(authorization.threatens)) {
+    errors.push({
+      code: "actions.authorization.threatens.invalid",
+      message: "The finalized threat declaration is not a known one.",
+      audience: "developer",
+      required: [...THREAT_DECLARATIONS],
+      actual: String(authorization.threatens),
+    });
+  }
+
+  if (!Array.isArray(authorization.declaredTargets)) {
+    errors.push({
+      code: "actions.authorization.targets.invalid",
+      message: "An authorization's declared targets must be a list.",
+      audience: "developer",
+      required: "an array of targets",
+      actual: String(authorization.declaredTargets),
+    });
+
+    return errors;
+  }
+
+  for (const target of authorization.declaredTargets) {
+    errors.push(...findTargetIssues(target));
+  }
+
+  return errors;
+}
+
+
 function nonEmpty(value: unknown): boolean {
   return typeof value === "string" && value.trim().length > 0;
 }
@@ -177,6 +265,29 @@ export function authorizeScheduledAction(
   }
 
   errors.push(...findActorIssues(proposal.actor));
+
+  /*
+   * The operation id has to be the same everywhere it appears. The proposal,
+   * the GM view and the public view are assembled separately, and a
+   * disagreement between them means one of the three describes a different
+   * operation than the caller believes.
+   */
+  for (
+    const [value, where] of [
+      [gm.operationId, "the GM view"],
+      [input.adjudicated.public.operationId, "the public view"],
+    ] as const
+  ) {
+    if (value !== proposal.operationId) {
+      errors.push({
+        code: "actions.authorization.operation.mismatch",
+        message: `The operation on ${where} does not match the proposal's.`,
+        audience: "developer",
+        required: proposal.operationId,
+        actual: String(value),
+      });
+    }
+  }
 
   /*
    * The timing has to be structured, because scheduling IS the structured

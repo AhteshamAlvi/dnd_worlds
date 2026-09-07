@@ -705,7 +705,43 @@ export const ENGINE_DECISIONS = {
         chosen:
             "A ReactionQueue. Threatened participants are deduplicated, the actor is excluded, and everybody is ordered by the Round's own Initiative. Gates resolve one at a time in that order; a failed or declined gate advances and spends nothing; successful gates queue in the same order. The FIRST opening ends the triggering Turn, once, and it never resumes. Finishing one queued Reaction opens the next rather than starting a Turn, and only an empty queue lets Initiative continue — from the interrupted combatant, where it was parked the whole time.",
         rationale:
-            "Initiative order is the point. Something has to decide who answers first, and using the order a host listed its targets in would let presentation decide a mechanical outcome; the Round already has an authority for 'who goes first' and it costs nothing to reuse. Ending the Turn exactly once matters because the Turn can only be ended once and later openings have nothing left to close — carrying that as queue state is cheaper than inferring it. Eligibility is checked when a Reaction OPENS rather than when its gate passed, because the shared Round pool is the only Reaction limit and a combatant can be emptied between the two. There is still no per-Round Reaction count: a combatant may answer later threats in the same Round while Actions remain.",
+            "Initiative order is the point. Something has to decide who answers first, and using the order a host listed its targets in would let presentation decide a mechanical outcome; the Round already has an authority for 'who goes first' and it costs nothing to reuse. Ending the Turn exactly once matters because the Turn can only be ended once and later openings have nothing left to close — carrying that as queue state is cheaper than inferring it. Eligibility is checked when a Reaction OPENS rather than when its gate passed, because the shared Round pool is the only Reaction limit and a combatant can be emptied between the two. There is still no per-Round Reaction count: a combatant may answer later threats in the same Round while Actions remain. AMENDED by combat.reactions.queue-is-a-state-machine: the first version was two mutable arrays and a boolean, which let a caller reach states no sequence of play could.",
+    },
+    "combat.actions.zero-cost-is-legal": {
+        id: "combat.actions.zero-cost-is-legal",
+        question:
+            "isValidActionCost() required a positive whole number, so a GM who waived an Action cost produced an authorization Combat then refused. StructuredActionCost has always defined zero as meaningful.",
+        chosen:
+            "An Action cost is a whole NON-NEGATIVE number. A zero-cost Action schedules and resolves, spends nothing from the Round pool, and adds nothing to the state's spent count. Inaction and Hesitation stay fixed at one Action. canAffordRoundActionCost() treats zero as affordable by anybody, including a combatant with an empty pool.",
+        rationale:
+            "Refusing zero made the GM's waiver unusable at the one place it mattered, which is the same defect as the scheduler re-deciding timing: a ruling that cannot survive to the point of use is decoration. The important thing this is NOT is a Bonus Action. A free Action consumes nothing and GRANTS nothing — it does not extend what the Turn may still do, it is not limited to one, and nothing authorizes it beyond the ordinary adjudication that waived the cost. Bonus Actions remain removed and undesigned, and a test asserts the remaining Turn allowance is unchanged specifically so this cannot be read as an accidental implementation of them. Inaction and Hesitation keep their cost because deliberately doing nothing, and failing to decide in time, are both supposed to cost you the Action.",
+    },
+    "combat.reactions.queue-is-a-state-machine": {
+        id: "combat.reactions.queue-is-a-state-machine",
+        question:
+            "The first multi-target Reaction queue was a record of two mutable arrays and a boolean, coordinated by callers calling the helpers in the right order.",
+        chosen:
+            "A discriminated state machine: resolving-gates, resolving-reactions, complete. The open Reaction's responder is named in the state, the Gate-to-Reaction transition happens once when the last Gate is answered, and a Reaction must be closed through finishQueuedReaction() — which takes a ReactionEnd produced by a canonical ending operation and checks it against the queue — before the next may open. Every transition first re-checks that the queue still describes this Round, this trigger and this parked Initiative position.",
+        rationale:
+            "The old shape let a caller reach states no sequence of play could produce: opening a second Reaction while the first was running, discarding an active Reaction by continuing twice, and advancing Initiative after a queue in which every Gate failed and the Turn was therefore still alive. None were reachable through the intended call order and all were reachable, which is the definition of a shape doing less work than it appears to. Naming the active responder in the state turns 'do not open another yet' from a rule callers remember into a transition the type refuses. Taking a ReactionEnd rather than ending the Reaction here keeps one canonical place for a Reaction to end and makes a mismatched end refusable. The staleness check exists because a queue is a small record a caller holds across several calls, which makes reusing one against a later Round the cheapest way to corrupt Combat.",
+    },
+    "combat.reactions.ineligible-responders-are-skipped": {
+        id: "combat.reactions.ineligible-responders-are-skipped",
+        question:
+            "A responder can pass their Reaction Gate and then lose their last Round Action before the queue reaches them. Failing the queue, or cancelling the rest of it, are both available answers.",
+        chosen:
+            "They are skipped, recorded in the queue's `skipped` list, and the next eligible responder opens. If nobody eligible remains, the queue completes and Initiative advances normally. Eligibility is therefore checked when a Reaction OPENS rather than when its Gate was answered.",
+        rationale:
+            "The shared Round pool is the only Reaction limit there is, so running out is an ordinary outcome rather than an error, and one responder running out is not a reason to silence everybody behind them — which is the same argument that made a failed Gate advance rather than cancel. Checking at open rather than at gate is what makes the rule true in the gap between the two, which is exactly where the situation arises.",
+    },
+    "actions.authorization.validated-data-not-a-token": {
+        id: "actions.authorization.validated-data-not-a-token",
+        question:
+            "The scheduling authorization was described as evidence that preparation and adjudication had run. It is a plain readonly TypeScript object, so a caller can build one by hand or edit one they were given.",
+        chosen:
+            "It is documented as VALIDATED DATA rather than an unforgeable token, and both ends validate. The builder checks the adjudication it narrows, including that the operation id agrees across the proposal, the GM view and the public view; the scheduler re-checks the authorization's identifiers, actor, timing, cost, declared targets and threat declaration at its own boundary through findAuthorizationIssues(). Tests that cloned a valid authorization and replaced finalized fields were replaced with ones that build a genuine authorization for the intended actor.",
+        rationale:
+            "A structurally editable record is not proof of anything, and a comment claiming otherwise is worse than no comment: it invites the next reader to skip a check. It stays a plain object deliberately — a host may persist one, send it over a wire and hand it back — so an opaque factory-produced type would buy a guarantee that does not survive serialization anyway. Two independent checks on a mutable record is the honest arrangement. The cloned-authorization tests were the same error in test form: editing a token and watching it work proves the token is not a token, and the cases worth keeping are the ones where an edit is REFUSED, which are now tested explicitly alongside a genuinely-built authorization for a second actor.",
     },
 } as const satisfies Record<string, EngineDecision>;
 

@@ -63,19 +63,30 @@ describe("Round-Action helpers", () => {
     expect(hasExhaustedRoundActions(roundState("a", -1))).toBe(true);
   });
 
-  it("requires a positive whole cost that the pool can cover", () => {
+  it("requires a whole cost the pool can cover", () => {
     const combatant = roundState("a", 2);
 
     expect(canAffordRoundActionCost(combatant, 2)).toBe(true);
     expect(canAffordRoundActionCost(combatant, 3)).toBe(false);
-    expect(canAffordRoundActionCost(combatant, 0)).toBe(false);
     expect(canAffordRoundActionCost(combatant, -1)).toBe(false);
     expect(canAffordRoundActionCost(combatant, 1.5)).toBe(false);
   });
 
-  it("rejects a zero cost, because a free Action is a Bonus Action", () => {
+  it("treats a free Action as affordable by anybody", () => {
+    /* CHANGED DELIBERATELY: there is nothing to pay. */
+    expect(canAffordRoundActionCost(roundState("a", 2), 0)).toBe(true);
+    expect(canAffordRoundActionCost(roundState("a", 0), 0)).toBe(true);
+  });
+
+  it("accepts zero as a whole, non-negative cost", () => {
+    /*
+     * CHANGED DELIBERATELY. StructuredActionCost has always defined zero as
+     * meaningful and GM adjudication may waive a cost, so refusing it here
+     * made a GM ruling unusable at the one place it mattered. Zero is not a
+     * Bonus Action: it grants nothing and is limited by nothing.
+     */
     expect(isValidActionCost(1)).toBe(true);
-    expect(isValidActionCost(0)).toBe(false);
+    expect(isValidActionCost(0)).toBe(true);
     expect(isValidActionCost(-1)).toBe(false);
     expect(isValidActionCost(1.5)).toBe(false);
     expect(isValidActionCost(Number.NaN)).toBe(false);
@@ -95,10 +106,18 @@ describe("why an Action cannot be spent", () => {
 
   it("reports an invalid cost before anything else", () => {
     expect(findActionSpendFailure(
-      skillAction({ actionCost: 0, actorCombatantId: "b" }),
+      skillAction({ actionCost: -1, actorCombatantId: "b" }),
       roundState("a", 4),
       turnState("a"),
     )).toBe("invalid-action-cost");
+  });
+
+  it("lets a free Action through the whole economy check", () => {
+    expect(findActionSpendFailure(
+      skillAction({ actionCost: 0 }),
+      roundState("a", 0),
+      turnState("a", 2, 2),
+    )).toBeNull();
   });
 
   it("rejects an Action whose actor is not the one acting", () => {
@@ -226,6 +245,43 @@ describe("spending an Action", () => {
 
     expect(combatant.remainingActions).toBe(4);
     expect(state.actionsSpent).toBe(0);
+  });
+});
+
+
+describe("free Actions cost nothing and grant nothing", () => {
+  it("spends no Round Action and no state Action", () => {
+    const result = spendCombatAction(
+      skillAction({ actionCost: 0 }),
+      roundState("a", 4),
+      turnState("a", 2, 1),
+    );
+
+    if (!result.success) throw new Error("unreachable");
+
+    expect(result.combatant.remainingActions).toBe(4);
+    expect(result.state.actionsSpent).toBe(1);
+  });
+
+  it("does not extend what the Turn may still do", () => {
+    /*
+     * The distinction from a Bonus Action. A free Action consumes nothing;
+     * it does not ADD anything either, so the Turn's remaining allowance is
+     * exactly what it was.
+     */
+    const before = turnState("a", 2, 1);
+    const combatant = roundState("a", 4);
+
+    const result = spendCombatAction(
+      skillAction({ actionCost: 0 }),
+      combatant,
+      before,
+    );
+
+    if (!result.success) throw new Error("unreachable");
+
+    expect(remainingStateActions(result.state))
+      .toBe(remainingStateActions(before));
   });
 });
 

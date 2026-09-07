@@ -98,6 +98,7 @@ export const REACTION_DECISION_LIMIT_SECONDS = 15;
 export const REACTION_OPPORTUNITY_FAILURE_REASONS = [
   "combatant-not-threatened",
   "self-reaction",
+  "trigger-id-missing",
 ] as const;
 
 export type ReactionOpportunityFailureReason =
@@ -145,6 +146,17 @@ export function createReactionOpportunity(
   action: CombatAction,
   reactingCombatantId: CombatantId,
 ): ReactionOpportunityResult {
+  if (
+    typeof action.id !== "string" ||
+    action.id.trim().length === 0
+  ) {
+    return {
+      success: false,
+      reactingCombatantId,
+      reason: "trigger-id-missing",
+    };
+  }
+
   if (
     action.actorCombatantId ===
     reactingCombatantId
@@ -200,6 +212,22 @@ export function createEventReactionOpportunity(
   threat: CredibleThreat,
   reactingCombatantId: CombatantId,
 ): ReactionOpportunityResult {
+  /*
+   * An unidentified hazard cannot be recorded, reacted to coherently, or
+   * matched against a queue later. Checked here as well as on the queued
+   * path, because a direct caller reaches this function without one.
+   */
+  if (
+    typeof threat.eventId !== "string" ||
+    threat.eventId.trim().length === 0
+  ) {
+    return {
+      success: false,
+      reactingCombatantId,
+      reason: "trigger-id-missing",
+    };
+  }
+
   if (
     !threat.threatenedCombatantIds.includes(
       reactingCombatantId,

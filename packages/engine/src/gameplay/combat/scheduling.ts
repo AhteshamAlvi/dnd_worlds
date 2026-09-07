@@ -40,8 +40,14 @@
  * Hazards with no actor go through CredibleThreat instead.
  */
 
-import type { ActorRef, ScheduledActionAuthorization } from "../../actions";
+import {
+  findAuthorizationIssues,
+  type ActorRef,
+  type ScheduledActionAuthorization,
+} from "../../actions";
 import type { TargetRef } from "../../targeting";
+
+import type { EngineError } from "../../infrastructure/diagnostics";
 
 import { activeStateCombatantId, isValidActionCost } from "./actions";
 import type {
@@ -53,6 +59,7 @@ import type {
 
 
 export const ACTION_SCHEDULE_FAILURE_REASONS = [
+  "authorization-invalid",
   "no-active-state",
   "combat-action-id-missing",
   "operation-mismatch",
@@ -81,6 +88,9 @@ export interface ActionScheduleFailure {
   readonly reason: ActionScheduleFailureReason;
 
   readonly combatantId?: CombatantId;
+
+  /** Present when the authorization itself did not hold up. */
+  readonly authorizationIssues?: readonly EngineError[];
 }
 
 
@@ -175,6 +185,25 @@ export function scheduleNeutralAction(
     input.actionId.trim().length === 0
   ) {
     return { success: false, reason: "combat-action-id-missing" };
+  }
+
+  /*
+   * Re-validated here rather than trusted.
+   *
+   * An authorization is a plain readonly object so it can be serialized,
+   * persisted and handed back — which means anything a caller can construct,
+   * a caller can construct wrong, and a type is not a proof. Checking it at
+   * both boundaries is the honest arrangement for a mutable record; treating
+   * it as unforgeable because it has a name is not.
+   */
+  const authorizationIssues = findAuthorizationIssues(authorization);
+
+  if (authorizationIssues.length > 0) {
+    return {
+      success: false,
+      reason: "authorization-invalid",
+      authorizationIssues,
+    };
   }
 
   if (input.operationId !== authorization.operationId) {

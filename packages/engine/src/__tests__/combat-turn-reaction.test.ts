@@ -215,11 +215,23 @@ describe("ending a Turn", () => {
 
 
 describe("Reaction opportunities", () => {
-  it("declares two failure reasons", () => {
+  it("declares three failure reasons", () => {
     expect([...REACTION_OPPORTUNITY_FAILURE_REASONS]).toEqual([
       "combatant-not-threatened",
       "self-reaction",
+      "trigger-id-missing",
     ]);
+  });
+
+  it("refuses an Action with no identity to react to", () => {
+    const result = createReactionOpportunity(
+      skillAction({ id: "  ", threatenedCombatantIds: ["c"] }),
+      "c",
+    );
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("trigger-id-missing");
   });
 
   it("is created for a combatant the Action explicitly threatens", () => {
@@ -332,6 +344,17 @@ describe("a hazard can open a Reaction with no actor at all", () => {
       },
       reactingCombatantId: "c",
     });
+  });
+
+  it("refuses a hazard with no identity", () => {
+    const result = createEventReactionOpportunity(
+      { eventId: "   ", threatenedCombatantIds: ["c"] },
+      "c",
+    );
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("trigger-id-missing");
   });
 
   it("refuses a combatant the hazard does not endanger", () => {
