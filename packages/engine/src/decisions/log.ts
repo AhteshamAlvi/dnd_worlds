@@ -347,6 +347,69 @@ export const ENGINE_DECISIONS = {
         rationale:
             "Rounding half up is the ordinary tabletop reading of 'round to the nearest whole number' and favors the character, which is the right default for a value they are rolling with. It is worth recording because it is asymmetric across zero: a Derived Attribute CAN go negative once Conditions and injuries push the contributing Attributes below the stored 1-30 range, and at that point 'up' means 'smaller in magnitude' rather than 'better'. A GM comparing two heavily-penalized characters should know the tie-break is directional, not magnitude-based.",
     },
+    "actions.targets.optional-and-zero": {
+        id: "actions.targets.optional-and-zero",
+        question:
+            "Combat modelled an Action's subjects as targetCombatantIds, and the surrounding assumption everywhere was that an attack has a target. A punch thrown at the ground, a stance, an En expansion and a wall of flame across a corridor all have no target and are all things a character does.",
+        chosen:
+            "Target cardinality is a minimum and a nullable maximum, and zero is an ordinary value. A profile expresses none (0,0), optional (0,1), exactly one (1,1), one or more (1,null) or any number (0,null); a selection is a flat list that may be empty when the profile permits it. There is no recursive 'multiple' target containing other targets.",
+        rationale:
+            "Making zero targets exotic forces every aimed action to invent a target, and the invention is always the ground or the actor themselves. Downstream that is unrecoverable: nothing can later tell which entries were subjects and which were placeholders for geometry, so a collateral-damage rule and a declared-target rule end up reading the same list and disagreeing about it. A minimum and a maximum also collapses five special cases into one comparison, which is why a heal requiring exactly one recipient and a stance requiring none are the same code path with different numbers. The maximum is null rather than Infinity so an unbounded profile survives JSON, and the collection is flat because a nested target makes 'how many targets does this have' a tree walk that every consumer would answer slightly differently.",
+    },
+    "actions.focus.separate-from-targets": {
+        id: "actions.focus.separate-from-targets",
+        question:
+            "Where an action is AIMED and WHO it is aimed at were the same field. A ground punch, a cone, and a charge along a route each need aim and may have no subject at all.",
+        chosen:
+            "Declared goal, declared targets, and action focus are three independent fields on an intent, and suggested and final affected subjects are two more produced later. Focus is a closed union of none, direction, position, path, and area placement. The declared goal is narrative text that nothing parses, dispatches on, or reads as mechanics.",
+        rationale:
+            "These five are the ones that get merged in a hurry and cannot be separated afterwards. Targets are subjects, focus is geometry, and an action may have either, both, or neither: a stance has neither, a heal has a target and no focus, a ground punch has a focus and no target. Keeping the goal as unparsed text is deliberate in the other direction — it is exactly the information a rules engine normally discards and a GM adjudicating an unusual attempt normally wants, and the moment anything dispatches on its wording, players are writing code by phrasing.",
+    },
+    "spatial.units.metres-only": {
+        id: "spatial.units.metres-only",
+        question:
+            "Distance had no shared representation. Movement worked in metres per Round, Range did not exist yet, and hosts natively speak in squares, hexes, feet, or nothing at all.",
+        chosen:
+            "Every distance in the engine is metres. Positions are metric coordinates in metres or opaque host references; there are no squares, hexes, feet, or grid units anywhere in the engine, and conversion is the host's, done once where the grid size is actually known.",
+        rationale:
+            "A square is 1.5 m in one system and 5 ft in another, squares and hexes disagree about diagonals, and a table with no map has neither — so a mechanic written in grid units means something different on every host it runs on, silently. Metres is the only unit that still works when there is no grid, which is the case the engine must support because most play is not on a battle map. A straight-line distance and a travelled path length are also given different types rather than both being bare numbers, because they are almost never the same figure and confusing them produces a plausible wrong answer rather than an error.",
+    },
+    "spatial.geometry.host-supplied": {
+        id: "spatial.geometry.host-supplied",
+        question:
+            "Walls, cover, obstruction, line of effect, occupancy, and whether a mover can actually reach a destination all decide whether a mechanic works, and all require a model of the world the engine does not have.",
+        chosen:
+            "The host supplies geometry as facts and the engine decides whether the supplied facts satisfy the mechanic. Missing facts carry their own diagnostic code, spatial.fact.missing, distinct from both invalid data and ordinary rule failure. There is deliberately no containment function answering who is inside an area.",
+        rationale:
+            "The host already has a scene graph, a renderer, and a user looking at it; an engine answer would be a second, poorer occupancy model competing with the real one, and the two would disagree in front of the players. The three-way split of diagnostics is what makes this usable rather than merely principled: 'the wall is in the way' is the character's problem, 'I cannot tell whether the wall is in the way' is the host's, and 'this position has no coordinates' is the developer's, and a caller that cannot tell them apart either refuses things a GM should be able to override or commits corrupt operations. Refusing to compare positions in different spatial contexts belongs to the same rule — the engine does not know whether two contexts are adjacent, nested, or unrelated, and a plausible wrong distance is worse than a refusal.",
+    },
+    "spatial.range.inclusive-intervals-half-open-bands": {
+        id: "spatial.range.inclusive-intervals-half-open-bands",
+        question:
+            "Range requirements must include their declared endpoints — a target at exactly 10 metres is within a 10 metre Range — while Range bands must not overlap. Those two rules cannot both hold under one boundary convention: two inclusive bands that meet at 5 metres both contain 5 metres.",
+        chosen:
+            "Two shapes with two conventions, named so they cannot be confused. A DistanceInterval is a requirement and is inclusive at both minimumMetres and maximumMetres. A RangeBand is a partition and is half-open: inclusive at fromMetresInclusive, exclusive at toMetresExclusive, with only the final band permitted to be unbounded.",
+        rationale:
+            "Forcing one convention would have broken whichever concept lost. Inclusive bands make exactly one distance belong to two bands, and the engine would then be picking between them by array order — a gameplay outcome decided by authoring order, which is the class of thing this engine refuses elsewhere for dice. Half-open requirements would put a target at exactly 10 metres outside a 10 metre Range, contradicting what every written rule means by 'up to 10 metres'. The field names carry the convention rather than a comment, because a reader who gets this backwards writes an off-by-one that only fires on round numbers, which is precisely the input a playtester uses.",
+    },
+    "actions.layering.neutral-above-targeting-and-spatial": {
+        id: "actions.layering.neutral-above-targeting-and-spatial",
+        question:
+            "Where a neutral action vocabulary sits relative to Character, Body, Combat, and the host, given that it needs Body Part identities, spatial primitives, and check scopes, and that Combat will eventually consume it.",
+        chosen:
+            "spatial/ and targeting/ sit above the infrastructure, time, checks, runtime and Character foundation layer; actions/ sits above those; Combat and other consumers sit above actions/. targeting/ may type-import BodyPartId and CriticalPointId and nothing else from Character. actions/ may not import Combat, Character, or content catalogs, and Character may not import spatial/, targeting/, or actions/. The actions/ to runtime/ edge is permitted now, before it is used. Every one of these is enforced by architecture.test.ts against the source text.",
+        rationale:
+            "Reusing the Body identities rather than redeclaring them is the same argument that moved the sensory vocabulary to one declaration: two string aliases are mutually assignable, so a targeting id and an anatomy id could be swapped forever without a compiler complaint. The reverse ban matters more than it looks — a Character file importing the neutral eligibility shape would mean the Character-aware adapter had been written inside the layer it was supposed to sit above, reversing the arrow with nothing to notice. Permitting the runtime edge before anything uses it is deliberate: withdrawing it as unused tidying would make later action preparation look like it was eroding a boundary rather than using one that was always intended. The host ban is checked as 'no non-relative import in these three domains' rather than by grepping for 'grid' or 'token', because the prose explaining why those are absent would fail a word search.",
+    },
+    "actions.eligibility.provisional-findings-are-supplied": {
+        id: "actions.eligibility.provisional-findings-are-supplied",
+        question:
+            "Action preparation must report whether the actor may do this, and Character rules already own Character requirements. Having actions/ evaluate requirements itself would create a second requirement system; having it import Character rules would reverse the layering.",
+        chosen:
+            "actions/ defines only a normalised finding — an id, a status of satisfied, unsatisfied or unresolved, and the name of the domain that decided it. Character-aware adapters evaluate Requirement data and hand findings in; actions/ aggregates them without importing Character rules or understanding any Character-specific requirement variant. Folding several findings, a definite unsatisfied outranks an unresolved.",
+        rationale:
+            "Two requirement systems eventually disagree, and the one that loses is whichever is not the source of truth for the content author — so the shape here is deliberately too thin to re-decide anything. The three statuses exist because 'no' and 'I could not tell' are different answers with different remedies: unresolved is usually a missing host fact or a Body nobody supplied, and reporting it as a failure sends a GM to overrule a rule that never objected. Unsatisfied outranking unresolved follows from what the caller does next — an action with one failed requirement is blocked whether or not something else is still unanswered, and reporting 'unresolved' there would send them hunting for a fact that would not have helped. The richer shape belongs to the ticket that builds preparation; this is the smallest contract that lets it be built.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;

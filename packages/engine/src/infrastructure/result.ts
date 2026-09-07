@@ -34,3 +34,30 @@ export interface EngineFailure {
 export type EngineResult<T> =
     | EngineSuccess<T>
     | EngineFailure;
+
+/*
+ * Constructors for the two branches.
+ *
+ * Added because the domains introduced in Stage II Phase 2 return
+ * EngineResult from small pure measurements — a distance, a path length, a
+ * travel duration — and writing the envelope by hand at every one of those
+ * call sites is how a `warnings: []` gets forgotten and a caller starts
+ * reading `undefined.length`. The older domains build the envelope inline and
+ * are deliberately left alone; nothing here changes what they return.
+ */
+
+export function engineSuccess<T>(
+    payload: T,
+    trace: EngineTrace,
+    warnings: Warning[] = [],
+): EngineSuccess<T> {
+    return { success: true, payload, trace, warnings };
+}
+
+export function engineFailure(
+    trace: EngineTrace,
+    errors: NonEmptyArray<EngineError>,
+    warnings: Warning[] = [],
+): EngineFailure {
+    return { success: false, trace, warnings, errors };
+}

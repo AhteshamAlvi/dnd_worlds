@@ -391,3 +391,211 @@ describe("Body Volume has no Size-named survivors", () => {
     expect(users.length).toBeGreaterThan(0);
   });
 });
+
+
+/*
+ * Stage II Phase 2A layering.
+ *
+ *   infrastructure / time / checks / runtime / character foundation
+ *                                 ^
+ *                            spatial / targeting
+ *                                 ^
+ *                               actions
+ *                                 ^
+ *                       later consumers, including Combat
+ *
+ * Three of these edges are the ones that would actually get written by
+ * accident, and each has a specific failure behind it:
+ *
+ * - spatial/ reaching for a Character is how "Range" quietly becomes "Range
+ *   between two Characters", and then movement, En and a thrown rock each need
+ *   their own copy for the cases with no Character at either end.
+ *
+ * - actions/ reaching for Combat is the whole reason this phase exists. A
+ *   neutral action that imports Combat is not neutral, and every non-Combat
+ *   consumer inherits a turn order it has no use for.
+ *
+ * - character/ reaching UP for actions/ is the subtler one. Character rules
+ *   own Character requirements and must keep owning them; the moment a
+ *   Character file imports the neutral finding shape, the adapter that was
+ *   supposed to sit above both layers has been written inside one of them, and
+ *   the dependency arrow is reversed with nothing to notice.
+ */
+describe("Stage II Phase 2A layering", () => {
+  const spatialFiles = sourceFilesUnder(join(SRC, "spatial"));
+  const targetingFiles = sourceFilesUnder(join(SRC, "targeting"));
+  const actionFiles = sourceFilesUnder(join(SRC, "actions"));
+
+  it("finds the sources it is checking", () => {
+    // Guards against a renamed directory turning every rule below vacuous.
+    expect(spatialFiles.length).toBeGreaterThan(5);
+    expect(targetingFiles.length).toBeGreaterThan(2);
+    expect(actionFiles.length).toBeGreaterThan(5);
+  });
+
+  it("keeps spatial/ independent of Character, Combat and consumers", () => {
+    const forbidden = ["character", "gameplay", "targeting", "actions"];
+
+    const offenders = spatialFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        forbidden.some((segment) => resolvesInto(path, specifier, segment)),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("lets targeting/ reuse Body identities and nothing else from Character", () => {
+    /*
+     * The ONE permitted upward reach, and it is deliberately narrow: the two
+     * modules that declare BodyPartId and CriticalPointId. Reusing those is
+     * what stops targeting from declaring a second string alias TypeScript
+     * would happily let anyone swap with the first. Anything else under
+     * character/ is a dependency on anatomy mechanics, which targeting does
+     * not have and must not grow.
+     */
+    const permitted = [
+      join("body", "anatomy", "types"),
+      join("body", "critical-points", "types"),
+    ];
+
+    const offenders = targetingFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) => {
+        if (!resolvesInto(path, specifier, "character")) return false;
+
+        return !permitted.some((allowed) => specifier.includes(allowed));
+      }),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps targeting/ out of Combat", () => {
+    const offenders = targetingFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "gameplay"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never lets Body import targeting/", () => {
+    const bodyFiles = sourceFilesUnder(
+      join(SRC, "character", "foundation", "body"),
+    );
+
+    expect(bodyFiles.length).toBeGreaterThan(20);
+
+    const offenders = bodyFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "targeting"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps actions/ out of Combat, Character, and content catalogs", () => {
+    const offenders = actionFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "gameplay") ||
+        resolvesInto(path, specifier, "character")
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * A permission, guarded so it cannot be quietly withdrawn.
+   *
+   * 2A uses almost none of runtime/, and the temptation later is to "tidy up"
+   * by forbidding the edge — at which point action preparation, which is
+   * supposed to reach the coordinator, looks like it is eroding a boundary
+   * rather than using one that was always intended.
+   */
+  it("permits the intended actions/ -> runtime/ edge", () => {
+    const forbiddenForActions = ["gameplay", "character"];
+
+    expect(forbiddenForActions).not.toContain("runtime");
+    expect(forbiddenForActions).not.toContain("checks");
+    expect(forbiddenForActions).not.toContain("time");
+    expect(forbiddenForActions).not.toContain("spatial");
+    expect(forbiddenForActions).not.toContain("targeting");
+  });
+
+  /*
+   * Checked by resolved PREFIX, not by substring.
+   *
+   * `character/foundation/actions/` already exists and is a different domain
+   * entirely — how many Actions per Round a character is capable of, which is
+   * Character data Combat consumes. A substring test for "actions" flags every
+   * file that imports it and the rule reads as broken on day one. The two
+   * domains genuinely are different things that share a word, so the check has
+   * to know the difference between `src/actions/` and an `actions` folder
+   * further down a path.
+   */
+  function resolvesIntoDomain(
+    fromPath: string,
+    specifier: string,
+    domain: string,
+  ): boolean {
+    if (!specifier.startsWith(".")) return false;
+
+    const resolved = join(fromPath, "..", specifier);
+
+    return resolved === join(SRC, domain) ||
+      resolved.startsWith(join(SRC, domain) + "/");
+  }
+
+  it("never lets Character reach up into spatial/, targeting/ or actions/", () => {
+    const characterFiles = sourceFilesUnder(join(SRC, "character"));
+
+    expect(characterFiles.length).toBeGreaterThan(50);
+
+    const offenders = characterFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, "spatial") ||
+        resolvesIntoDomain(path, specifier, "targeting") ||
+        resolvesIntoDomain(path, specifier, "actions")
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("distinguishes src/actions/ from character/foundation/actions/", () => {
+    /*
+     * A guard on the guard above. If resolvesIntoDomain ever loosens back into
+     * a substring match, this fails rather than the rule silently flagging the
+     * Action-capacity domain forever.
+     */
+    const capacityImporter = join(SRC, "character", "resolution.ts");
+
+    expect(resolvesIntoDomain(capacityImporter, "./foundation/actions", "actions"))
+      .toBe(false);
+
+    expect(resolvesIntoDomain(capacityImporter, "../actions/intent", "actions"))
+      .toBe(true);
+  });
+
+  /*
+   * No host geometry, by the only check that cannot be fooled by prose.
+   *
+   * The rule is "no Foundry scenes, walls, tokens, squares, hexes, grids or
+   * canvas types". Grepping for those WORDS would fail on the comments that
+   * explain why they are absent, so what is checked instead is the shape a
+   * host dependency would actually have: a non-relative import. These three
+   * domains have no package dependencies at all, so any bare specifier is
+   * either a host library or a package that has no business here.
+   */
+  it("imports no package at all in the new domains", () => {
+    const offenders = [...spatialFiles, ...targetingFiles, ...actionFiles]
+      .filter((path) =>
+        moduleSpecifiers(path).some((specifier) => !specifier.startsWith(".")),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+});
