@@ -474,9 +474,9 @@ function diceRequirements(
  * the problems". Every finding is on the proposal either way; this only
  * decides which one leads.
  */
-function resolveDisposition(
+export function resolveDisposition(
   approach: ResolutionApproach,
-  profile: ActionProfile,
+  hasCheck: boolean,
   findings: readonly EligibilityFinding[],
 ): ProposalDisposition {
   const unsatisfied = findings.filter(
@@ -495,7 +495,7 @@ function resolveDisposition(
 
   if (requiresAdjudication(approach)) return "requires-adjudication";
 
-  return profile.check === undefined ? "resolvable" : "check-dependent";
+  return hasCheck ? "check-dependent" : "resolvable";
 }
 
 
@@ -558,7 +558,11 @@ export function prepareAction(
   ];
 
   const advantage = input.checkAdvantage ?? 0;
-  const disposition = resolveDisposition(input.approach, profile, findings);
+  const disposition = resolveDisposition(
+    input.approach,
+    profile.check !== undefined,
+    findings,
+  );
 
   const travelChildren: TraceNode[] = [];
   let travel: number | undefined;

@@ -117,6 +117,35 @@ export type {
 
 export { prepareAction } from "./preparation";
 
+export type {
+  AdjudicatedAction,
+  AdjudicatedRoll,
+  AdjudicationOverrideRecord,
+  GmActionView,
+  PublicActionView,
+  RevealChoices,
+  RevealedDetailLevel,
+} from "./visibility";
+
+export {
+  REVEALED_DETAIL_LEVELS,
+  isRevealedDetailLevel,
+  revealsAtLeast,
+} from "./visibility";
+
+export type {
+  AdjudicationCheckInputs,
+  AdjudicationDecision,
+  AdjudicationInput,
+  AdjudicationKind,
+  CostOverride,
+  DiceOverride,
+  FindingOverride,
+  OutcomeOverride,
+} from "./adjudication";
+
+export { ADJUDICATION_KINDS, adjudicateAction } from "./adjudication";
+
 export type { ActionIntent, ActionIntentEvaluation } from "./intent";
 
 export {

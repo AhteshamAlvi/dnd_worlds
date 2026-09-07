@@ -644,3 +644,67 @@ describe("dice layering points from runtime to checks", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+
+/*
+ * GM authority lives in exactly one place.
+ *
+ * The design this rejects is an `override?` beside every field a GM might want
+ * to change — on the check, on the requirement, on the Range test, on the Body
+ * call. That fails three ways at once: every domain grows a second code path
+ * that only runs when a person intervened and is therefore the least tested
+ * code in the system; nothing can answer "what did the GM change" without
+ * walking the whole object graph; and the private reasoning ends up scattered
+ * across structures designed to be public.
+ *
+ * Checked against code with comments stripped, because the comments explaining
+ * why adjudication is absent from these domains would otherwise fail a word
+ * search for it.
+ */
+describe("GM adjudication is not scattered", () => {
+  const DOMAINS = [
+    join(SRC, "checks"),
+    join(SRC, "spatial"),
+    join(SRC, "targeting"),
+    join(SRC, "runtime"),
+    join(SRC, "gameplay"),
+    join(SRC, "character"),
+  ];
+
+  function codeOf(path: string): string {
+    return readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+  }
+
+  it("finds the sources it is checking", () => {
+    expect(DOMAINS.flatMap((one) => sourceFilesUnder(one)).length)
+      .toBeGreaterThan(100);
+  });
+
+  it("names no GM override anywhere below actions/", () => {
+    const offenders = DOMAINS
+      .flatMap((directory) => sourceFilesUnder(directory))
+      .filter((path) => /gmOverride|adjudicat/i.test(codeOf(path)));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the public/GM split inside the adjudication layer", () => {
+    /*
+     * Only the layer that builds both views, and the barrel that exports them,
+     * may reach for the visibility module. A third importer would be a second
+     * place deciding what players can see.
+     */
+    const actionFiles = sourceFilesUnder(join(SRC, "actions"));
+
+    const importers = actionFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        specifier.endsWith("./visibility")
+      ),
+    );
+
+    expect(importers.map((path) => path.slice(join(SRC, "actions").length + 1)).sort())
+      .toEqual(["adjudication.ts", "index.ts"]);
+  });
+});

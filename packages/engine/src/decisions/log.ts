@@ -482,6 +482,42 @@ export const ENGINE_DECISIONS = {
         rationale:
             "The two states mean opposite things to settlement, and the dangerous one is silent: an unrun geometry query committed as a verified empty area is an action that affects nobody, succeeds, and leaves nothing anywhere saying why. Undefined-versus-empty would have encoded the same distinction, and was rejected because `?? []` is the natural way to write past an optional array and reads as defensive rather than as destroying an answer. The flag has to be looked at. Defaulting to false rather than true is the same instinct as refusing missing state elsewhere: the engine says 'no answer' unless somebody actually supplied one. Note the same absent-versus-empty hazard exists in principle for cost requests; it is not modelled there because those are priced synchronously by engine-owned domains rather than by a host query that may not have run.",
     },
+    "actions.adjudication.one-central-layer": {
+        id: "actions.adjudication.one-central-layer",
+        question:
+            "The GM can overrule any rule-level result: success, margin, requirements, Range, costs, durations, who was affected, what happened. The obvious implementation is an optional override beside each of those fields, in the domain that owns it.",
+        chosen:
+            "One adjudication layer over the finished ActionProposal. No domain below it has an override field or has heard of a GM. Overrides arrive as a decision — accept, modify, or replace — and every change is recorded as provenance in one list. An architecture test fails if the words for GM adjudication appear in code under checks/, spatial/, targeting/, runtime/, gameplay/ or character/.",
+        rationale:
+            "Scattered overrides fail three ways at once. Every domain grows a second code path that only runs when a person intervened, which is by construction the least exercised code in the system and the most likely to be wrong at the worst moment. Nothing can answer 'what did the GM change here' without walking the whole object graph, so the log a table wants after a contentious ruling cannot be produced. And the GM's private reasoning ends up stored on structures that were designed to be handed to players. Keeping authority in one layer leaves every domain below it a pure rules engine, which is also what makes them testable without inventing a GM.",
+    },
+    "actions.adjudication.integrity-is-not-negotiable": {
+        id: "actions.adjudication.integrity-is-not-negotiable",
+        question:
+            "If GM authority over rule-level results is total, what is left for the engine to refuse? An override is either respected or it is not, and a rules engine that argues with the GM is worse than useless.",
+        chosen:
+            "Rule-level authority is total; technical integrity is absolute. The engine refuses an adjudication naming a different operation than its proposal, a non-finite total or margin, a negative cost, an override of a finding or a cost request that does not exist, a dice override for a purpose nobody rolled, and a die face the die does not have. It also refuses an 'accept' that carries changes. Everything else the GM says stands.",
+        rationale:
+            "The line is not how much power the GM has — it is total — but whether the engine can still describe what happened without lying. A NaN margin is not a ruling, and a cost override for a request nobody made would silently do nothing while reading as a decision that was honoured. Refusing a face the die does not have is the interesting case: a GM who wants a result better than a d20 can show should say so on the total or the outcome, both of which are theirs to set, and a 40 on a d20 would produce a total nobody could explain afterwards. Refusing accept-with-changes protects the provenance itself: the record would otherwise say the GM accepted a proposal beside a list of things the GM changed.",
+    },
+    "actions.adjudication.secret-rolls-by-ordering": {
+        id: "actions.adjudication.secret-rolls-by-ordering",
+        question:
+            "A GM must be able to secretly replace a rolled value. The rolled value must then never appear in check resolution, a public result, an event, a diagnostic, or any trace a player can reach. The obvious implementation carries both numbers through and strips the original on the way out.",
+        chosen:
+            "Ordering, not filtering, and no third dice vocabulary. The override is applied while building an EFFECTIVE roll set, and only that set is projected into CheckDiceInput. The original is written to exactly one place — the AdjudicatedRoll on the GM's view — and is never passed to anything downstream.",
+        rationale:
+            "Filtering on the way out fails the first time someone adds a field, and there is no test that notices, because the leak looks exactly like the feature. Ordering makes the guarantee structural: the check resolver is never handed the original, so no amount of tracing inside it can expose one — there is nothing there to expose. Adding an 'effective roll' type between runtime and check dice was the other option and was rejected for the reason 2B-0 rejected it: three dice vocabularies give a wrong number a third place to hide. The tests for this were verified by deliberately reintroducing each leak and confirming the suite fails; the first version of the parent-trace test did NOT fail that way and was rewritten to assert identity rather than to search for the day's secret.",
+    },
+    "actions.adjudication.two-views-built-separately": {
+        id: "actions.adjudication.two-views-built-separately",
+        question:
+            "Public and GM-private information have to be separated. One result object with a private field on it, or a filter applied to a single view, are both simpler.",
+        chosen:
+            "Two objects returned together. The public view is BUILT field by field from things explicitly marked as revealed; it is never the private view with things removed. Players are shown detail on a four-step ladder — narrative, outcome, total, roll — and no level ever reveals an original roll. The EngineResult's own trace IS the public trace.",
+        rationale:
+            "A private field on a shared object leaks the moment anything serializes it, and serialization is exactly what a host does. Building the public view additively is what makes this survive later tickets: adding a field to the GM view does not add it to the public one, whereas a filter has to be updated by whoever adds the field, and they will not. The parent trace is the public one because an EngineResult's trace is the thing most likely to be rendered without anybody thinking about audience. The engine is not promising authorization — it has no idea who is asking — only that a host handing the public view to players cannot leak by accident, because that object never held the secret.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;
