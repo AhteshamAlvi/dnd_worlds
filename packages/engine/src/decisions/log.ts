@@ -203,6 +203,60 @@ export const ENGINE_DECISIONS = {
         rationale:
             "The ledger previously let the exhausted case through as a SUCCESS of zero metres, which is the worst of the three available answers: a caller counting successful Moves believed it happened, the Action was consumed either way, and nothing in the result said the character had not moved. Refusing before the Action is spent is what makes the outcome match the fiction — a character who has already been shoved their whole Round's distance has not used their Action, they have run out of ground. Short Moves are deliberately NOT refused, because a Move that covers one metre instead of three is a Move that happened and the Action is genuinely gone. Recording charged grants clamped rather than as offered keeps the field truthful: the consumption is clamped regardless, so an unclamped total can only ever mislead whoever reads it into thinking a 100-metre shove moved someone 100 metres across a 6-metre Round.",
     },
+    "runtime.state.outlives-combat": {
+        id: "runtime.state.outlives-combat",
+        question:
+            "Where does a temporarily-true fact live? Ren is up, a transformation is running, a Condition has four rounds left. The two obvious homes are the permanent Character — a renActive boolean beside the mastery — and the Combat encounter, which is where most of these matter.",
+        chosen:
+            "A third place: shared Runtime State, which exists outside Combat and is not part of the Character. Combat ATTACHES to it and owns only what an encounter owns — remaining Actions, Turn, Reaction, Initiative. Attaching and detaching carries every other section by reference, unchanged. Runtime State is composed from per-domain sections rather than being one object every domain may write.",
+        rationale:
+            "Both obvious homes fail on the same fact: an activation is not scoped to an encounter and is not part of what a character IS. Ren goes up in a corridor, survives a fight starting, and is still up after it ends — so Combat owning it would mean importing every active application on entry and exporting them on exit, a copy in each direction and a place for the two to disagree. Putting it on the permanent Character fails at the first save instead: every load has to decide whether someone who was mid-Ren when the session ended is still in Ren, and every migration carries a field that was never meant to persist. Sections rather than one bag because the ownership matrix is only enforceable if there is a shape to violate; a single untyped object lets any domain edit any other domain's data invisibly. The Combat slot is a GENERIC parameter and this layer never names a Combat type, because runtime sits below gameplay and an import the other way would reverse the layering the architecture tests exist to hold.",
+    },
+    "runtime.transition.state-authoritative-events-explain": {
+        id: "runtime.transition.state-authoritative-events-explain",
+        question:
+            "A state-changing operation has to return the new state and some account of what happened. Event sourcing makes the events primary and derives state by folding them; the alternative makes state primary and treats events as a record.",
+        chosen:
+            "State is authoritative and events are explanatory. Nothing in the engine rebuilds state by folding events, so an event may be dropped, batched, filtered or ignored with no consequence for correctness. Transitions return TransitionResult<TState, TChange> = EngineResult<TransitionOutcome<...>>, reusing the existing envelope rather than introducing a second top-level success/failure shape.",
+        rationale:
+            "A fold is a second implementation of every calculation, and it has to be kept in step with the first forever. The day they disagree, the character sheet and the event log are both plausible and one of them is wrong, with nothing to say which — a failure mode this engine already avoids elsewhere by having exactly one place each rule lives. Building on EngineResult rather than beside it is the same argument at the type level: two envelopes means every caller checks two shapes and every helper is written twice. The outcome is generic over state and changes only; the original design was generic over events and requests too, which cannot be ROUTED, because a coordinator dispatching a mixed list needs a supertype and four unrelated per-domain types do not provide one. Events and requests are therefore a shared discriminated base that domains extend.",
+    },
+    "runtime.costs.invalid-spends-nothing-failed-attempt-pays": {
+        id: "runtime.costs.invalid-spends-nothing-failed-attempt-pays",
+        question:
+            "An attack that misses and an attack that was never legal both end with the attacker having accomplished nothing. Does the engine treat them the same way?",
+        chosen:
+            "No, and the difference is the load-bearing distinction in the protocol. An operation that cannot BEGIN — unknown target, missing mastery, unaffordable, malformed dice — fails, commits no cost, applies no effect and leaves every input unchanged. An operation that begins and then goes badly SUCCEEDS, keeps its committed costs, and reports the miss as an event inside the successful transition. A resist, immunity or cap is likewise an actual of zero rather than a failure. Mandatory costs commit atomically through two-phase prepare/commit handlers, and partial payment is refused unless a request explicitly allows it.",
+        rationale:
+            "Collapsing the two is wrong in whichever direction it collapses. Treating a miss as a failure refunds the Aura and the Action every time somebody swings and misses, which makes missing free and makes the action economy meaningless. Treating an illegal operation as a success charges a character for a wiring bug and makes the bug indistinguishable from bad luck in the log. Atomicity needs the two-phase handler specifically: 'validate every cost, then commit every cost' is unimplementable when a domain's only entry point validates and applies in one call, because by the time the second cost refuses the first is already spent and the coordinator has nothing it is allowed to roll back to. Partial payment is refused by default because a half-paid cost is a mechanic nobody designed — a mechanic that wants one has to say so and report both figures.",
+    },
+    "runtime.requests.typed-cross-domain-changes": {
+        id: "runtime.requests.typed-cross-domain-changes",
+        question:
+            "Nen activation costs Aura, an attack damages a Body, recovery finishes an Injury that lives on Character status. How does one domain change state another domain owns?",
+        chosen:
+            "It does not. It raises a typed request naming the owning domain, and the owner validates and applies its own rule, then reports requested against actual. Cost requests resolve before commitment; effect requests resolve after. requestId is IDENTITY rather than content — two separate 10-damage requests to one target are both honoured, while the same id arriving twice is refused as a cycle. Consequence depth is bounded at 8.",
+        rationale:
+            "The alternative is not 'a domain reaches into another domain', it is 'every domain carries a partial copy of the other's rules'. Four systems need Aura spent; without requests, four of them learn what an Aura cost is, and the fourth copy is the one that disagrees about the Control multiplier. Routing through the owner also makes the boundary auditable: a request names both ends, so a domain acting outside its own state is visible in the data rather than only in a review. Identity rather than content-hashing is what lets legitimate repetition through — two identical shoves are two real shoves — while still catching the genuine bug, which is a request producing itself. The depth bound exists to catch non-termination rather than to constrain design: every consequence chain anybody has designed is finite and far shorter than eight, so hitting it means a request is producing itself and is reported as an engine bug.",
+    },
+    "runtime.dice.caller-supplied-and-validated-first": {
+        id: "runtime.dice.caller-supplied-and-validated-first",
+        question:
+            "The engine resolves checks, so something has to produce the numbers. Rolling them internally is one line and removes a whole class of caller mistakes.",
+        chosen:
+            "Dice are caller input. No gameplay outcome in this engine is randomly generated; the only Math.random in the tree is a UUID fallback in infrastructure/id.ts, which produces an identity rather than a result, and never decides anything. Rolls are identified by PURPOSE rather than by position, and are validated — present, finite integer, right die, in range, not ambiguously duplicated — before any cost commits. Operation ids and timestamps are likewise supplied rather than generated. This is not a dice roller and does not become one.",
+        rationale:
+            "Determinism is the whole return. Given one starting state, context, command, time and set of dice, this engine returns the same state, events, changes, warnings, errors and trace — which makes a session replayable and a bug report reproducible from its inputs. An internal roll breaks that on the first attempt, and a generated operation id or an internally-read clock breaks it just as completely for facts that look nothing like dice. Validating BEFORE commitment rather than at the point of use is what makes a malformed roll cost the character nothing: a caller who forgot to supply the attack roll must not have already paid for the swing. Purposes rather than positions because two d20s in an array are ambiguous, and picking either one would be the engine deciding a gameplay outcome by array order — the same failure the simultaneous-event work removed from Aura.",
+    },
+    "runtime.time.single-character-coordinator": {
+        id: "runtime.time.single-character-coordinator",
+        question:
+            "The runtime protocol defines how state changes are shaped, and character/time/ already coordinates applying one interval across Aura, wakefulness, Fatigue and recovery. Should the time coordinator be reshaped to wear the new types?",
+        chosen:
+            "No. character/time/ remains the single character-time integration point, unchanged, and its conformance to the protocol's meanings is documented rather than restated in the protocol's type names. No second time coordinator is created. Existing transitions migrate incrementally as their domains are developed, not through a repository-wide rewrite.",
+        rationale:
+            "The coordinator already satisfies every property the protocol asks for — deterministic, atomic at a timestamp, immutable in its inputs, interval-invariant across 28,800 one-second steps, rejecting stale and gapped intervals. Reshaping it would therefore change no behaviour while putting a 22-test invariance suite and the half-open ownership rules at risk, which is a poor trade at any time and a particularly poor one in a phase whose purpose is to establish a protocol rather than to move calculations. The same reasoning governs the wider migration: a protocol proves itself on representative operations, and rewriting thirty legacy transitions at once would mix an enormous diff of mechanical churn into the one change where the design still needs to be reviewable.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:

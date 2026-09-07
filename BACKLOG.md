@@ -1,13 +1,14 @@
 # Nenworld Engine — Authoritative Incomplete-Mechanics Backlog
 
 **This is the single authoritative list of what the engine does not yet do.** `ENGINE_SUMMARY.md`
-and `ENGINE_HANDOFF.md` describe what exists; when either needs to say something is missing, it
-links here rather than keeping its own list. Two backlogs are two things to keep in step, and the
+and `ENGINE_HANDOFF.md` describe what exists, and
+[`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) describes who owns what state; when any of them needs
+to say something is missing, it links here rather than keeping its own list. Two backlogs are two things to keep in step, and the
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: Phase 0.2 close.
-Suite at that point: **70 files, 1,978 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: Stage II Phase 1 close.
+Suite at that point: **72 files, 2,019 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
@@ -62,6 +63,45 @@ unconsumed functions are not mechanics, and are never recorded as complete here.
 | **Nen authored profiles and prerequisites** | **Implemented but internal** | `foundation/nen/` (4,009 LOC) resolves the principle graph, mastery states, prerequisites and per-principle profiles for Ten, Ren, Zetsu and Hatsu. Finished and correct; **unexported and untested**. |
 | **Active Nen runtime state** | **Specified but absent** | Nothing tracks whether a character currently *has* Ten up. `NenState` is mastery plus a bare `awakened` boolean — there is no active-principle state, no activation, no deactivation, and no per-Round cost. This is a different gap from the row above, which is why they are no longer one row: the infrastructure being written does not make the runtime partially written. |
 | **Ten, Ren, Zetsu, Chū combat contracts** | **Partially implemented** | Ten, Ren and Zetsu have principle files with mastery profiles, CON requirements and output limits; Chū has none. All four lack a combat contract — what activating one costs per Round, what it does to incoming damage, and how two of them interact. 11 of 15 principles (shu, en, gyo, ken, chū, in, ko, ryu, yu, ju, fu) are graph nodes only. |
+
+## 3b · Runtime protocol and deferred migrations
+
+The shared protocol is complete and documented in
+[`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md). What is built ON it is almost nothing yet, and this
+section is the difference.
+
+| Mechanic | State | Detail |
+|---|---|---|
+| **Runtime ownership and transition protocol** | Complete | Ownership matrix, `TransitionResult`, typed events and requests, two-phase atomic costs, dice validation, generic coordinator, deterministic ordering. `runtime/`. Exported. Dependency-tested to contain no gameplay. |
+| **Aura cost-handler reference** | Complete | `aura/runtime.ts`. A domain owning a spendable resource others need. |
+| **Body recovery request reference** | Complete | `body/recovery/runtime.ts`. A domain asking another owner to change something. |
+| **Active Nen runtime implementation** | **Specified but absent** | The `nen` runtime section exists and holds protocol-level `ActiveApplication`s. Nothing populates it: no activation, no deactivation, no Output level, no Chū allocation, no per-Round cost, no suspension rules. Ten, Ren, Zetsu and Chū combat contracts remain absent (§3). |
+| **Transformation runtime implementation** | **Specified but absent** | The `transformations` section exists. Nothing projects a transformed Body from it, and no transformation is authored. The projection boundary is decided — project, never overwrite — and unimplemented. |
+| **Injury transfer between forms** | **Specified but absent** | Explicitly not decided in Phase 1. When a character transforms with a broken arm, what happens to the Injury in the new form — carried, suppressed, remapped, or ignored — has no answer yet. It needs the transformation runtime and the anatomy-mapping question answered together. |
+| **Runtime spatial state** | **Specified but absent** | The `spatial` section is a declared placeholder with no fields, because there is no spatial vocabulary in the engine to put in it (§1). |
+| **Combat integration** | **Specified but absent** | `RuntimeState` has a generic Combat slot and `attachCombat`/`detachCombat` are tested. Nothing in `gameplay/combat/` uses either, and no Combat Action raises a cost request. |
+| **Dynamic or multi-stage dice requests** | **Specified but absent** | Dice are validated once, up front, against a fixed requirement list. An operation that cannot know what it needs to roll until part-way through — a reroll, an escalating contest, a damage die whose size depends on the attack result — is not supported. |
+| **Legacy transition migrations** | **Partially implemented** | Two references migrated. The remaining exported state-changing operations are listed below and migrate as their domains are developed, not in a repository-wide rewrite (decision `runtime.time.single-character-coordinator`). |
+
+### Deferred migrations
+
+Inventoried at Phase 1 close: **688 exports, 30 state-changing operations.**
+
+| Operation(s) | Disposition |
+|---|---|
+| `spendActionAura` | **Migrated** — reference, via `aura/runtime.ts`. |
+| `resolveRecovery` / `resolveValidatedRecovery` | **Migrated** — reference, via `body/recovery/runtime.ts`. |
+| `advanceCharacterTime`, `projectCharacterAtTime` | **Already conforming.** Deterministic, atomic, immutable, interval-invariant, rejects stale and gapped intervals. Documented rather than reshaped — see `RUNTIME_PROTOCOL.md` §7. |
+| `advanceAuraTime`, `settleAuraTransition` | **Already conforming.** Immutable, `EngineResult`, deterministic, atomic at a timestamp. No typed request surface yet because nothing cross-domain calls them. |
+| `spendAura`, `spendPhysicalAura`, `drainAura` | **Deferred** to the Nen/Combat phases that will call them cross-domain. Behaviourally conforming today. |
+| `upsertAuraAllocation`, `removeAuraAllocation`, `replaceAuraAllocations`, `clearAuraAllocations`, `reconcileAuraState` | **Deferred.** Allocation editing is caller-driven, not cross-domain. |
+| `advanceWakefulness` | **Already conforming.** Validated, immutable, `EngineResult`. |
+| `regenerateAnatomy`, `destroyContinuity` | **Deferred** to the injury/damage phase. |
+| `beginRoundMovement`, `spendMove`, `grantMovement` | **Deferred** to Combat integration — the movement ledger will become a cost handler when a Combat Action spends a Move. |
+| `grantStatPoints`, `spendStatPoints`, `grantGrowthPoints`, `spendGrowthPoints` | **Deferred** to a progression phase. |
+| `advanceGameClock`, `advanceGameTime`, `advanceFromRealTime`, `setTimeScale` | **Not migrating.** Time owns the clock; these are its own boundary, not cross-domain transitions. |
+| `registerDefinition`, `clearCustomDefinitions` | **Not migrating.** Catalog registration is host configuration, not gameplay state. |
+| `applyAttributeModifiers`, `applyPhysicalScaleSteps`, `resolveMovement`, derived attributes, Speed curve | **Pure calculations.** No state owned, no migration owed (`RUNTIME_PROTOCOL.md` §2). |
 
 ## 4 · Combat
 

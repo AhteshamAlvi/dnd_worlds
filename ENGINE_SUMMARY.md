@@ -3,8 +3,10 @@
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
 **Snapshot:** Phase 0.2 close · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **70 files, 1,978 tests, all passing**. `tsc --noEmit` → **clean**.
+**Health:** `vitest run` → **72 files, 2,019 tests, all passing**. `tsc --noEmit` → **clean**.
 **Backlog:** [`BACKLOG.md`](BACKLOG.md) is the single authoritative list of what is not done.
+**Ownership:** [`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) is the authoritative state-ownership
+matrix and transition protocol.
 **Size:** 217 source files / 62,725 LOC + 74 test files / 32,404 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
@@ -1509,6 +1511,46 @@ out of `gameplay/`.
 
 ---
 
+## 12c · Runtime protocol (`runtime/`) — ownership and transitions
+
+The shared protocol every state-changing operation follows. **Full statement:
+[`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md).**
+
+```
+runtime/
+├── domains.ts      RuntimeDomain vocabulary — the ownership matrix, typed
+├── state.ts        RuntimeState<TCombat> composed from per-domain sections
+├── transition.ts   TransitionResult<TState, TChange> over EngineResult
+├── events.ts       facts that already happened; requested vs actual
+├── requests.ts     typed cross-domain work; cost phase vs effect phase
+├── dice.ts         caller-supplied rolls, validated before commitment
+└── coordinator.ts  procedure only — imports NO gameplay domain
+```
+
+**Runtime State exists outside Combat.** Ren goes up in a corridor, survives Combat starting, and
+is still up when it ends. Combat *attaches* through a generic slot — this layer never names a
+Combat type, because runtime sits below `gameplay/`. Permanent `NenState` carries no
+`renActive`-style flag, and a test asserts no key ends in `Active`.
+
+**Invalid spends nothing; a failed attempt keeps what it paid.** An operation that cannot begin
+fails with no cost committed; one that begins and misses succeeds, keeps its costs, and reports the
+miss as an event. A resist or cap is an `actual` of zero, never a failure and never a refund.
+
+**Costs commit atomically** through two-phase `prepare`/`commit` handlers — "validate all, then
+commit all" is unimplementable when one call does both. Partial payment is refused unless a request
+declares it.
+
+**Determinism**: dice are caller input and validated first, operation ids and timestamps are
+supplied not generated, requests sort by a total stable key, and events carry a coordinator-assigned
+`sequence`.
+
+References migrated: `aura/runtime.ts` (a domain owning a spendable resource) and
+`body/recovery/runtime.ts` (a domain asking another owner to act). Both were already behaviourally
+correct; the migration added the typed surface, not the behaviour. `character/time/` is unchanged
+and its conformance documented. Deferred migrations are inventoried in `BACKLOG.md` §3b.
+
+---
+
 ## 13 · Recorded decisions (`decisions/log.ts`)
 
 The Rulebook is frozen; every divergence gets a log entry and a `decisionId` on the trace node
@@ -1531,6 +1573,12 @@ rather than an edit to the book.
 15. **`movement.resolution.mode-propulsion-gait-integrity`** — movement resolves as Base × Mode × Propulsion × Gait × Integrity; only Integrity exists, bounded to [0,1]. Limb count is an input to gait, not a modifier.
 16. **`movement.input.normalized-boundaries`** — one normalization per quantity; zero and negative Speed exit before the clamp to 1, and Speed 30 is the base-curve ceiling.
 17. **`movement.ledger.one-allowance-two-spenders`** — a Move is refused *before* the Action is spent when charged grants took the Round; a partial allowance still permits a short Move that does spend it.
+18. **`runtime.state.outlives-combat`** — temporary facts live in shared Runtime State, not on the Character and not inside Combat; Combat attaches through a generic slot.
+19. **`runtime.transition.state-authoritative-events-explain`** — state is the answer and events are the record; nothing folds events to rebuild state, and `EngineResult` stays the one envelope.
+20. **`runtime.costs.invalid-spends-nothing-failed-attempt-pays`** — an illegal operation commits nothing; a legal one that misses keeps its costs. Mandatory costs commit atomically via prepare/commit.
+21. **`runtime.requests.typed-cross-domain-changes`** — a domain never edits state it does not own; it raises a typed request and the owner decides, reporting requested against actual.
+22. **`runtime.dice.caller-supplied-and-validated-first`** — dice, operation ids and timestamps are all supplied, and dice are validated before any cost commits.
+23. **`runtime.time.single-character-coordinator`** — `character/time/` stays the one character-time integration point, unchanged; legacy transitions migrate incrementally.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1539,7 +1587,7 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (70 files, 1,978 tests)
+## 14 · Test coverage (72 files, 2,019 tests)
 
 Every test file appears in exactly one row, and the rows sum to the suite total. Recounted from
 the runner's own report at Phase 0.2 close — the previous version of this table omitted the whole
@@ -1558,7 +1606,8 @@ Senses category and two Body files, and its Body subtotal was 32 short of its ow
 | Endurance & character time | **63** | body-endurance 39 · character-time 24 |
 | Progression | **58** | progression 58 |
 | Capabilities | **41** | skills 41 |
-| **Total** | **1,978** | **70 files** |
+| Runtime protocol | **41** | runtime-protocol 25 · runtime-references 16 |
+| **Total** | **2,019** | **72 files** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1636,7 +1685,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 70 files, 1,978 tests
+cd packages/engine && npx vitest run     # 72 files, 2,019 tests
 ```
 
 ```bash

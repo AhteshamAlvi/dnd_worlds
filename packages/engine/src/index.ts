@@ -108,6 +108,17 @@ export {
 export type { EngineDecision } from "./decisions/log";
 export { ENGINE_DECISIONS, getEngineDecision } from "./decisions/log";
 
+/*
+ * The shared runtime and transition protocol.
+ *
+ * Ownership, transition results, cross-domain requests, atomic costs, dice
+ * validation and the coordinator. Deliberately NOT accompanied by exports of
+ * the unfinished mechanics it exists to serve — there is no active Ren, no
+ * transformation and no spatial state here, because the protocol being ready
+ * does not make them ready.
+ */
+export * from "./runtime";
+
 /* ── Character: identity ────────────────────────────────────────────────── */
 
 export type { Character } from "./character/types";

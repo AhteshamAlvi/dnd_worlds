@@ -609,6 +609,18 @@ export {
 
 export type { RecoveryValidationIssue } from "./recovery/validation";
 
+/* Recovery's runtime-protocol surface: the healed-Injury removals it has
+ * always reported, addressed to the owner that must apply them. */
+export {
+  INJURY_REMOVAL_REQUEST,
+  recoveryEvent,
+  recoveryRequests,
+} from "./recovery/runtime";
+export type {
+  AnatomyRecoveredEvent,
+  InjuryRemovalRequest,
+} from "./recovery/runtime";
+
 export {
   findRecoveryInputIssues,
   isValidRecoveryInput,

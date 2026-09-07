@@ -302,6 +302,7 @@ export function resolveRecovery(
       partId: part.id,
       integrityBefore: part.integrity,
       integrityAfter: result.integrity,
+      bpRequested: recoveryAmountBP,
       bpRestored: result.bpRestored,
       ceiling,
     });

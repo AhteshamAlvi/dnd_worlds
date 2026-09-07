@@ -329,6 +329,19 @@ export { AURA_TIMELINE_EVENT_KINDS, advanceAuraTime } from "./time";
 
 export type { AuraStateTransition } from "./transitions";
 
+/* Aura's runtime-protocol surface: how a domain that is not Aura asks Aura to
+ * pay for something. See runtime/ for the protocol itself. */
+export {
+  AURA_ACTION_COST,
+  auraCostRequest,
+  createAuraCostHandler,
+} from "./runtime";
+export type {
+  AuraCostHandler,
+  AuraCostRequest,
+  AuraSpentEvent,
+} from "./runtime";
+
 export {
   clearAuraAllocations,
   drainAura,

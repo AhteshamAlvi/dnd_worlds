@@ -80,6 +80,16 @@ export interface BodyPartRecoveryOutcome {
   readonly integrityBefore: number;
   readonly integrityAfter: number;
 
+  /**
+   * The tick's full amount — what this pass WOULD have restored uncapped.
+   *
+   * Surfaced so that requested and actual are both readable. The calculation
+   * always had this figure; it simply never left `applyBodyPartRecovery`, so a
+   * part healed 5 of a possible 12 and the outcome recorded only the 5. The
+   * gap is the whole point of a recovery ceiling and is worth reporting.
+   */
+  readonly bpRequested: number;
+
   /** Exact BP actually restored — below the tick's full amount at the ceiling. */
   readonly bpRestored: number;
 
