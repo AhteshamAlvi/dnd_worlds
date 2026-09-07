@@ -518,6 +518,60 @@ export const ENGINE_DECISIONS = {
         rationale:
             "A private field on a shared object leaks the moment anything serializes it, and serialization is exactly what a host does. Building the public view additively is what makes this survive later tickets: adding a field to the GM view does not add it to the public one, whereas a filter has to be updated by whoever adds the field, and they will not. The parent trace is the public one because an EngineResult's trace is the thing most likely to be rendered without anybody thinking about audience. The engine is not promising authorization — it has no idea who is asking — only that a host handing the public view to players cannot leak by accident, because that object never held the secret.",
     },
+    "character.actions.adapter-owns-the-seam": {
+        id: "character.actions.adapter-owns-the-seam",
+        question:
+            "Neutral action preparation needs Character-owned inputs — eligibility findings, the governing contribution, the assembled check modifiers — and must not import Character rules to get them. Until now that was left to 'whatever the caller does', which is not a boundary but the absence of one.",
+        chosen:
+            "character/actions/preparation.ts. It may import neutral actions/, Character rules and the canonical check-invocation path, and supplies exactly three things: normalised eligibility findings, the governing base contribution for the action's check scope, and the modifiers assembled through collectCharacterCheckModifiers(). Neutral actions/ may never import it, and nothing else under character/ may import it either. It refuses sensory check scopes, and an opposed check is assembled by calling it once per participant.",
+        rationale:
+            "The second ban matters as much as the first: a Character file reaching for the adapter would pull the neutral vocabulary back down into the layer that is supposed to sit underneath, and the layering test would still pass because the import would be Character-to-Character. Refusing sensory scopes is the same instinct — a sensory governing score depends on the sense, the route and the profile, the sensory resolvers already compute it, and answering here would be a second source that drifts the first time a sense gains a modifier. There is deliberately no two-sided entry point for opposed checks, because a call taking both characters would have to decide which one is the initiator, and that is the calling mechanic's question rather than a Character's.",
+    },
+    "character.actions.unrecorded-is-not-unmet": {
+        id: "character.actions.unrecorded-is-not-unmet",
+        question:
+            "A requirement asking for a Trait, evaluated against a half-built sheet whose Trait list has never been recorded, currently reads as 'does not have it'. Character collections are optional precisely so an unfinished sheet can still be resolved.",
+        chosen:
+            "The adapter reports such a requirement as UNRESOLVED, with a diagnostic naming the collection that is missing, and reads that from the Character itself rather than from the RequirementContext.",
+        rationale:
+            "Reporting an unrecorded Trait list as a failed requirement refuses an action for a reason that is not true yet — it is not known yet, which is a different answer with a different remedy, and the proposal's dispositions already distinguish them. It is read from the Character because buildRequirementContext() collapses every absent collection to an empty array on the way in, so by the time a requirement is evaluated 'never recorded' and 'recorded, and none' are already the same value. That collapse is fine for a boolean evaluator and wrong for a finding a GM will read, so the distinction is recovered at the only layer that reports it. NOTE: every other consumer of meetsRequirement() still has the original blind spot.",
+    },
+    "actions.consequences.the-owner-routes-the-change": {
+        id: "actions.consequences.the-owner-routes-the-change",
+        question:
+            "A GM ruling that something happens has to become a state change. Letting the GM or the host construct RuntimeRequest objects directly means picking request ids, naming phases and addressing owners — every one a chance to build something the coordinator refuses, by the person least placed to debug it.",
+        chosen:
+            "High-level builders, one per supported concept, each of which knows which of three channels its concept belongs to: runtime (the engine owns the state, so it becomes a request), host (the engine does not own it, so it comes back as typed work), or unresolved (nobody owns it yet, so it comes back as a diagnostic). Settlement partitions them and never guesses.",
+        rationale:
+            "The three channels are not a convenience, they are the honest answer to who owns what. Body Points, Aura and Conditions are the engine's. Position is not — spatial/ has said since it was written that the host owns occupancy and geometry — so displacement is host-facing however much it looks like a mechanic. What anyone now believes is not the engine's either: the sensory domain resolves whether a cue was perceived and holds no state about belief. Sorting that out inside the builders means a GM asks for the effect they want and the routing is already decided correctly.",
+    },
+    "actions.consequences.host-facing-is-a-success": {
+        id: "actions.consequences.host-facing-is-a-success",
+        question:
+            "The engine has no terrain model, no object durability model and no position for anything. When an action tears up the ground, the obvious options are to invent a model, to fail, or to say nothing happened.",
+        chosen:
+            "A fourth option: describe the change precisely and hand it back as a typed host-facing consequence, on a SUCCESSFUL settlement. The engine never claims to have mutated state it does not own, and returned state lists only owners it actually changed.",
+        rationale:
+            "Inventing a terrain model to look complete is how a system acquires a second, worse copy of something the host already has — the same argument that kept occupancy out of spatial/. Reporting it as an error would be worse than either: hosts that see errors on successful actions learn to ignore errors. Saying nothing happened is the only genuinely unacceptable option, because the GM's ruling would silently evaporate. The ground-impact fixture asserts this directly: two world changes come back as work, and the returned state contains one owner, the Aura pool that was actually charged.",
+    },
+    "actions.consequences.bp-only-no-sp-conversion": {
+        id: "actions.consequences.bp-only-no-sp-conversion",
+        question:
+            "applyBodyDamage() takes Body Points. Some damage is denominated in Stamina Points, and no SP-to-BP conversion exists anywhere in the engine or the Rulebook.",
+        chosen:
+            "BP damage routes to the Body normally. SP-denominated damage returns unresolved, with a diagnostic naming the amount and the body it was meant for, and an explicit note that no conversion exists. No rate is invented, not even a placeholder.",
+        rationale:
+            "This is the single most tempting place in the phase to write a plausible constant, and the failure mode is invisible: an SP figure passed to a BP function is not rejected, it is silently reinterpreted, and the resulting injuries look exactly like correctly calculated ones. An explicit refusal is recoverable at any point later; a wrong exchange rate buried in a damage log is discovered, if at all, as a balance complaint months afterwards. The diagnostic is addressed to the GM rather than to a developer because the recovery is a ruling — state the damage in BP, or record it narratively — not a code change.",
+    },
+    "actions.settlement.finalize-then-commit-once": {
+        id: "actions.settlement.finalize-then-commit-once",
+        question:
+            "Where the check is resolved, and how many times an action may touch the coordinator.",
+        chosen:
+            "Adjudication resolves the check with the effective dice; settlement takes the already-finalized action and runs the coordinator exactly once, supplying no dice at all. Ineligible, spatially-invalid and missing-facts refuse to settle and charge nothing. A resolved MISS settles normally and pays what it cost. Combat is not involved in any of it, and this is where Phase 2 stops before Combat is touched.",
+        rationale:
+            "Passing the dice down to the coordinator would give the operation a second opportunity to roll, and the two answers would eventually differ with nothing able to reconcile them afterwards. Refusing to settle an action with an unanswered question is the conservative half of the same instinct that made preparation refuse to fabricate geometry: committing quietly would spend Aura on something nobody established could happen, and the GM already has a recorded way to proceed anyway — override the finding. A miss is deliberately not in that list: a resolved failure is a settled outcome, and Aura spent on a punch that missed is spent. Stopping here, with the whole non-Combat path proven end to end, is what makes the Combat tickets a refactor against a working system rather than a redesign of one.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;

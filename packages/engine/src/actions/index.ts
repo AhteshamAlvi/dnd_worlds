@@ -146,6 +146,31 @@ export type {
 
 export { ADJUDICATION_KINDS, adjudicateAction } from "./adjudication";
 
+export type {
+  Consequence,
+  ConsequenceContext,
+  HostFacingConsequence,
+} from "./consequences";
+
+export {
+  affectedSubjectConsequence,
+  auraExpenditureConsequence,
+  auraRestorationConsequence,
+  bodyDamageConsequence,
+  bodyRecoveryConsequence,
+  conditionApplicationConsequence,
+  conditionRemovalConsequence,
+  displacementConsequence,
+  informationalConsequence,
+  narrativeConsequence,
+  staminaDamageConsequence,
+  worldChangeConsequence,
+} from "./consequences";
+
+export type { SettledAction, SettlementInput } from "./settlement";
+
+export { settleAction } from "./settlement";
+
 export type { ActionIntent, ActionIntentEvaluation } from "./intent";
 
 export {

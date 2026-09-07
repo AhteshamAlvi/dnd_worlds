@@ -549,8 +549,25 @@ describe("Stage II Phase 2A layering", () => {
       resolved.startsWith(join(SRC, domain) + "/");
   }
 
+  /*
+   * The adapter subtree, and the only exception to the rule below it.
+   *
+   * character/actions/ is the declared seam between a Character and a neutral
+   * action: it evaluates Requirements and assembles check modifiers, and hands
+   * the results across as neutral findings. It is ABOVE both layers by
+   * definition, so it may import actions/ — that is what an adapter is.
+   *
+   * Two things keep that from becoming a hole. Neutral actions/ still may not
+   * import character/ (checked separately, above). And nothing else under
+   * character/ may import the adapter, because a Character file reaching for
+   * it would pull the neutral vocabulary back down into the layer that is
+   * supposed to sit underneath.
+   */
+  const ADAPTER = join(SRC, "character", "actions");
+
   it("never lets Character reach up into spatial/, targeting/ or actions/", () => {
-    const characterFiles = sourceFilesUnder(join(SRC, "character"));
+    const characterFiles = sourceFilesUnder(join(SRC, "character"))
+      .filter((path) => !path.startsWith(ADAPTER + "/"));
 
     expect(characterFiles.length).toBeGreaterThan(50);
 
@@ -560,6 +577,38 @@ describe("Stage II Phase 2A layering", () => {
         resolvesIntoDomain(path, specifier, "targeting") ||
         resolvesIntoDomain(path, specifier, "actions")
       ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the adapter the only Character file that may import actions/", () => {
+    const adapterFiles = sourceFilesUnder(ADAPTER);
+
+    expect(adapterFiles.length).toBeGreaterThan(0);
+
+    /* Guards against the exception passing vacuously if the edge is removed. */
+    const reaching = adapterFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, "actions"),
+      ),
+    );
+
+    expect(reaching.length).toBeGreaterThan(0);
+  });
+
+  it("never lets the rest of Character import the adapter", () => {
+    const characterFiles = sourceFilesUnder(join(SRC, "character"))
+      .filter((path) => !path.startsWith(ADAPTER + "/"));
+
+    const offenders = characterFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) => {
+        if (!specifier.startsWith(".")) return false;
+
+        const resolved = join(path, "..", specifier);
+
+        return resolved === ADAPTER || resolved.startsWith(ADAPTER + "/");
+      }),
     );
 
     expect(offenders).toEqual([]);
@@ -692,11 +741,17 @@ describe("GM adjudication is not scattered", () => {
 
   it("keeps the public/GM split inside the adjudication layer", () => {
     /*
-     * Only the layer that builds both views, and the barrel that exports them,
-     * may reach for the visibility module. A third importer would be a second
-     * place deciding what players can see.
+     * Carrying the two views is fine; DECIDING what goes in them is not.
+     *
+     * Settlement holds both views and passes them through untouched, so it may
+     * name the types. What it may not do — what nothing but adjudication may
+     * do — is consult the reveal ladder, because that is the function that
+     * decides what a player is shown, and a second caller of it would be a
+     * second policy.
      */
     const actionFiles = sourceFilesUnder(join(SRC, "actions"));
+    const relative = (path: string) =>
+      path.slice(join(SRC, "actions").length + 1);
 
     const importers = actionFiles.filter((path) =>
       moduleSpecifiers(path).some((specifier) =>
@@ -704,7 +759,14 @@ describe("GM adjudication is not scattered", () => {
       ),
     );
 
-    expect(importers.map((path) => path.slice(join(SRC, "actions").length + 1)).sort())
-      .toEqual(["adjudication.ts", "index.ts"]);
+    expect(importers.map(relative).sort())
+      .toEqual(["adjudication.ts", "index.ts", "settlement.ts"]);
+
+    const deciders = actionFiles.filter((path) =>
+      /\brevealsAtLeast\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(deciders.map(relative).sort())
+      .toEqual(["adjudication.ts", "index.ts", "visibility.ts"]);
   });
 });
