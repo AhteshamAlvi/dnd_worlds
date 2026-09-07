@@ -1,6 +1,18 @@
 /* Deterministic resolution for universal d20 checks. Randomness is supplied. */
 
-import { createTraceNode, type TraceInput, type TraceNode } from "../infrastructure/trace";
+import {
+  createTraceNode,
+  type EngineTrace,
+  type TraceInput,
+  type TraceNode,
+} from "../infrastructure/trace";
+import type { EngineError } from "../infrastructure/diagnostics";
+import {
+  engineFailure,
+  engineSuccess,
+  type EngineResult,
+  type NonEmptyArray,
+} from "../infrastructure/result";
 import {
   collectApplicableCheckModifiers,
   sumCheckBaseContributions,
@@ -45,21 +57,140 @@ function retainedIndexFor(
 }
 
 /**
+ * How many d20s a signed advantage level requires.
+ *
+ * Declared once and read by both the request validator and the resolver
+ * below. They used to agree by coincidence — validation.ts computed it inline
+ * and resolution.ts only documented it in a comment — which meant a caller
+ * that skipped validation, as every sensory resolver does, reached a resolver
+ * that trusted a rule nothing had enforced.
+ */
+export function expectedRollCount(advantage: number): number {
+  return 1 + Math.abs(advantage);
+}
+
+
+function findCheckDiceIssues(
+  input: CheckDiceInput,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  if (!Number.isInteger(input.advantage)) {
+    errors.push({
+      code: "checks.dice.advantage.invalid",
+      message: "A check's advantage level must be a whole number.",
+      audience: "developer",
+      required: "integer",
+      actual: String(input.advantage),
+    });
+  }
+
+  if (!Array.isArray(input.rolls) || input.rolls.length === 0) {
+    errors.push({
+      code: "checks.dice.empty",
+      message: "A check requires at least one supplied d20 roll.",
+      audience: "developer",
+      required: "one or more d20 rolls",
+      actual: Array.isArray(input.rolls) ? "none" : String(input.rolls),
+    });
+
+    return errors;
+  }
+
+  if (
+    Number.isInteger(input.advantage) &&
+    input.rolls.length !== expectedRollCount(input.advantage)
+  ) {
+    errors.push({
+      code: "checks.dice.count.mismatch",
+      message: "The number of supplied d20 rolls does not match the advantage level.",
+      audience: "developer",
+      required: String(expectedRollCount(input.advantage)),
+      actual: String(input.rolls.length),
+    });
+  }
+
+  input.rolls.forEach((roll, index) => {
+    if (!Number.isInteger(roll) || roll < 1 || roll > 20) {
+      errors.push({
+        code: "checks.dice.roll.invalid",
+        message: `Supplied d20 roll ${index + 1} is not a face of a d20.`,
+        audience: "developer",
+        required: "integer 1..20",
+        actual: String(roll),
+      });
+    }
+  });
+
+  return errors;
+}
+
+
+function diceFailureTrace(input: CheckDiceInput): EngineTrace {
+  return {
+    root: createTraceNode({
+      id: "checks.dice",
+      label: "Resolve d20 Pool",
+      formula: "supplied rolls rejected before resolution",
+      inputs: {
+        advantage: {
+          value: Number.isFinite(input.advantage) ? input.advantage : 0,
+        },
+        supplied: {
+          value: Array.isArray(input.rolls) ? input.rolls.length : 0,
+        },
+      },
+      output: 0,
+    }),
+  };
+}
+
+
+function asFailure(
+  trace: EngineTrace,
+  errors: readonly EngineError[],
+): ReturnType<typeof engineFailure> {
+  const [first, ...rest] = errors as NonEmptyArray<EngineError>;
+
+  return engineFailure(trace, [first, ...rest]);
+}
+
+
+/**
  * Selects the d20 retained by a signed advantage pool.
  *
  * The caller supplies exactly 1 + abs(advantage) rolls. Positive advantage
  * keeps the highest; negative advantage keeps the lowest. Equal dice retain
  * the earliest supplied die so resolution is deterministic.
+ *
+ * Malformed input returns a failure rather than throwing. It used to throw a
+ * RangeError on an empty pool, which made "no dice were supplied" — an
+ * ordinary thing for a host to get wrong — the one input in the check system
+ * that could not be reported alongside every other validation error, and the
+ * only one a caller had to write a try/catch for.
  */
-export function resolveCheckDice(input: CheckDiceInput): CheckDiceResolution {
+export function resolveCheckDice(
+  input: CheckDiceInput,
+): EngineResult<CheckDiceResolution> {
+  const issues = findCheckDiceIssues(input);
+
+  if (issues.length > 0) return asFailure(diceFailureTrace(input), issues);
+
   const retainedIndex = retainedIndexFor(input.rolls, input.advantage);
   const retainedRoll = input.rolls[retainedIndex];
 
   if (retainedRoll === undefined) {
-    throw new RangeError("A check requires at least one supplied d20 roll.");
+    /* Unreachable: a non-empty pool always retains one of its own entries. */
+    return asFailure(diceFailureTrace(input), [{
+      code: "checks.dice.empty",
+      message: "A check requires at least one supplied d20 roll.",
+      audience: "developer",
+      required: "one or more d20 rolls",
+      actual: "none",
+    }]);
   }
 
-  return {
+  const resolution: CheckDiceResolution = {
     advantage: input.advantage,
     rolls: [...input.rolls],
     retainedIndex,
@@ -70,6 +201,8 @@ export function resolveCheckDice(input: CheckDiceInput): CheckDiceResolution {
         ? "lowest"
         : "single",
   };
+
+  return engineSuccess(resolution, { root: createDiceTraceNode(resolution) });
 }
 
 function addTraceInput(
@@ -145,8 +278,14 @@ function createModifierTraceNode(
 }
 
 /** Resolves one check total without interpreting success or failure. */
-export function resolveCheck(request: CheckRequest): CheckResolution {
-  const dice = resolveCheckDice(request.dice);
+export function resolveCheck(
+  request: CheckRequest,
+): EngineResult<CheckResolution> {
+  const diceResult = resolveCheckDice(request.dice);
+
+  if (!diceResult.success) return diceResult;
+
+  const dice = diceResult.payload;
   const applicableModifiers = collectApplicableCheckModifiers(
     request.modifiers,
     request.scope,
@@ -176,7 +315,7 @@ export function resolveCheck(request: CheckRequest): CheckResolution {
     ],
   });
 
-  return {
+  return engineSuccess({
     scope: request.scope,
     dice,
     baseContributions: [...request.baseContributions],
@@ -186,14 +325,18 @@ export function resolveCheck(request: CheckRequest): CheckResolution {
     finalModifier,
     total,
     trace,
-  };
+  }, { root: trace });
 }
 
 /** Resolves one check against a fixed difficulty. */
 export function resolveFixedCheck(
   request: FixedCheckRequest,
-): FixedCheckResolution {
-  const check = resolveCheck(request.check);
+): EngineResult<FixedCheckResolution> {
+  const checkResult = resolveCheck(request.check);
+
+  if (!checkResult.success) return checkResult;
+
+  const check = checkResult.payload;
   const tiePolicy = request.tiePolicy ?? "succeeds";
   const margin = check.total - request.difficulty;
   const tied = margin === 0;
@@ -211,7 +354,7 @@ export function resolveFixedCheck(
     children: [check.trace],
   });
 
-  return {
+  return engineSuccess({
     check,
     difficulty: request.difficulty,
     margin,
@@ -219,15 +362,23 @@ export function resolveFixedCheck(
     tied,
     tiePolicy,
     trace,
-  };
+  }, { root: trace });
 }
 
 /** Resolves two complete checks and preserves both sides of the contest. */
 export function resolveOpposedCheck(
   request: OpposedCheckRequest,
-): OpposedCheckResolution {
-  const initiator = resolveCheck(request.initiator);
-  const opponent = resolveCheck(request.opponent);
+): EngineResult<OpposedCheckResolution> {
+  const initiatorResult = resolveCheck(request.initiator);
+
+  if (!initiatorResult.success) return initiatorResult;
+
+  const opponentResult = resolveCheck(request.opponent);
+
+  if (!opponentResult.success) return opponentResult;
+
+  const initiator = initiatorResult.payload;
+  const opponent = opponentResult.payload;
   const margin = initiator.total - opponent.total;
   const tied = margin === 0;
   const winner = margin > 0
@@ -248,7 +399,7 @@ export function resolveOpposedCheck(
     children: [initiator.trace, opponent.trace],
   });
 
-  return {
+  return engineSuccess({
     initiator,
     opponent,
     margin,
@@ -256,6 +407,6 @@ export function resolveOpposedCheck(
     winner,
     tiesFavor: request.tiesFavor,
     trace,
-  };
+  }, { root: trace });
 }
 

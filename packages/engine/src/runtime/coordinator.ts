@@ -71,7 +71,7 @@ import {
   type RuntimeDomain,
   type RuntimeOwnerRef,
 } from "./domains";
-import { findDiceIssues, type RuntimeDieRequirement, type RuntimeDieRoll } from "./dice";
+import { findDiceIssues, type RuntimeDieRequirement, type RuntimeRollSet } from "./dice";
 import type { RuntimeEvent } from "./events";
 import {
   effectiveTimeOf,
@@ -207,7 +207,7 @@ export interface CoordinatedOperation<TResult> {
 
   /** Dice the operation needs, checked before anything is priced. */
   readonly requiredDice?: readonly RuntimeDieRequirement[];
-  readonly dice?: readonly RuntimeDieRoll[];
+  readonly dice?: readonly RuntimeRollSet[];
 
   /** Mandatory costs. All prepare against the running draft, or none apply. */
   readonly costs: readonly RuntimeRequest[];
@@ -220,7 +220,7 @@ export interface CoordinatedOperation<TResult> {
    * transition containing a failed-check event, not an error.
    */
   resolve(
-    dice: readonly RuntimeDieRoll[],
+    dice: readonly RuntimeRollSet[],
     states: OwnerStates,
   ): {
     readonly result: TResult;
@@ -555,9 +555,9 @@ export function runCoordinatedOperation<TResult>(
     id: "runtime.operation.dice",
     label: "Validate supplied dice",
     inputs: Object.fromEntries(
-      dice.map((roll, index) => [
-        `${roll.purpose || `roll-${index}`}`,
-        { value: `d${roll.sides}=${roll.value}` },
+      dice.map((rolls, index) => [
+        `${rolls.purpose || `roll-${index}`}`,
+        { value: `d${rolls.sides}=[${(rolls.values ?? []).join(", ")}]` },
       ]),
     ),
   });

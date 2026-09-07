@@ -1,5 +1,17 @@
 import { resolveCheck, resolveFixedCheck } from "../../../../checks/resolution";
-import { createTraceNode } from "../../../../infrastructure/trace";
+import type {
+  CheckResolution,
+  FixedCheckResolution,
+} from "../../../../checks/types";
+import {
+  engineSuccess,
+  type EngineResult,
+} from "../../../../infrastructure/result";
+import {
+  createTraceNode,
+  type TraceNode,
+} from "../../../../infrastructure/trace";
+import { sensoryFailure } from "../diagnostics";
 import { resolveDerivedAttribute } from "../../attributes/derived/resolution";
 import { deriveStandardModifier } from "../../attributes/resolution";
 import { resolveInformationBand } from "../information";
@@ -8,9 +20,19 @@ import type { InvestigationRequest, InvestigationResolution } from "./types";
 
 export function resolveInvestigationCheck(
   request: InvestigationRequest,
-): InvestigationResolution {
+): EngineResult<InvestigationResolution> {
   if (request.sense !== undefined && request.profile === undefined) {
-    throw new RangeError("Sense-specific Investigation requires a sensory profile.");
+    return sensoryFailure(
+      "character.senses.investigation.resolve",
+      "Resolve Investigation",
+      {
+        code: "character.senses.investigation.profile.missing",
+        message: "Sense-specific Investigation requires a sensory profile.",
+        audience: "developer",
+        required: "ResolvedSensoryProfile",
+        actual: "absent",
+      },
+    );
   }
 
   const score = request.sense === undefined
@@ -34,24 +56,32 @@ export function resolveInvestigationCheck(
     modifiers: request.modifiers ?? [],
   };
 
-  let check;
-  let fixedCheck;
+  let check: CheckResolution;
+  let fixedCheck: FixedCheckResolution | undefined;
   let opposingValue: number;
   let margin: number;
-  let childTrace;
+  let childTrace: TraceNode;
 
   if (request.difficulty.kind === "fixed") {
-    fixedCheck = resolveFixedCheck({
+    const fixedResult = resolveFixedCheck({
       check: checkRequest,
       difficulty: request.difficulty.difficulty,
       tiePolicy: "fails",
     });
+
+    if (!fixedResult.success) return fixedResult;
+
+    fixedCheck = fixedResult.payload;
     check = fixedCheck.check;
     opposingValue = request.difficulty.difficulty;
     margin = fixedCheck.margin;
     childTrace = fixedCheck.trace;
   } else {
-    check = resolveCheck(checkRequest);
+    const checkResult = resolveCheck(checkRequest);
+
+    if (!checkResult.success) return checkResult;
+
+    check = checkResult.payload;
     opposingValue = request.difficulty.rating.total;
     margin = check.total - opposingValue;
     childTrace = createTraceNode({
@@ -73,7 +103,19 @@ export function resolveInvestigationCheck(
   });
   const revealed = findingsRevealedAtBand(eligible, band);
 
-  return {
+  const trace = createTraceNode({
+    id: "character.senses.investigation.resolve",
+    label: "Resolve Investigation",
+    formula: "margin determines information band; prerequisites determine eligible findings",
+    inputs: {
+      margin: { value: margin },
+      eligibleFindings: { value: eligible.map((finding) => finding.id) },
+    },
+    output: revealed.map((finding) => finding.id),
+    children: [childTrace],
+  });
+
+  return engineSuccess({
     total: check.total,
     opposingValue,
     margin,
@@ -82,16 +124,6 @@ export function resolveInvestigationCheck(
     revealedFindingIds: revealed.map((finding) => finding.id),
     check,
     ...(fixedCheck === undefined ? {} : { fixedCheck }),
-    trace: createTraceNode({
-      id: "character.senses.investigation.resolve",
-      label: "Resolve Investigation",
-      formula: "margin determines information band; prerequisites determine eligible findings",
-      inputs: {
-        margin: { value: margin },
-        eligibleFindings: { value: eligible.map((finding) => finding.id) },
-      },
-      output: revealed.map((finding) => finding.id),
-      children: [childTrace],
-    }),
-  };
+    trace,
+  }, { root: trace });
 }

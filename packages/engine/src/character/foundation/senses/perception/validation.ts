@@ -13,12 +13,14 @@ export type PerceptionValidationIssue =
 /*
  * Validate-then-resolve for Perception.
  *
- * resolvePerception() throws on exactly one caller-supplied condition —
+ * resolvePerception() refuses exactly one caller-supplied condition —
  * uncertain reception with no dice — and this reports it as "dice-missing"
- * rather than letting the resolver be the thing that finds out. Dice handed in
- * for automatic or impossible reception are reported too: they are not a crash
- * but they are a caller who believes a roll is about to happen when none is,
- * and silently ignoring them hides that.
+ * rather than letting the resolver be the thing that finds out. The resolver
+ * returns a typed failure there rather than throwing, so skipping validation
+ * is no longer a crash; it is still the wrong place to find out. Dice handed
+ * in for automatic or impossible reception are reported too: they are a caller
+ * who believes a roll is about to happen when none is, and silently ignoring
+ * them hides that.
  */
 export function findPerceptionRequestIssues(
   request: PerceptionRequest,

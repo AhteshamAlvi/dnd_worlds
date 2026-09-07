@@ -1,9 +1,10 @@
+import type { EngineResult } from "../../../../infrastructure/result";
 import type { ConcealmentRequest, ConcealmentResolution } from "./types";
 import { resolveConcealmentCheck } from "./resolution";
 
 export function establishConcealment(
   request: Omit<ConcealmentRequest, "mode">,
-): ConcealmentResolution {
+): EngineResult<ConcealmentResolution> {
   return resolveConcealmentCheck({ ...request, mode: "established" });
 }
 

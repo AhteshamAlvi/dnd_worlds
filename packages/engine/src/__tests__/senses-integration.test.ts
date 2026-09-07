@@ -9,6 +9,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { payloadOf } from "./fixtures/result";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 import { resolveRuleEffects } from "../character/rules/resolution";
 import { findEffectValidationIssues } from "../character/rules/validation";
@@ -317,7 +319,7 @@ describe("the public barrel", () => {
       ),
     );
 
-    const result = engine.resolvePerception({
+    const result = payloadOf(engine.resolvePerception({
       profile,
       signature: {
         id: "footstep",
@@ -327,7 +329,7 @@ describe("the public barrel", () => {
         reception: { kind: "uncertain", difficulty: 10 },
       },
       dice: { advantage: 0, rolls: [12] },
-    });
+    }));
 
     expect(result.status).toBe("perceived");
     if (result.status !== "perceived") throw new Error("unreachable");

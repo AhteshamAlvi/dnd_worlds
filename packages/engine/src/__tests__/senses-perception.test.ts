@@ -9,6 +9,9 @@
 
 import { describe, expect, it } from "vitest";
 
+import type { EngineResult } from "../infrastructure/result";
+import { errorCodesOf, payloadOf } from "./fixtures/result";
+
 import { resolvePerception } from "../character/foundation/senses/perception/resolution";
 import { findPerceptionRequestIssues } from "../character/foundation/senses/perception/validation";
 import type { PerceptionRequest } from "../character/foundation/senses/perception/types";
@@ -28,19 +31,31 @@ import { roll, sensoryProfile, signature, source } from "./fixtures/senses";
  * wants one has to say which state it expected first. That the compiler
  * enforces this is itself the fix working.
  */
-function expectPerceived(result: PerceptionResolution): PerceivedPerception {
+function expectPerceived(
+  outcome: EngineResult<PerceptionResolution>,
+): PerceivedPerception {
+  const result = payloadOf(outcome);
+
   expect(result.status).toBe("perceived");
   if (result.status !== "perceived") throw new Error("unreachable");
   return result;
 }
 
-function expectNotPerceived(result: PerceptionResolution): UnperceivedPerception {
+function expectNotPerceived(
+  outcome: EngineResult<PerceptionResolution>,
+): UnperceivedPerception {
+  const result = payloadOf(outcome);
+
   expect(result.status).toBe("not-perceived");
   if (result.status !== "not-perceived") throw new Error("unreachable");
   return result;
 }
 
-function expectInaccessible(result: PerceptionResolution): InaccessiblePerception {
+function expectInaccessible(
+  outcome: EngineResult<PerceptionResolution>,
+): InaccessiblePerception {
+  const result = payloadOf(outcome);
+
   expect(result.status).toBe("inaccessible");
   if (result.status !== "inaccessible") throw new Error("unreachable");
   return result;
@@ -96,6 +111,10 @@ describe("impossible reception", () => {
   });
 
   it("never reaches the roll, so it never throws", () => {
+    /*
+     * The one remaining throw in this resolver guards a branch access
+     * resolution has already excluded. This proves it stays unreachable.
+     */
     expect(() =>
       resolvePerception(request({
         signature: signature({ reception: { kind: "impossible" } }),
@@ -123,14 +142,14 @@ describe("inaccessible routes", () => {
   });
 
   it("opens the Nen route once Nen Perception is available", () => {
-    const result = resolvePerception(request({
+    const result = payloadOf(resolvePerception(request({
       profile: sensoryProfile({ nenAwakened: true }),
       signature: signature({
         sense: "sight",
         phenomenon: "nen",
         reception: { kind: "automatic" },
       }),
-    }));
+    })));
 
     expect(result.status).toBe("perceived");
   });
@@ -180,7 +199,7 @@ describe("uncertain reception", () => {
   });
 
   it("ignores a modifier scoped to a different sense", () => {
-    const result = resolvePerception(request({
+    const result = payloadOf(resolvePerception(request({
       dice: roll(7),
       modifiers: [{
         source: source("keen-ears"),
@@ -188,7 +207,7 @@ describe("uncertain reception", () => {
         amount: 4,
         channel: "persistent",
       }],
-    }));
+    })));
 
     expect(result.status).toBe("not-perceived");
   });
@@ -209,12 +228,12 @@ describe("uncertain reception", () => {
     });
 
     // Hearing is 20 -> +5. 7 + 5 = 12 against 10 -> margin 2 -> minimal.
-    const heard = resolvePerception(request({
+    const heard = payloadOf(resolvePerception(request({
       profile,
       signature: signature({ sense: "hearing" }),
       dice: roll(7),
-    }));
-    const seen = resolvePerception(request({ profile, dice: roll(7) }));
+    })));
+    const seen = payloadOf(resolvePerception(request({ profile, dice: roll(7) })));
 
     expect(heard.status).toBe("perceived");
     expect(seen.status).toBe("not-perceived");
@@ -292,15 +311,18 @@ describe("validate-then-resolve", () => {
     }))).toEqual([]);
   });
 
-  it("catches every condition that would make the resolver throw", () => {
+  it("reports missing dice through validation AND through the resolver", () => {
     /*
-     * resolvePerception() throws on exactly one caller-supplied condition.
-     * Validation has to be the thing that finds it, not the resolver.
+     * Validation should still be what finds this first. What changed is the
+     * resolver's answer when it is reached anyway: a failure a caller can read
+     * alongside every other diagnostic, rather than the one sensory problem
+     * that had to be caught.
      */
     const missingDice = request();
 
     expect(issueTypes(missingDice)).toContain("dice-missing");
-    expect(() => resolvePerception(missingDice)).toThrow(RangeError);
+    expect(errorCodesOf(resolvePerception(missingDice)))
+      .toContain("character.senses.dice.missing");
   });
 
   it("reports a malformed signature", () => {

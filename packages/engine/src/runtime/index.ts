@@ -51,8 +51,9 @@ export type {
 export { transitionOutcome } from "./transition";
 export type { TransitionOutcome, TransitionResult } from "./transition";
 
-export { dieFor, findDiceIssues } from "./dice";
-export type { RuntimeDieRequirement, RuntimeDieRoll } from "./dice";
+export { findDiceIssues, requireOneDie, rollsFor } from "./dice";
+export { projectCheckDice } from "./check-dice";
+export type { RuntimeDieRequirement, RuntimeRollSet } from "./dice";
 
 export {
   activeApplications,

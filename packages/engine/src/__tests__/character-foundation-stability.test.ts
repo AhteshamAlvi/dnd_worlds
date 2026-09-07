@@ -19,6 +19,8 @@
  */
 
 import { afterEach, describe, expect, it } from "vitest";
+
+import { payloadOf } from "./fixtures/result";
 import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
@@ -171,12 +173,12 @@ describe("activation: knowing is not using", () => {
     ]);
 
     // And the provenance survives an actual roll, not just collection.
-    const check = resolveCheck({
+    const check = payloadOf(resolveCheck({
       scope: AGI_CHECK,
       dice: { advantage: 0, rolls: [10] },
       baseContributions: [{ id: "standard", amount: 0 }],
       modifiers: invoked,
-    });
+    }));
 
     expect(check.total).toBe(13);
     expect(check.applicableModifiers[0]?.source).toEqual({
@@ -1339,7 +1341,7 @@ describe("check traces are top-level", () => {
       }
     };
 
-    walk(resolveCheck(request).trace);
+    walk(payloadOf(resolveCheck(request)).trace);
 
     expect(ids).toContain("checks.resolve");
     expect(ids).toContain("checks.dice");

@@ -9,6 +9,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { errorCodesOf, payloadOf } from "./fixtures/result";
+
 import { createTraceNode } from "../infrastructure/trace";
 import { resolveInvestigationCheck } from "../character/foundation/senses/investigation/resolution";
 import {
@@ -70,7 +72,7 @@ function concealmentRating(total: number): ConcealmentRating {
 
 describe("against a fixed difficulty", () => {
   it("rolls the Investigation Derived Attribute", () => {
-    const result = resolveInvestigationCheck(request());
+    const result = payloadOf(resolveInvestigationCheck(request()));
 
     expect(result.total).toBe(10 + INVESTIGATION_MODIFIER);
     expect(result.opposingValue).toBe(10);
@@ -79,14 +81,14 @@ describe("against a fixed difficulty", () => {
   });
 
   it("carries the fixed check through for inspection", () => {
-    const result = resolveInvestigationCheck(request());
+    const result = payloadOf(resolveInvestigationCheck(request()));
 
     expect(result.fixedCheck?.margin).toBe(3);
     expect(result.check.total).toBe(13);
   });
 
   it("reveals nothing on a missed roll", () => {
-    const result = resolveInvestigationCheck(request({ dice: roll(6) }));
+    const result = payloadOf(resolveInvestigationCheck(request({ dice: roll(6) })));
 
     expect(result.band).toBe("none");
     expect(result.revealedFindingIds).toEqual([]);
@@ -96,9 +98,9 @@ describe("against a fixed difficulty", () => {
 
 describe("opposed by informational Concealment", () => {
   it("measures the margin against the Concealment total", () => {
-    const result = resolveInvestigationCheck(request({
+    const result = payloadOf(resolveInvestigationCheck(request({
       difficulty: { kind: "concealment", rating: concealmentRating(8) },
-    }));
+    })));
 
     expect(result.opposingValue).toBe(8);
     expect(result.margin).toBe(5);
@@ -110,7 +112,7 @@ describe("opposed by informational Concealment", () => {
 
 describe("finding prerequisites", () => {
   it("reveals only what the band reached", () => {
-    const result = resolveInvestigationCheck(request({ dice: roll(10) }));
+    const result = payloadOf(resolveInvestigationCheck(request({ dice: roll(10) })));
 
     expect(result.band).toBe("minimal");
     expect(result.revealedFindingIds).toEqual(["was-a-struggle"]);
@@ -118,7 +120,7 @@ describe("finding prerequisites", () => {
 
   it("withholds a finding whose Skill the character lacks", () => {
     // 15 + 3 = 18 against 10 -> margin 8 -> partial, enough band but no Skill.
-    const result = resolveInvestigationCheck(request({ dice: roll(15) }));
+    const result = payloadOf(resolveInvestigationCheck(request({ dice: roll(15) })));
 
     expect(result.band).toBe("partial");
     expect(result.eligibleFindingIds).not.toContain("attacker-was-left-handed");
@@ -126,10 +128,10 @@ describe("finding prerequisites", () => {
   });
 
   it("reveals it once the Skill is held", () => {
-    const result = resolveInvestigationCheck(request({
+    const result = payloadOf(resolveInvestigationCheck(request({
       dice: roll(15),
       skillIds: ["forensics"],
-    }));
+    })));
 
     expect(result.revealedFindingIds).toEqual([
       "was-a-struggle",
@@ -139,19 +141,19 @@ describe("finding prerequisites", () => {
 
   it("requires the evidence AND the knowledge, not either", () => {
     // 20 + 3 = 23 against 10 -> margin 13 -> substantial.
-    const withEvidenceOnly = resolveInvestigationCheck(request({
+    const withEvidenceOnly = payloadOf(resolveInvestigationCheck(request({
       dice: roll(20),
       evidence: [{ id: "scorch-mark" }],
-    }));
-    const withKnowledgeOnly = resolveInvestigationCheck(request({
+    })));
+    const withKnowledgeOnly = payloadOf(resolveInvestigationCheck(request({
       dice: roll(20),
       knowledgeIds: ["nen-categories"],
-    }));
-    const withBoth = resolveInvestigationCheck(request({
+    })));
+    const withBoth = payloadOf(resolveInvestigationCheck(request({
       dice: roll(20),
       evidence: [{ id: "scorch-mark" }],
       knowledgeIds: ["nen-categories"],
-    }));
+    })));
 
     expect(withEvidenceOnly.band).toBe("substantial");
     expect(withEvidenceOnly.revealedFindingIds).not.toContain("nen-residue-is-emitter");
@@ -165,12 +167,12 @@ describe("finding prerequisites", () => {
      * to reach is eligible and unrevealed — which is what lets a GM say "there
      * is more here" without saying what.
      */
-    const result = resolveInvestigationCheck(request({
+    const result = payloadOf(resolveInvestigationCheck(request({
       dice: roll(10),
       evidence: [{ id: "scorch-mark" }],
       knowledgeIds: ["nen-categories"],
       skillIds: ["forensics"],
-    }));
+    })));
 
     expect(result.eligibleFindingIds).toHaveLength(3);
     expect(result.revealedFindingIds).toEqual(["was-a-struggle"]);
@@ -221,29 +223,29 @@ describe("sense-specific Investigation", () => {
 
   it("substitutes the sense for ordinary PER", () => {
     // Hearing 22 -> round((18 + 14 + 22) / 3) = 18 -> +4.
-    const result = resolveInvestigationCheck(request({
+    const result = payloadOf(resolveInvestigationCheck(request({
       profile: KEEN_EARS,
       sense: "hearing",
       dice: roll(10),
-    }));
+    })));
 
     expect(result.total).toBe(14);
     expect(result.margin).toBe(4);
   });
 
   it("leaves an unmodified sense at the ordinary score", () => {
-    const result = resolveInvestigationCheck(request({
+    const result = payloadOf(resolveInvestigationCheck(request({
       profile: KEEN_EARS,
       sense: "sight",
       dice: roll(10),
-    }));
+    })));
 
     expect(result.total).toBe(10 + INVESTIGATION_MODIFIER);
   });
 
   it("refuses a sense with no profile to read it from", () => {
-    expect(() => resolveInvestigationCheck(request({ sense: "hearing" })))
-      .toThrow(RangeError);
+    expect(errorCodesOf(resolveInvestigationCheck(request({ sense: "hearing" }))))
+      .toContain("character.senses.investigation.profile.missing");
   });
 
   it("reports the missing profile in validation first", () => {

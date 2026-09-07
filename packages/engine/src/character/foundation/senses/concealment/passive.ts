@@ -2,6 +2,10 @@ import {
   createCheckModifierTraceNode,
   resolveCheckModifier,
 } from "../../../../checks/modifiers";
+import {
+  engineSuccess,
+  type EngineResult,
+} from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 import type { ConcealmentRequest, ConcealmentResolution } from "./types";
 
@@ -17,7 +21,13 @@ import type { ConcealmentRequest, ConcealmentResolution } from "./types";
  */
 export function resolvePassiveConcealment(
   request: ConcealmentRequest,
-): ConcealmentResolution {
+): EngineResult<ConcealmentResolution> {
+  /*
+   * A throw rather than a failure, and deliberately so: reaching this resolver
+   * with a non-passive request is the dispatch above having called the wrong
+   * function, not a caller supplying bad data. Returning it as a value would
+   * let that bug be handled as though the character had merely failed to hide.
+   */
   if (request.mode !== "passive" || request.basis.kind !== "character") {
     throw new RangeError("Passive Concealment requires a character basis and passive mode.");
   }
@@ -43,20 +53,18 @@ export function resolvePassiveConcealment(
     };
   });
 
-  return {
-    mode: "passive",
-    ratings,
-    trace: createTraceNode({
-      id: "character.senses.concealment.passive",
-      label: "Resolve passive Concealment",
-      formula: "stored passive Concealment base + matching persistent modifiers",
-      inputs: {
-        passiveConcealmentBase: {
-          value: request.basis.profile.passiveConcealmentBase,
-        },
+  const trace = createTraceNode({
+    id: "character.senses.concealment.passive",
+    label: "Resolve passive Concealment",
+    formula: "stored passive Concealment base + matching persistent modifiers",
+    inputs: {
+      passiveConcealmentBase: {
+        value: request.basis.profile.passiveConcealmentBase,
       },
-      output: ratings.length,
-      children: ratings.map((rating) => rating.trace),
-    }),
-  };
+    },
+    output: ratings.length,
+    children: ratings.map((rating) => rating.trace),
+  });
+
+  return engineSuccess({ mode: "passive", ratings, trace }, { root: trace });
 }

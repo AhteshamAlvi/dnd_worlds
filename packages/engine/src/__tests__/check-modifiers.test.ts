@@ -24,6 +24,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { payloadOf } from "./fixtures/result";
+
 import {
   clearCustomDefinitions,
   findCatalogReferenceIssues,
@@ -627,14 +629,14 @@ describe("authored modifiers reach the gameplay check resolver", () => {
      * proved here is that no translation layer stands between an authored
      * modifyCheck and the check resolver, not that knowing a Skill is enough.
      */
-    const result = resolveCheck({
+    const result = payloadOf(resolveCheck({
       scope: { kind: "attribute", attribute: "agi" },
       dice: { advantage: 0, rolls: [11] },
       baseContributions: [{ id: "standard", amount: 4 }],
       modifiers: collectCharacterCheckModifiers(resolved, {
         sources: [{ type: "skill", id: "contort" }],
       }),
-    });
+    }));
 
     // 11 rolled + 4 standard + 3 from the Contort the player invoked.
     expect(result.total).toBe(18);
@@ -646,12 +648,12 @@ describe("authored modifiers reach the gameplay check resolver", () => {
 
     // And the same character, having invoked nothing, rolls 11 + 4.
     expect(
-      resolveCheck({
+      payloadOf(resolveCheck({
         scope: { kind: "attribute", attribute: "agi" },
         dice: { advantage: 0, rolls: [11] },
         baseContributions: [{ id: "standard", amount: 4 }],
         modifiers: collectCharacterCheckModifiers(resolved),
-      }).total,
+      })).total,
     ).toBe(15);
   });
 

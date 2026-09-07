@@ -599,3 +599,48 @@ describe("Stage II Phase 2A layering", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+
+/*
+ * The two dice layers point one way.
+ *
+ * runtime/ owns operation-level dice validation and may project a validated
+ * roll set into a check, so runtime/ -> checks/ is a real, intended edge.
+ * The reverse would make the universal d20 vocabulary depend on the
+ * transaction layer that happens to be one of its callers — and checks/ is
+ * used from Character Foundation, which knows nothing about operations at all.
+ */
+describe("dice layering points from runtime to checks", () => {
+  const checkFiles = sourceFilesUnder(join(SRC, "checks"));
+  const runtimeFiles = sourceFilesUnder(join(SRC, "runtime"));
+
+  it("finds the sources it is checking", () => {
+    expect(checkFiles.length).toBeGreaterThan(3);
+    expect(runtimeFiles.length).toBeGreaterThan(5);
+  });
+
+  it("never lets checks/ import runtime/", () => {
+    const offenders = checkFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "runtime"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the projection the only runtime file reaching into checks/", () => {
+    /*
+     * Narrow on purpose. One crossing point is auditable; a second one added
+     * later for convenience is how the two layers start sharing rules.
+     */
+    const offenders = runtimeFiles.filter((path) =>
+      !path.endsWith("check-dice.ts") &&
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "checks"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});

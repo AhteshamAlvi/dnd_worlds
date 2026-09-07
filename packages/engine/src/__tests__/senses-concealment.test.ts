@@ -11,6 +11,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { errorCodesOf, payloadOf } from "./fixtures/result";
+
 import { resolvePassiveConcealment } from "../character/foundation/senses/concealment/passive";
 import { resolveConcealmentCheck } from "../character/foundation/senses/concealment/resolution";
 import {
@@ -60,22 +62,22 @@ function hearingOnly(amount: number) {
 
 describe("passive Concealment", () => {
   it("is DEX modifier + WIS modifier with no modifiers in play", () => {
-    const result = resolvePassiveConcealment({
+    const result = payloadOf(resolvePassiveConcealment({
       mode: "passive",
       basis: characterBasis(),
       routes: [SIGHT],
-    });
+    }));
 
     expect(result.ratings[0]!.total).toBe(PASSIVE_CONCEALMENT_BASE);
     expect(result.ratings[0]!.mode).toBe("passive");
   });
 
   it("does not roll", () => {
-    const result = resolvePassiveConcealment({
+    const result = payloadOf(resolvePassiveConcealment({
       mode: "passive",
       basis: characterBasis(),
       routes: [SIGHT],
-    });
+    }));
 
     expect(result.ratings[0]!.check).toBeUndefined();
     expect(result.sharedDice).toBeUndefined();
@@ -90,40 +92,45 @@ describe("passive Concealment", () => {
     const profile = sensoryProfile();
     const restated = { ...profile, passiveConcealmentBase: 99 };
 
-    const result = resolvePassiveConcealment({
+    const result = payloadOf(resolvePassiveConcealment({
       mode: "passive",
       basis: { kind: "character", stats: sensoryStats(), profile: restated },
       routes: [SIGHT],
-    });
+    }));
 
     expect(profile.passiveConcealmentBase).toBe(PASSIVE_CONCEALMENT_BASE);
     expect(result.ratings[0]!.total).toBe(99);
   });
 
   it("layers route-specific persistent modifiers on top, per route", () => {
-    const result = resolvePassiveConcealment({
+    const result = payloadOf(resolvePassiveConcealment({
       mode: "passive",
       basis: characterBasis(),
       routes: [SIGHT, HEARING],
       modifiers: [hearingOnly(3)],
-    });
+    }));
 
     expect(result.ratings[0]!.total).toBe(PASSIVE_CONCEALMENT_BASE);
     expect(result.ratings[1]!.total).toBe(PASSIVE_CONCEALMENT_BASE + 3);
   });
 
   it("is reachable through the general resolver", () => {
-    const result = resolveConcealmentCheck({
+    const result = payloadOf(resolveConcealmentCheck({
       mode: "passive",
       basis: characterBasis(),
       routes: [SIGHT],
-    });
+    }));
 
     expect(result.mode).toBe("passive");
     expect(result.ratings[0]!.total).toBe(PASSIVE_CONCEALMENT_BASE);
   });
 
-  it("rejects an authored-information basis", () => {
+  /*
+   * Still a throw, and deliberately: this is the PASSIVE resolver being handed
+   * a request it does not resolve, which is engine code calling the wrong
+   * function rather than a caller supplying bad data.
+   */
+  it("rejects an authored-information basis by throwing", () => {
     expect(() =>
       resolvePassiveConcealment({
         mode: "passive",
@@ -137,11 +144,11 @@ describe("passive Concealment", () => {
 
 describe("established Concealment", () => {
   it("retains one die across every sensory route", () => {
-    const result = establishConcealment({
+    const result = payloadOf(establishConcealment({
       basis: characterBasis(),
       routes: [SIGHT, HEARING],
       dice: roll(13),
-    });
+    }));
 
     const retained = result.ratings.map(
       (rating) => rating.check?.dice.retainedRoll,
@@ -152,11 +159,11 @@ describe("established Concealment", () => {
   });
 
   it("scores each route from that one die plus the Concealment modifier", () => {
-    const result = establishConcealment({
+    const result = payloadOf(establishConcealment({
       basis: characterBasis(),
       routes: [SIGHT, HEARING],
       dice: roll(13),
-    });
+    }));
 
     for (const rating of result.ratings) {
       expect(rating.total).toBe(13 + CONCEALMENT_MODIFIER);
@@ -164,12 +171,12 @@ describe("established Concealment", () => {
   });
 
   it("still resolves route modifiers independently on that shared die", () => {
-    const result = establishConcealment({
+    const result = payloadOf(establishConcealment({
       basis: characterBasis(),
       routes: [SIGHT, HEARING],
       dice: roll(13),
       modifiers: [hearingOnly(3)],
-    });
+    }));
 
     expect(result.ratings[0]!.total).toBe(14);
     expect(result.ratings[1]!.total).toBe(17);
@@ -178,11 +185,11 @@ describe("established Concealment", () => {
   });
 
   it("is tagged established on every rating", () => {
-    const result = establishConcealment({
+    const result = payloadOf(establishConcealment({
       basis: characterBasis(),
       routes: [SIGHT, HEARING],
       dice: roll(13),
-    });
+    }));
 
     expect(result.mode).toBe("established");
     expect(result.ratings.map((rating) => rating.mode))
@@ -201,24 +208,24 @@ describe("established Concealment", () => {
 
 describe("active Concealment", () => {
   it("rolls the Concealment Derived Attribute", () => {
-    const result = resolveConcealmentCheck({
+    const result = payloadOf(resolveConcealmentCheck({
       mode: "active",
       basis: characterBasis(),
       routes: [SIGHT],
       dice: roll(9),
-    });
+    }));
 
     expect(result.ratings[0]!.total).toBe(9 + CONCEALMENT_MODIFIER);
   });
 
-  it("requires dice", () => {
-    expect(() =>
+  it("requires dice, as a failure rather than a thrown error", () => {
+    expect(errorCodesOf(
       resolveConcealmentCheck({
         mode: "active",
         basis: characterBasis(),
         routes: [SIGHT],
-      })
-    ).toThrow(RangeError);
+      }),
+    )).toContain("character.senses.dice.missing");
   });
 });
 
@@ -239,7 +246,8 @@ describe("authored-information Concealment", () => {
       dice: roll(10),
     };
 
-    expect(resolveConcealmentCheck(request).ratings[0]!.total).toBe(10 + 4 + 2 + 1);
+    expect(payloadOf(resolveConcealmentCheck(request)).ratings[0]!.total)
+      .toBe(10 + 4 + 2 + 1);
   });
 });
 

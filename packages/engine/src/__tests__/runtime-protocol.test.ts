@@ -28,6 +28,8 @@ import {
   detachCombat,
   emptyRuntimeState,
   findDiceIssues,
+  requireOneDie,
+  rollsFor,
   findOperationContextIssues,
   findRequestIssues,
   groupSimultaneousRequests,
@@ -455,8 +457,8 @@ describe("a failure changes nothing, wherever it happens", () => {
       {
         context: OPERATION,
         states: original,
-        requiredDice: [{ purpose: "attack", sides: 20 }],
-        dice: [{ purpose: "attack", value: 21, sides: 20 }],
+        requiredDice: [requireOneDie("attack", 20)],
+        dice: [{ purpose: "attack", sides: 20, values: [21] }],
         costs: [costRequest({ requestId: "r1", to: owner("aura", "gon"), requested: 40 })],
         resolve: () => ({ result: "hit" }),
       },
@@ -477,11 +479,11 @@ describe("a failure changes nothing, wherever it happens", () => {
       {
         context: OPERATION,
         states: original,
-        requiredDice: [{ purpose: "attack", sides: 20 }],
-        dice: [{ purpose: "attack", value: 1, sides: 20 }],
+        requiredDice: [requireOneDie("attack", 20)],
+        dice: [{ purpose: "attack", sides: 20, values: [1] }],
         costs: [costRequest({ requestId: "r1", to: owner("aura", "gon"), requested: 40 })],
         resolve: (dice) => ({
-          result: { hit: dice[0]!.value >= 10 },
+          result: { hit: dice[0]!.values[0]! >= 10 },
           events: [{
             kind: "check-failed",
             domain: "caller",
@@ -786,47 +788,111 @@ describe("the boundary refuses malformed protocol input", () => {
 
 
 describe("dice are validated at the boundary", () => {
+  /*
+   * The shape being checked: rolls belong to a PURPOSE, and a purpose owns an
+   * ordered set of them. Advantage is two values inside one set, never two
+   * sets or two entries in a flat array — the flat array was ambiguous about
+   * which die belonged to what, and the previous model rejected the second one
+   * outright, which meant advantage could not be expressed at all.
+   */
+  it("accepts one d20 for one purpose", () => {
+    expect(findDiceIssues(
+      [{ purpose: "attack", sides: 20, values: [14] }],
+      [requireOneDie("attack", 20)],
+    )).toEqual([]);
+  });
+
+  it("accepts two d20 rolls for one purpose, for advantage", () => {
+    expect(findDiceIssues(
+      [{ purpose: "attack", sides: 20, values: [14, 3] }],
+      [{ purpose: "attack", sides: 20, count: 2 }],
+    )).toEqual([]);
+  });
+
+  it("accepts the same two-roll set for disadvantage", () => {
+    /*
+     * Runtime does not know which it is. The count is the same, the ordering
+     * is the same, and WHICH die is retained is the check's decision — see
+     * the projection tests. Runtime validating "two d20s arrived for one
+     * purpose" is the whole of its job here.
+     */
+    expect(findDiceIssues(
+      [{ purpose: "attack", sides: 20, values: [3, 14] }],
+      [{ purpose: "attack", sides: 20, count: 2 }],
+    )).toEqual([]);
+  });
+
+  it("keeps the rolled order inside a purpose", () => {
+    const supplied = [{ purpose: "attack", sides: 20, values: [3, 14] }];
+
+    expect(rollsFor(supplied, "attack")?.values).toEqual([3, 14]);
+  });
+
   it.each([
     [
-      "a die with no purpose",
-      [{ purpose: "  ", value: 3, sides: 20 }],
-      [{ purpose: "attack", sides: 20 }],
+      "a set with no purpose",
+      [{ purpose: "  ", sides: 20, values: [3] }],
+      [requireOneDie("attack", 20)],
       "runtime.dice.purpose.missing",
     ],
     [
-      "two dice for one purpose",
+      "two sets for one purpose",
       [
-        { purpose: "attack", value: 3, sides: 20 },
-        { purpose: "attack", value: 19, sides: 20 },
+        { purpose: "attack", sides: 20, values: [3] },
+        { purpose: "attack", sides: 20, values: [19] },
       ],
-      [{ purpose: "attack", sides: 20 }],
+      [requireOneDie("attack", 20)],
       "runtime.dice.duplicate",
     ],
     [
-      "a missing die",
+      "a missing set",
       [],
-      [{ purpose: "attack", sides: 20 }],
+      [requireOneDie("attack", 20)],
       "runtime.dice.missing",
     ],
     [
+      "one roll where advantage needs two",
+      [{ purpose: "attack", sides: 20, values: [3] }],
+      [{ purpose: "attack", sides: 20, count: 2 }],
+      "runtime.dice.count.mismatch",
+    ],
+    [
+      "an extra roll nobody asked for",
+      [{ purpose: "attack", sides: 20, values: [3, 19] }],
+      [requireOneDie("attack", 20)],
+      "runtime.dice.count.mismatch",
+    ],
+    [
+      "a wrongly sided die",
+      [{ purpose: "attack", sides: 12, values: [3] }],
+      [requireOneDie("attack", 20)],
+      "runtime.dice.sides.mismatch",
+    ],
+    [
       "a fractional face",
-      [{ purpose: "attack", value: 3.5, sides: 20 }],
-      [{ purpose: "attack", sides: 20 }],
+      [{ purpose: "attack", sides: 20, values: [3.5] }],
+      [requireOneDie("attack", 20)],
       "runtime.dice.value.invalid",
     ],
     [
       "a face outside the range",
-      [{ purpose: "attack", value: 0, sides: 20 }],
-      [{ purpose: "attack", sides: 20 }],
+      [{ purpose: "attack", sides: 20, values: [0] }],
+      [requireOneDie("attack", 20)],
       "runtime.dice.value.out-of-range",
     ],
     [
-      "a die nothing asked for",
+      "a face outside the range in the second position",
+      [{ purpose: "attack", sides: 20, values: [10, 21] }],
+      [{ purpose: "attack", sides: 20, count: 2 }],
+      "runtime.dice.value.out-of-range",
+    ],
+    [
+      "a set nothing asked for",
       [
-        { purpose: "attack", value: 3, sides: 20 },
-        { purpose: "gossip", value: 3, sides: 6 },
+        { purpose: "attack", sides: 20, values: [3] },
+        { purpose: "gossip", sides: 6, values: [3] },
       ],
-      [{ purpose: "attack", sides: 20 }],
+      [requireOneDie("attack", 20)],
       "runtime.dice.unexpected",
     ],
   ])("rejects %s", (_name, supplied, required, code) => {
@@ -845,22 +911,60 @@ describe("dice are validated at the boundary", () => {
     [2.5, "a fractional die"],
   ])("rejects %s as a requirement (%s)", (sides) => {
     const issues = findDiceIssues(
-      [{ purpose: "attack", value: 1, sides }],
-      [{ purpose: "attack", sides }],
+      [{ purpose: "attack", sides, values: [1] }],
+      [requireOneDie("attack", sides)],
     );
 
     expect(issues.map((one) => one.code))
       .toContain("runtime.dice.requirement.sides.invalid");
   });
 
+  it.each([
+    [0, "no rolls at all"],
+    [-1, "a negative count"],
+    [1.5, "a fractional count"],
+  ])("rejects a requirement asking for %s (%s)", (count) => {
+    const issues = findDiceIssues(
+      [{ purpose: "attack", sides: 20, values: [1] }],
+      [{ purpose: "attack", sides: 20, count }],
+    );
+
+    expect(issues.map((one) => one.code))
+      .toContain("runtime.dice.requirement.count.invalid");
+  });
+
   it("rejects one purpose required twice", () => {
     const issues = findDiceIssues(
-      [{ purpose: "attack", value: 3, sides: 20 }],
-      [{ purpose: "attack", sides: 20 }, { purpose: "attack", sides: 6 }],
+      [{ purpose: "attack", sides: 20, values: [3] }],
+      [requireOneDie("attack", 20), requireOneDie("attack", 6)],
     );
 
     expect(issues.map((one) => one.code))
       .toContain("runtime.dice.requirement.duplicate");
+  });
+
+  /*
+   * The ordering guarantee that matters: WITHIN a purpose order is meaningful,
+   * BETWEEN purposes it is not. A caller that happens to list its Detection
+   * roll before its attack roll must get the same answer, or validation would
+   * be one more thing deciding outcomes by array order.
+   */
+  it("gives the same answer however the sets were ordered", () => {
+    const attack = { purpose: "attack", sides: 20, values: [14, 3] };
+    const detection = { purpose: "detection", sides: 20, values: [9] };
+
+    const required = [
+      { purpose: "attack", sides: 20, count: 2 },
+      requireOneDie("detection", 20),
+    ];
+
+    expect(findDiceIssues([attack, detection], required)).toEqual([]);
+    expect(findDiceIssues([detection, attack], required)).toEqual([]);
+
+    const broken = { purpose: "detection", sides: 20, values: [99] };
+
+    expect(findDiceIssues([attack, broken], required).map((one) => one.code))
+      .toEqual(findDiceIssues([broken, attack], required).map((one) => one.code));
   });
 });
 

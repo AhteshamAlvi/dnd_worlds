@@ -1,6 +1,14 @@
 import { resolveFixedCheck } from "../../../../checks/resolution";
+import {
+  engineSuccess,
+  type EngineResult,
+} from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 import { resolveSensoryAccess } from "../access";
+import {
+  missingSensoryDiceError,
+  sensoryFailure,
+} from "../diagnostics";
 import { resolveInformationBand } from "../information";
 import type { PerceptionRequest, PerceptionResolution } from "./types";
 
@@ -15,43 +23,54 @@ import type { PerceptionRequest, PerceptionResolution } from "./types";
  * findPerceptionRequestIssues() rejects every input that would make this
  * function throw, so a validated request cannot reach either throw below.
  */
-export function resolvePerception(request: PerceptionRequest): PerceptionResolution {
+export function resolvePerception(
+  request: PerceptionRequest,
+): EngineResult<PerceptionResolution> {
   const { profile, signature } = request;
   const access = resolveSensoryAccess(profile, signature);
 
   if (!access.accessible) {
-    return {
+    const blockedTrace = createTraceNode({
+      id: `character.senses.perception.${signature.id}.blocked`,
+      label: "Resolve sensory access",
+      inputs: {
+        sense: { value: signature.sense },
+        phenomenon: { value: signature.phenomenon },
+      },
+      output: access.reason,
+    });
+
+    /*
+     * Inaccessible is a successful RESOLUTION of an unsuccessful perception.
+     * The character genuinely could not have perceived this, which is an
+     * answer; it is not the engine failing to work out what happened.
+     */
+    return engineSuccess({
       status: "inaccessible",
       perceived: false,
       signature,
       reason: access.reason,
-      trace: createTraceNode({
-        id: `character.senses.perception.${signature.id}.blocked`,
-        label: "Resolve sensory access",
-        inputs: {
-          sense: { value: signature.sense },
-          phenomenon: { value: signature.phenomenon },
-        },
-        output: access.reason,
-      }),
-    };
+      trace: blockedTrace,
+    }, { root: blockedTrace });
   }
 
   if (signature.reception.kind === "automatic") {
     const band = signature.reception.band ?? "full";
-    return {
+    const automaticTrace = createTraceNode({
+      id: `character.senses.perception.${signature.id}.automatic`,
+      label: "Automatically receive sensory cue",
+      inputs: { sense: { value: signature.sense } },
+      output: band,
+    });
+
+    return engineSuccess({
       status: "perceived",
       perceived: true,
       signature,
       band,
       cue: { signature, perceptionBand: band },
-      trace: createTraceNode({
-        id: `character.senses.perception.${signature.id}.automatic`,
-        label: "Automatically receive sensory cue",
-        inputs: { sense: { value: signature.sense } },
-        output: band,
-      }),
-    };
+      trace: automaticTrace,
+    }, { root: automaticTrace });
   }
 
   if (signature.reception.kind === "impossible") {
@@ -60,11 +79,15 @@ export function resolvePerception(request: PerceptionRequest): PerceptionResolut
   }
 
   if (request.dice === undefined) {
-    throw new RangeError("Uncertain sensory reception requires supplied d20 dice.");
+    return sensoryFailure(
+      `character.senses.perception.${signature.id}`,
+      "Resolve sensory reception",
+      missingSensoryDiceError("Uncertain sensory reception"),
+    );
   }
 
   const sense = profile.senses[signature.sense];
-  const check = resolveFixedCheck({
+  const checkResult = resolveFixedCheck({
     check: {
       scope: {
         kind: "perception",
@@ -81,6 +104,9 @@ export function resolvePerception(request: PerceptionRequest): PerceptionResolut
     tiePolicy: "fails",
   });
 
+  if (!checkResult.success) return checkResult;
+
+  const check = checkResult.payload;
   const band = resolveInformationBand(check.margin, request.informationOverride);
   const trace = createTraceNode({
     id: `character.senses.perception.${signature.id}`,
@@ -92,17 +118,17 @@ export function resolvePerception(request: PerceptionRequest): PerceptionResolut
   });
 
   if (band === "none") {
-    return {
+    return engineSuccess({
       status: "not-perceived",
       perceived: false,
       signature,
       band,
       check,
       trace,
-    };
+    }, { root: trace });
   }
 
-  return {
+  return engineSuccess({
     status: "perceived",
     perceived: true,
     signature,
@@ -110,5 +136,5 @@ export function resolvePerception(request: PerceptionRequest): PerceptionResolut
     cue: { signature, perceptionBand: band },
     check,
     trace,
-  };
+  }, { root: trace });
 }

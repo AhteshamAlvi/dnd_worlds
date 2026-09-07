@@ -23,44 +23,69 @@ import type { EngineError } from "../infrastructure/diagnostics";
 
 
 /**
- * One roll, named for the thing it decides.
+ * Every roll made for one purpose, in the order they were rolled.
  *
- * `purpose` is what makes a set of dice checkable at all: two d20s in an array
- * are ambiguous, while an attack roll and a Detection roll are not. A required
- * roll that is absent, and a supplied roll nothing asked for, are both errors
- * because both mean the caller and the engine disagree about what is happening.
+ * A SET rather than a roll, because advantage exists. Two d20s in a flat array
+ * are ambiguous about which purpose each belongs to; two d20s inside one
+ * purpose's set are not ambiguous about anything, and the pair is exactly what
+ * advantage and disadvantage need.
+ *
+ * The order of `values` is the order they were rolled and it is meaningful:
+ * a check retains one of them by index, and a GM asking "what did the second
+ * die say" is asking about a specific die. The order of the SETS, by contrast,
+ * carries no meaning at all — validation must give the same answer however the
+ * caller happened to arrange them, and a test pins that.
  */
-export interface RuntimeDieRoll {
+export interface RuntimeRollSet {
   readonly purpose: string;
 
-  /** The face rolled. Validated against `sides`. */
-  readonly value: number;
-
-  /** The die's size, so the range can be checked rather than assumed. */
+  /** The size of every die in this set, so the range can be checked. */
   readonly sides: number;
-}
 
-
-/** What an operation needs rolled before it can proceed. */
-export interface RuntimeDieRequirement {
-  readonly purpose: string;
-  readonly sides: number;
+  /** The faces rolled, in rolled order. */
+  readonly values: readonly number[];
 }
 
 
 /**
- * Judge a set of supplied dice against what the operation requires.
+ * What an operation needs rolled before it can proceed.
+ *
+ * `count` is what makes a set checkable. Without it the engine cannot tell an
+ * advantage pair from an accidental duplicate, and would be deciding by
+ * counting whatever arrived — which means a caller who supplied one die too
+ * many would silently get advantage they never had.
+ */
+export interface RuntimeDieRequirement {
+  readonly purpose: string;
+  readonly sides: number;
+
+  /** How many rolls this purpose needs. One normally; two for advantage. */
+  readonly count: number;
+}
+
+
+/** A requirement for a single roll, which is most of them. */
+export function requireOneDie(
+  purpose: string,
+  sides: number,
+): RuntimeDieRequirement {
+  return { purpose, sides, count: 1 };
+}
+
+
+/**
+ * Judge the supplied sets against what the operation requires.
  *
  * Every failure mode is reported at once rather than on first error, because a
  * caller wiring up a new operation would otherwise fix four mistakes in four
  * round trips.
  */
 export function findDiceIssues(
-  supplied: readonly RuntimeDieRoll[],
+  supplied: readonly RuntimeRollSet[],
   required: readonly RuntimeDieRequirement[],
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
-  const byPurpose = new Map<string, RuntimeDieRoll[]>();
+  const byPurpose = new Map<string, RuntimeRollSet[]>();
 
   /*
    * The REQUIREMENT list is checked first, because a malformed requirement
@@ -107,108 +132,150 @@ export function findDiceIssues(
         actual: String(requirement.sides),
       });
     }
+
+    if (!Number.isInteger(requirement.count) || requirement.count < 1) {
+      errors.push({
+        code: "runtime.dice.requirement.count.invalid",
+        message: `The requirement for "${requirement.purpose}" asks for an invalid number of rolls.`,
+        audience: "developer",
+        required: "integer >= 1",
+        actual: String(requirement.count),
+      });
+    }
   }
 
   if (errors.length > 0) return errors;
 
-  for (const roll of supplied) {
-    if (typeof roll.purpose !== "string" || roll.purpose.trim().length === 0) {
+  for (const rolls of supplied) {
+    if (typeof rolls.purpose !== "string" || rolls.purpose.trim().length === 0) {
       errors.push({
         code: "runtime.dice.purpose.missing",
-        message: "Every supplied die must name what it is rolled for.",
+        message: "Every supplied roll set must name what it is rolled for.",
         audience: "developer",
         required: "non-empty purpose",
-        actual: String(roll.purpose),
+        actual: String(rolls.purpose),
       });
 
       continue;
     }
 
-    const existing = byPurpose.get(roll.purpose);
+    const existing = byPurpose.get(rolls.purpose);
 
-    if (existing === undefined) byPurpose.set(roll.purpose, [roll]);
-    else existing.push(roll);
+    if (existing === undefined) byPurpose.set(rolls.purpose, [rolls]);
+    else existing.push(rolls);
   }
 
   /*
-   * Two rolls for one purpose is ambiguous, and picking either one would be
-   * the engine deciding a gameplay outcome by array order.
+   * Two SETS for one purpose is still ambiguous, and merging them would be the
+   * engine inventing advantage. The set is where multiple rolls belong; a
+   * second set means the caller thinks two different things are being rolled
+   * and has given them the same name.
    */
-  for (const [purpose, rolls] of byPurpose) {
-    if (rolls.length > 1) {
+  for (const [purpose, sets] of byPurpose) {
+    if (sets.length > 1) {
       errors.push({
         code: "runtime.dice.duplicate",
-        message: `More than one die was supplied for "${purpose}".`,
+        message: `More than one roll set was supplied for "${purpose}".`,
         audience: "developer",
-        required: "one roll per purpose",
-        actual: `${rolls.length} rolls`,
+        required: "one roll set per purpose",
+        actual: `${sets.length} sets`,
       });
     }
   }
 
   for (const requirement of required) {
-    const rolls = byPurpose.get(requirement.purpose);
-    const roll = rolls?.[0];
+    const sets = byPurpose.get(requirement.purpose);
+    const rolls = sets?.[0];
 
-    if (roll === undefined) {
+    if (rolls === undefined) {
       errors.push({
         code: "runtime.dice.missing",
-        message: `This operation requires a die for "${requirement.purpose}".`,
+        message: `This operation requires dice for "${requirement.purpose}".`,
         audience: "developer",
-        required: `d${requirement.sides} for ${requirement.purpose}`,
+        required: `${requirement.count} x d${requirement.sides} for ${requirement.purpose}`,
         actual: "absent",
       });
 
       continue;
     }
 
-    if (!Number.isInteger(roll.value)) {
-      errors.push({
-        code: "runtime.dice.value.invalid",
-        message: `The die for "${requirement.purpose}" must be a finite integer.`,
-        audience: "developer",
-        required: "integer",
-        actual: Number.isFinite(roll.value)
-          ? String(roll.value)
-          : String(roll.value),
-      });
-
-      continue;
-    }
-
-    if (!Number.isInteger(roll.sides) || roll.sides < 1) {
+    if (!Number.isInteger(rolls.sides) || rolls.sides < 1) {
       errors.push({
         code: "runtime.dice.sides.invalid",
-        message: `The die supplied for "${requirement.purpose}" has no valid faces.`,
+        message: `The dice supplied for "${requirement.purpose}" have no valid faces.`,
         audience: "developer",
         required: "integer >= 1",
-        actual: String(roll.sides),
+        actual: String(rolls.sides),
       });
 
       continue;
     }
 
-    if (roll.sides !== requirement.sides) {
+    if (rolls.sides !== requirement.sides) {
       errors.push({
         code: "runtime.dice.sides.mismatch",
-        message: `The die for "${requirement.purpose}" is the wrong size.`,
+        message: `The dice for "${requirement.purpose}" are the wrong size.`,
         audience: "developer",
         required: `d${requirement.sides}`,
-        actual: `d${String(roll.sides)}`,
+        actual: `d${String(rolls.sides)}`,
       });
 
       continue;
     }
 
-    if (roll.value < 1 || roll.value > requirement.sides) {
+    if (!Array.isArray(rolls.values)) {
       errors.push({
-        code: "runtime.dice.value.out-of-range",
-        message: `The die for "${requirement.purpose}" rolled outside its range.`,
+        code: "runtime.dice.values.invalid",
+        message: `The rolls for "${requirement.purpose}" are not a list of values.`,
         audience: "developer",
-        required: `1..${requirement.sides}`,
-        actual: String(roll.value),
+        required: "array of rolled values",
+        actual: String(rolls.values),
       });
+
+      continue;
     }
+
+    /*
+     * Count is checked before the values are, and separately from "missing".
+     * One die short of advantage and no dice at all are different mistakes
+     * with different fixes, and a caller that conflates them goes looking for
+     * an absent roll that is in fact present.
+     */
+    if (rolls.values.length !== requirement.count) {
+      errors.push({
+        code: "runtime.dice.count.mismatch",
+        message: `"${requirement.purpose}" requires ${requirement.count} roll(s).`,
+        audience: "developer",
+        required: String(requirement.count),
+        actual: String(rolls.values.length),
+      });
+
+      continue;
+    }
+
+    rolls.values.forEach((value, index) => {
+      if (!Number.isInteger(value)) {
+        errors.push({
+          code: "runtime.dice.value.invalid",
+          message: `Roll ${index + 1} for "${requirement.purpose}" must be a finite integer.`,
+          audience: "developer",
+          required: "integer",
+          actual: String(value),
+        });
+
+        return;
+      }
+
+      if (value < 1 || value > requirement.sides) {
+        errors.push({
+          code: "runtime.dice.value.out-of-range",
+          message: `Roll ${index + 1} for "${requirement.purpose}" is outside its range.`,
+          audience: "developer",
+          required: `1..${requirement.sides}`,
+          actual: String(value),
+        });
+      }
+    });
   }
 
   /* A roll nothing asked for means the caller thinks a different operation is
@@ -231,10 +298,10 @@ export function findDiceIssues(
 }
 
 
-/** The roll for one purpose, once the set has been validated. */
-export function dieFor(
-  supplied: readonly RuntimeDieRoll[],
+/** The rolls for one purpose, once the set has been validated. */
+export function rollsFor(
+  supplied: readonly RuntimeRollSet[],
   purpose: string,
-): RuntimeDieRoll | undefined {
-  return supplied.find((roll) => roll.purpose === purpose);
+): RuntimeRollSet | undefined {
+  return supplied.find((rolls) => rolls.purpose === purpose);
 }

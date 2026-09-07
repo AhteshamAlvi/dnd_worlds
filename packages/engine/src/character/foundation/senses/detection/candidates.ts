@@ -1,4 +1,9 @@
 import type { CheckModifierContribution } from "../../../../checks/types";
+import {
+  engineSuccess,
+  type EngineResult,
+} from "../../../../infrastructure/result";
+import { createTraceNode } from "../../../../infrastructure/trace";
 import type { ConcealmentRating } from "../concealment";
 import { compareInformationBands, highestInformationBand, type InformationBand } from "../information";
 import type { PerceivedCue } from "../signatures";
@@ -40,7 +45,7 @@ export function resolvePassiveDetectionCandidates(input: {
   readonly profile: ResolvedSensoryProfile;
   readonly candidates: readonly DetectionCandidate[];
   readonly modifiers?: readonly CheckModifierContribution[];
-}): readonly DetectionNotification[] {
+}): EngineResult<readonly DetectionNotification[]> {
   const collected = new Map<string, {
     candidateIds: string[];
     importance: DetectionImportance;
@@ -48,15 +53,28 @@ export function resolvePassiveDetectionCandidates(input: {
   }>();
 
   for (const candidate of input.candidates) {
-    const results = candidate.routes.map(({ cue, concealment }) =>
-      resolvePassiveDetection({
+    const results: DetectionResolution[] = [];
+
+    for (const { cue, concealment } of candidate.routes) {
+      const result = resolvePassiveDetection({
         mode: "passive",
         profile: input.profile,
         cue,
         concealment,
         ...(input.modifiers === undefined ? {} : { modifiers: input.modifiers }),
-      })
-    );
+      });
+
+      /*
+       * One malformed candidate fails the sweep rather than being dropped.
+       * Silently skipping it would mean an observer quietly stopped being
+       * notified about something, which is indistinguishable from correctly
+       * not noticing it.
+       */
+      if (!result.success) return result;
+
+      results.push(result.payload);
+    }
+
     const best = highestInformationBand(results.map((result) => result.band));
     const minimum = candidate.minimumNotificationBand ?? "minimal";
     if (best === "none" || compareInformationBands(best, minimum) < 0) continue;
@@ -75,7 +93,7 @@ export function resolvePassiveDetectionCandidates(input: {
     collected.set(key, entry);
   }
 
-  return [...collected.entries()].map(([key, entry]) => ({
+  const notifications = [...collected.entries()].map(([key, entry]) => ({
     key,
     candidateIds: entry.candidateIds,
     importance: entry.importance,
@@ -87,4 +105,14 @@ export function resolvePassiveDetectionCandidates(input: {
     Math.max(...right.results.map((result) => result.margin)) -
       Math.max(...left.results.map((result) => result.margin))
   );
+
+  return engineSuccess(notifications, {
+    root: createTraceNode({
+      id: "character.senses.detection.passive.candidates",
+      label: "Sweep passive Detection candidates",
+      formula: "notify per group at the highest band any of its routes reached",
+      inputs: { candidates: { value: input.candidates.length } },
+      output: notifications.length,
+    }),
+  });
 }

@@ -9,6 +9,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { errorCodesOf, payloadOf } from "./fixtures/result";
+
 import { createTraceNode } from "../infrastructure/trace";
 import { resolvePassiveDetection } from "../character/foundation/senses/detection/passive";
 import { resolveDetectionCheck } from "../character/foundation/senses/detection/resolution";
@@ -70,7 +72,7 @@ function request(overrides: Partial<DetectionRequest> = {}): DetectionRequest {
 
 describe("passive Detection", () => {
   it("is the sense's stored passive base opposed by the Concealment total", () => {
-    const result = resolvePassiveDetection(request());
+    const result = payloadOf(resolvePassiveDetection(request()));
 
     expect(result.observerTotal).toBe(PASSIVE_DETECTION_BASE);
     expect(result.concealmentTotal).toBe(3);
@@ -79,33 +81,34 @@ describe("passive Detection", () => {
   });
 
   it("does not roll", () => {
-    expect(resolvePassiveDetection(request()).check).toBeUndefined();
+    expect(payloadOf(resolvePassiveDetection(request())).check).toBeUndefined();
   });
 
   it("notices nothing when Concealment matches the passive base", () => {
-    const result = resolvePassiveDetection(request({
+    const result = payloadOf(resolvePassiveDetection(request({
       concealment: rating(SIGHT, PASSIVE_DETECTION_BASE),
-    }));
+    })));
 
     expect(result.margin).toBe(0);
     expect(result.band).toBe("none");
   });
 
   it("layers route-specific persistent modifiers on the observer's side", () => {
-    const result = resolvePassiveDetection(request({
+    const result = payloadOf(resolvePassiveDetection(request({
       modifiers: [{
         source: source("alert"),
         scope: { kind: "detection", mode: { kind: "specific", mode: "passive" } },
         amount: 4,
         channel: "persistent",
       }],
-    }));
+    })));
 
     expect(result.observerTotal).toBe(PASSIVE_DETECTION_BASE + 4);
     expect(result.band).toBe("partial");
   });
 
   it("refuses a request that is not passive", () => {
+    /* Wrong resolver for the mode: a throw, deliberately. */
     expect(() => resolvePassiveDetection(request({ mode: "active" })))
       .toThrow(RangeError);
   });
@@ -114,7 +117,7 @@ describe("passive Detection", () => {
 
 describe("active and reaction Detection", () => {
   it("rolls the sense-adjusted Detection modifier", () => {
-    const result = resolveDetectionCheck(request({ mode: "active", dice: roll(10) }));
+    const result = payloadOf(resolveDetectionCheck(request({ mode: "active", dice: roll(10) })));
 
     expect(result.observerTotal).toBe(10 + SIGHT_DETECTION_MODIFIER);
     expect(result.margin).toBe(12 - 3);
@@ -122,19 +125,19 @@ describe("active and reaction Detection", () => {
   });
 
   it("resolves a reaction the same way", () => {
-    const result = resolveDetectionCheck(request({ mode: "reaction", dice: roll(10) }));
+    const result = payloadOf(resolveDetectionCheck(request({ mode: "reaction", dice: roll(10) })));
 
     expect(result.mode).toBe("reaction");
     expect(result.observerTotal).toBe(12);
   });
 
   it("requires dice", () => {
-    expect(() => resolveDetectionCheck(request({ mode: "active" })))
-      .toThrow(RangeError);
+    expect(errorCodesOf(resolveDetectionCheck(request({ mode: "active" }))))
+      .toContain("character.senses.dice.missing");
   });
 
   it("delegates a passive request to the passive resolver", () => {
-    const result = resolveDetectionCheck(request());
+    const result = payloadOf(resolveDetectionCheck(request()));
 
     expect(result.mode).toBe("passive");
     expect(result.observerTotal).toBe(PASSIVE_DETECTION_BASE);
@@ -146,13 +149,14 @@ describe("route matching", () => {
   const MISMATCHED = request({ concealment: rating(HEARING, 3) });
 
   it("refuses a passive resolution across mismatched routes", () => {
-    expect(() => resolvePassiveDetection(MISMATCHED)).toThrow(RangeError);
+    expect(errorCodesOf(resolvePassiveDetection(MISMATCHED)))
+      .toContain("character.senses.route.mismatch");
   });
 
   it("refuses a rolled resolution across mismatched routes", () => {
-    expect(() =>
-      resolveDetectionCheck({ ...MISMATCHED, mode: "active", dice: roll(10) })
-    ).toThrow(RangeError);
+    expect(errorCodesOf(
+      resolveDetectionCheck({ ...MISMATCHED, mode: "active", dice: roll(10) }),
+    )).toContain("character.senses.route.mismatch");
   });
 
   it("reports the mismatch in validation, before the resolver throws", () => {
@@ -187,39 +191,39 @@ describe("passive candidate sweeps", () => {
   }
 
   it("drops a candidate nobody noticed at all", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [candidate({
         id: "hidden",
         routes: [{ cue: cue(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE) }],
       })],
-    });
+    }));
 
     expect(notifications).toEqual([]);
   });
 
   it("drops a candidate that did not clear its own notification floor", () => {
     // Margin 1 is "minimal", which is below the authored "partial" floor.
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [candidate({ id: "rustle", minimumNotificationBand: "partial" })],
-    });
+    }));
 
     expect(notifications).toEqual([]);
   });
 
   it("keeps a candidate that cleared its floor", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [candidate({ id: "rustle", minimumNotificationBand: "minimal" })],
-    });
+    }));
 
     expect(notifications.map((entry) => entry.key)).toEqual(["rustle"]);
     expect(notifications[0]!.band).toBe("minimal");
   });
 
   it("reports a candidate's best route when several exist", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [candidate({
         id: "intruder",
@@ -228,20 +232,20 @@ describe("passive candidate sweeps", () => {
           { cue: cue("hearing"), concealment: rating(HEARING, 0) },
         ],
       })],
-    });
+    }));
 
     // Sight margin 1 (minimal), hearing margin 5 (partial): the best wins.
     expect(notifications[0]!.band).toBe("partial");
   });
 
   it("collapses a group into one notification carrying every member", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [
         candidate({ id: "bystander-1", groupId: "crowd" }),
         candidate({ id: "bystander-2", groupId: "crowd" }),
       ],
-    });
+    }));
 
     expect(notifications).toHaveLength(1);
     expect(notifications[0]!.key).toBe("crowd");
@@ -249,13 +253,13 @@ describe("passive candidate sweeps", () => {
   });
 
   it("takes a group's importance from its most important member", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [
         candidate({ id: "bystander", groupId: "crowd", importance: "ambient" }),
         candidate({ id: "assassin", groupId: "crowd", importance: "critical" }),
       ],
-    });
+    }));
 
     expect(notifications[0]!.importance).toBe("critical");
   });
@@ -265,7 +269,7 @@ describe("passive candidate sweeps", () => {
      * The ambient hit is noticed far more clearly, and still ranks below the
      * critical one. A passive sweep must not bury the assassin under scenery.
      */
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [
         candidate({
@@ -275,14 +279,14 @@ describe("passive candidate sweeps", () => {
         }),
         candidate({ id: "assassin", importance: "critical" }),
       ],
-    });
+    }));
 
     expect(notifications.map((entry) => entry.key)).toEqual(["assassin", "scenery"]);
     expect(notifications[1]!.band).toBe("full");
   });
 
   it("breaks an importance tie on the information band", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [
         candidate({ id: "faint" }),
@@ -291,16 +295,16 @@ describe("passive candidate sweeps", () => {
           routes: [{ cue: cue(), concealment: rating(SIGHT, 0) }],
         }),
       ],
-    });
+    }));
 
     expect(notifications.map((entry) => entry.key)).toEqual(["obvious", "faint"]);
   });
 
   it("carries the underlying results through for the GM to inspect", () => {
-    const notifications = resolvePassiveDetectionCandidates({
+    const notifications = payloadOf(resolvePassiveDetectionCandidates({
       profile: sensoryProfile(),
       candidates: [candidate({ id: "rustle" })],
-    });
+    }));
 
     expect(notifications[0]!.results).toHaveLength(1);
     expect(notifications[0]!.results[0]!.margin).toBe(1);

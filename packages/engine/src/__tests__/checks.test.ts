@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { payloadOf } from "./fixtures/result";
+
 import {
   findCheckRequestIssues,
   matchesCheckScope,
@@ -36,10 +38,10 @@ function detectionCheck(
 
 describe("checks", () => {
   it("resolves signed advantage pools", () => {
-    const result = resolveCheck({
+    const result = payloadOf(resolveCheck({
       ...detectionCheck(7, 2, 1),
       dice: { advantage: 2, rolls: [7, 16, 11] },
-    });
+    }));
 
     expect(result.dice.retainedRoll).toBe(16);
     expect(result.dice.mode).toBe("highest");
@@ -70,7 +72,7 @@ describe("checks", () => {
   });
 
   it("applies only modifiers whose selectors match the concrete scope", () => {
-    const result = resolveCheck({
+    const result = payloadOf(resolveCheck({
       ...detectionCheck(10, 3, 2),
       modifiers: [
         {
@@ -92,7 +94,7 @@ describe("checks", () => {
           channel: "persistent",
         },
       ],
-    });
+    }));
 
     expect(result.baseModifierTotal).toBe(5);
     expect(result.situationalModifierTotal).toBe(4);
@@ -102,15 +104,15 @@ describe("checks", () => {
   });
 
   it("lets fixed checks choose their tie policy", () => {
-    const succeeds = resolveFixedCheck({
+    const succeeds = payloadOf(resolveFixedCheck({
       check: detectionCheck(10, 2, 1),
       difficulty: 13,
-    });
-    const fails = resolveFixedCheck({
+    }));
+    const fails = payloadOf(resolveFixedCheck({
       check: detectionCheck(10, 2, 1),
       difficulty: 13,
       tiePolicy: "fails",
-    });
+    }));
 
     expect(succeeds.margin).toBe(0);
     expect(succeeds.success).toBe(true);
@@ -118,7 +120,7 @@ describe("checks", () => {
   });
 
   it("preserves both sides and explicit tie ownership in opposed checks", () => {
-    const result = resolveOpposedCheck({
+    const result = payloadOf(resolveOpposedCheck({
       initiator: detectionCheck(10, 2, 1),
       opponent: {
         scope: {
@@ -136,7 +138,7 @@ describe("checks", () => {
         modifiers: [],
       },
       tiesFavor: "opponent",
-    });
+    }));
 
     expect(result.initiator.total).toBe(13);
     expect(result.opponent.total).toBe(13);

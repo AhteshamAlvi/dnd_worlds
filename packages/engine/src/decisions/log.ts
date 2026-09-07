@@ -410,6 +410,33 @@ export const ENGINE_DECISIONS = {
         rationale:
             "Two requirement systems eventually disagree, and the one that loses is whichever is not the source of truth for the content author — so the shape here is deliberately too thin to re-decide anything. The three statuses exist because 'no' and 'I could not tell' are different answers with different remedies: unresolved is usually a missing host fact or a Body nobody supplied, and reporting it as a failure sends a GM to overrule a rule that never objected. Unsatisfied outranking unresolved follows from what the caller does next — an action with one failed requirement is blocked whether or not something else is still unanswered, and reporting 'unresolved' there would send them hunting for a fact that would not have helped. The richer shape belongs to the ticket that builds preparation; this is the smallest contract that lets it be built.",
     },
+    "runtime.dice.purpose-owns-its-rolls": {
+        id: "runtime.dice.purpose-owns-its-rolls",
+        question:
+            "Runtime dice arrived as a flat array of single rolls, each naming its purpose, and a second roll for the same purpose was rejected as runtime.dice.duplicate. Check dice accept a list of rolls so advantage can retain one of them. The two models had never met, and under the runtime rule advantage was not expressible at all.",
+        chosen:
+            "A purpose owns an ordered set of rolls: one RuntimeRollSet per purpose, carrying the die size and the values in rolled order, and a requirement that states purpose, sides and count. Two SETS for one purpose remains an error. Order within a purpose is meaningful; order between purposes is not, and validation returns the same answer whatever order the sets arrived in.",
+        rationale:
+            "The old rejection was right about the real problem and wrong about the fix. Two d20s in a flat array genuinely are ambiguous — nothing says which is which — and picking either one would have been the engine deciding a gameplay outcome by array order, which is the thing this dice module exists to prevent. Putting the pair inside the purpose removes the ambiguity instead of removing the capability. The count on the REQUIREMENT is what makes the set checkable: without it the engine would infer advantage from however many dice happened to arrive, so a caller who sent one die too many would silently be granted advantage they never rolled for. Explicit indices were the alternative and were rejected as a way of writing an array without admitting to it.",
+    },
+    "runtime.dice.one-projection-into-checks": {
+        id: "runtime.dice.one-projection-into-checks",
+        question:
+            "With runtime dice and check dice reconciled, something has to convert one into the other, and the obvious third option was a shared 'effective roll' structure sitting between them.",
+        chosen:
+            "Exactly two dice vocabularies, with one sanctioned crossing: projectCheckDice() in runtime/, which takes a validated roll set plus the check's advantage level and produces CheckDiceInput. runtime/ -> checks/ is the permitted direction; checks/ never imports runtime/, and check-dice.ts is the only runtime file allowed to reach into checks/. No third shared die type exists, and a test fails if one is declared.",
+        rationale:
+            "The two layers answer questions neither can answer for the other. Runtime asks whether the OPERATION got the dice it required — count, size, purpose, nothing missing and nothing extra — and deliberately does not know what advantage is, because a pair of d20s is the same pair whether it was rolled with advantage, with disadvantage, or by a GM who wanted a spare. Checks ask which number the character uses, which is a rule about a check rather than a property of a die. A middle vocabulary would have given a wrong number three places to hide and would have grown a copy of both neighbours' rules; the direction is fixed rather than merely documented because checks/ is used from Character Foundation, which knows nothing about operations. The advantage level crossing with the dice rather than being inferred from them is what lets the projection catch a caller claiming advantage the operation never supplied rolls for.",
+    },
+    "checks.dice.structured-failure-not-thrown": {
+        id: "checks.dice.structured-failure-not-thrown",
+        question:
+            "resolveCheckDice() threw a RangeError on an empty roll pool, and four sensory resolvers threw RangeError for missing dice, a mismatched sensory route, or a missing sensory profile. Everything else in the engine reports invalid input as data.",
+        chosen:
+            "resolveCheckDice, resolveCheck, resolveFixedCheck and resolveOpposedCheck return EngineResult, and so do the Concealment, Detection, Perception and Investigation resolvers and the passive-Detection candidate sweep. Empty pools, malformed faces, a roll count contradicting the advantage level, missing dice, mismatched routes and a missing sensory profile are all typed failures now. Two RangeErrors survive on purpose: the PASSIVE Concealment and Detection resolvers refusing a non-passive request.",
+        rationale:
+            "A single throwing path in an otherwise value-returning system is worse than a consistently throwing one, because it is invisible: every caller that handles diagnostics correctly still crashes on the one input nobody wrapped, and 'the host supplied no dice' is an ordinary thing for a host to get wrong rather than an exceptional one. The line drawn for what still throws is caller DATA versus wrong FUNCTION: a mismatched sensory route is two resolutions the caller handed in together and belongs in the result, while reaching the passive resolver with an active request is the dispatch above it having called the wrong function. Returning that second one as a value would let a genuine engine bug be handled as though the character had merely failed to perceive something. The expected roll count also moved into one exported helper both the request validator and the resolver read, because they previously agreed only by coincidence — one computed it inline, the other stated it in a comment — and every sensory resolver calls the resolver directly without going through the validator.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;

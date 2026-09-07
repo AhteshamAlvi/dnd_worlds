@@ -249,7 +249,15 @@ same state, events, changes, warnings, errors and trace.
 
 - **Dice are caller input.** No gameplay outcome is randomly generated. (The one `Math.random` in
   the tree is a UUID fallback in `infrastructure/id.ts` — an identity, not a result.) Rolls are identified by purpose,
-  validated before any cost commits, and a malformed roll costs nothing.
+  validated before any cost commits, and a malformed roll costs nothing. A purpose owns an *ordered
+  set* of rolls rather than a single one, so advantage and disadvantage are two values inside one
+  purpose; the requirement states the count, so the engine never infers advantage from however many
+  dice happened to arrive. Order **within** a purpose is meaningful — a check retains one of them by
+  index — while order **between** purposes is not, and validation returns the same answer either way.
+- **Two dice layers, one crossing.** Runtime validates that the operation got the dice it required
+  and knows nothing about advantage. `checks/` decides which supplied number the character uses.
+  `projectCheckDice()` in `runtime/check-dice.ts` is the only sanctioned conversion, and the
+  dependency points one way: `checks/` never imports `runtime/`.
 - **Array order never decides an outcome.** Requests sort by phase, effective time, owner, kind and
   finally `requestId` — a total, stable key. Ordering controls **reporting and dispatch, not
   results**: simultaneous effects settle from one pre-batch state, so the sort cannot change the
