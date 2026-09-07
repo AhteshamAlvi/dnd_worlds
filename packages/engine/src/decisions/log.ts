@@ -617,6 +617,24 @@ export const ENGINE_DECISIONS = {
         rationale:
             "Same reasoning as the missing-Species warning that predates this: the Workbench is where characters get finished, and an engine that refuses to resolve a half-built one cannot help build it. What matters is that this is a DIAGNOSTIC severity and not a rules decision — demoting the warning makes the sheet resolvable and does nothing to the requirement, which is still unresolved everywhere it counts. The action adapter still reports unresolved eligibility, the proposal still reads missing-facts, and settlement still refuses to commit; a test walks that whole path on a warning-only sheet precisely so the two cannot quietly converge later.",
     },
+    "combat.characterization.describes-behaviour-not-intent": {
+        id: "combat.characterization.describes-behaviour-not-intent",
+        question:
+            "Combat is roughly 5,500 lines across nine files and had essentially no behavioural test coverage — the only tests touching it imported a duration constant. It is about to be refactored to schedule neutral actions. What should the tests written first assert?",
+        chosen:
+            "What the code DOES, not what the rules say it should. 173 characterization tests across six files cover the Action economy, Initiative ordering and rotation, Turn and Reaction lifecycles, the Round lifecycle, the orchestration sequences, and structural validation. Where behaviour appears to contradict a settled rule, the test still pins the behaviour and a comment marks it CHARACTERIZED, NOT ENDORSED.",
+        rationale:
+            "A characterization suite that quietly asserts the intended rule instead of the real one is worse than no suite at all: the refactor it exists to protect would then silently 'fix' a discrepancy nobody decided to change, and the tests would go green while the game changed underneath them. Pinning the real behaviour makes every deliberate change to it visible as a failing test somebody has to look at. Tests build Rounds through startRound() and spend through resolveCombatAction() wherever possible rather than hand-assembling state, so each one describes something a caller can actually reach.",
+    },
+    "combat.characterization.three-gaps-found": {
+        id: "combat.characterization.three-gaps-found",
+        question:
+            "Writing the suite surfaced three places where Combat's behaviour does not match what the surrounding documentation and rules imply. Fix them, or record them?",
+        chosen:
+            "Recorded, and pinned as tests, not fixed. (1) `bonusAction` is carried on a CombatAction and read by NOTHING — not validated, not counted, not limited to one; the rule 'Bonus Actions do not consume an additional Action' holds only because nothing consumes anything for them. (2) Nothing limits how many Reactions a combatant opens per Round; the only brake is the shared Round Action pool. (3) Affectedness is read solely from `targetCombatantIds`, so a position-focused Action cannot create a Reaction opportunity for a collateral combatant, and a declared target who ends up unaffected still gets one.",
+        rationale:
+            "All three are rules decisions rather than defects in the code as specified, and a characterization ticket is the wrong place to make them — the whole point of writing the tests first is to have a baseline that does not move while the refactor happens. The third is the one the neutral-action wrapper exists to address, and it is exactly the distinction the earlier phases built: declared targets are not affected subjects. The first two are genuinely open and need somebody to decide what the rule is before code enforces one.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;
