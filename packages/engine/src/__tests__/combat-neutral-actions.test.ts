@@ -18,6 +18,7 @@ import {
   UNSTRUCTURED_EXECUTION,
   adjudicateAction,
   authorizeScheduledAction,
+  findAuthorizationIssues,
   prepareAction,
   profileThreatensDeclaredTargets,
   structuredActionCostFor,
@@ -56,6 +57,7 @@ import {
   settleActiveStateAfterAction,
   skipReactionOpportunity,
   type CombatRound,
+  type QueuedReactionOpenResult,
   type ReactionQueue,
   type ReactionState,
 } from "../gameplay/combat";
@@ -75,6 +77,34 @@ function resolveCombatant(target: TargetRef): string | undefined {
 
 function resolveActorCombatant(actor: ActorRef): string | undefined {
   return actor.id;
+}
+
+/** The "opened" branch of a queue opening, failing the test otherwise. */
+function opened(result: QueuedReactionOpenResult) {
+  if (!result.success) {
+    throw new Error(`Expected the Reaction to open: ${result.reason}`);
+  }
+
+  if (result.outcome !== "opened") {
+    throw new Error("Expected a Reaction to open, but the queue was exhausted.");
+  }
+
+  return result;
+}
+
+/** Finishes the running Reaction canonically, failing the test otherwise. */
+function finish(round: CombatRound, queue: ReactionQueue) {
+  const result = finishQueuedReaction(
+    round,
+    queue,
+    endReactionVoluntarily(activeReactionOf(round)),
+  );
+
+  if (!result.success) {
+    throw new Error(`Expected the Reaction to close: ${result.reason}`);
+  }
+
+  return result;
 }
 
 /** The Reaction currently running, failing the test if there is not one. */
@@ -482,6 +512,74 @@ describe("the authorization is narrow evidence", () => {
     if (result.success) throw new Error("unreachable");
 
     expect(result.reason).toBe("operation-mismatch");
+  });
+
+  it("refuses malformed serialized data without throwing", () => {
+    /*
+     * An authorization crosses a serialization boundary, so what arrives may
+     * be null, a string, or a record whose actor or cost is null. A
+     * validator that assumed the declared shape would throw on exactly the
+     * inputs it exists to reject — and a thrown error at a scheduling
+     * boundary escapes the result type every other refusal travels in.
+     */
+    const valid = authorize(STRIKE, intent({ targets: [AT_C] }));
+
+    const malformed: readonly unknown[] = [
+      null,
+      undefined,
+      "an authorization",
+      42,
+      [],
+      {},
+      { ...valid, actor: null },
+      { ...valid, structuredActionCost: null },
+      { ...valid, declaredTargets: null },
+      { ...valid, declaredTargets: [null] },
+      { ...valid, declaredTargets: "c" },
+      { ...valid, operationId: null },
+      { ...valid, intentId: 7 },
+      { ...valid, timing: null },
+      { ...valid, threatens: null },
+    ];
+
+    const round = threeCombatantRound();
+
+    for (const authorization of malformed) {
+      expect(() => findAuthorizationIssues(authorization)).not.toThrow();
+      expect(findAuthorizationIssues(authorization).length)
+        .toBeGreaterThan(0);
+
+      const result = scheduleNeutralAction(round, {
+        actionId: "combat-action-1",
+        operationId: "op-1",
+        authorization: authorization as ScheduledActionAuthorization,
+        resolveActorCombatant,
+        resolveCombatant,
+      });
+
+      expect(result.success).toBe(false);
+
+      if (result.success) throw new Error("unreachable");
+
+      expect(result.reason).toBe("authorization-invalid");
+    }
+
+    /* Nothing was spent by any of them. */
+    expect(round.combatants.map((one) => one.remainingActions))
+      .toEqual([4, 4, 4]);
+    expect(round.activeState).toEqual(turnState("a", 2));
+  });
+
+  it("accepts a valid authorization that made the same round trip", () => {
+    const valid = authorize(STRIKE, intent({ targets: [AT_C] }));
+
+    const roundTripped = JSON.parse(
+      JSON.stringify(valid),
+    ) as ScheduledActionAuthorization;
+
+    expect(findAuthorizationIssues(roundTripped)).toEqual([]);
+    expect(schedule(threeCombatantRound(), { authorization: roundTripped })
+      .success).toBe(true);
   });
 
   it("spends nothing when the authorization does not hold up", () => {
@@ -964,15 +1062,15 @@ describe("every threatened combatant gets their turn to answer", () => {
   });
 
   it("excludes the actor from their own sweep", () => {
-    const opened = openReactionQueue(
+    const queueResult = openReactionQueue(
       threeCombatantRound(),
       { kind: "action", actionId: "combat-action-1", actorCombatantId: "a" },
       ["a", "b"],
     );
 
-    if (!opened.success) throw new Error("unreachable");
+    if (!queueResult.success) throw new Error("unreachable");
 
-    expect(opened.queue.pending).toEqual(["b"]);
+    expect(queueResult.queue.pending).toEqual(["b"]);
   });
 
   it("stays in the Gate phase until the last Gate is answered", () => {
@@ -1060,20 +1158,16 @@ describe("every threatened combatant gets their turn to answer", () => {
 
     expect(queued.phase).toBe("resolving-reactions");
 
-    const opened = openNextQueuedReaction(round, queued);
+    const first = opened(openNextQueuedReaction(round, queued));
 
-    if (!opened.success) throw new Error("unreachable");
-
-    expect(opened.round.activeState?.kind).toBe("reaction");
-    expect(opened.queue.activeResponder).toBe("c");
+    expect(first.round.activeState?.kind).toBe("reaction");
+    expect(first.queue.activeResponder).toBe("c");
   });
 
   it("ends the triggering Turn once, on the first opening", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
-
-    if (!first.success) throw new Error("unreachable");
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
     expect(first.triggeringTurnEnd).toEqual({
       combatantId: "a",
@@ -1081,17 +1175,11 @@ describe("every threatened combatant gets their turn to answer", () => {
       actionsSpent: 1,
     });
 
-    const finished = finishQueuedReaction(
-      first.round,
-      first.queue,
-      endReactionVoluntarily(activeReactionOf(first.round)),
+    const finished = finish(first.round, first.queue);
+
+    const second = opened(
+      openNextQueuedReaction(finished.round, finished.queue),
     );
-
-    if (!finished.success) throw new Error("unreachable");
-
-    const second = openNextQueuedReaction(first.round, finished.queue);
-
-    if (!second.success) throw new Error("unreachable");
 
     /* No second Turn ending: there is no Turn left to end. */
     expect(second.triggeringTurnEnd).toBeUndefined();
@@ -1104,9 +1192,7 @@ describe("every threatened combatant gets their turn to answer", () => {
      */
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
-
-    if (!first.success) throw new Error("unreachable");
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
     const again = openNextQueuedReaction(first.round, first.queue);
 
@@ -1125,11 +1211,13 @@ describe("every threatened combatant gets their turn to answer", () => {
   it("cannot discard an active Reaction by continuing", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
-    if (!first.success) throw new Error("unreachable");
+    const result = continueReactionQueue(first.round, first.queue);
 
-    continueReactionQueue(first.round, first.queue);
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-still-active");
 
     /* B's Reaction is exactly where it was. */
     expect(activeReactionOf(first.round).reactingCombatantId).toBe("b");
@@ -1138,19 +1226,12 @@ describe("every threatened combatant gets their turn to answer", () => {
   it("advances to the next queued Reaction, not to the next Turn", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
+    const finished = finish(first.round, first.queue);
 
-    if (!first.success) throw new Error("unreachable");
+    expect(finished.round.activeState).toBeNull();
 
-    const finished = finishQueuedReaction(
-      first.round,
-      first.queue,
-      endReactionVoluntarily(activeReactionOf(first.round)),
-    );
-
-    if (!finished.success) throw new Error("unreachable");
-
-    const continued = continueReactionQueue(first.round, finished.queue);
+    const continued = continueReactionQueue(finished.round, finished.queue);
 
     if (!continued.success) throw new Error("unreachable");
 
@@ -1161,21 +1242,12 @@ describe("every threatened combatant gets their turn to answer", () => {
   it("keeps one coherent trigger and interrupted combatant throughout", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
-
-    if (!first.success) throw new Error("unreachable");
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
     const firstState = activeReactionOf(first.round);
+    const finished = finish(first.round, first.queue);
 
-    const finished = finishQueuedReaction(
-      first.round,
-      first.queue,
-      endReactionVoluntarily(firstState),
-    );
-
-    if (!finished.success) throw new Error("unreachable");
-
-    const continued = continueReactionQueue(first.round, finished.queue);
+    const continued = continueReactionQueue(finished.round, finished.queue);
 
     if (!continued.success || continued.outcome !== "reaction-opened") {
       throw new Error("unreachable");
@@ -1191,9 +1263,7 @@ describe("every threatened combatant gets their turn to answer", () => {
   it("refuses a Reaction end that belongs to somebody else", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
-
-    if (!first.success) throw new Error("unreachable");
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
     const foreign = endReactionVoluntarily({
       ...activeReactionOf(first.round),
@@ -1204,15 +1274,13 @@ describe("every threatened combatant gets their turn to answer", () => {
 
     if (finished.success) throw new Error("unreachable");
 
-    expect(finished.reason).toBe("queue-trigger-mismatch");
+    expect(finished.reason).toBe("reaction-mismatch");
   });
 
   it("advances Initiative only after the last queued Reaction ends", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    let current = openNextQueuedReaction(round, bothGatesPassed(queue));
-
-    if (!current.success) throw new Error("unreachable");
+    const current = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
     let workingRound = current.round;
     let workingQueue: ReactionQueue = current.queue;
@@ -1220,15 +1288,9 @@ describe("every threatened combatant gets their turn to answer", () => {
     for (const expected of ["b", "c"]) {
       expect(activeReactionOf(workingRound).reactingCombatantId).toBe(expected);
 
-      const finished = finishQueuedReaction(
-        workingRound,
-        workingQueue,
-        endReactionVoluntarily(activeReactionOf(workingRound)),
-      );
+      const finished = finish(workingRound, workingQueue);
 
-      if (!finished.success) throw new Error("unreachable");
-
-      const continued = continueReactionQueue(workingRound, finished.queue);
+      const continued = continueReactionQueue(finished.round, finished.queue);
 
       if (!continued.success) throw new Error("unreachable");
 
@@ -1264,13 +1326,13 @@ describe("every threatened combatant gets their turn to answer", () => {
 
     if (!spent.success) throw new Error("unreachable");
 
-    const opened = openReactionQueue(
+    const queueResult = openReactionQueue(
       spent.round,
       { kind: "action", actionId: action.id, actorCombatantId: "a" },
       action.threatenedCombatantIds,
     );
 
-    if (!opened.success) throw new Error("unreachable");
+    if (!queueResult.success) throw new Error("unreachable");
 
     const drained = {
       ...spent.round,
@@ -1281,12 +1343,10 @@ describe("every threatened combatant gets their turn to answer", () => {
       ),
     };
 
-    const result = openNextQueuedReaction(
+    const result = opened(openNextQueuedReaction(
       drained,
-      bothGatesPassed(opened.queue),
-    );
-
-    if (!result.success) throw new Error("unreachable");
+      bothGatesPassed(queueResult.queue),
+    ));
 
     expect(result.skipped).toEqual(["b"]);
     expect(activeReactionOf(result.round).reactingCombatantId).toBe("c");
@@ -1335,12 +1395,185 @@ describe("every threatened combatant gets their turn to answer", () => {
   it("reports whether the Round's Reaction is the one the queue expects", () => {
     const { round, queue } = queueFor(threeCombatantRound());
 
-    const first = openNextQueuedReaction(round, bothGatesPassed(queue));
-
-    if (!first.success) throw new Error("unreachable");
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
 
     expect(queueMatchesActiveReaction(first.round, first.queue)).toBe(true);
     expect(queueMatchesActiveReaction(round, first.queue)).toBe(false);
+  });
+
+  it("refuses a fabricated Reaction end that no Reaction matches", () => {
+    /*
+     * A ReactionEnd is a plain record like everything else here. Checking it
+     * only against the QUEUE let one built from a ReactionState nobody was
+     * in — or carrying a spent count that never happened — close a Reaction
+     * it did not describe.
+     */
+    const { round, queue } = queueFor(threeCombatantRound());
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
+
+    const fabricated = {
+      ...endReactionVoluntarily(activeReactionOf(first.round)),
+      actionsSpent: 3,
+    };
+
+    const result = finishQueuedReaction(first.round, first.queue, fabricated);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-mismatch");
+
+    /* And the Reaction is still running. */
+    expect(activeReactionOf(first.round).reactingCombatantId).toBe("b");
+  });
+
+  it("refuses to finish when the Round holds a different Reaction", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
+
+    const swapped = {
+      ...first.round,
+      activeState: {
+        ...activeReactionOf(first.round),
+        reactingCombatantId: "c",
+      },
+    };
+
+    const result = finishQueuedReaction(
+      swapped,
+      first.queue,
+      endReactionVoluntarily(activeReactionOf(first.round)),
+    );
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-mismatch");
+  });
+
+  it("is the only thing that closes an active Reaction", () => {
+    const { round, queue } = queueFor(threeCombatantRound());
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
+
+    /* Continuation refuses rather than clearing it on the way past. */
+    const continued = continueReactionQueue(first.round, first.queue);
+
+    if (continued.success) throw new Error("unreachable");
+
+    expect(continued.reason).toBe("reaction-still-active");
+    expect(first.round.activeState?.kind).toBe("reaction");
+
+    /* Finishing it is what nulls the state, and it does so in the Round. */
+    const finished = finish(first.round, first.queue);
+
+    expect(finished.round.activeState).toBeNull();
+  });
+
+  it("refuses to continue past an unrelated active Reaction", () => {
+    /*
+     * A Round holding somebody else's Reaction is not something to advance
+     * over. The old version cleared whatever was active before advancing.
+     */
+    const { round, queue } = queueFor(threeCombatantRound());
+
+    const allDeclined = skipReactionOpportunity(
+      skipReactionOpportunity(queue),
+    );
+
+    const foreign = {
+      ...round,
+      activeState: {
+        kind: "reaction" as const,
+        reactingCombatantId: "c",
+        trigger: { kind: "event" as const, eventId: "unrelated" },
+        interruptedCombatantId: "a",
+        actionCap: 1,
+        actionsSpent: 0,
+      },
+    };
+
+    const result = continueReactionQueue(foreign, allDeclined);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-still-active");
+    expect(foreign.activeState.reactingCombatantId).toBe("c");
+  });
+
+  it("keeps the Turn when every responder turns out ineligible", () => {
+    /*
+     * Both gates passed and both responders then lost their Actions. Nothing
+     * opened, so nothing ended the Turn — this is a no-Reaction outcome, not
+     * an Initiative advance, and every skipped responder is recorded.
+     */
+    const round = threeCombatantRound();
+    const action = sweep(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const queueResult = openReactionQueue(
+      spent.round,
+      { kind: "action", actionId: action.id, actorCombatantId: "a" },
+      action.threatenedCombatantIds,
+    );
+
+    if (!queueResult.success) throw new Error("unreachable");
+
+    const drained = {
+      ...spent.round,
+      combatants: spent.round.combatants.map((combatant) =>
+        combatant.combatantId === "a"
+          ? combatant
+          : { ...combatant, remainingActions: 0 }
+      ),
+    };
+
+    const continued = continueReactionQueue(
+      drained,
+      bothGatesPassed(queueResult.queue),
+    );
+
+    if (!continued.success) throw new Error("unreachable");
+
+    expect(continued.outcome).toBe("no-reactions");
+    expect(continued.round.activeState).toEqual(turnState("a", 2, 1));
+    expect(continued.queue.phase).toBe("complete");
+
+    if (continued.queue.phase !== "complete") throw new Error("unreachable");
+
+    expect(continued.queue.openedAny).toBe(false);
+    expect([...continued.queue.skipped].sort()).toEqual(["b", "c"]);
+  });
+
+  it("advances Initiative when the REMAINDER turns out ineligible", () => {
+    /*
+     * B reacted; C then lost their Actions. One Reaction did open, so the
+     * Turn is gone and Initiative continues after the interrupted combatant.
+     */
+    const { round, queue } = queueFor(threeCombatantRound());
+    const first = opened(openNextQueuedReaction(round, bothGatesPassed(queue)));
+    const finished = finish(first.round, first.queue);
+
+    const drained = {
+      ...finished.round,
+      combatants: finished.round.combatants.map((combatant) =>
+        combatant.combatantId === "c"
+          ? { ...combatant, remainingActions: 0 }
+          : combatant
+      ),
+    };
+
+    const continued = continueReactionQueue(drained, finished.queue);
+
+    if (!continued.success) throw new Error("unreachable");
+
+    expect(continued.outcome).toBe("initiative-advanced");
+    expect(continued.round.initiativeIndex).toBe(1);
+    expect(continued.round.activeState).toEqual(turnState("b", 2));
+
+    if (continued.queue.phase !== "complete") throw new Error("unreachable");
+
+    expect(continued.queue.openedAny).toBe(true);
+    expect(continued.queue.skipped).toEqual(["c"]);
   });
 
   it("refuses a queue naming somebody outside the fight", () => {
@@ -1365,6 +1598,85 @@ describe("every threatened combatant gets their turn to answer", () => {
     if (result.success) throw new Error("unreachable");
 
     expect(result.reason).toBe("trigger-id-missing");
+  });
+});
+
+
+describe("single-target Reactions use the same lifecycle", () => {
+  it("runs the direct helper through a one-entry queue", () => {
+    const round = threeCombatantRound();
+    const action = scheduled(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const gate = createReactionOpportunity(action, "c");
+
+    if (!gate.success) throw new Error("unreachable");
+
+    const result = resolveSuccessfulReactionGate(spent.round, gate.opportunity);
+
+    if (!result.success) throw new Error("unreachable");
+
+    /* The same queue shape a sweep produces, with one entry already spent. */
+    expect(result.queue.phase).toBe("resolving-reactions");
+    expect(result.queue.activeResponder).toBe("c");
+    expect(result.queue.queued).toEqual([]);
+    expect(result.queue.openedAny).toBe(true);
+    expect(result.queue.interruptedCombatantId).toBe("a");
+    expect(queueMatchesActiveReaction(result.round, result.queue)).toBe(true);
+  });
+
+  it("obeys the same invariants a multi-target queue does", () => {
+    const round = threeCombatantRound();
+    const action = scheduled(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const gate = createReactionOpportunity(action, "c");
+
+    if (!gate.success) throw new Error("unreachable");
+
+    const result = resolveSuccessfulReactionGate(spent.round, gate.opportunity);
+
+    if (!result.success) throw new Error("unreachable");
+
+    /* Continuing before ending is refused, exactly as in a sweep. */
+    const early = continueReactionQueue(result.round, result.queue);
+
+    if (early.success) throw new Error("unreachable");
+
+    expect(early.reason).toBe("reaction-still-active");
+
+    const finished = finish(result.round, result.queue);
+
+    expect(finished.round.activeState).toBeNull();
+    expect(finished.queue.phase).toBe("complete");
+
+    const continued = continueReactionQueue(finished.round, finished.queue);
+
+    if (!continued.success) throw new Error("unreachable");
+
+    expect(continued.outcome).toBe("initiative-advanced");
+    expect(continued.round.activeState).toEqual(turnState("b", 2));
+  });
+
+  it("still refuses a trigger whose actor is not the interrupted combatant", () => {
+    const round = threeCombatantRound();
+    const spent = resolveCombatAction(round, scheduled(round));
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const result = resolveSuccessfulReactionGate(spent.round, {
+      trigger: { kind: "action", actionId: "combat-action-1", actorCombatantId: "b" },
+      reactingCombatantId: "c",
+    });
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-open-failed");
+    expect(result.reactionStartFailureReason).toBe("triggering-turn-mismatch");
   });
 });
 

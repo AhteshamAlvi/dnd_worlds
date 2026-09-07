@@ -77,6 +77,13 @@ import {
   type ReactionStartFailureReason,
 } from "./reaction";
 
+import {
+  openNextQueuedReaction,
+  openReactionQueue,
+  queueReactionAfterGateSuccess,
+  type ReactionResolvingQueue,
+} from "./reaction-queue";
+
 
 // ---------------------------------------------------------------------------
 // General failure vocabulary
@@ -177,6 +184,14 @@ export type CombatStateSettlementResult =
 // ---------------------------------------------------------------------------
 
 export interface CombatReactionOpenSuccess {
+  /*
+   * The one-entry queue this Reaction is running under.
+   *
+   * Exposed so a caller ending it uses the same lifecycle a multi-target
+   * Reaction does, rather than a second ending path that happens to agree.
+   */
+  readonly queue: ReactionResolvingQueue;
+
   readonly success: true;
 
   readonly round: CombatRound;
@@ -574,34 +589,93 @@ export function resolveSuccessfulReactionGate(
     };
   }
 
-  const reactionResult =
-    openReactionAfterGateSuccess(
-      opportunity,
-      state,
-      round.combatants,
+  /*
+   * Delegated to the queue rather than opening the Reaction directly.
+   *
+   * A single-target Reaction is a queue with one entry, and running it
+   * through the same lifecycle is what stops "one responder" and "several
+   * responders" from being two code paths that drift. Everything the
+   * multi-target path validates — the trigger's actor, the parked Initiative
+   * position, the responder's remaining Actions, ending the Turn exactly
+   * once — is validated here too, because it is the same code.
+   */
+  const queueResult =
+    openReactionQueue(
+      round,
+      opportunity.trigger,
+      [opportunity.reactingCombatantId],
     );
 
-  if (!reactionResult.success) {
+  if (!queueResult.success) {
+    /*
+     * The queue reports a trigger whose actor is not the interrupted
+     * combatant as `queue-trigger-mismatch`; the direct path has always
+     * called that same condition `triggering-turn-mismatch`. They are one
+     * rule under two names, so the caller-facing name is preserved rather
+     * than leaking the queue's vocabulary into a characterized result.
+     */
     return {
       success: false,
-      reason:
-        "reaction-open-failed",
+      reason: "reaction-open-failed",
+      ...(queueResult.reason === "queue-trigger-mismatch"
+        ? {
+          reactionStartFailureReason:
+            "triggering-turn-mismatch" as const,
+        }
+        : {}),
+    };
+  }
+
+  const gated =
+    queueReactionAfterGateSuccess(
+      queueResult.queue,
+    );
+
+  const opened =
+    openNextQueuedReaction(round, gated);
+
+  if (!opened.success) {
+    return {
+      success: false,
+      reason: "reaction-open-failed",
+      ...(opened.reactionStartFailureReason === undefined
+        ? {}
+        : {
+          reactionStartFailureReason:
+            opened.reactionStartFailureReason,
+        }),
+    };
+  }
+
+  if (opened.outcome !== "opened") {
+    /*
+     * The one responder turned out to be ineligible. Reported through the
+     * same failure the direct path used to produce, so callers that never
+     * touch a queue see no change.
+     */
+    return {
+      success: false,
+      reason: "reaction-open-failed",
       reactionStartFailureReason:
-        reactionResult.reason,
+        "reacting-combatant-not-round-eligible",
+    };
+  }
+
+  const triggeringTurnEnd =
+    opened.triggeringTurnEnd;
+
+  if (triggeringTurnEnd === undefined) {
+    return {
+      success: false,
+      reason: "reaction-open-failed",
     };
   }
 
   return {
     success: true,
-
-    triggeringTurnEnd:
-      reactionResult.triggeringTurnEnd,
-
-    round:
-      activateReaction(
-        round,
-        reactionResult.reaction,
-      ),
+    triggeringTurnEnd,
+    round: opened.round,
+    queue: opened.queue,
   };
 }
 

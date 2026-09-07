@@ -130,75 +130,8 @@ export interface AuthorizeActionInput {
 }
 
 
-/**
- * Everything wrong with an authorization, if anything is.
- *
- * Exported so a consumer can re-validate one it was handed rather than
- * trusting the type — see the header on why that matters.
- */
-export function findAuthorizationIssues(
-  authorization: ScheduledActionAuthorization,
-): readonly EngineError[] {
-  const errors: EngineError[] = [];
-
-  for (
-    const [value, code, what] of [
-      [authorization.operationId, "actions.authorization.operation.missing", "An authorization's operation"],
-      [authorization.intentId, "actions.authorization.intent.missing", "The intent"],
-      [authorization.profileId, "actions.authorization.profile.missing", "The profile"],
-    ] as const
-  ) {
-    const issue = identifierIssue(value, code, what);
-
-    if (issue !== undefined) errors.push(issue);
-  }
-
-  errors.push(...findActorIssues(authorization.actor));
-
-  if (!isActionTiming(authorization.timing)) {
-    errors.push({
-      code: "actions.authorization.timing.invalid",
-      message: "The finalized timing is not a known Action timing.",
-      audience: "developer",
-      required: "action or reaction",
-      actual: String(authorization.timing),
-    });
-  }
-
-  errors.push(...findStructuredActionCostIssues(
-    authorization.structuredActionCost,
-  ).map((issue) => ({
-    ...issue,
-    code: "actions.authorization.cost.invalid",
-  })));
-
-  if (!isThreatDeclaration(authorization.threatens)) {
-    errors.push({
-      code: "actions.authorization.threatens.invalid",
-      message: "The finalized threat declaration is not a known one.",
-      audience: "developer",
-      required: [...THREAT_DECLARATIONS],
-      actual: String(authorization.threatens),
-    });
-  }
-
-  if (!Array.isArray(authorization.declaredTargets)) {
-    errors.push({
-      code: "actions.authorization.targets.invalid",
-      message: "An authorization's declared targets must be a list.",
-      audience: "developer",
-      required: "an array of targets",
-      actual: String(authorization.declaredTargets),
-    });
-
-    return errors;
-  }
-
-  for (const target of authorization.declaredTargets) {
-    errors.push(...findTargetIssues(target));
-  }
-
-  return errors;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }
 
 
@@ -221,6 +154,134 @@ function identifierIssue(
     required: "non-empty identifier",
     actual: value === undefined ? "absent" : String(value),
   };
+}
+
+
+/**
+ * Everything wrong with an authorization, if anything is.
+ *
+ * Takes `unknown` on purpose. An authorization is ordinary serializable data
+ * — a host may persist one and hand it back — so what arrives at a consumer
+ * may be null, a string, a partially-populated object, or a record whose
+ * actor is null. A validator that assumed the declared shape would throw on
+ * exactly the inputs it exists to reject, and a thrown error at a scheduling
+ * boundary is worse than a refusal: it escapes the result type every other
+ * failure travels in.
+ *
+ * So every field is reached defensively and every problem comes back as a
+ * diagnostic.
+ */
+export function findAuthorizationIssues(
+  authorization: unknown,
+): readonly EngineError[] {
+  if (!isRecord(authorization)) {
+    return [{
+      code: "actions.authorization.malformed",
+      message: "An authorization must be an object.",
+      audience: "developer",
+      required: "a ScheduledActionAuthorization",
+      actual: authorization === null ? "null" : typeof authorization,
+    }];
+  }
+
+  const errors: EngineError[] = [];
+
+  for (
+    const [key, code, what] of [
+      ["operationId", "actions.authorization.operation.missing", "An authorization's operation"],
+      ["intentId", "actions.authorization.intent.missing", "The intent"],
+      ["profileId", "actions.authorization.profile.missing", "The profile"],
+    ] as const
+  ) {
+    const issue = identifierIssue(authorization[key], code, what);
+
+    if (issue !== undefined) errors.push(issue);
+  }
+
+  const actor = authorization["actor"];
+
+  if (!isRecord(actor)) {
+    errors.push({
+      code: "actions.authorization.actor.malformed",
+      message: "An authorization must carry an actor.",
+      audience: "developer",
+      required: "an actor reference",
+      actual: actor === null ? "null" : typeof actor,
+    });
+  } else {
+    errors.push(...findActorIssues(actor as unknown as ActorRef));
+  }
+
+  if (!isActionTiming(authorization["timing"])) {
+    errors.push({
+      code: "actions.authorization.timing.invalid",
+      message: "The finalized timing is not a known Action timing.",
+      audience: "developer",
+      required: "action or reaction",
+      actual: String(authorization["timing"]),
+    });
+  }
+
+  const cost = authorization["structuredActionCost"];
+
+  if (!isRecord(cost)) {
+    errors.push({
+      code: "actions.authorization.cost.invalid",
+      message: "An authorization must carry a structured Action cost.",
+      audience: "developer",
+      required: "a structured Action cost",
+      actual: cost === null ? "null" : typeof cost,
+    });
+  } else {
+    errors.push(...findStructuredActionCostIssues(
+      cost as unknown as StructuredActionCost,
+    ).map((issue) => ({
+      ...issue,
+      code: "actions.authorization.cost.invalid",
+    })));
+  }
+
+  if (!isThreatDeclaration(authorization["threatens"])) {
+    errors.push({
+      code: "actions.authorization.threatens.invalid",
+      message: "The finalized threat declaration is not a known one.",
+      audience: "developer",
+      required: [...THREAT_DECLARATIONS],
+      actual: String(authorization["threatens"]),
+    });
+  }
+
+  const targets = authorization["declaredTargets"];
+
+  if (!Array.isArray(targets)) {
+    errors.push({
+      code: "actions.authorization.targets.invalid",
+      message: "An authorization's declared targets must be a list.",
+      audience: "developer",
+      required: "an array of targets",
+      actual: targets === null ? "null" : typeof targets,
+    });
+
+    return errors;
+  }
+
+  for (const target of targets) {
+    if (!isRecord(target)) {
+      errors.push({
+        code: "actions.authorization.targets.invalid",
+        message: "Every declared target must be an object.",
+        audience: "developer",
+        required: "a target reference",
+        actual: target === null ? "null" : typeof target,
+      });
+
+      continue;
+    }
+
+    errors.push(...findTargetIssues(target as unknown as TargetRef));
+  }
+
+  return errors;
 }
 
 
