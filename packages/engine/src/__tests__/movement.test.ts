@@ -28,6 +28,7 @@ import { COMBAT_ROUND_DURATION_SECONDS } from "../gameplay/combat/round";
 import {
   REFERENCE_ROUND_MOVEMENT_METERS,
   presentMovementMeters,
+  resolveCurveSpeed,
   resolveMovement,
   resolveMovementRateMps,
   resolveRoundMovementMeters,
@@ -206,28 +207,87 @@ describe("Speed consumes resolved Attributes and nothing else", () => {
 });
 
 
-describe("mass and size reach movement through resolved AGI, once", () => {
+describe("one canonical Speed owns base movement", () => {
   const speedOf = (character: ReturnType<typeof createTestCharacter>) =>
     resolveTestCharacter(character).movement;
 
   /*
-   * Two characters who reach one Speed by DIFFERENT Attribute splits. AGI 14
-   * against the fixture's STR 10 averages to 12, and so does AGI 12 with the
-   * two points moved elsewhere — the earlier version of this test compared two
-   * identical characters, which proved only that the function was a function.
+   * Different numbers in, one canonical Speed out, one distance.
+   *
+   * This replaces a test that CLAIMED to compare two characters reaching
+   * Speed 12 by different Attribute splits and did not: both had AGI 14 and
+   * STR 10, and only their DEX differed — which Speed does not read. It
+   * asserted a real property against inputs that could not have violated it.
+   *
+   * The morphology version of this claim, with genuinely different bodies, is
+   * in phase9-model.test.ts where the resolved Bodies exist to build it from.
    */
-  it("gives equal canonical Speed equal baseline movement", () => {
-    const agile = speedOf(createTestCharacter({ attributes: { agi: 14 } }));
-    const also = speedOf(createTestCharacter({ attributes: { agi: 14, dex: 6 } }));
+  it("gives every input that normalizes to one Speed the same movement", () => {
+    const twelve = resolveRoundMovementMeters(12);
 
-    expect(agile.displayedSpeed).toBe(12);
-    expect(also.displayedSpeed).toBe(12);
+    for (const speed of [11.5, 11.6, 12, 12.4]) {
+      expect(resolveCurveSpeed(speed)).toBe(12);
+      expect(resolveRoundMovementMeters(speed)).toBe(twelve);
+      expect(resolveMovement(speed, 1).baselineRoundMovementMeters)
+        .toBe(twelve);
+    }
 
-    expect(also.baselineRoundMovementMeters)
-      .toBe(agile.baselineRoundMovementMeters);
+    /* And the neighbours are genuinely different, so this is not vacuous. */
+    expect(resolveRoundMovementMeters(11.4)).not.toBe(twelve);
+    expect(resolveRoundMovementMeters(12.5)).not.toBe(twelve);
+  });
 
-    expect(agile.baselineRoundMovementMeters)
-      .toBe(resolveRoundMovementMeters(12));
+  /*
+   * One Speed on the result, never two.
+   *
+   * `displayedSpeed` used to report the rounded INPUT while `curveSpeed`
+   * reported the normalized one, so a Speed 31 character carried a displayed
+   * 31 against a curve 30 and a Speed -4 carried a displayed -4 against a
+   * curve 0. A sheet showing one of those beside a distance derived from the
+   * other cannot be explained to anybody.
+   */
+  it.each([
+    [0.4, 1],
+    [1, 1],
+    [10, 10],
+    [30, 30],
+    [31, 30],
+    [400, 30],
+    [0, 0],
+    [-4, 0],
+    [Number.NaN, 0],
+    [Number.POSITIVE_INFINITY, 0],
+    [Number.NEGATIVE_INFINITY, 0],
+  ])("reports Speed %s as a single canonical %i", (given, expected) => {
+    const movement = resolveMovement(given, 1);
+
+    expect(movement.displayedSpeed).toBe(expected);
+    expect(movement.curveSpeed).toBe(expected);
+    expect(movement.displayedSpeed).toBe(movement.curveSpeed);
+
+    expect(movement.baselineRoundMovementMeters)
+      .toBe(resolveRoundMovementMeters(expected));
+  });
+
+  /* Speed 30 is the ceiling of the Speed itself, not merely of the curve. */
+  it("caps an out-of-range Speed at the canonical ceiling in both fields", () => {
+    const beyond = resolveMovement(400, 1);
+
+    expect(beyond.displayedSpeed).toBe(30);
+    expect(beyond.baselineRoundMovementMeters).toBeCloseTo(700, 6);
+    expect(beyond.baselineRoundMovementMeters)
+      .toBe(resolveMovement(30, 1).baselineRoundMovementMeters);
+  });
+
+  /* Invalid Speed reports zero and moves zero — no accidental forward motion. */
+  it("gives an invalid Speed no movement to go with its zero", () => {
+    for (const speed of [0, -4, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const movement = resolveMovement(speed, 1);
+
+      expect(movement.displayedSpeed).toBe(0);
+      expect(movement.baselineRoundMovementMeters).toBe(0);
+      expect(movement.currentRoundMovementMeters).toBe(0);
+    }
   });
 
   it("moves an agile character further than a clumsy one", () => {
@@ -239,12 +299,16 @@ describe("mass and size reach movement through resolved AGI, once", () => {
   });
 
   /*
-   * Invested AGI is a stored score; the Body adjustment is applied to it; the
-   * result is what Speed reads. Raising the investment therefore compensates
-   * for a burden rather than being erased by it, and lowering the burden later
-   * returns the character to where their investment says they should be.
+   * Invested AGI raises movement, and the stored score is never written to.
+   *
+   * This deliberately does NOT claim anything about a physical burden: the
+   * fixture body is the Standard Human and carries none, so a burden test
+   * built on it would be asserting against inputs that cannot exercise the
+   * property. The version with a real burden — scale 10, four whole steps,
+   * reverted — is "a body change is reversible and never consumes invested
+   * AGI" in phase9-model.test.ts, where resolved Bodies exist to build it.
    */
-  it("lets invested AGI compensate for a burden and survive it", () => {
+  it("raises movement with invested AGI without consuming the stored score", () => {
     const burdened = resolveTestCharacter(
       createTestCharacter({ attributes: { agi: 10 } }),
     );

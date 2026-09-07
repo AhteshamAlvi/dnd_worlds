@@ -51,10 +51,11 @@
  *   Speed    1      5     10     13     16     20     25     30
  *   m/Round  1.64   2.74   6.0   10.4   19.1   46.9  167.1  700.0
  *
- * Speed 30 is the ordinary base-curve CEILING. A Trait, technique or
- * supernatural ability that carries someone past it does so as an explicit
- * modifier on the result, not by feeding 40 into the exponential — which the
- * curve would happily answer with 39 kilometres a Round.
+ * Speed 30 is the canonical CEILING of this curve — of the Speed a character
+ * has, not merely of the Speed the curve is evaluated at. A Trait, technique
+ * or future movement factor that carries someone faster does so as an explicit
+ * modifier on the RESULT, not by feeding 40 into the exponential, which would
+ * happily answer with 39 kilometres a Round.
  *
  * There is deliberately NO height, limb-length or stride term. A larger body
  * is not universally faster; it has already been charged for its size through
@@ -272,17 +273,18 @@ export const NEUTRAL_GAIT_FACTOR = 1;
 
 
 export interface ResolvedMovement {
-  /** The canonical Speed score, as the character actually has it. */
-  readonly displayedSpeed: number;
-
   /*
-   * The Speed the base curve was evaluated at, after normalization.
+   * The canonical Speed, normalized once.
    *
-   * Equal to `displayedSpeed` for every ordinary character. It differs only
-   * when Speed left the 1..30 ladder, and it is reported separately so that a
-   * Speed 35 character's sheet can show that 5 points bought nothing yet
-   * instead of appearing to have been ignored.
+   * `displayedSpeed` and `curveSpeed` are the SAME number and are both kept
+   * because callers ask for them by different names. They briefly differed —
+   * the curve was normalized and the display was not — which let a Speed 31
+   * character report a displayed 31 against a curve 30, and a Speed -4 report
+   * a displayed -4 against a curve 0. Two Speeds on one result is exactly the
+   * contradiction canonical Speed exists to remove; a sheet showing one of
+   * them and a distance derived from the other is unexplainable.
    */
+  readonly displayedSpeed: number;
   readonly curveSpeed: number;
 
   /** Base movement from Speed alone, before any factor. */
@@ -322,8 +324,10 @@ export function resolveMovement(
   speed: number,
   integrityFraction: number,
 ): ResolvedMovement {
-  const curveSpeed = resolveCurveSpeed(speed);
-  const baselineRoundMovementMeters = resolveRoundMovementMeters(speed);
+  /* Normalized ONCE, and every field below reads this one value. */
+  const canonicalSpeed = resolveCurveSpeed(speed) ?? 0;
+
+  const baselineRoundMovementMeters = resolveRoundMovementMeters(canonicalSpeed);
 
   const integrityFactor = resolveIntegrityFactor(integrityFraction);
 
@@ -335,8 +339,8 @@ export function resolveMovement(
     integrityFactor;
 
   return {
-    displayedSpeed: Number.isFinite(speed) ? Math.round(speed) : 0,
-    curveSpeed: curveSpeed ?? 0,
+    displayedSpeed: canonicalSpeed,
+    curveSpeed: canonicalSpeed,
 
     baselineRoundMovementMeters,
     baselineMovementRateMps:

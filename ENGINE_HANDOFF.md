@@ -1,7 +1,7 @@
 # Nenworld Rules Engine — Complete State Handoff
 
 > ⚠️ **This document is a historical snapshot and is stale.** It was written at 27 files /
-> 596 tests; the engine is now at **70 files / 1,936 tests**. Several sections below describe
+> 596 tests; the engine is now at **70 files / 1,978 tests**. Several sections below describe
 > code that has since moved (`character/mechanics/` → `foundation/`), been rewritten (Speed and
 > movement), or been completed (Aura time resolution).
 >

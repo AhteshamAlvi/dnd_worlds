@@ -1,10 +1,11 @@
 # Nenworld Rules Engine — Consolidated State
 
 **Package:** `@nenworld/engine` (`packages/engine`) · **Branch:** `main` @ `3e0b961`
-**Snapshot:** 2026-09-05 · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
+**Snapshot:** Phase 0.2 close · supersedes `ENGINE_HANDOFF.md` (2026-08-27, pre-Body-refactor)
 
-**Health:** `vitest run` → **69 files, 1,882 tests, all passing** (~4.5 s). `tsc --noEmit` → **clean**.
-**Size:** 216 source files / ~62,000 LOC + 73 test files / ~31,300 LOC.
+**Health:** `vitest run` → **70 files, 1,978 tests, all passing**. `tsc --noEmit` → **clean**.
+**Backlog:** [`BACKLOG.md`](BACKLOG.md) is the single authoritative list of what is not done.
+**Size:** 217 source files / 62,725 LOC + 74 test files / 32,404 LOC.
 **Stack:** TypeScript 5.6, ESM, Vitest 2.1, **zero runtime dependencies**.
 
 The Body refactor (12 phases) is **through Phase 10**, plus the post-refactor integration
@@ -54,7 +55,7 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       │      │                     character/mechanics/ — an Injury is anatomical, and Recovery
       │      │                     is the Body↔Injury seam; see §10)
       │      ├── aura/             ~1,330 LOC
-      │      └── nen/              ~3,970 LOC  (NOT exported)
+      │      └── nen/              4,009 LOC  (NOT exported)
       ├── character/progression/   levels · stats · growth
       ├── character/catalogs.ts    one generic surface over 11 catalog domains
       ├── character/resolution.ts  THE ORCHESTRATOR: authored character → ResolvedCharacter
@@ -67,7 +68,7 @@ infrastructure/       JsonValue · EngineResult · TraceNode · Warning/EngineEr
       ├── time/                    timestamp · duration · calendar · clock · validation
       ├── decisions/log.ts         where the engine knowingly diverges from the frozen Rulebook
       ├── gameplay/                the runtime encounter layer, ON TOP of character/
-      │      └── combat/           ~5,470 LOC of encounter structure (NOT exported, NO tests)
+      │      └── combat/           5,482 LOC of encounter structure (NOT exported, NO tests)
       └── index.ts                 the public barrel (800 lines)
 ```
 
@@ -902,7 +903,13 @@ and concrete penalties for Fatigue 5–8.
 
 ---
 
-## 7 · Nen (`foundation/nen/`, ~3,970 LOC) — complete but **unexported**
+## 7 · Nen (`foundation/nen/`, 4,009 LOC) — authored infrastructure only, **unexported**
+
+The graph, mastery states, prerequisites and the four written principle profiles are complete,
+correct, unexported and untested. What does **not** exist is any notion of a principle being
+currently *active*: `NenState` is mastery plus a bare `awakened` boolean, with no activation, no
+deactivation and no per-Round cost. "Complete" used to head this section and was describing the
+first half while the second was absent — the two are tracked separately in `BACKLOG.md` §3.
 
 15 principles in `NEN_PRINCIPLE_GRAPH`. Universal rule: to hold Mastery N in a child, every
 prerequisite applying at N must hold at least N.
@@ -1393,7 +1400,7 @@ with its source, and `checkStatureJustified` checks coverage per dimension AND p
 
 ## 12 · Gameplay (`gameplay/`) — the runtime layer, **unexported**
 
-### Combat (`gameplay/combat/`, ~5,470 LOC) — structure only, untested
+### Combat (`gameplay/combat/`, 5,482 LOC) — structure only, untested
 
 Owns Combat Actions, Round runtime state, Turn state, Reaction opportunities/gates, Initiative
 ordering and rotation, Action expenditure, state transitions, structural validation.
@@ -1532,20 +1539,26 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (70 files, 1,965 tests)
+## 14 · Test coverage (70 files, 1,978 tests)
 
-| Area | Files (tests) |
-|---|---|
-| Body | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · effects-integration 29 · damage 25 · **continuity 24** · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · effects 19 · recovery 20 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **529** |
-| Attributes | phase9-model 71 · standard-modifier 39 · **movement 37** · derived 35 · physical 15 · propagation 7 — **204** |
-| Progression | 58 |
-| Capabilities | skills 41 |
-| Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
-| Rules | check-modifiers 29 · requirements 25 · effects 16 — **70** |
-| Aura | time 61 · timeline 49 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · interval-invariance 22 · control 21 · access-enforcement 16 · character-state 12 — **453** |
-| Endurance & character time | body-endurance 39 · character-time 24 — **63** |
-| Catalogs | 28 · **Injuries** validation 19 + recovery 13 · **Actions** 7 · **Checks** 6 · **Infra** trace 8 + id 7 — **88** |
-| **Foundation stability** | architecture 56 · character-foundation-stability 41 · injury-ownership 17 — **114** |
+Every test file appears in exactly one row, and the rows sum to the suite total. Recounted from
+the runner's own report at Phase 0.2 close — the previous version of this table omitted the whole
+Senses category and two Body files, and its Body subtotal was 32 short of its own listed files.
+
+| Area | Tests | Files |
+|---|---:|---|
+| Body | **561** | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · surface-area 29 · effects-integration 29 · damage 25 · continuity 24 · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · recovery 20 · effects 19 · capability 15 · point-state 14 · reference-standard 14 · reference-humanoid 13 |
+| Aura | **453** | time 61 · timeline 49 · validation 44 · profile 43 · allocation 37 · transitions 37 · expenditure 33 · access 27 · recovery 26 · scalars 25 · interval-invariance 22 · control 21 · access-enforcement 16 · character-state 12 |
+| Attributes | **216** | phase9-model 70 · **movement 50** · standard-modifier 39 · derived 35 · physical 15 · propagation 7 |
+| Senses | **207** | integration 60 · information 35 · perception 26 · profile 24 · detection 24 · investigation 20 · concealment 18 |
+| Foundation stability | **114** | architecture 56 · character-foundation-stability 41 · injury-ownership 17 |
+| Character | **107** | lifecycle 32 · character-features 27 · validation 25 · classification 23 |
+| Catalogs, injuries, actions, checks, infra | **88** | catalogs 28 · injury-validation 19 · injury-recovery 13 · trace 8 · action-capacity 7 · checks 6 · id.infrastructure 4 · id 3 |
+| Rules | **70** | check-modifiers 29 · requirements 25 · effects 16 |
+| Endurance & character time | **63** | body-endurance 39 · character-time 24 |
+| Progression | **58** | progression 58 |
+| Capabilities | **41** | skills 41 |
+| **Total** | **1,978** | **70 files** |
 
 `character-foundation-stability.test.ts` is grouped rather than folded into the domain suites on
 purpose: every case in it corresponds to something that was silently **wrong** — it passed a
@@ -1573,7 +1586,7 @@ round); that Rules never imports Injuries back; that Checks imports nothing from
 provenance has exactly one structural definition. Its own detection was verified twice, by
 reintroducing a removed import and watching it fail.
 
-**Zero tests:** Nen (~3,970 LOC), Combat (~5,470 LOC), time clock/calendar,
+**Zero tests:** Nen (4,009 LOC), Combat (5,482 LOC), time clock/calendar,
 equipment beyond the two demo items.
 
 ---
@@ -1591,13 +1604,16 @@ The shape of it, for orientation only — the file has the detail and the states
   cluster: damage blocks Aura reinforcement, Condition effects and every combat check; space
   blocks terrain, Range bands and targeting, and is what movement's metres are currently
   denominated against nothing for.
-- **Absent:** Sprint, encumbrance, terrain, combat Stamina expenditure, full combat resolution,
-  Perception↔Reaction integration, Foundry.
+- **Absent:** Sprint and the other movement modes, propulsion and gait resolution, encumbrance,
+  terrain, combat Stamina expenditure, full combat resolution, Perception↔Reaction integration,
+  **active Nen runtime state** (nothing tracks whether Ten is currently up), Foundry.
 - **Partial:** Fatigue (derived, no consequences), locomotor conditions (destruction only, no
   graded impairment), Aura reinforcement (unawakened only), the Nen principles (4 of 15 written,
-  no combat contracts), skill execution.
+  no combat contracts), skill execution, combat↔movement wiring.
 - **Internal:** **11,758 LOC** unreachable from the barrel, recounted per directory at Phase 0.1
-  close — Combat 5,482 · Nen 4,009 · `time/{validation,calendar,clock}` 1,371 · the rest small.
+  close — Combat 5,482 · Nen 4,009 (the authored profiles and prerequisites, which is a separate
+  question from the absent runtime above) · `time/{validation,calendar,clock}` 1,371 · the rest
+  small.
   Most of `checks/` **is** reachable; only the roll (`checks/resolution.ts`, 261) is not. See
   `BACKLOG.md` §6 for the table.
 - **Downstream:** `apps/workbench` is broken against the engine — 65 TypeScript errors, 49 of 97
@@ -1620,7 +1636,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 70 files, 1,965 tests
+cd packages/engine && npx vitest run     # 70 files, 1,978 tests
 ```
 
 ```bash

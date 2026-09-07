@@ -6,8 +6,8 @@ links here rather than keeping its own list. Two backlogs are two things to keep
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: Phase 0.1 close.
-Suite at that point: **70 files, 1,965 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: Phase 0.2 close.
+Suite at that point: **70 files, 1,978 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
@@ -59,7 +59,8 @@ unconsumed functions are not mechanics, and are never recorded as complete here.
 | **Expenditure and recovery** | Complete | Regeneration, mode multipliers, suppression, provenance per segment. |
 | **Continuous time resolution** | Complete | Calculated boundaries, interval invariance verified to 28,800 one-second steps, atomic simultaneous events, exact upkeep shutdown. Decisions `time.continuous-resolution.boundaries`, `time.upkeep.exact-shutdown`. |
 | **Aura reinforcement** | **Partially implemented** | Unawakened pseudo-Chū is implemented, distributed by Volume, and tested (decision `aura.unawakened.pseudo-chu-from-current-aura`). Awakened reinforcement — Aura placed on the body reducing incoming damage — is absent, because it terminates in a damage model that does not exist. |
-| **Runtime Nen states** | **Implemented but internal** | `foundation/nen/` (~3,970 LOC) resolves mastery, prerequisites and per-principle profiles, and is **unexported and untested**. Nothing tracks whether a character currently *has* Ten up: `NenState` is mastery and a bare `awakened` boolean, with no active-principle runtime state. |
+| **Nen authored profiles and prerequisites** | **Implemented but internal** | `foundation/nen/` (4,009 LOC) resolves the principle graph, mastery states, prerequisites and per-principle profiles for Ten, Ren, Zetsu and Hatsu. Finished and correct; **unexported and untested**. |
+| **Active Nen runtime state** | **Specified but absent** | Nothing tracks whether a character currently *has* Ten up. `NenState` is mastery plus a bare `awakened` boolean — there is no active-principle state, no activation, no deactivation, and no per-Round cost. This is a different gap from the row above, which is why they are no longer one row: the infrastructure being written does not make the runtime partially written. |
 | **Ten, Ren, Zetsu, Chū combat contracts** | **Partially implemented** | Ten, Ren and Zetsu have principle files with mastery profiles, CON requirements and output limits; Chū has none. All four lack a combat contract — what activating one costs per Round, what it does to incoming damage, and how two of them interact. 11 of 15 principles (shu, en, gyo, ken, chū, in, ko, ryu, yu, ju, fu) are graph nodes only. |
 
 ## 4 · Combat
@@ -107,7 +108,7 @@ is not.
 
 | Area | Gap |
 |---|---|
-| Nen (~3,970 LOC) | Zero tests. |
+| Nen (4,009 LOC) | Zero tests. |
 | Combat (~5,480 LOC) | Zero tests. |
 | Time clock and calendar | Zero tests beyond the duration constants and interval arithmetic. |
 | Equipment | Two demo items; no load, no capacity, no conflicts. |
