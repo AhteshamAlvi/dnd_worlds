@@ -1282,27 +1282,64 @@ export function buildRequirementContext(
   traits: ResolvedTraits,
   capabilities: ResolvedCapabilities,
 ): RequirementContext {
-  const species = character.species ?? [];
+  /*
+   * ABSENCE IS PRESERVED, not collapsed to an empty list.
+   *
+   * Character collections are optional so a partially-built sheet can still be
+   * resolved. This function used to answer `?? []` for every one of them,
+   * which made "nobody has recorded this character's Traits" identical to
+   * "recorded, and they have none" by the time any requirement was evaluated.
+   *
+   * Those are different facts with different remedies — the second refuses an
+   * action, the first asks somebody to finish the sheet — and the requirement
+   * evaluator can now tell them apart. It can only do that if the distinction
+   * survives the trip through here, so each field is present exactly when the
+   * character records the collection behind it.
+   */
+  const species = character.species;
 
   return {
     attributes,
 
     level: characterLevel(character),
 
-    speciesIds: collectSpeciesAncestry(species),
-    subspeciesIds: declaredSubspeciesIds(species),
-    clanIds: (character.clans ?? []).map((clan) => clan.clanId),
+    ...(species === undefined ? {} : {
+      speciesIds: collectSpeciesAncestry(species),
+      subspeciesIds: declaredSubspeciesIds(species),
+    }),
 
-    traitIds: resolvedTraitIds(traits),
+    ...(character.clans === undefined ? {} : {
+      clanIds: character.clans.map((clan) => clan.clanId),
+    }),
 
-    skillMastery: getResolvedSkillMasteryRecord(capabilities),
-    techniqueMastery: getResolvedTechniqueMasteryRecord(capabilities),
+    /*
+     * Traits key off the AUTHORED list even though the resolved list can also
+     * hold granted ones. If the sheet never recorded traits, a Trait it does
+     * not mention may still be there, so absence cannot be confirmed — and
+     * confirming absence is the only thing an unsatisfied membership result
+     * claims.
+     */
+    ...(character.traits === undefined ? {} : {
+      traitIds: resolvedTraitIds(traits),
+    }),
 
-    conditionIds: (character.conditions ?? []).map(
-      (condition) => condition.conditionId,
-    ),
+    ...(character.skills === undefined ? {} : {
+      skillMastery: getResolvedSkillMasteryRecord(capabilities),
+    }),
 
-    items: collectItemState(character.items ?? []),
+    ...(character.techniques === undefined ? {} : {
+      techniqueMastery: getResolvedTechniqueMasteryRecord(capabilities),
+    }),
+
+    ...(character.conditions === undefined ? {} : {
+      conditionIds: character.conditions.map(
+        (condition) => condition.conditionId,
+      ),
+    }),
+
+    ...(character.items === undefined ? {} : {
+      items: collectItemState(character.items),
+    }),
   };
 }
 

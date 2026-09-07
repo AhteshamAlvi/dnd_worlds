@@ -15,6 +15,7 @@ import {
   type NamedRequirement,
 } from "../character/actions/preparation";
 import type { Requirement } from "../character/rules/requirements";
+import { resolveRequirement } from "../character/rules/resolution";
 import type { Character } from "../character/types";
 import {
   clearCustomDefinitions,
@@ -141,7 +142,19 @@ describe("an unrecorded sheet is not a failed requirement", () => {
 
     expect(inputs.eligibility[0]?.status).toBe("unresolved");
     expect(inputs.eligibility[0]?.diagnostic?.code)
-      .toBe("character.actions.requirement.unrecorded");
+      .toBe("character.actions.requirement.unresolved");
+
+    /*
+     * The status is the rules layer's own disposition, unmodified. The adapter
+     * used to work this out by inspecting the Character itself, because the
+     * requirement context collapsed absence into emptiness before the
+     * evaluator saw it. There is one source of requirement semantics now.
+     */
+    expect(inputs.eligibility[0]?.status)
+      .toBe(resolveRequirement(
+        { type: "hasTrait", traitId: "firebending" },
+        halfBuilt.requirementContext,
+      ));
   });
 
   it("reports unsatisfied once the collection exists and is empty", () => {

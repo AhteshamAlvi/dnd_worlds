@@ -534,7 +534,7 @@ export const ENGINE_DECISIONS = {
         chosen:
             "The adapter reports such a requirement as UNRESOLVED, with a diagnostic naming the collection that is missing, and reads that from the Character itself rather than from the RequirementContext.",
         rationale:
-            "Reporting an unrecorded Trait list as a failed requirement refuses an action for a reason that is not true yet — it is not known yet, which is a different answer with a different remedy, and the proposal's dispositions already distinguish them. It is read from the Character because buildRequirementContext() collapses every absent collection to an empty array on the way in, so by the time a requirement is evaluated 'never recorded' and 'recorded, and none' are already the same value. That collapse is fine for a boolean evaluator and wrong for a finding a GM will read, so the distinction is recovered at the only layer that reports it. NOTE: every other consumer of meetsRequirement() still has the original blind spot.",
+            "Reporting an unrecorded Trait list as a failed requirement refuses an action for a reason that is not true yet — it is not known yet, which is a different answer with a different remedy, and the proposal's dispositions already distinguish them. It is read from the Character because buildRequirementContext() collapses every absent collection to an empty array on the way in, so by the time a requirement is evaluated 'never recorded' and 'recorded, and none' are already the same value. That collapse is fine for a boolean evaluator and wrong for a finding a GM will read. SUPERSEDED by requirements.presence.absent-is-not-empty: the collapse was removed at its source, the rules layer now answers with a three-valued disposition, and this adapter reads that answer instead of inspecting the Character itself.",
     },
     "actions.consequences.the-owner-routes-the-change": {
         id: "actions.consequences.the-owner-routes-the-change",
@@ -571,6 +571,33 @@ export const ENGINE_DECISIONS = {
             "Adjudication resolves the check with the effective dice; settlement takes the already-finalized action and runs the coordinator exactly once, supplying no dice at all. Ineligible, spatially-invalid and missing-facts refuse to settle and charge nothing. A resolved MISS settles normally and pays what it cost. Combat is not involved in any of it, and this is where Phase 2 stops before Combat is touched.",
         rationale:
             "Passing the dice down to the coordinator would give the operation a second opportunity to roll, and the two answers would eventually differ with nothing able to reconcile them afterwards. Refusing to settle an action with an unanswered question is the conservative half of the same instinct that made preparation refuse to fabricate geometry: committing quietly would spend Aura on something nobody established could happen, and the GM already has a recorded way to proceed anyway — override the finding. A miss is deliberately not in that list: a resolved failure is a settled outcome, and Aura spent on a punch that missed is spent. Stopping here, with the whole non-Combat path proven end to end, is what makes the Combat tickets a refactor against a working system rather than a redesign of one.",
+    },
+    "requirements.presence.absent-is-not-empty": {
+        id: "requirements.presence.absent-is-not-empty",
+        question:
+            "buildRequirementContext() answered `?? []` for every optional Character collection, so by the time a requirement was evaluated an unrecorded Trait list and a recorded empty one were the same value. Every consumer then reported the first as \"the character does not have that Trait\".",
+        chosen:
+            "Absence is preserved through the context builder, and requirements resolve to three answers rather than two: satisfied, unsatisfied, unresolved. A membership question against an absent collection is unresolved; against a recorded collection it is decided, empty or not. Attributes and Level are always present and therefore always decidable.",
+        rationale:
+            "Character collections are optional on purpose — the Workbench builds a sheet incrementally, and an engine that only accepts finished characters cannot help finish one. The cost of that choice was a confident wrong answer: \"you lack that Trait\" and \"nobody has said what Traits you have\" have different remedies, and only the first is a refusal. The collapse was fixed at its source rather than worked around by each consumer, because the previous ticket had already demonstrated the alternative — the action adapter recovered the distinction by re-reading the Character, which meant two interpretations of missing data and only one of them documented. Traits key off the AUTHORED list even though the resolved list can also hold granted ones: if the sheet never recorded traits, one it does not mention may still be there, and confirming absence is the only thing an unsatisfied membership result claims.",
+    },
+    "requirements.presence.compound-propagation": {
+        id: "requirements.presence.compound-propagation",
+        question:
+            "How all, any and not combine three values instead of two, and in particular whether a definite answer or an open question wins when both are present.",
+        chosen:
+            "all: unsatisfied if any member is, else unresolved if any member is, else satisfied. any: satisfied if any member is, else unresolved if any member is, else unsatisfied. not: inverts the two definite answers and leaves unresolved alone.",
+        rationale:
+            "Each rule is the three-valued form of the short-circuit the two-valued version already had — `all` stops at a false, `any` stops at a true — so a definite answer wins exactly when it already decides the whole expression, and the unknown members genuinely could not have changed it. This also keeps the boolean helper's behaviour identical for every input that used to be decidable, which is what made the migration safe. `not` leaving unresolved alone is the rule people get wrong: not knowing whether they have it is not knowing whether they lack it, and inverting an unknown into a definite answer would manufacture the exact confidence this change removes.",
+    },
+    "requirements.presence.boolean-helper-is-lossy-on-purpose": {
+        id: "requirements.presence.boolean-helper-is-lossy-on-purpose",
+        question:
+            "Whether meetsRequirement() should be deleted, now that it cannot express the third answer.",
+        chosen:
+            "Kept, defined as `resolveRequirement(...) === \"satisfied\"`, and documented as treating unresolved as false. Capability validation was migrated off it and now emits a distinct unresolved-skill-requirements / unresolved-technique-requirements issue whose message says the sheet is incomplete rather than that a prerequisite failed. UI-facing helpers such as satisfiesSkillRequirements() stay boolean, with tri-state siblings beside them.",
+        rationale:
+            "Collapsing unresolved to false is the RIGHT answer for a caller asking whether something may proceed — an unfinished sheet should not offer a capability whose prerequisites nobody can confirm — and the WRONG answer for a caller explaining why, because both non-satisfied values arrive as the same `false`. Deleting the helper would have pushed every gating call site into a comparison it does not care about; leaving it undocumented was how the original defect spread. So the rule is stated where the function is defined and enforced by where it is no longer used: nothing that produces a diagnostic reads it. Severity was deliberately not changed — an unresolved capability requirement is still a blocking validation error, exactly as the collapsed version was, so this ticket changed what the message SAYS without changing which characters validate.",
     },
 } as const satisfies Record<string, EngineDecision>;
 

@@ -748,19 +748,62 @@ export interface RequirementContext {
 /* Requirement helpers                                                        */
 /* -------------------------------------------------------------------------- */
 
-function includesId(
-  ids: readonly string[] | undefined,
-  id: string,
-): boolean {
-  return ids?.includes(id) ?? false;
+/**
+ * Whether a character MEETS a requirement, DOES NOT, or cannot be judged yet.
+ *
+ * The third answer is the one this vocabulary exists for. Character
+ * collections are optional so a half-built sheet still resolves, and an
+ * unrecorded Trait list used to be indistinguishable from a recorded empty
+ * one — both read as "does not have it". That is a confident wrong answer:
+ * "you lack that Trait" and "nobody has said what Traits you have" have
+ * different remedies, and only the first is a refusal.
+ */
+export const REQUIREMENT_DISPOSITIONS = [
+  "satisfied",
+  "unsatisfied",
+  "unresolved",
+] as const;
+
+export type RequirementDisposition = typeof REQUIREMENT_DISPOSITIONS[number];
+
+
+export function isRequirementDisposition(
+  value: unknown,
+): value is RequirementDisposition {
+  return typeof value === "string" &&
+    (REQUIREMENT_DISPOSITIONS as readonly string[]).includes(value);
 }
 
 
-function getMastery(
+function fromBoolean(satisfied: boolean): RequirementDisposition {
+  return satisfied ? "satisfied" : "unsatisfied";
+}
+
+
+/**
+ * Membership in a collection that may not have been recorded.
+ *
+ * An absent collection is unresolved; a recorded one answers definitively,
+ * empty or not.
+ */
+function membership(
+  ids: readonly string[] | undefined,
+  id: string,
+): RequirementDisposition {
+  if (ids === undefined) return "unresolved";
+
+  return fromBoolean(ids.includes(id));
+}
+
+
+function masteryAtLeast(
   mastery: Readonly<Record<string, number>> | undefined,
   id: string,
-): number {
-  return mastery?.[id] ?? 0;
+  minimum: number,
+): RequirementDisposition {
+  if (mastery === undefined) return "unresolved";
+
+  return fromBoolean((mastery[id] ?? 0) >= minimum);
 }
 
 
@@ -794,10 +837,10 @@ function getRequirementAttributes(
  * - any: at least one child must pass;
  * - not: the child must fail.
  */
-export function meetsRequirement(
+export function resolveRequirement(
   requirement: Requirement,
   context: RequirementContext,
-): boolean {
+): RequirementDisposition {
   switch (requirement.type) {
     case "attributeMinimum": {
       const attributes = getRequirementAttributes(
@@ -805,8 +848,8 @@ export function meetsRequirement(
         requirement.layer,
       );
 
-      return (
-        attributes[requirement.attribute] >= requirement.minimum
+      return fromBoolean(
+        attributes[requirement.attribute] >= requirement.minimum,
       );
     }
 
@@ -830,108 +873,140 @@ export function meetsRequirement(
        * character instead. Supplying 0 keeps the arithmetic defined rather
        * than silently inventing a Strength nobody resolved.
        */
-      return (
+      return fromBoolean(
         resolveDerivedAttribute(requirement.derivedAttribute, {
           ...attributes,
           str: 0,
-        }) >= requirement.minimum
+        }) >= requirement.minimum,
       );
     }
 
     case "levelMinimum":
-      return context.level >= requirement.minimum;
+      /* Level is derived and always present, so it is always decidable. */
+      return fromBoolean(context.level >= requirement.minimum);
 
     case "hasSpecies":
-      return includesId(
-        context.speciesIds,
-        requirement.speciesId,
-      );
+      return membership(context.speciesIds, requirement.speciesId);
 
     case "hasSubspecies":
-      return includesId(
-        context.subspeciesIds,
-        requirement.subspeciesId,
-      );
+      return membership(context.subspeciesIds, requirement.subspeciesId);
 
     case "hasClan":
-      return includesId(
-        context.clanIds,
-        requirement.clanId,
-      );
+      return membership(context.clanIds, requirement.clanId);
 
     case "hasTrait":
-      return includesId(
-        context.traitIds,
-        requirement.traitId,
-      );
+      return membership(context.traitIds, requirement.traitId);
 
     case "hasSkill":
-      return (
-        getMastery(
-          context.skillMastery,
-          requirement.skillId,
-        ) >= 1
-      );
+      return masteryAtLeast(context.skillMastery, requirement.skillId, 1);
 
     case "skillMastery":
-      return (
-        getMastery(
-          context.skillMastery,
-          requirement.skillId,
-        ) >= requirement.minimumMastery
+      return masteryAtLeast(
+        context.skillMastery,
+        requirement.skillId,
+        requirement.minimumMastery,
       );
 
     case "hasTechnique":
-      return (
-        getMastery(
-          context.techniqueMastery,
-          requirement.techniqueId,
-        ) >= 1
+      return masteryAtLeast(
+        context.techniqueMastery,
+        requirement.techniqueId,
+        1,
       );
 
     case "techniqueMastery":
-      return (
-        getMastery(
-          context.techniqueMastery,
-          requirement.techniqueId,
-        ) >= requirement.minimumMastery
+      return masteryAtLeast(
+        context.techniqueMastery,
+        requirement.techniqueId,
+        requirement.minimumMastery,
       );
 
     case "hasCondition":
-      return includesId(
-        context.conditionIds,
-        requirement.conditionId,
-      );
+      return membership(context.conditionIds, requirement.conditionId);
 
     case "hasItem":
-      if (requirement.state === "equipped") {
-        return includesId(
-          context.items?.equipped,
-          requirement.itemId,
-        );
-      }
+      /*
+       * The two lists are recorded together, so an absent `items` makes both
+       * questions unresolved rather than only the one being asked.
+       */
+      if (context.items === undefined) return "unresolved";
 
-      return includesId(
-        context.items?.possessed,
+      return membership(
+        requirement.state === "equipped"
+          ? context.items.equipped
+          : context.items.possessed,
         requirement.itemId,
       );
 
-    case "all":
-      return requirement.requirements.every((child) =>
-        meetsRequirement(child, context)
+    /*
+     * Compound propagation. In every case a DEFINITE answer outranks an
+     * unresolved one when the definite answer already decides the whole
+     * expression — which is the same reasoning that lets `all` short-circuit
+     * on a false and `any` on a true.
+     */
+    case "all": {
+      const children = requirement.requirements.map((child) =>
+        resolveRequirement(child, context)
       );
 
-    case "any":
-      return requirement.requirements.some((child) =>
-        meetsRequirement(child, context)
+      if (children.includes("unsatisfied")) return "unsatisfied";
+      if (children.includes("unresolved")) return "unresolved";
+
+      return "satisfied";
+    }
+
+    case "any": {
+      const children = requirement.requirements.map((child) =>
+        resolveRequirement(child, context)
       );
 
-    case "not":
-      return !meetsRequirement(
-        requirement.requirement,
-        context,
-      );
+      if (children.includes("satisfied")) return "satisfied";
+      if (children.includes("unresolved")) return "unresolved";
+
+      return "unsatisfied";
+    }
+
+    case "not": {
+      const inner = resolveRequirement(requirement.requirement, context);
+
+      /* Unresolved inverts to itself: not-knowing is not knowing either way. */
+      if (inner === "unresolved") return "unresolved";
+
+      return inner === "satisfied" ? "unsatisfied" : "satisfied";
+    }
   }
+}
+
+
+/**
+ * The same question for a list, with `all` semantics.
+ *
+ * An empty list is satisfied: no prerequisites means nothing to fail.
+ */
+export function resolveAllRequirements(
+  requirements: readonly Requirement[],
+  context: RequirementContext,
+): RequirementDisposition {
+  return resolveRequirement({ type: "all", requirements }, context);
+}
+
+
+/**
+ * Boolean compatibility over the canonical evaluator.
+ *
+ * TREATS UNRESOLVED AS FALSE. That is safe for a caller asking "may this
+ * proceed", and wrong for a caller producing a diagnostic — "unresolved" and
+ * "unsatisfied" both arrive as `false`, and a message built on that says a
+ * requirement definitively failed when nobody has established that it did.
+ *
+ * Callers that report anything to a person should use resolveRequirement()
+ * and say which of the two they found.
+ */
+export function meetsRequirement(
+  requirement: Requirement,
+  context: RequirementContext,
+): boolean {
+  return resolveRequirement(requirement, context) === "satisfied";
 }
 
 
@@ -945,7 +1020,5 @@ export function meetsAllRequirements(
   requirements: readonly Requirement[],
   context: RequirementContext,
 ): boolean {
-  return requirements.every((requirement) =>
-    meetsRequirement(requirement, context)
-  );
+  return resolveAllRequirements(requirements, context) === "satisfied";
 }

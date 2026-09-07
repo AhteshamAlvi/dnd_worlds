@@ -419,13 +419,22 @@ describe("composition", () => {
   it("inverts with not", () => {
     const sealed = contextWith({ conditionIds: ["aura-sealed"] });
 
+    /*
+     * The unsealed case now records an EMPTY condition list rather than
+     * omitting it. Omitting it used to mean the same thing; it no longer
+     * does, and that is the point of the presence-semantics change — "this
+     * character has no Conditions" and "nobody has said what Conditions this
+     * character has" are different facts, and only the first inverts to true.
+     */
+    const unsealed = contextWith({ conditionIds: [] });
+
     const notSealed: Requirement = {
       type: "not",
       requirement: { type: "hasCondition", conditionId: "aura-sealed" },
     };
 
     expect(meetsRequirement(notSealed, sealed)).toBe(false);
-    expect(meetsRequirement(notSealed, contextWith())).toBe(true);
+    expect(meetsRequirement(notSealed, unsealed)).toBe(true);
   });
 
   it("treats an empty requirement list as no prerequisites", () => {

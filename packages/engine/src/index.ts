@@ -535,6 +535,7 @@ export type {
   ResolvedRuleEffects,
   RequirementAttributes,
   RequirementContext,
+  RequirementDisposition,
   RequirementItems,
 } from "./character/rules/resolution";
 
@@ -543,6 +544,10 @@ export {
   resolveRuleEffects,
   meetsRequirement,
   meetsAllRequirements,
+  resolveRequirement,
+  resolveAllRequirements,
+  isRequirementDisposition,
+  REQUIREMENT_DISPOSITIONS,
 } from "./character/rules/resolution";
 
 /*

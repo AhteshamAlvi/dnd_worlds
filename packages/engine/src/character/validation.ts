@@ -187,6 +187,18 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     resolution:
       "Meet the Technique's prerequisites, or remove the Technique.",
   },
+  /*
+   * Deliberately not phrased as a failure. The sheet is unfinished, which is
+   * an ordinary state for a character being built, and telling an author to
+   * meet a prerequisite they may already meet is worse than saying nothing.
+   */
+  "unresolved-technique-requirements": {
+    code: "character.technique.requirements_unresolved",
+    describe: (issue) =>
+      `Technique "${issue.techniqueId}" has prerequisites that cannot be judged: the character does not record everything they read.`,
+    resolution:
+      "Record the Species, Clans, Traits, Skills, Techniques, Conditions or Items the prerequisites depend on.",
+  },
 
   "unknown-skill": {
     code: "character.skill.unknown",
@@ -210,6 +222,13 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
       `Skill "${issue.skillId}" requires something the character does not have.`,
     resolution:
       "Meet the Skill's prerequisites, or remove the Skill.",
+  },
+  "unresolved-skill-requirements": {
+    code: "character.skill.requirements_unresolved",
+    describe: (issue) =>
+      `Skill "${issue.skillId}" has prerequisites that cannot be judged: the character does not record everything they read.`,
+    resolution:
+      "Record the Species, Clans, Traits, Skills, Techniques, Conditions or Items the prerequisites depend on.",
   },
 
   "unknown-condition": {

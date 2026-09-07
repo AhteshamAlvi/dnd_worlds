@@ -54,9 +54,11 @@ import {
   type CheckInvocation,
 } from "../checks/invocation";
 import type { Requirement } from "../rules/requirements";
-import { meetsRequirement, type RequirementContext } from "../rules/resolution";
+import {
+  resolveRequirement,
+  type RequirementContext,
+} from "../rules/resolution";
 import type { ResolvedCharacter } from "../resolution";
-import type { Character } from "../types";
 
 
 /**
@@ -109,101 +111,42 @@ export interface CharacterActionContribution {
 
 
 /**
- * The sheet collection a Requirement reads, when that collection is absent.
+ * One Requirement, as a finding.
  *
- * Used to tell "the character does not have it" from "the sheet does not
- * record it". Those are different answers: Character collections are optional
- * so a half-built sheet can still be resolved, and reporting an unrecorded
- * Trait list as "you lack that Trait" would refuse an action for a reason that
- * is not true yet.
- *
- * Read from the CHARACTER rather than from RequirementContext, because
- * buildRequirementContext() collapses every absent collection to an empty
- * array on the way in — so by the time a requirement is evaluated, "no traits
- * recorded" and "recorded, and none" are already the same value. That is fine
- * for a yes/no evaluator and not fine for a finding that a GM will read, so
- * the distinction is recovered here, at the only layer that reports it.
+ * The three statuses map one-to-one onto the rules layer's own
+ * RequirementDisposition, and this adapter deliberately adds nothing to the
+ * mapping. It used to inspect the Character itself to decide whether a
+ * collection had been recorded, because the requirement context collapsed
+ * absence into emptiness before the evaluator ever saw it. That collapse is
+ * gone, so the second interpretation is gone with it — there is one source of
+ * requirement semantics and this is not it.
  */
-function unrecordedCollection(
-  requirement: Requirement,
-  character: Character,
-): string | undefined {
-  switch (requirement.type) {
-    case "hasSpecies":
-    case "hasSubspecies":
-      return character.species === undefined ? "species" : undefined;
-
-    case "hasClan":
-      return character.clans === undefined ? "clans" : undefined;
-
-    case "hasTrait":
-      return character.traits === undefined ? "traits" : undefined;
-
-    case "hasSkill":
-    case "skillMastery":
-      return character.skills === undefined ? "skills" : undefined;
-
-    case "hasTechnique":
-    case "techniqueMastery":
-      return character.techniques === undefined ? "techniques" : undefined;
-
-    case "hasCondition":
-      return character.conditions === undefined ? "conditions" : undefined;
-
-    case "hasItem":
-      return character.items === undefined ? "items" : undefined;
-
-    /*
-     * A compound requirement is unresolved when any child is. "any" is
-     * arguably resolvable when a recorded child already passes, and is treated
-     * the same way anyway: reporting a definite yes while part of the sheet is
-     * missing would be right by luck rather than by evidence.
-     */
-    case "all":
-    case "any":
-      return requirement.requirements
-        .map((child) => unrecordedCollection(child, character))
-        .find((missing) => missing !== undefined);
-
-    case "not":
-      return unrecordedCollection(requirement.requirement, character);
-
-    /* Attributes and Level are always present on a resolved character. */
-    default:
-      return undefined;
-  }
-}
-
-
 function findingFor(
   named: NamedRequirement,
-  character: Character,
   context: RequirementContext,
 ): EligibilityFinding {
-  const unrecorded = unrecordedCollection(named.requirement, character);
+  const disposition = resolveRequirement(named.requirement, context);
 
-  if (unrecorded !== undefined) {
+  if (disposition === "unresolved") {
     return {
       id: named.id,
       status: "unresolved",
       decidedBy: "character",
       summary: named.summary ??
-        `This character's ${unrecorded} are not recorded yet.`,
+        "This character does not record everything the requirement reads.",
       diagnostic: {
-        code: "character.actions.requirement.unrecorded",
-        message: `Cannot decide "${named.id}": the character's ${unrecorded} are not recorded.`,
+        code: "character.actions.requirement.unresolved",
+        message: `Cannot decide "${named.id}": the character does not record everything this requirement reads.`,
         audience: "gm",
-        required: `a recorded ${unrecorded} list`,
+        required: "a recorded value for every collection the requirement reads",
         actual: "absent",
       },
     };
   }
 
-  const satisfied = meetsRequirement(named.requirement, context);
-
   return {
     id: named.id,
-    status: satisfied ? "satisfied" : "unsatisfied",
+    status: disposition,
     decidedBy: "character",
     ...(named.summary === undefined ? {} : { summary: named.summary }),
   };
@@ -277,7 +220,7 @@ export function prepareCharacterActionInputs(
   const context = input.resolved.requirementContext;
 
   const eligibility = (input.requirements ?? []).map((named) =>
-    findingFor(named, input.resolved.character, context)
+    findingFor(named, context)
   );
 
   const modifiers = collectCharacterCheckModifiers(

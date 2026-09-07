@@ -108,6 +108,12 @@ type Effect =
 
 Attribute requirements carry a `layer: "stored" | "base" | "resolved"` — permanent acquisition normally checks `base`, so a temporary Condition can't revoke a capability the character trained for.
 
+**Requirements resolve to three answers, not two.** `resolveRequirement()` returns a `RequirementDisposition` of `satisfied` / `unsatisfied` / `unresolved`. The third exists because Character collections are optional so a half-built sheet still resolves: an **absent** collection means nobody has recorded it (unresolved), while a **recorded empty** one means the character genuinely has none (unsatisfied). `buildRequirementContext()` preserves that distinction rather than collapsing absence to `[]`.
+
+Compound propagation: `all` is unsatisfied if any member is, else unresolved if any member is, else satisfied. `any` is satisfied if any member is, else unresolved if any member is, else unsatisfied. `not` inverts the two definite answers and leaves unresolved alone.
+
+`meetsRequirement()` and `meetsAllRequirements()` remain as **boolean compatibility helpers that treat unresolved as false**. That is correct for "may this proceed" and wrong for "why not" — anything producing a diagnostic must use the tri-state evaluator, or it will tell an author a requirement definitively failed when the sheet is merely unfinished.
+
 ### `content.ts`
 
 `EffectfulDefinition extends Definition { effects?, requirements? }` — the shape every authored domain extends. Plus `collectGrantedIds()` and `collectRequirementReferences()` (walks compound trees, tags each id with its domain) for cross-catalog validation.

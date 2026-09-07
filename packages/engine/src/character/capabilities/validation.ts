@@ -24,7 +24,12 @@
 
 import { scanReferences } from "../../infrastructure/registry";
 
-import { meetsAllRequirements, type RequirementContext } from "../rules/resolution";
+import {
+  meetsAllRequirements,
+  resolveAllRequirements,
+  type RequirementContext,
+  type RequirementDisposition,
+} from "../rules/resolution";
 import {
   isMasteryRank,
   type MasteryRank,
@@ -52,6 +57,10 @@ import {
 
 export type TechniqueValidationIssue =
   | {
+      readonly type: "unresolved-technique-requirements";
+      readonly techniqueId: TechniqueId;
+    }
+  | {
       readonly type: "unknown-technique";
       readonly techniqueId: TechniqueId;
     }
@@ -66,11 +75,25 @@ export type TechniqueValidationIssue =
       readonly maximumMastery: MasteryRank;
     }
   | {
+      /*
+       * The character's data is complete enough to say the prerequisites are
+       * not met. Distinct from "unresolved", below, which is what an
+       * unfinished sheet produces.
+       */
       readonly type: "unsatisfied-technique-requirements";
       readonly techniqueId: TechniqueId;
     };
 
 export type SkillValidationIssue =
+  | {
+      /*
+       * The sheet does not record something the prerequisites read, so the
+       * engine cannot say whether they are met. NOT a failure: reporting it
+       * as one would tell an author to fix a character that may be correct.
+       */
+      readonly type: "unresolved-skill-requirements";
+      readonly skillId: SkillId;
+    }
   | {
       readonly type: "unknown-skill";
       readonly skillId: SkillId;
@@ -146,14 +169,29 @@ export function findTechniqueValidationIssues(
       });
     }
 
-    if (
-      context !== undefined &&
-      !meetsAllRequirements(definition.requirements ?? [], context)
-    ) {
-      issues.push({
-        type: "unsatisfied-technique-requirements",
-        techniqueId: id,
-      });
+    if (context !== undefined) {
+      /*
+       * Tri-state on purpose. The boolean helper collapses "unresolved" into
+       * false, and a diagnostic built on that would tell an author their
+       * character fails a prerequisite when nobody has established that it
+       * does — the sheet is simply unfinished.
+       */
+      const disposition = resolveAllRequirements(
+        definition.requirements ?? [],
+        context,
+      );
+
+      if (disposition === "unsatisfied") {
+        issues.push({
+          type: "unsatisfied-technique-requirements",
+          techniqueId: id,
+        });
+      } else if (disposition === "unresolved") {
+        issues.push({
+          type: "unresolved-technique-requirements",
+          techniqueId: id,
+        });
+      }
     }
   }
 
@@ -202,14 +240,23 @@ export function findSkillValidationIssues(
       });
     }
 
-    if (
-      context !== undefined &&
-      !meetsAllRequirements(definition.requirements ?? [], context)
-    ) {
-      issues.push({
-        type: "unsatisfied-skill-requirements",
-        skillId: id,
-      });
+    if (context !== undefined) {
+      const disposition = resolveAllRequirements(
+        definition.requirements ?? [],
+        context,
+      );
+
+      if (disposition === "unsatisfied") {
+        issues.push({
+          type: "unsatisfied-skill-requirements",
+          skillId: id,
+        });
+      } else if (disposition === "unresolved") {
+        issues.push({
+          type: "unresolved-skill-requirements",
+          skillId: id,
+        });
+      }
     }
   }
 
@@ -221,6 +268,11 @@ export function findSkillValidationIssues(
  *
  * Exposed so a UI can grey out a Skill for exactly the reason the engine
  * would reject it, rather than reimplementing the test.
+ *
+ * BOOLEAN, and therefore treats "unresolved" as false. That is the right
+ * answer for greying out a control — an unfinished sheet should not offer a
+ * Skill whose prerequisites nobody can confirm — and the wrong answer for
+ * explaining WHY. Use resolveSkillRequirements() for anything a person reads.
  */
 export function satisfiesSkillRequirements(
   definition: SkillDefinition,
@@ -230,14 +282,31 @@ export function satisfiesSkillRequirements(
 }
 
 
+/** The same question, with the difference between "no" and "cannot tell". */
+export function resolveSkillRequirements(
+  definition: SkillDefinition,
+  context: RequirementContext,
+): RequirementDisposition {
+  return resolveAllRequirements(definition.requirements ?? [], context);
+}
+
+
 /**
- * The same question for a Technique.
+ * The same question for a Technique. Also collapses unresolved to false.
  */
 export function satisfiesTechniqueRequirements(
   definition: TechniqueDefinition,
   context: RequirementContext,
 ): boolean {
   return meetsAllRequirements(definition.requirements ?? [], context);
+}
+
+
+export function resolveTechniqueRequirements(
+  definition: TechniqueDefinition,
+  context: RequirementContext,
+): RequirementDisposition {
+  return resolveAllRequirements(definition.requirements ?? [], context);
 }
 
 // One call for the whole layer, in dependency order: a Skill's requirements
