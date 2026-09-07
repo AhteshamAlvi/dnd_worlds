@@ -230,43 +230,29 @@ describe("spending an Action", () => {
 });
 
 
-describe("Bonus Actions", () => {
-  it("are carried on the Action and cost nothing", () => {
+describe("Bonus Actions are gone from the model", () => {
+  it("cannot be attached to a Combat Action at all", () => {
     /*
-     * CHARACTERIZED, NOT ENDORSED. `bonusAction` is recorded on the Action
-     * and read by NOTHING in this module: it is not validated, not counted,
-     * and not restricted to one per Action. The stated rule — "Bonus Actions
-     * do not consume an additional normal Round Action" — is satisfied only
-     * because nothing consumes anything for them at all.
+     * CHANGED DELIBERATELY in 2B-4B. `bonusAction` was carried on every
+     * Action and read by nothing: not validated, not counted, not limited.
+     * It was dead data that read like a feature, and a wrapper that kept it
+     * would have carried the same lie into the new model.
      *
-     * Reported rather than corrected, since fixing it here would be a rules
-     * change inside a characterization ticket.
+     * It is removed rather than fixed. Authorization, limits, resolution and
+     * cost semantics for Bonus Actions are a rules design nobody has done,
+     * and inventing them inside a refactor is how an unowned mechanic gets
+     * decided by accident.
      */
-    const withBonus = skillAction({
-      bonusAction: { source: { kind: "skill", skillId: "step" } },
-    });
+    const action = skillAction();
 
-    const result = spendCombatAction(
-      withBonus,
-      roundState("a", 4),
-      turnState("a", 2),
-    );
-
-    if (!result.success) throw new Error("unreachable");
-
-    expect(result.combatant.remainingActions).toBe(3);
-    expect(result.state.actionsSpent).toBe(1);
-
-    const withoutBonus = spendCombatAction(
-      skillAction(),
-      roundState("a", 4),
-      turnState("a", 2),
-    );
-
-    if (!withoutBonus.success) throw new Error("unreachable");
-
-    expect(result.combatant.remainingActions)
-      .toBe(withoutBonus.combatant.remainingActions);
+    expect(action).not.toHaveProperty("bonusAction");
+    expect(Object.keys(action).sort()).toEqual([
+      "actionCost",
+      "actorCombatantId",
+      "id",
+      "source",
+      "threatenedCombatantIds",
+    ]);
   });
 });
 
@@ -277,7 +263,7 @@ describe("Inaction and Hesitation", () => {
     expect(HESITATION_ACTION_COST).toBe(1);
   });
 
-  it("builds an Inaction that targets nobody", () => {
+  it("builds an Inaction that threatens nobody", () => {
     const action = createInactionAction("i-1", "a");
 
     expect(action).toEqual({
@@ -285,7 +271,7 @@ describe("Inaction and Hesitation", () => {
       actorCombatantId: "a",
       actionCost: 1,
       source: { kind: "inaction" },
-      targetCombatantIds: [],
+      threatenedCombatantIds: [],
     });
   });
 

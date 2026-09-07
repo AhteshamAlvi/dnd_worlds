@@ -89,27 +89,6 @@ export type CombatActionSource =
 
 
 // ---------------------------------------------------------------------------
-// Bonus Actions
-// ---------------------------------------------------------------------------
-
-/*
- * A normal Action may be accompanied by a Bonus Action when some external
- * mechanic grants or enables one.
- *
- * Bonus Actions do not consume an additional normal Round Action.
- *
- * The granting mechanic belongs to Character content such as a Skill,
- * Technique, Trait, Item, or another effect. Combat only records and
- * resolves the runtime use.
- */
-export interface CombatBonusAction {
-  readonly source: CombatActionSource;
-
-  readonly targetCombatantIds?: readonly CombatantId[];
-}
-
-
-// ---------------------------------------------------------------------------
 // Actions
 // ---------------------------------------------------------------------------
 
@@ -129,18 +108,29 @@ export interface CombatAction {
   readonly source: CombatActionSource;
 
   /*
-   * Combatants directly attacked or otherwise affected by this Action.
+   * The neutral intent this Action schedules, when it schedules one.
    *
-   * Targeting another combatant may create a Reaction opportunity, but
-   * does not automatically open a Reaction. The target must first pass
-   * the Reaction Gate.
+   * A REFERENCE, not a copy. Combat does not own the Skill, the targets,
+   * the geometry, the check or the consequences — it owns when this
+   * combatant may act and what it costs the Action economy. Absent for
+   * Inaction and Hesitation, which schedule nothing.
    */
-  readonly targetCombatantIds: readonly CombatantId[];
+  readonly intentId?: string;
 
   /*
-   * Optional Bonus Action performed alongside this Action.
+   * Combatants this Action explicitly endangers.
+   *
+   * NOT the declared targets. A target list answers "who is this pointed
+   * at", and pointing at somebody is not always dangerous — a heal declares
+   * a recipient and threatens nobody. This list is derived above Combat
+   * from the action profile's own threat declaration, and it is the ONLY
+   * thing that opens a Reaction opportunity.
+   *
+   * Being on it is not being hit: a threatened combatant may react to a
+   * blow that ultimately misses, and a combatant the blow ultimately
+   * catches gets nothing from this list unless they were on it first.
    */
-  readonly bonusAction?: CombatBonusAction;
+  readonly threatenedCombatantIds: readonly CombatantId[];
 }
 
 
@@ -233,17 +223,40 @@ export interface TurnState {
 // ---------------------------------------------------------------------------
 
 /*
- * Being attacked or otherwise affected creates a Reaction opportunity.
+ * What threatened somebody enough to be worth reacting to.
+ *
+ * Two kinds, because two genuinely different things can threaten you and
+ * only one of them is somebody's Action. A falling boulder has no actor and
+ * declared no targets; describing it as an Action with a target list would
+ * be inventing a combatant who threw it.
+ */
+export type ReactionTrigger =
+  | {
+      readonly kind: "action";
+      readonly actionId: CombatActionId;
+      readonly actorCombatantId: CombatantId;
+    }
+  | {
+      /*
+       * A host-supplied hazard. The host identifies it and says who it
+       * endangers; Combat neither models nor resolves it.
+       */
+      readonly kind: "event";
+      readonly eventId: string;
+      readonly describedAs?: string;
+    };
+
+
+/*
+ * Being explicitly threatened creates a Reaction opportunity.
  *
  * This is deliberately distinct from ReactionState.
  *
- * The affected combatant must first resolve the Detection-based Reaction
+ * The threatened combatant must first resolve the Detection-based Reaction
  * Gate. Only a successful gate creates an actual Reaction state.
  */
 export interface ReactionOpportunity {
-  readonly triggeringActionId: CombatActionId;
-
-  readonly triggeringCombatantId: CombatantId;
+  readonly trigger: ReactionTrigger;
 
   readonly reactingCombatantId: CombatantId;
 }
@@ -267,9 +280,17 @@ export interface ReactionState {
 
   readonly reactingCombatantId: CombatantId;
 
-  readonly triggeringCombatantId: CombatantId;
+  readonly trigger: ReactionTrigger;
 
-  readonly triggeringActionId: CombatActionId;
+  /*
+   * Whose Turn this Reaction ended.
+   *
+   * Separate from the trigger because a hazard has no actor and still
+   * interrupts somebody. Initiative stays parked on this combatant, which
+   * is what makes the Round resume AFTER them rather than returning to the
+   * Turn the Reaction cut short.
+   */
+  readonly interruptedCombatantId: CombatantId;
 
   readonly actionCap: number;
 

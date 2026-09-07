@@ -589,10 +589,10 @@ export function findReactionStateValidationIssues(
       reaction.reactingCombatantId,
     );
 
-  const triggeringCombatant =
+  const interruptedCombatant =
     findRoundCombatant(
       round,
-      reaction.triggeringCombatantId,
+      reaction.interruptedCombatantId,
     );
 
   if (
@@ -610,22 +610,28 @@ export function findReactionStateValidationIssues(
   }
 
   if (
-    triggeringCombatant === undefined
+    interruptedCombatant === undefined
   ) {
     issues.push({
       code:
         "combat.round.reaction.triggering-combatant-unknown",
       message:
-        "The active Reaction references a triggering combatant who is not present in the Round.",
+        "The active Reaction interrupted a combatant who is not present in the Round.",
       combatantIds: [
-        reaction.triggeringCombatantId,
+        reaction.interruptedCombatantId,
       ],
     });
   }
 
+  /*
+   * Only an ACTION trigger can be a self-Reaction. A hazard has no actor, so
+   * a combatant reacting to a boulder during their own Turn is ordinary
+   * rather than incoherent.
+   */
   if (
+    reaction.trigger.kind === "action" &&
     reaction.reactingCombatantId ===
-    reaction.triggeringCombatantId
+      reaction.trigger.actorCombatantId
   ) {
     issues.push({
       code:
@@ -652,7 +658,7 @@ export function findReactionStateValidationIssues(
 
   if (
     initiativeCombatantId !==
-    reaction.triggeringCombatantId
+    reaction.interruptedCombatantId
   ) {
     issues.push({
       code:
@@ -660,23 +666,27 @@ export function findReactionStateValidationIssues(
       message:
         "During a Reaction, the Round Initiative position must remain on the combatant whose Turn was interrupted.",
       combatantIds: [
-        reaction.triggeringCombatantId,
+        reaction.interruptedCombatantId,
         reaction.reactingCombatantId,
       ],
     });
   }
 
+  const triggerId =
+    reaction.trigger.kind === "action"
+      ? reaction.trigger.actionId
+      : reaction.trigger.eventId;
+
   if (
-    reaction.triggeringActionId.trim()
-      .length === 0
+    triggerId.trim().length === 0
   ) {
     issues.push({
       code:
         "combat.round.reaction.triggering-action-id-empty",
       message:
-        "An active Reaction must reference the Action that triggered it.",
+        "An active Reaction must identify what triggered it.",
       combatantIds: [
-        reaction.triggeringCombatantId,
+        reaction.interruptedCombatantId,
         reaction.reactingCombatantId,
       ],
     });

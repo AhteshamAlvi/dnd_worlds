@@ -222,10 +222,12 @@ describe("settling the state after an Action", () => {
 
 describe("the Reaction sequence, end to end", () => {
   function attackOnC() {
-    const round = spend(threeCombatantRound(), { targetCombatantIds: ["c"] });
+    const round = spend(threeCombatantRound(), {
+      threatenedCombatantIds: ["c"],
+    });
 
     const opportunity = createReactionOpportunity(
-      skillAction({ targetCombatantIds: ["c"] }),
+      skillAction({ threatenedCombatantIds: ["c"] }),
       "c",
     );
 
@@ -252,8 +254,12 @@ describe("the Reaction sequence, end to end", () => {
     expect(opened.round.activeState).toEqual({
       kind: "reaction",
       reactingCombatantId: "c",
-      triggeringCombatantId: "a",
-      triggeringActionId: "action-1",
+      trigger: {
+        kind: "action",
+        actionId: "action-1",
+        actorCombatantId: "a",
+      },
+      interruptedCombatantId: "a",
       actionCap: 1,
       actionsSpent: 0,
     });
@@ -358,8 +364,11 @@ describe("the Reaction sequence, end to end", () => {
     const { round } = attackOnC();
 
     const result = resolveSuccessfulReactionGate(round, {
-      triggeringActionId: "action-1",
-      triggeringCombatantId: "b",
+      trigger: {
+        kind: "action",
+        actionId: "action-1",
+        actorCombatantId: "b",
+      },
       reactingCombatantId: "c",
     });
 

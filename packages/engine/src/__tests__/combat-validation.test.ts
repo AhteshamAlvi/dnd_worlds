@@ -239,7 +239,10 @@ describe("the active Reaction must be coherent with the Round", () => {
 
   it("requires the triggering Action to be identified", () => {
     expect(codesOf(findReactionStateValidationIssues(
-      { ...reactionState("c", "a"), triggeringActionId: "  " },
+      {
+        ...reactionState("c", "a"),
+        trigger: { kind: "action", actionId: "  ", actorCombatantId: "a" },
+      },
       round,
     ))).toContain("combat.round.reaction.triggering-action-id-empty");
   });

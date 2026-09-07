@@ -79,12 +79,19 @@ export {
   summarizeEligibility,
 } from "./eligibility";
 
-export type { ActionCheckProfile, ActionProfile } from "./profile";
+export type {
+  ActionCheckProfile,
+  ActionProfile,
+  ThreatDeclaration,
+} from "./profile";
 
 export {
+  THREAT_DECLARATIONS,
   findActionProfileIssues,
+  isThreatDeclaration,
   profilePermitsFocusKind,
   profilePermitsTiming,
+  profileThreatensDeclaredTargets,
 } from "./profile";
 
 export type { ResolutionApproach } from "./approach";

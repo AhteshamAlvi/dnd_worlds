@@ -61,17 +61,38 @@ export function turnState(
 
 export function reactionState(
   reactingCombatantId: CombatantId,
-  triggeringCombatantId: CombatantId,
+  interruptedCombatantId: CombatantId,
   actionCap = 1,
   actionsSpent = 0,
 ): ReactionState {
   return {
     kind: "reaction",
     reactingCombatantId,
-    triggeringCombatantId,
-    triggeringActionId: "action-1",
+    trigger: {
+      kind: "action",
+      actionId: "action-1",
+      actorCombatantId: interruptedCombatantId,
+    },
+    interruptedCombatantId,
     actionCap,
     actionsSpent,
+  };
+}
+
+
+/** A Reaction opened by a hazard rather than by anybody's Action. */
+export function eventReactionState(
+  reactingCombatantId: CombatantId,
+  interruptedCombatantId: CombatantId,
+  actionCap = 1,
+): ReactionState {
+  return {
+    kind: "reaction",
+    reactingCombatantId,
+    trigger: { kind: "event", eventId: "boulder-1" },
+    interruptedCombatantId,
+    actionCap,
+    actionsSpent: 0,
   };
 }
 
@@ -83,7 +104,7 @@ export function skillAction(
     actorCombatantId: "a",
     actionCost: 1,
     source: { kind: "skill", skillId: "strike" },
-    targetCombatantIds: [],
+    threatenedCombatantIds: [],
     ...overrides,
   };
 }

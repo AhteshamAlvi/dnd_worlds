@@ -43,8 +43,24 @@ import type {
   CombatantRoundState,
   ReactionOpportunity,
   ReactionState,
+  ReactionTrigger,
   TurnState,
 } from "./types";
+
+
+/*
+ * A hazard the host reports, with the combatants it endangers.
+ *
+ * The engine models no boulders. It is told one is falling and on whom, and
+ * that is enough to offer a Reaction.
+ */
+export interface CredibleThreat {
+  readonly eventId: string;
+
+  readonly threatenedCombatantIds: readonly CombatantId[];
+
+  readonly describedAs?: string;
+}
 
 import {
   hasExhaustedRoundActions,
@@ -76,7 +92,7 @@ export const REACTION_DECISION_LIMIT_SECONDS = 15;
 // ---------------------------------------------------------------------------
 
 export const REACTION_OPPORTUNITY_FAILURE_REASONS = [
-  "combatant-not-affected",
+  "combatant-not-threatened",
   "self-reaction",
 ] as const;
 
@@ -106,11 +122,17 @@ export type ReactionOpportunityResult =
 
 
 /*
- * Creates a Reaction opportunity for a combatant directly affected by an
- * Action.
+ * Creates a Reaction opportunity for a combatant an Action explicitly
+ * threatens.
  *
- * The Action's targetCombatantIds are currently the Combat-level declaration
- * that another combatant is attacked or otherwise affected.
+ * Reads threatenedCombatantIds and nothing else. That list is derived above
+ * Combat from the action profile's own threat declaration, so a heal that
+ * names a recipient produces no opportunity while an attack that names the
+ * same combatant does.
+ *
+ * Being threatened is not being hit. The Action may still miss, and this
+ * opportunity stands either way — you duck the blow that was coming, not the
+ * one that landed.
  *
  * This does NOT perform the Detection check and therefore does not open a
  * Reaction state.
@@ -131,23 +153,65 @@ export function createReactionOpportunity(
   }
 
   if (
-    !action.targetCombatantIds.includes(
+    !action.threatenedCombatantIds.includes(
       reactingCombatantId,
     )
   ) {
     return {
       success: false,
       reactingCombatantId,
-      reason: "combatant-not-affected",
+      reason: "combatant-not-threatened",
     };
   }
 
   return {
     success: true,
     opportunity: {
-      triggeringActionId: action.id,
-      triggeringCombatantId:
-        action.actorCombatantId,
+      trigger: {
+        kind: "action",
+        actionId: action.id,
+        actorCombatantId: action.actorCombatantId,
+      },
+      reactingCombatantId,
+    },
+  };
+}
+
+
+/*
+ * Creates a Reaction opportunity from a hazard nobody performed.
+ *
+ * A falling boulder threatens whoever is under it, and forcing that through
+ * the Action model would mean inventing a combatant who threw it and a
+ * target list it never declared. The host says what happened and who it
+ * endangers; Combat does the rest identically from there.
+ */
+export function createEventReactionOpportunity(
+  threat: CredibleThreat,
+  reactingCombatantId: CombatantId,
+): ReactionOpportunityResult {
+  if (
+    !threat.threatenedCombatantIds.includes(
+      reactingCombatantId,
+    )
+  ) {
+    return {
+      success: false,
+      reactingCombatantId,
+      reason: "combatant-not-threatened",
+    };
+  }
+
+  return {
+    success: true,
+    opportunity: {
+      trigger: {
+        kind: "event",
+        eventId: threat.eventId,
+        ...(threat.describedAs === undefined
+          ? {}
+          : { describedAs: threat.describedAs }),
+      },
       reactingCombatantId,
     },
   };
@@ -214,9 +278,10 @@ export type ReactionEndReason =
 export interface ReactionEnd {
   readonly combatantId: CombatantId;
 
-  readonly triggeringCombatantId: CombatantId;
+  /** Whose Turn this Reaction ended. */
+  readonly interruptedCombatantId: CombatantId;
 
-  readonly triggeringActionId: string;
+  readonly trigger: ReactionTrigger;
 
   readonly reason: ReactionEndReason;
 
@@ -271,12 +336,21 @@ export function isValidReactionActionCap(
  */
 export function openReactionAfterGateSuccess(
   opportunity: ReactionOpportunity,
-  triggeringTurn: TurnState,
+  interruptedTurn: TurnState,
   combatants: readonly CombatantRoundState[],
 ): ReactionStartResult {
+  /*
+   * An ACTION trigger must interrupt the Turn of the combatant who acted:
+   * a Reaction to Gon's punch cannot interrupt somebody else's Turn.
+   *
+   * An EVENT trigger has no actor, so there is nothing to match against. A
+   * hazard interrupts whichever Turn is in progress when it lands, which is
+   * the only Turn it could interrupt.
+   */
   if (
-    triggeringTurn.combatantId !==
-    opportunity.triggeringCombatantId
+    opportunity.trigger.kind === "action" &&
+    interruptedTurn.combatantId !==
+      opportunity.trigger.actorCombatantId
   ) {
     return {
       success: false,
@@ -327,11 +401,10 @@ export function openReactionAfterGateSuccess(
     reactingCombatantId:
       opportunity.reactingCombatantId,
 
-    triggeringCombatantId:
-      opportunity.triggeringCombatantId,
+    trigger: opportunity.trigger,
 
-    triggeringActionId:
-      opportunity.triggeringActionId,
+    interruptedCombatantId:
+      interruptedTurn.combatantId,
 
     actionCap,
 
@@ -346,7 +419,7 @@ export function openReactionAfterGateSuccess(
    */
   const triggeringTurnEnd =
     endTurnForReaction(
-      triggeringTurn,
+      interruptedTurn,
     );
 
   return {
@@ -491,11 +564,10 @@ function createReactionEnd(
     combatantId:
       reaction.reactingCombatantId,
 
-    triggeringCombatantId:
-      reaction.triggeringCombatantId,
+    interruptedCombatantId:
+      reaction.interruptedCombatantId,
 
-    triggeringActionId:
-      reaction.triggeringActionId,
+    trigger: reaction.trigger,
 
     reason,
 

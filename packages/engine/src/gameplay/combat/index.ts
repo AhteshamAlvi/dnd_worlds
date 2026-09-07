@@ -49,7 +49,6 @@ export type {
   CombatStateKind,
 
   CombatActionSource,
-  CombatBonusAction,
   CombatAction,
 
   CombatActionCapacity,
@@ -60,6 +59,7 @@ export type {
 
   TurnState,
 
+  ReactionTrigger,
   ReactionOpportunity,
   ReactionState,
 
@@ -108,6 +108,25 @@ export type {
   ActionSpendFailure,
   ActionSpendResult,
 } from "./actions";
+
+
+// ---------------------------------------------------------------------------
+// Neutral-action scheduling
+// ---------------------------------------------------------------------------
+
+export {
+  ACTION_SCHEDULE_FAILURE_REASONS,
+  resolveThreatenedCombatants,
+  scheduleNeutralAction,
+} from "./scheduling";
+
+export type {
+  ActionScheduleFailureReason,
+  ActionScheduleFailure,
+  ActionScheduleSuccess,
+  ActionScheduleResult,
+  ScheduleNeutralActionInput,
+} from "./scheduling";
 
 
 // ---------------------------------------------------------------------------
@@ -196,6 +215,7 @@ export {
   REACTION_END_REASONS,
 
   createReactionOpportunity,
+  createEventReactionOpportunity,
 
   isValidReactionActionCap,
 
@@ -214,6 +234,8 @@ export {
 } from "./reaction";
 
 export type {
+  CredibleThreat,
+
   ReactionOpportunityFailureReason,
 
   ReactionOpportunitySuccess,

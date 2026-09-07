@@ -21,6 +21,7 @@ import {
   availableTurnActions,
   canContinueReaction,
   canContinueTurn,
+  createEventReactionOpportunity,
   createReactionOpportunity,
   endReactionAtActionCap,
   endReactionForRoundExhaustion,
@@ -216,15 +217,15 @@ describe("ending a Turn", () => {
 describe("Reaction opportunities", () => {
   it("declares two failure reasons", () => {
     expect([...REACTION_OPPORTUNITY_FAILURE_REASONS]).toEqual([
-      "combatant-not-affected",
+      "combatant-not-threatened",
       "self-reaction",
     ]);
   });
 
-  it("is created for a combatant the Action names as affected", () => {
+  it("is created for a combatant the Action explicitly threatens", () => {
     const action = skillAction({
       actorCombatantId: "a",
-      targetCombatantIds: ["c"],
+      threatenedCombatantIds: ["c"],
     });
 
     const result = createReactionOpportunity(action, "c");
@@ -234,8 +235,11 @@ describe("Reaction opportunities", () => {
     if (!result.success) throw new Error("unreachable");
 
     expect(result.opportunity).toEqual({
-      triggeringActionId: "action-1",
-      triggeringCombatantId: "a",
+      trigger: {
+        kind: "action",
+        actionId: "action-1",
+        actorCombatantId: "a",
+      },
       reactingCombatantId: "c",
     });
   });
@@ -246,30 +250,33 @@ describe("Reaction opportunities", () => {
      * cap and no spent count, because nothing has opened yet.
      */
     const result = createReactionOpportunity(
-      skillAction({ targetCombatantIds: ["c"] }),
+      skillAction({ threatenedCombatantIds: ["c"] }),
       "c",
     );
 
     if (!result.success) throw new Error("unreachable");
 
     expect(result.opportunity).not.toHaveProperty("actionCap");
-    expect(result.opportunity).not.toHaveProperty("kind");
+    expect(result.opportunity).not.toHaveProperty("actionsSpent");
   });
 
-  it("refuses a combatant the Action did not affect", () => {
+  it("refuses a combatant the Action does not threaten", () => {
     const result = createReactionOpportunity(
-      skillAction({ targetCombatantIds: ["c"] }),
+      skillAction({ threatenedCombatantIds: ["c"] }),
       "b",
     );
 
     if (result.success) throw new Error("unreachable");
 
-    expect(result.reason).toBe("combatant-not-affected");
+    expect(result.reason).toBe("combatant-not-threatened");
   });
 
   it("refuses the actor reacting to their own Action", () => {
     const result = createReactionOpportunity(
-      skillAction({ actorCombatantId: "a", targetCombatantIds: ["a", "c"] }),
+      skillAction({
+        actorCombatantId: "a",
+        threatenedCombatantIds: ["a", "c"],
+      }),
       "a",
     );
 
@@ -278,10 +285,9 @@ describe("Reaction opportunities", () => {
     expect(result.reason).toBe("self-reaction");
   });
 
-  it("checks self-reaction BEFORE affectedness", () => {
-    /* An actor not in their own target list still reports self-reaction. */
+  it("checks self-reaction BEFORE the threat list", () => {
     const result = createReactionOpportunity(
-      skillAction({ actorCombatantId: "a", targetCombatantIds: ["c"] }),
+      skillAction({ actorCombatantId: "a", threatenedCombatantIds: ["c"] }),
       "a",
     );
 
@@ -290,31 +296,80 @@ describe("Reaction opportunities", () => {
     expect(result.reason).toBe("self-reaction");
   });
 
-  it("reads affectedness from targetCombatantIds and nothing else", () => {
-    /*
-     * CHARACTERIZED, NOT ENDORSED. Declared targets are the only signal
-     * Combat has for "was affected". A position-focused Action that catches
-     * a bystander cannot currently produce an opportunity for them, and a
-     * declared target who ends up unaffected still gets one.
-     */
+  it("reads the threat list and nothing else", () => {
     const result = createReactionOpportunity(
-      skillAction({ targetCombatantIds: [] }),
+      skillAction({ threatenedCombatantIds: [] }),
       "c",
     );
 
     if (result.success) throw new Error("unreachable");
 
-    expect(result.reason).toBe("combatant-not-affected");
+    expect(result.reason).toBe("combatant-not-threatened");
+  });
+});
+
+
+describe("a hazard can open a Reaction with no actor at all", () => {
+  it("creates an opportunity from a host-supplied credible threat", () => {
+    const result = createEventReactionOpportunity(
+      {
+        eventId: "boulder-1",
+        threatenedCombatantIds: ["b", "c"],
+        describedAs: "A boulder comes down the slope.",
+      },
+      "c",
+    );
+
+    expect(result.success).toBe(true);
+
+    if (!result.success) throw new Error("unreachable");
+
+    expect(result.opportunity).toEqual({
+      trigger: {
+        kind: "event",
+        eventId: "boulder-1",
+        describedAs: "A boulder comes down the slope.",
+      },
+      reactingCombatantId: "c",
+    });
+  });
+
+  it("refuses a combatant the hazard does not endanger", () => {
+    const result = createEventReactionOpportunity(
+      { eventId: "boulder-1", threatenedCombatantIds: ["b"] },
+      "c",
+    );
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("combatant-not-threatened");
+  });
+
+  it("has no self-reaction rule, because a hazard has no actor", () => {
+    /*
+     * Reacting to a boulder during your own Turn is ordinary. The
+     * self-reaction refusal exists to stop somebody reacting to their own
+     * Action, and there is no Action here to react to.
+     */
+    const result = createEventReactionOpportunity(
+      { eventId: "boulder-1", threatenedCombatantIds: ["a"] },
+      "a",
+    );
+
+    expect(result.success).toBe(true);
   });
 });
 
 
 describe("opening a Reaction ends the triggering Turn", () => {
   const opportunity = {
-    triggeringActionId: "action-1",
-    triggeringCombatantId: "a",
+    trigger: {
+      kind: "action",
+      actionId: "action-1",
+      actorCombatantId: "a",
+    },
     reactingCombatantId: "c",
-  };
+  } as const;
 
   it("declares three failure reasons", () => {
     expect([...REACTION_START_FAILURE_REASONS]).toEqual([
@@ -342,8 +397,12 @@ describe("opening a Reaction ends the triggering Turn", () => {
     expect(result.reaction).toEqual({
       kind: "reaction",
       reactingCombatantId: "c",
-      triggeringCombatantId: "a",
-      triggeringActionId: "action-1",
+      trigger: {
+        kind: "action",
+        actionId: "action-1",
+        actorCombatantId: "a",
+      },
+      interruptedCombatantId: "a",
       actionCap: 1,
       actionsSpent: 0,
     });
@@ -466,8 +525,12 @@ describe("continuing and ending a Reaction", () => {
   it("carries the trigger's identity into the ending", () => {
     expect(endReactionVoluntarily(reactionState("c", "a", 1, 1))).toEqual({
       combatantId: "c",
-      triggeringCombatantId: "a",
-      triggeringActionId: "action-1",
+      interruptedCombatantId: "a",
+      trigger: {
+        kind: "action",
+        actionId: "action-1",
+        actorCombatantId: "a",
+      },
       reason: "voluntary",
       actionsSpent: 1,
     });

@@ -422,7 +422,9 @@ export function createInactionAction(
     actorCombatantId: combatantId,
     actionCost: INACTION_ACTION_COST,
     source,
-    targetCombatantIds: [],
+
+    /* Doing nothing endangers nobody. */
+    threatenedCombatantIds: [],
   };
 }
 
@@ -471,7 +473,9 @@ export function createHesitationAction(
     actorCombatantId: combatantId,
     actionCost: HESITATION_ACTION_COST,
     source,
-    targetCombatantIds: [],
+
+    /* Failing to decide endangers nobody either. */
+    threatenedCombatantIds: [],
   };
 }
 

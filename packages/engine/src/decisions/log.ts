@@ -635,6 +635,42 @@ export const ENGINE_DECISIONS = {
         rationale:
             "All three are rules decisions rather than defects in the code as specified, and a characterization ticket is the wrong place to make them — the whole point of writing the tests first is to have a baseline that does not move while the refactor happens. The third is the one the neutral-action wrapper exists to address, and it is exactly the distinction the earlier phases built: declared targets are not affected subjects. The first two are genuinely open and need somebody to decide what the rule is before code enforces one.",
     },
+    "combat.wrapper.schedules-rather-than-owns": {
+        id: "combat.wrapper.schedules-rather-than-owns",
+        question:
+            "Combat held its own copy of what an Action is: an actor, a cost, a source, and a list of who it points at. With a neutral action model in place, how much of that should Combat keep?",
+        chosen:
+            "A CombatAction REFERENCES a neutral intent by id and keeps only what the encounter layer adds: which Combatant is acting, what the Action economy charges, and who was explicitly endangered. Skills, goals, focus, targeting validity, Range, checks, resource mutation, adjudication and consequences all stay in the layers that already own them. The structured cost is read through the neutral accessor rather than recomputed, so the 'charged only inside structured time' rule has one implementation.",
+        rationale:
+            "Copying the targets into Combat was what made Combat a second authority on who an action affects, and a second authority is the thing this whole phase existed to remove. Referencing the intent also settles a subtler question the old shape could not answer: the same intent is resolvable outside a fight with no wrapper at all, which is only demonstrable if Combat adds something rather than duplicating something. An architecture test now fails if any file under gameplay/ imports character/, mentions targetCombatantIds, or mentions bonusAction — the three ways this boundary would quietly come back.",
+    },
+    "combat.reactions.threat-not-target": {
+        id: "combat.reactions.threat-not-target",
+        question:
+            "A Reaction opportunity was created for any combatant named in an Action's targetCombatantIds. That rule is wrong in both directions and the wrapper had to replace it with something.",
+        chosen:
+            "Reactions read an explicit THREAT list and nothing else. An action profile declares whether using it endangers its declared targets (`threatens`, default \"none\"); the wrapper maps those targets onto participating Combatants and hands Combat the result. A position-focused action threatens nobody unless somebody explicitly names who is endangered, and only a profile that already declares itself threatening may carry such names. Hazards with no actor supply a CredibleThreat directly and open Reactions through their own path.",
+        rationale:
+            "Being pointed at is not being endangered: a heal names a recipient and provokes no dodge, which the old rule could not express at all. Being endangered does not require being pointed at either: a boulder threatens whoever is under it and declares nothing, and forcing it through the target model would mean inventing a combatant who threw it. The three lists stay distinct for the reason the earlier tickets separated them — declared targets are what a player chose, credible threats are what warrants a Reaction, and finalized affected subjects are what settlement decided. Notably a collateral combatant gets NO Reaction from being affected: affectedness is known after resolution, and a Reaction exists to be taken before it. A threatened combatant keeps their opportunity even when the blow misses, because you duck what was coming rather than what landed.",
+    },
+    "combat.actions.bonus-action-removed-not-implemented": {
+        id: "combat.actions.bonus-action-removed-not-implemented",
+        question:
+            "`bonusAction` sat on every CombatAction and was read by nothing: not validated, not counted, not limited to one. The wrapper had to either keep it, implement it, or drop it.",
+        chosen:
+            "Removed from the canonical model. Bonus Actions get a dedicated ticket that defines authorization, limits, resolution and cost semantics before any code carries the field again.",
+        rationale:
+            "Keeping it would have carried dead data that reads like a feature into the new model, and the documented rule — 'Bonus Actions do not consume an additional Action' — held only because nothing consumed anything for them. Implementing it inside a refactor is worse: authorization and limits are rules nobody has written, and a mechanic invented as a side effect of a wrapper is a mechanic nobody decided. Removing it makes the absence visible, which is the honest state until somebody designs it.",
+    },
+    "combat.api.stays-internal-for-now": {
+        id: "combat.api.stays-internal-for-now",
+        question:
+            "Whether Combat should be exported from src/index.ts now that it wraps neutral actions and has a supported surface.",
+        chosen:
+            "It stays internal. src/index.ts continues to export Combat Ability and the Round duration and nothing else from gameplay/. No internal helper was exported to make testing convenient; the characterization and integration suites import module paths directly, as every other suite in this repo does.",
+        rationale:
+            "Nothing outside the engine consumes Combat yet, and an exported surface is a promise that is cheaper to make than to withdraw — the same reasoning that kept progression unexported until a consumer asked for it. The specific temptation this records refusing is exporting helpers purely so a test can reach them: tests here reach modules by path, so the public barrel stays a statement about what hosts may rely on rather than a byproduct of how the suite is written. When a host needs Combat, the surface gets chosen deliberately and this entry gets superseded.",
+    },
 } as const satisfies Record<string, EngineDecision>;
 
 export type KnownDecisionId = keyof typeof ENGINE_DECISIONS;

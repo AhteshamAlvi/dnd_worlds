@@ -770,3 +770,69 @@ describe("GM adjudication is not scattered", () => {
       .toEqual(["adjudication.ts", "index.ts", "visibility.ts"]);
   });
 });
+
+
+/*
+ * Combat wraps neutral actions; it does not own them.
+ *
+ * The edge gameplay/ -> actions/ is the point of the wrapper and is
+ * expected. What must stay absent is the reverse, and the content catalogs:
+ * a Combat that reaches into Skill or Item definitions has taken back the
+ * ownership this phase spent five tickets moving out of it.
+ */
+describe("Combat schedules neutral actions without owning them", () => {
+  const combatFiles = sourceFilesUnder(join(SRC, "gameplay"));
+
+  it("finds the sources it is checking", () => {
+    expect(combatFiles.length).toBeGreaterThan(5);
+  });
+
+  it("reaches actions/ from at least one place, so the edge is real", () => {
+    const reaching = combatFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "actions"),
+      ),
+    );
+
+    expect(reaching.length).toBeGreaterThan(0);
+  });
+
+  it("imports no Character content, catalogs or rules", () => {
+    /*
+     * Combat may consume a resolved Action capacity handed to it. What it
+     * may not do is look a Skill up, evaluate a Requirement, or read a
+     * catalog — each of which would make it a second authority on a question
+     * some other domain already answers.
+     */
+    const offenders = combatFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "character"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps declared targets out of the Combat model entirely", () => {
+    /*
+     * `targetCombatantIds` was the Combat-level copy of who an Action points
+     * at, and it was the source of Reaction truth. Both jobs moved: declared
+     * targets live on the neutral intent, and Reactions read an explicit
+     * threat list. A reappearance of the field would restore the competing
+     * source this ticket removed.
+     */
+    const offenders = combatFiles.filter((path) =>
+      /\btargetCombatantIds\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the inert Bonus Action field out of the model", () => {
+    const offenders = combatFiles.filter((path) =>
+      /\bbonusAction\b|\bCombatBonusAction\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});

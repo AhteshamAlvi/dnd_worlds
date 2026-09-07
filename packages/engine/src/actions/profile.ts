@@ -49,6 +49,39 @@ import {
 } from "./focus";
 
 
+/*
+ * Whether USING this constitutes a credible threat, and to whom.
+ *
+ * Deliberately phrased as a threat rather than as a Reaction: Reactions are
+ * Combat's, and a capability has to be able to say this about itself outside
+ * an encounter. A Skill's own definition states whether it endangers what it
+ * is pointed at; Combat reads that and decides what a Reaction opportunity
+ * is worth.
+ *
+ * "none" is the default, and it is the answer for most things a character
+ * does. Healing an ally declares a target and threatens nobody; a stance
+ * declares nothing at all. Being pointed at is not by itself dangerous, which
+ * is precisely the assumption the old model made.
+ */
+export const THREAT_DECLARATIONS = [
+  /* Using this endangers nobody. Declaring a target does not change that. */
+  "none",
+
+  /* Using this endangers the subjects it declared. */
+  "declared-targets",
+] as const;
+
+export type ThreatDeclaration = typeof THREAT_DECLARATIONS[number];
+
+
+export function isThreatDeclaration(
+  value: unknown,
+): value is ThreatDeclaration {
+  return typeof value === "string" &&
+    (THREAT_DECLARATIONS as readonly string[]).includes(value);
+}
+
+
 /**
  * The check a profile is decided by, named in the existing check vocabulary.
  *
@@ -100,6 +133,16 @@ export interface ActionProfile {
   readonly travel?: SpatialTravel;
 
   readonly check?: ActionCheckProfile;
+
+  /**
+   * Whether using this threatens its declared targets. Defaults to "none".
+   *
+   * Omitted by most content on purpose. A capability that endangers what it
+   * points at has to say so; nothing infers danger from the presence of a
+   * target, because that inference is wrong for every buff, heal and hand-off
+   * in the game.
+   */
+  readonly threatens?: ThreatDeclaration;
 }
 
 
@@ -169,7 +212,34 @@ export function findActionProfileIssues(
     errors.push(...findTravelIssues(profile.travel));
   }
 
+  if (
+    profile.threatens !== undefined &&
+    !isThreatDeclaration(profile.threatens)
+  ) {
+    errors.push({
+      code: "actions.profile.threatens.invalid",
+      message: `"${String(profile.threatens)}" is not a known threat declaration.`,
+      audience: "developer",
+      required: [...THREAT_DECLARATIONS],
+      actual: String(profile.threatens),
+    });
+  }
+
   return errors;
+}
+
+
+/**
+ * Whether this profile endangers the subjects it declares.
+ *
+ * The one place the default lives. A caller reading `profile.threatens`
+ * directly would have to remember that absent means "none", and the first one
+ * that forgets turns every targeted heal into an attack.
+ */
+export function profileThreatensDeclaredTargets(
+  profile: ActionProfile,
+): boolean {
+  return (profile.threatens ?? "none") === "declared-targets";
 }
 
 
