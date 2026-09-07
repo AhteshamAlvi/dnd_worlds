@@ -102,10 +102,14 @@ export function resolveCombatAbility(attributes: CharacterStats): number {
  *
  *   round((STR + AGI) / 2)
  *
- * Speed replaced Speed, which averaged the same two Stats but described a
+ * Speed replaced ATHLETICS, which averaged the same two Stats but described a
  * vague "forceful physical capability". Speed says one thing and converts to
- * metres per second — see attributes/speed.ts — so a Move covers a distance
- * rather than a feeling.
+ * metres per Round — see attributes/speed.ts — so a Move covers a distance
+ * rather than a feeling. (The rename briefly left this paragraph reading
+ * "Speed replaced Speed", which is what a find-and-replace does to prose that
+ * names both sides of a rename.)
+ *
+ * This score is what movement consumes. It is resolved once, here.
  *
  * Volume and Mass are NOT applied here. They have already moved AGI through the
  * physical base resolution, and applying them again would charge a large

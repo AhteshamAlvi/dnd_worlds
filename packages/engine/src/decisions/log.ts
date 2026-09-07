@@ -164,6 +164,45 @@ export const ENGINE_DECISIONS = {
         rationale:
             "This is deliberately the opposite of the Aura Control decision, where rounding is part of the calculation so that two characters whose raw curves differ in the third decimal genuinely pay the same. Movement ACCUMULATES, and that is the whole difference: a multiplier is applied once, but a Move share is added up to ten times within a Round, and rounding it first is exactly how a character ends the Round having travelled 5.9 or 6.1 metres against a 6-metre allowance. Two figures rather than one because movement spans four orders of magnitude across the ladder and one figure would collapse Speed 12 through 14 into a single displayed distance.",
     },
+    "movement.speed.canonical-score-owns-base-movement": {
+        id: "movement.speed.canonical-score-owns-base-movement",
+        question:
+            "Speed averages STR and AGI, and STR arrives as a continuous logarithm of Structural Capacity. Base movement can consume either the integer Derived Attribute a sheet shows, or the continuous position underneath it. movement.speed.round-denominated-accelerating-curve chose the continuous position, on the reasoning that flooring discarded up to a fifth of a doubling of genuine force.",
+        chosen:
+            "SUPERSEDES that half of the earlier decision. Base movement consumes the canonical integer Speed — round((STR + AGI) / 2), the Derived Attribute — and nothing else. The continuous Strength ladder position does not reach movement at any point, and movement does not reconstruct Speed from its Attributes. The curve, its anchors and its shape are unchanged.",
+        rationale:
+            "The precision was real and it bought the wrong thing. Two characters 25% apart in scale both resolve to STR 10, AGI 10 and Speed 10 while their ladder positions are 10.00 and 10.64 — so under the continuous version they covered 6.00 and 6.55 metres a Round with two identical character sheets and nothing on either one accounting for the difference. A rules engine may not answer 'why is that one faster' with a number the sheet does not carry. The invariant EQUAL CANONICAL SPEED = EQUAL BASE MOVEMENT is worth more than the fifth of a doubling, because it is what makes movement explicable at the table and comparable between characters. It deliberately does not promise equal PERFORMANCE: a swimmer and a sprinter of one Speed will differ, through mode, propulsion, gait and integrity factors that a GM can point at, and every one of those is inspectable in a way a logarithm of Structural Capacity is not.",
+        ruleSource: {
+            file: "01 Core Rules/Scale Speed and Magnitude.md",
+        },
+    },
+    "movement.resolution.mode-propulsion-gait-integrity": {
+        id: "movement.resolution.mode-propulsion-gait-integrity",
+        question:
+            "Base movement is one number, and a great many things will eventually modify it — Sprint, Crawl, Climb, Swim, Flight, the limbs doing the work, how those limbs are arranged, and how damaged they currently are. Left unnamed, each of those arrives as a multiplication at whichever call site its author happened to be looking at.",
+        chosen:
+            "Four named factors, declared now and resolved later: Resolved = Base(Speed) x Mode x Propulsion x Gait x Integrity. Mode is the inherent rate of a movement mode; Propulsion is the strength and suitability of the parts producing it; Gait is their number, arrangement, symmetry, specialization and coordination; Integrity is how usable they currently are. Only Integrity is implemented — it is the existing locomotion fraction, bounded to [0, 1]. The other three are fixed at 1 and reported on every result. Limb count is an INPUT to gait, never a modifier of its own.",
+        rationale:
+            "Naming an empty slot costs nothing and fixes where the answer goes. The alternative is not 'no factors' but 'four factors nobody declared', discovered one at a time as Swim, then encumbrance, then a Trait each multiply the same number somewhere else — at which point their order and their interaction are accidents rather than decisions. Splitting propulsion from gait specifically is what makes non-humanoid movement describable: a naturally tripedal creature has an efficient tripedal gait while a quadruped down to three usable legs has a disrupted one, and the two are indistinguishable to anything that treats a leg count as a multiplier. Gait must always compare against the creature's INTENDED body plan, which is why it cannot be a lookup table on a number of limbs. Integrity is bounded to [0, 1] rather than left open because an unbounded integrity is a movement bonus mechanism waiting to be discovered by accident: the first '1.2 for a powerful runner' would have become one, and strong limbs are propulsion's job.",
+    },
+    "movement.input.normalized-boundaries": {
+        id: "movement.input.normalized-boundaries",
+        question:
+            "The Speed curve is an exponential, so it answers ANY input with confident forward motion — a NaN Speed, a negative Speed, a Speed of 40, an integrity of 1.5. None of these is refusable in the ordinary way, because these are pure derivations with no EngineResult to fail into.",
+        chosen:
+            "One normalization boundary per quantity. Speed: non-finite or <= 0 produces zero movement; otherwise round to the canonical integer and clamp into 1..30. Integrity: non-finite or <= 0 produces 0, above 1 clamps to 1. Round Action Capacity: one shared helper flooring to a non-negative integer, used by every helper that divides or records a capacity. Speed 30 is the ordinary base-curve ceiling, and anything faster arrives as an explicit modifier on the result rather than as a larger number fed to the exponential.",
+        rationale:
+            "The order inside the Speed rule is the part worth recording: zero and negative Speed exit BEFORE the clamp to 1, because 'this does not move' and 'this moves very slowly' are different claims and merging them would have turned every NaN into a Speed 1 character covering 1.6 metres a Round. Clamping at 30 rather than extrapolating is a statement about what the curve is calibrated for: it was fitted between two anchors in the mortal range, and feeding it 40 answers 39 kilometres a Round with an authority it has not earned. One capacity helper rather than three matching implementations, because two normalizations that merely agree today are two that can disagree after an edit, and a share helper flooring differently from the ledger would hand out Move shares the ledger could not spend.",
+    },
+    "movement.ledger.one-allowance-two-spenders": {
+        id: "movement.ledger.one-allowance-two-spenders",
+        question:
+            "A Round's movement can be spent by a Move the character chooses and by a charged grant somebody else applies — a shove, a pull, a repositioning Technique. Both draw on one finite allowance, so what happens when a grant has already consumed the whole Round and the character still holds an unspent Action?",
+        chosen:
+            "The Move is REFUSED before the Action is spent, with the existing allowance-spent reason. `movesSpent` does not increment and the ledger is returned untouched. A partially consumed allowance is a different case and still succeeds: the Move covers whatever distance remains, which may be short of a full share, and spends the Action because the Move was performed. Charged grants are clamped to the remaining allowance and RECORDED clamped. Refusal precedence is fixed: no Round Actions, then no Move shares remaining, then no charged distance remaining.",
+        rationale:
+            "The ledger previously let the exhausted case through as a SUCCESS of zero metres, which is the worst of the three available answers: a caller counting successful Moves believed it happened, the Action was consumed either way, and nothing in the result said the character had not moved. Refusing before the Action is spent is what makes the outcome match the fiction — a character who has already been shoved their whole Round's distance has not used their Action, they have run out of ground. Short Moves are deliberately NOT refused, because a Move that covers one metre instead of three is a Move that happened and the Action is genuinely gone. Recording charged grants clamped rather than as offered keeps the field truthful: the consumption is clamped regardless, so an unclamped total can only ever mislead whoever reads it into thinking a 100-metre shove moved someone 100 metres across a 6-metre Round.",
+    },
     "attributes.derived.rounding-direction": {
         id: "attributes.derived.rounding-direction",
         question:

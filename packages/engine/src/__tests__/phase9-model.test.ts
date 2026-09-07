@@ -33,10 +33,11 @@ import {
   REFERENCE_ROUND_MOVEMENT_METERS,
   REFERENCE_SPEED_OF_SOUND_MPS,
   presentMovementMeters,
+  resolveCurveSpeed,
+  resolveIntegrityFactor,
   resolveMovement,
   resolveMovementRateMps,
   resolveRoundMovementMeters,
-  resolveSpeedPosition,
 } from "../character/foundation/attributes/speed";
 import {
   beginRoundMovement,
@@ -101,7 +102,7 @@ function resolve(scale: number, continuity: ContinuityStates = {}) {
     derived,
     strength,
     movement: resolveMovement(
-      resolveSpeedPosition(strength.position ?? 0, stats.agi),
+      derived.speed,
       body.payload.locomotion.fraction,
     ),
   };
@@ -125,7 +126,7 @@ describe("the Standard Human", () => {
 
   it("covers 6 metres in a two-second Round, which is 3 m/s", () => {
     expect(human.derived.speed).toBe(10);
-    expect(human.movement.speedPosition).toBeCloseTo(10, 10);
+    expect(human.movement.displayedSpeed).toBe(10);
     expect(human.movement.baselineRoundMovementMeters).toBeCloseTo(6, 10);
     expect(human.movement.baselineMovementRateMps).toBeCloseTo(3, 10);
   });
@@ -175,20 +176,23 @@ describe("the Scale-10 Giant", () => {
    * Less agile than a Human and still faster in a straight line, because
    * Strength carries it. Speed 11 = (16 + 6) / 2.
    */
-  it("covers 7.6 metres a Round despite being clumsier", () => {
+  it("covers 7.2 metres a Round despite being clumsier", () => {
     expect(giant.derived.speed).toBe(11);
+    expect(giant.movement.displayedSpeed).toBe(11);
 
     /*
-     * The displayed Speed is 11 and the position it MOVES on is 11.32,
-     * because Strength arrives continuous: the Giant's 16.64 ladder position
-     * is worth a third of a point of Speed that flooring would have thrown
-     * away. Movement is one of the few consumers that needs the difference.
+     * The Giant's Strength ladder position is 16.64, and movement does NOT
+     * see it. Base movement comes off the canonical Speed 11 and nothing
+     * else, so the Giant covers exactly what any other Speed 11 character
+     * covers — which is the invariant this replaced a briefly-continuous
+     * version of Speed to get back.
      */
     expect(giant.strength.position).toBeCloseTo(16.6439, 4);
-    expect(giant.movement.speedPosition).toBeCloseTo(11.3219, 4);
+    expect(giant.movement.baselineRoundMovementMeters)
+      .toBe(resolveRoundMovementMeters(11));
 
-    expect(giant.movement.baselineRoundMovementMeters).toBeCloseTo(7.5874, 4);
-    expect(giant.movement.baselineMovementRateMps).toBeCloseTo(3.7937, 4);
+    expect(giant.movement.baselineRoundMovementMeters).toBeCloseTo(7.1584, 4);
+    expect(giant.movement.baselineMovementRateMps).toBeCloseTo(3.5792, 4);
   });
 });
 
@@ -218,8 +222,8 @@ describe("a body change is reversible and never consumes invested AGI", () => {
     expect(large.movement.baselineRoundMovementMeters)
       .not.toBeCloseTo(small.movement.baselineRoundMovementMeters, 6);
 
-    expect(smallAgain.movement.speedPosition)
-      .toBe(small.movement.speedPosition);
+    expect(smallAgain.movement.displayedSpeed)
+      .toBe(small.movement.displayedSpeed);
 
     expect(smallAgain.movement.baselineRoundMovementMeters)
       .toBe(small.movement.baselineRoundMovementMeters);
@@ -235,6 +239,67 @@ describe("a body change is reversible and never consumes invested AGI", () => {
 
     expect(large.movement.baselineRoundMovementMeters)
       .toBeGreaterThan(small.movement.baselineRoundMovementMeters);
+  });
+});
+
+
+/*
+ * The invariant the whole of Phase 0.1 exists to restore.
+ *
+ * Base movement is a function of the canonical Speed score and NOTHING else.
+ * Phase 0 briefly fed the continuous Strength ladder position into the curve,
+ * and these are the characters that made it untenable.
+ */
+describe("equal canonical Speed produces exactly equal base movement", () => {
+  /*
+   * Two bodies 25% apart in scale. Both resolve to STR 10, AGI 10 and Speed
+   * 10 — and their Strength LADDER POSITIONS are 10.000 and 10.644, which is
+   * two thirds of a point of hidden difference. Under the continuous version
+   * these two moved 6.00 and 6.55 metres and no sheet explained the gap.
+   */
+  const ordinary = resolve(1);
+  const denser = resolve(1.25);
+
+  it("finds two characters of equal Speed with unequal Structural Capacity", () => {
+    expect(ordinary.derived.speed).toBe(10);
+    expect(denser.derived.speed).toBe(10);
+
+    expect(ordinary.stats.str).toBe(denser.stats.str);
+    expect(ordinary.stats.agi).toBe(denser.stats.agi);
+
+    /* The hidden difference is real, and large enough to have mattered. */
+    expect(ordinary.strength.position).toBeCloseTo(10, 10);
+    expect(denser.strength.position).toBeCloseTo(10.6439, 4);
+  });
+
+  it("moves them exactly the same distance", () => {
+    expect(denser.movement.baselineRoundMovementMeters)
+      .toBe(ordinary.movement.baselineRoundMovementMeters);
+
+    expect(denser.movement.baselineRoundMovementMeters).toBeCloseTo(6, 10);
+  });
+
+  /*
+   * The stronger statement: the same Speed reached by a DIFFERENT route.
+   * A scale-1.5 body carries STR 11 and AGI 9 against the Standard Human's
+   * 10 and 10 — different Attributes, different mass, different Structural
+   * Capacity, one Speed, one base movement.
+   */
+  it("moves two different builds of one Speed identically", () => {
+    const heavier = resolve(1.5);
+
+    expect(heavier.derived.speed).toBe(10);
+    expect(heavier.stats.str).toBe(11);
+    expect(heavier.stats.agi).toBe(9);
+
+    expect(heavier.movement.baselineRoundMovementMeters)
+      .toBe(ordinary.movement.baselineRoundMovementMeters);
+  });
+
+  it("reports the canonical score as the displayed Speed", () => {
+    expect(ordinary.movement.displayedSpeed).toBe(ordinary.derived.speed);
+    expect(denser.movement.displayedSpeed).toBe(denser.derived.speed);
+    expect(resolve(10).movement.displayedSpeed).toBe(resolve(10).derived.speed);
   });
 });
 
@@ -268,7 +333,9 @@ describe("the Speed curve", () => {
   it("stays finite, positive and monotonic across Speed 1 to 30", () => {
     let previous = 0;
 
-    for (let speed = 1; speed <= 30; speed += 0.25) {
+    /* Whole points: fractional Speed canonicalizes onto them, so a finer
+     * sweep would compare a score against itself. */
+    for (let speed = 1; speed <= 30; speed += 1) {
       const movement = resolveRoundMovementMeters(speed);
 
       expect(Number.isFinite(movement)).toBe(true);
@@ -293,29 +360,112 @@ describe("the Speed curve", () => {
     }
   });
 
-  /* Flooring before converting is what this replaces. */
-  it("moves a fractional Speed position differently from a whole one", () => {
-    expect(resolveRoundMovementMeters(10.5))
-      .toBeGreaterThan(resolveRoundMovementMeters(10));
-
-    expect(resolveRoundMovementMeters(10.5))
-      .toBeLessThan(resolveRoundMovementMeters(11));
+  /*
+   * An exponential is relentlessly positive: hand it anything at all and it
+   * answers with confident forward motion. Refusing first is the only thing
+   * that stops a NaN Speed becoming a distance on a sheet.
+   */
+  it("gives no movement at all for invalid or absent Speed", () => {
+    for (const speed of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      0,
+      -1,
+      -30,
+    ]) {
+      expect(resolveRoundMovementMeters(speed)).toBe(0);
+      expect(resolveMovementRateMps(speed)).toBe(0);
+      expect(resolveCurveSpeed(speed)).toBeNull();
+    }
   });
 
-  it("averages the two resolved Attributes it is built from", () => {
-    expect(resolveSpeedPosition(16.643856189774723, 6))
-      .toBeCloseTo(11.321928094887362, 12);
+  /* Fractional Speed canonicalizes; it does not ride the curve fractionally. */
+  it("canonicalizes a fractional Speed to the integer score", () => {
+    expect(resolveCurveSpeed(10.4)).toBe(10);
+    expect(resolveCurveSpeed(10.5)).toBe(11);
+    expect(resolveCurveSpeed(10.6)).toBe(11);
+
+    expect(resolveRoundMovementMeters(10.4))
+      .toBe(resolveRoundMovementMeters(10));
+
+    expect(resolveRoundMovementMeters(10.6))
+      .toBe(resolveRoundMovementMeters(11));
   });
 
   /*
-   * Safe rather than refused: these are pure derivations with no EngineResult
-   * to fail into, and a NaN distance on a sheet names nothing.
+   * A sub-1 but positive Speed is a very slow thing, not a motionless one, so
+   * it clamps up. Zero and below are motionless, and are caught above.
    */
-  it("resolves a non-finite input to zero instead of propagating it", () => {
-    expect(resolveRoundMovementMeters(Number.NaN)).toBe(0);
-    expect(resolveRoundMovementMeters(Number.POSITIVE_INFINITY)).toBe(0);
-    expect(resolveSpeedPosition(Number.NaN, 10)).toBe(0);
-    expect(resolveSpeedPosition(10, Number.NaN)).toBe(0);
+  it("clamps a positive sub-1 Speed onto the bottom of the ladder", () => {
+    expect(resolveCurveSpeed(0.4)).toBe(1);
+    expect(resolveRoundMovementMeters(0.4)).toBe(resolveRoundMovementMeters(1));
+  });
+
+  /*
+   * Speed 30 is the ordinary base-curve ceiling. Feeding 40 to the exponential
+   * would answer 39 kilometres a Round; anything genuinely faster than Speed
+   * 30 owes an explicit modifier on the result instead.
+   */
+  it("holds the base curve at its Speed 30 ceiling", () => {
+    expect(resolveCurveSpeed(31)).toBe(30);
+    expect(resolveCurveSpeed(40)).toBe(30);
+
+    expect(resolveRoundMovementMeters(40))
+      .toBe(resolveRoundMovementMeters(30));
+
+    expect(resolveRoundMovementMeters(40)).toBeCloseTo(700, 6);
+  });
+});
+
+
+describe("the integrity factor is bounded to [0, 1]", () => {
+  /*
+   * Integrity says how much of the apparatus still works. It may take movement
+   * away and may never add any — a value above 1 is not a strong limb or a
+   * good gait, and accepting one here is how "1.2 for a powerful runner" would
+   * have become the movement bonus mechanism by accident.
+   */
+  it("never grants bonus movement", () => {
+    expect(resolveIntegrityFactor(1.5)).toBe(1);
+    expect(resolveIntegrityFactor(100)).toBe(1);
+
+    expect(resolveMovement(10, 3).currentRoundMovementMeters)
+      .toBe(resolveMovement(10, 1).currentRoundMovementMeters);
+  });
+
+  it("floors at zero rather than reversing", () => {
+    expect(resolveIntegrityFactor(-0.5)).toBe(0);
+    expect(resolveMovement(10, -0.5).currentRoundMovementMeters).toBe(0);
+  });
+
+  /* An unknown state of the legs is not a working pair of legs. */
+  it("treats a non-finite integrity as none", () => {
+    expect(resolveIntegrityFactor(Number.NaN)).toBe(0);
+    expect(resolveIntegrityFactor(Number.POSITIVE_INFINITY)).toBe(0);
+    expect(resolveIntegrityFactor(Number.NEGATIVE_INFINITY)).toBe(0);
+    expect(resolveMovement(10, Number.NaN).currentRoundMovementMeters).toBe(0);
+  });
+
+  it("leaves the intact case exactly alone", () => {
+    expect(resolveIntegrityFactor(1)).toBe(1);
+    expect(resolveIntegrityFactor(0.5)).toBe(0.5);
+    expect(resolveMovement(10, 1).currentRoundMovementMeters).toBeCloseTo(6, 10);
+    expect(resolveMovement(10, 0.5).currentRoundMovementMeters).toBeCloseTo(3, 10);
+  });
+
+  /*
+   * The other three factors are declared, neutral and reported. Naming them
+   * now is what stops Swim arriving as a multiplication somebody adds at
+   * whichever call site they were looking at.
+   */
+  it("reports the unresolved factors as neutral", () => {
+    const movement = resolveMovement(10, 1);
+
+    expect(movement.modeFactor).toBe(1);
+    expect(movement.propulsionFactor).toBe(1);
+    expect(movement.gaitFactor).toBe(1);
+    expect(movement.integrityFactor).toBe(1);
   });
 });
 

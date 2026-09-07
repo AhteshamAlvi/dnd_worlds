@@ -320,10 +320,44 @@ point buy proportionally more than the last — and is finite, positive and mono
 |---|---|---|---|---|---|---|---|---|
 | m/Round | 1.6 | 2.7 | 6.0 | 10 | 19 | 47 | 170 | 700 |
 
-Conversion takes the **continuous** position — the mean of the continuous Strength ladder position
-and resolved AGI, *not* the floored `stats.str`, which made two characters 40% apart in Structural
-Capacity move identically. No height or stride term: large bodies were already charged through AGI.
-`resolveMovement()` returns both the intact allowance and the current one (× locomotor condition).
+**The canonical integer Speed is the sole input.** `derivedAttributes.speed` = `round((STR + AGI) / 2)`
+off the physically-resolved stat block, resolved once and handed to movement. Movement does **not**
+reconstruct Speed from its Attributes and does **not** read the continuous Strength ladder position:
+
+```
+EQUAL CANONICAL SPEED = EQUAL BASE MOVEMENT
+```
+
+Phase 0 briefly fed the continuous position in, to avoid flooring away real force. Two bodies 25%
+apart in scale both resolve to STR 10 / AGI 10 / Speed 10 with ladder positions 10.00 and 10.64 — so
+they covered 6.00 and 6.55 m with identical sheets and nothing explaining the gap. Equal Speed does
+**not** promise equal *performance*; differences must arrive as explicit, inspectable factors.
+
+**Normalization** — one boundary per quantity, because an exponential answers any input with
+confident forward motion:
+
+```
+Speed      non-finite or ≤ 0 → no movement · fractional → round · clamp into 1..30
+Integrity  non-finite or ≤ 0 → 0 · > 1 → 1
+Capacity   normalizeRoundActionCapacity(): finite and > 0 → floor, else 0
+```
+
+Speed 30 is the ordinary base-curve **ceiling**; anything faster is an explicit modifier on the
+result, not a larger number fed to the curve.
+
+**The four factors** — declared now, three of them neutral, so the next movement mode lands in one
+place rather than as an ad-hoc multiplication:
+
+```
+Resolved = Base(Speed) × Mode × Propulsion × Gait × Integrity
+                          1        1          1     [0,1]
+```
+
+Mode is a movement mode's inherent rate · Propulsion the strength and suitability of the parts doing
+the work · Gait their number, arrangement, symmetry, specialization and coordination · Integrity how
+usable they currently are (the existing locomotion fraction). **Limb count is an input to gait, never
+a modifier**: a naturally tripedal creature has an efficient tripedal gait; a quadruped down to three
+legs has a disrupted one, and the comparison is always against the intended body plan.
 
 **Move** (`movement.ts`) divides one Round allowance by the Round Action Capacity **snapshotted at
 Round start**:
@@ -335,11 +369,20 @@ MoveShare = 1 / RoundActionCapacity        MoveDistance = CurrentRoundMovement �
 Actions per Turn affect **sequencing only** and appear in neither formula. Spending every Round
 Action on Move reaches exactly the cap and no arrangement of Actions exceeds it; consumption is
 tracked as a *count* of Moves so awkward shares (sevenths of 6 m) accumulate without drift.
-Reaction Moves draw on the same allowance. Granted and forced movement must declare whether it
-charges against the cap. Presentation is **two significant figures**; nothing internal consumes it.
+
+**Moves and charged grants share one allowance.** A grant that consumed the whole Round means the
+next Move is **refused before the Action is spent** — `movesSpent` does not increment. A *partially*
+consumed allowance still permits a Move covering what remains, short of a full share, and that Move
+does spend the Action because it happened. Charged grants are clamped to the remaining allowance and
+recorded clamped. Refusal order: no Round Actions → no shares left → no charged distance left.
+Reaction Moves draw on the same allowance. Presentation is **two significant figures**; nothing
+internal consumes it.
 
 Decisions: `time.combat-round.two-seconds`, `movement.speed.round-denominated-accelerating-curve`,
-`movement.move.round-action-capacity-divisor`, `movement.presentation.two-significant-figures`.
+`movement.move.round-action-capacity-divisor`, `movement.presentation.two-significant-figures`, and
+the Phase 0.1 corrections `movement.speed.canonical-score-owns-base-movement` (superseding the
+continuous-position half of the curve decision), `movement.resolution.mode-propulsion-gait-integrity`,
+`movement.input.normalized-boundaries`, `movement.ledger.one-allowance-two-spenders`.
 
 ### Strength surface (`attributes/strength.ts`)
 
@@ -1477,6 +1520,10 @@ rather than an edit to the book.
 11. **`movement.speed.round-denominated-accelerating-curve`** — Speed is metres per Round on an accelerating curve pinned at 6 m (Speed 10) and 700 m (Speed 30), taking the continuous STR/AGI position.
 12. **`movement.move.round-action-capacity-divisor`** — a Round holds one movement allowance divided by the Round Action Capacity snapshotted at Round start; Actions per Turn are sequencing only.
 13. **`movement.presentation.two-significant-figures`** — movement rounds at the sheet and nowhere else, unlike Aura Control, because a Move share accumulates and a rounded share drifts.
+14. **`movement.speed.canonical-score-owns-base-movement`** — *supersedes part of 11.* Base movement consumes the canonical integer Speed; the continuous Strength position never reaches it. Equal Speed = equal base movement.
+15. **`movement.resolution.mode-propulsion-gait-integrity`** — movement resolves as Base × Mode × Propulsion × Gait × Integrity; only Integrity exists, bounded to [0,1]. Limb count is an input to gait, not a modifier.
+16. **`movement.input.normalized-boundaries`** — one normalization per quantity; zero and negative Speed exit before the clamp to 1, and Speed 30 is the base-curve ceiling.
+17. **`movement.ledger.one-allowance-two-spenders`** — a Move is refused *before* the Action is spent when charged grants took the Round; a partial allowance still permits a short Move that does spend it.
 
 `injury.overlap.recovery-progress-default` used to be a third entry here — a non-blocking GM
 decision for a second Injury landing on anatomy with banked recovery progress. It is gone along
@@ -1485,12 +1532,12 @@ nothing left to bank, preserve, or reset, and no decision to surface.
 
 ---
 
-## 14 · Test coverage (70 files, 1,936 tests)
+## 14 · Test coverage (70 files, 1,965 tests)
 
 | Area | Files (tests) |
 |---|---|
 | Body | strength 59 · anatomy 42 · critical-points 42 · measurements 34 · stature 33 · age 31 · points 31 · effects-integration 29 · damage 25 · **continuity 24** · selectors 24 · structure 22 · morphology-layers 21 · archive 20 · effects 19 · recovery 20 · capability 15 · point-state 14 · reference-humanoid 13 · reference-standard 11 — **529** |
-| Attributes | phase9-model 60 · standard-modifier 39 · derived 35 · **movement 18** · physical 15 · propagation 7 — **174** |
+| Attributes | phase9-model 71 · standard-modifier 39 · **movement 37** · derived 35 · physical 15 · propagation 7 — **204** |
 | Progression | 58 |
 | Capabilities | skills 41 |
 | Character | lifecycle 32 · character-features 27 · validation 25 · classification 23 — **107** |
@@ -1549,8 +1596,10 @@ The shape of it, for orientation only — the file has the detail and the states
 - **Partial:** Fatigue (derived, no consequences), locomotor conditions (destruction only, no
   graded impairment), Aura reinforcement (unawakened only), the Nen principles (4 of 15 written,
   no combat contracts), skill execution.
-- **Internal:** ~9,400 LOC unreachable from the barrel — Combat (~5,480), Nen (~3,970), most of
-  `checks/`.
+- **Internal:** **11,758 LOC** unreachable from the barrel, recounted per directory at Phase 0.1
+  close — Combat 5,482 · Nen 4,009 · `time/{validation,calendar,clock}` 1,371 · the rest small.
+  Most of `checks/` **is** reachable; only the roll (`checks/resolution.ts`, 261) is not. See
+  `BACKLOG.md` §6 for the table.
 - **Downstream:** `apps/workbench` is broken against the engine — 65 TypeScript errors, 49 of 97
   tests failing, verified at Phase 0 close. Pre-existing; it never absorbed three engine
   migrations plus the Body refactor.
@@ -1571,7 +1620,7 @@ dnd_worlds/                     npm workspaces, "nenworld"
 ```
 
 ```bash
-cd packages/engine && npx vitest run     # 70 files, 1,936 tests
+cd packages/engine && npx vitest run     # 70 files, 1,965 tests
 ```
 
 ```bash

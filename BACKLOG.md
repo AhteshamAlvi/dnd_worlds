@@ -6,8 +6,8 @@ links here rather than keeping its own list. Two backlogs are two things to keep
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: Phase 0 close.
-Suite at that point: **70 files, 1,936 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: Phase 0.1 close.
+Suite at that point: **70 files, 1,965 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
@@ -30,13 +30,17 @@ unconsumed functions are not mechanics, and are never recorded as complete here.
 
 | Mechanic | State | Detail |
 |---|---|---|
-| **Speed → Round movement** | Complete | Accelerating curve, two anchors, continuous STR/AGI, two-significant-figure presentation. `attributes/speed.ts`. Decision `movement.speed.round-denominated-accelerating-curve`. |
-| **Move and the Round allowance** | Complete | Snapshotted divisor, exact share accumulation, cap enforcement, declared grants. `attributes/movement.ts`. Decision `movement.move.round-action-capacity-divisor`. |
-| **Spatial and Range vocabulary** | **Specified but absent** | There is no position, distance, zone or reach type anywhere in the engine. Movement now produces metres with nothing to spend them against, and `senses/access.ts` resolves sensory access with no distance term. This is the **highest-leverage movement gap**: terrain, Range bands, opportunity attacks and targeting all need it and none of them can be written first. |
-| **Terrain and paths** | **Specified but absent** | No terrain vocabulary, no cost-per-metre, no pathfinding. The extension point exists — terrain is a modifier to the Round allowance handed to `beginRoundMovement` — and nothing occupies it. Blocked on Spatial vocabulary. |
+| **Canonical Speed → base movement** | Complete | Accelerating curve on the canonical integer Speed, two anchors, normalized inputs, two-significant-figure presentation. `attributes/speed.ts`. Decisions `movement.speed.round-denominated-accelerating-curve` + `movement.speed.canonical-score-owns-base-movement`. |
+| **Standard Move allowance and expenditure ledger** | Complete | Snapshotted divisor, one shared capacity normalization, exact share accumulation, cap enforcement, refusal precedence, charged/uncharged grants. `attributes/movement.ts`. Decisions `movement.move.round-action-capacity-divisor` + `movement.ledger.one-allowance-two-spenders`. |
+| **Locomotor integrity factor** | Complete | The existing whole-body locomotion fraction, bounded to `[0, 1]` at the movement boundary and reported as `integrityFactor`. It may reduce movement to nothing and may never grant any. |
+| **Body-derived propulsion profiles** | **Specified but absent** | `propulsionFactor` is declared, fixed at 1 and reported. Nothing derives it. It needs per-part muscularity and suitability, which Body owns and movement must never reach for. |
+| **Gait and limb-configuration resolution** | **Specified but absent** | `gaitFactor` is declared, fixed at 1 and reported. Limb count is an *input* to gait, not a modifier: a naturally tripedal creature has an efficient tripedal gait while a quadruped down to three legs has a disrupted one, so gait must compare against the creature's intended body plan. Decision `movement.resolution.mode-propulsion-gait-integrity`. |
+| **Movement modes: Sprint, Crawl, Climb, Swim, Flight** | **Specified but absent** | `modeFactor` is declared, fixed at 1 and reported. No mode vocabulary, no rates, no Aura costs, no mode-legality rules. Deliberately out of Phase 0 and 0.1. |
+| **Spatial and Range vocabulary** | **Specified but absent** | There is no position, distance, zone or reach type anywhere in the engine. Movement produces metres with nothing to spend them against, and `senses/access.ts` resolves sensory access with no distance term. This is the **highest-leverage movement gap**: modes, terrain, Range bands and targeting all need it and none of them can be written first. |
+| **Terrain and environmental movement** | **Specified but absent** | No terrain vocabulary, no cost-per-metre, no pathfinding, no jumping or falling. Blocked on Spatial vocabulary. |
 | **Encumbrance** | **Specified but absent** | `character/equipment/` tracks what is worn and carried but computes no load, no capacity and no penalty. Body owns mass; nothing converts carried mass into a movement or exertion cost. |
-| **Sprint** | **Specified but absent** | No Sprint Action, no burst multiplier, no Aura cost, no cooldown. Deliberately out of Phase 0. It is the first mechanic that will exercise "a modifier to the Round allowance" as a real extension rather than a documented one. |
-| **Locomotor injuries and conditions** | **Partially implemented** | `body/locomotion.ts` resolves a whole-body fraction from destroyed locomotor chains, and movement consumes it — tested. What is absent is graded impairment: an injured but not destroyed leg, a Condition that halves movement, a prone or grappled state. The 11 Conditions carry zero Effects. |
+| **Locomotor injuries and conditions** | **Partially implemented** | `body/locomotion.ts` resolves a whole-body fraction from destroyed locomotor chains, and movement consumes it as integrity — tested. Absent: graded impairment for an injured but not destroyed limb, and Conditions that impair movement (the 11 Conditions carry zero Effects). |
+| **Traits, Skills and techniques that modify movement** | **Specified but absent** | The extension points exist — a modifier on the Round allowance before it opens, a factor, or a grant during the Round — and nothing occupies them. This is also the only sanctioned route past the Speed 30 base-curve ceiling. |
 
 ## 2 · Endurance and exertion
 
@@ -63,7 +67,8 @@ unconsumed functions are not mechanics, and are never recorded as complete here.
 | Mechanic | State | Detail |
 |---|---|---|
 | **Round, Turn, Initiative, Action structure** | **Implemented but internal** | `gameplay/combat/` (~5,480 LOC) is unexported and has **zero tests**. It is structure only and references no Body, STR, BP or damage. |
-| **Round Action Capacity** | Complete | Derived from Combat Ability, exported, integrated into `ResolvedCharacter.actionCapacity`, and now the snapshotted divisor Move reads. |
+| **Round Action Capacity** | Complete | Derived from Combat Ability, exported, integrated into `ResolvedCharacter.actionCapacity`, and the snapshotted divisor Move reads. |
+| **Combat Action ↔ movement integration** | **Partially implemented** | The contract is complete on the movement side: the ledger takes a snapshotted capacity, refuses correctly, and shares one allowance between Moves and grants. Nothing in `gameplay/combat/` calls it — no Combat Action spends a Move, and the ledger is opened by tests and callers rather than by a Round starting. |
 | **SP-to-BP damage conversion** | **Specified but absent** | Nothing defines how Strength Points become Body Point damage. Still the **highest-leverage hole in the engine**: it is what would validate `CONSTITUTION_DOUBLING_INTERVAL = 2` and the STR/CON durability parity the whole BP calibration rests on, and it blocks Aura reinforcement, Condition effects and every combat check below. |
 | **Full combat resolution** | **Specified but absent** | No Guard, Strike, Evasion, attack rolls or death saves. |
 | **Skill execution and Accuracy modification** | **Partially implemented** | `checks/` resolves d20 checks including opposed and fixed forms, and `Accuracy` is a Derived Attribute. Skills are authored and validated; nothing *executes* one. `ImprovisedSkillAttempt` is a type with no resolution. Most of `checks/` is also unexported (below). |
@@ -78,13 +83,25 @@ unconsumed functions are not mechanics, and are never recorded as complete here.
 
 ## 6 · Reachability
 
-**~9,400 LOC of finished code is unreachable from the public barrel**, most of it also untested:
+Recounted per directory with `wc -l` at Phase 0.1 close. This replaces a "~9,400 LOC" estimate that
+was wrong in both directions: it undercounted Combat and Nen, and counted all of `checks/` as
+unreachable when most of it exports.
 
-`gameplay/combat/*` (~5,480) · `foundation/nen/*` (~3,970) · most of `checks/*` (~1,150 —
-`resolveCheck`, `resolveFixedCheck`, `resolveOpposedCheck` and `CheckRequest` are not exported;
-the scope vocabulary and the roll-free modifier helpers are) · `foundation/aura/control.ts` ·
-`character/details.ts` · `time/{validation,calendar,clock}` · `infrastructure/{rounding,id}` ·
-`character/progression/index`.
+| Unreachable | LOC | Note |
+|---|---|---|
+| `gameplay/combat/*` | 5,482 | whole directory, zero tests |
+| `character/foundation/nen/*` | 4,009 | whole tree incl. `principles/`, zero tests |
+| `time/{validation,calendar,clock}` | 1,371 | unexported by design |
+| `character/foundation/aura/control.ts` | 379 | |
+| `checks/resolution.ts` | 261 | `resolveCheck` / `resolveFixedCheck` / `resolveOpposedCheck` |
+| `infrastructure/{rounding,id}` | 108 | |
+| `character/details.ts` | 77 | |
+| `character/progression/index.ts` | 71 | superseded by direct barrel exports |
+| **Total** | **11,758** | |
+
+The other 1,090 LOC of `checks/` — scopes, matching, modifiers, types, validation, index — **is**
+reachable through the barrel's Checks block and `character/rules/effects.ts`. Only the roll itself
+is not.
 
 ## 7 · Test-coverage gaps in shipped code
 

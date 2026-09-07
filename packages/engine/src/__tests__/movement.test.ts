@@ -31,11 +31,13 @@ import {
   resolveMovement,
   resolveMovementRateMps,
   resolveRoundMovementMeters,
-  resolveSpeedPosition,
 } from "../character/foundation/attributes/speed";
 import {
   beginRoundMovement,
   beginRoundMovementFor,
+  movesRemaining,
+  normalizeRoundActionCapacity,
+  resolveMoveShare,
   spendMove,
   totalDistanceTravelledMeters,
   grantMovement,
@@ -209,17 +211,23 @@ describe("mass and size reach movement through resolved AGI, once", () => {
     resolveTestCharacter(character).movement;
 
   /*
-   * The property that says the burden is applied exactly once: movement is a
-   * function of the resolved scores and of nothing else, so two characters who
-   * arrive at the same resolved STR and AGI by different routes move the same.
+   * Two characters who reach one Speed by DIFFERENT Attribute splits. AGI 14
+   * against the fixture's STR 10 averages to 12, and so does AGI 12 with the
+   * two points moved elsewhere — the earlier version of this test compared two
+   * identical characters, which proved only that the function was a function.
    */
-  it("gives equal resolved STR and AGI equal baseline movement", () => {
-    const first = speedOf(createTestCharacter({ attributes: { agi: 14 } }));
-    const second = speedOf(createTestCharacter({ attributes: { agi: 14 } }));
+  it("gives equal canonical Speed equal baseline movement", () => {
+    const agile = speedOf(createTestCharacter({ attributes: { agi: 14 } }));
+    const also = speedOf(createTestCharacter({ attributes: { agi: 14, dex: 6 } }));
 
-    expect(second.speedPosition).toBe(first.speedPosition);
-    expect(second.baselineRoundMovementMeters)
-      .toBe(first.baselineRoundMovementMeters);
+    expect(agile.displayedSpeed).toBe(12);
+    expect(also.displayedSpeed).toBe(12);
+
+    expect(also.baselineRoundMovementMeters)
+      .toBe(agile.baselineRoundMovementMeters);
+
+    expect(agile.baselineRoundMovementMeters)
+      .toBe(resolveRoundMovementMeters(12));
   });
 
   it("moves an agile character further than a clumsy one", () => {
@@ -254,16 +262,21 @@ describe("mass and size reach movement through resolved AGI, once", () => {
   });
 
   /*
-   * Speed reads the CONTINUOUS Strength position. Flooring it is a sheet
-   * concern, and doing it before the conversion is what made two visibly
-   * different characters move identically.
+   * There is exactly one Speed, and movement does not reconstruct it.
+   *
+   * Neither movement module mentions STR, AGI or a Strength ladder position:
+   * `derivedAttributes.speed` is resolved once in character/resolution.ts and
+   * handed over. A second derivation here is precisely what let base movement
+   * and the displayed Stat disagree.
    */
-  it("uses a continuous Speed position, not the displayed Stat", () => {
-    const position = resolveSpeedPosition(16.643856189774723, 6);
+  it("does not rebuild Speed out of STR and AGI", () => {
+    for (const path of MOVEMENT_SOURCES) {
+      const code = readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
 
-    expect(position).not.toBe(Math.floor(position));
-    expect(resolveRoundMovementMeters(position))
-      .toBeGreaterThan(resolveRoundMovementMeters(Math.floor(position)));
+      expect(code).not.toMatch(/strengthPosition|\bagility\b|\.agi\b|\.str\b/);
+    }
   });
 });
 
@@ -335,5 +348,171 @@ describe("a Round's allowance is one allowance", () => {
     expect(presentMovementMeters(spent.consumedMeters)).toBe(33);
     expect(spent.consumedMeters).toBeCloseTo(32.8652, 4);
     expect(spent.consumedMeters).not.toBe(33);
+  });
+});
+
+
+/*
+ * Moves and charged grants draw on ONE allowance.
+ *
+ * The ledger used to let a character whose whole Round had already been
+ * consumed by a shove spend an Action on a Move anyway: `movesSpent` went up,
+ * the refusal was null, and the reported distance was zero. A caller counting
+ * successful Moves believed it, and the Action was spent either way.
+ */
+describe("charged grants and Moves share one allowance", () => {
+  const round = () => beginRoundMovement(6, 2);
+
+  it("refuses a Move when a charged grant took the whole Round", () => {
+    const shoved = grantMovement(round(), 6, { chargedAgainstCap: true });
+
+    expect(shoved.remainingMeters).toBe(0);
+    expect(movesRemaining(shoved)).toBe(2);
+
+    const attempt = spendMove(shoved);
+
+    expect(attempt.refusal).toBe("allowance-spent");
+    expect(attempt.distanceMeters).toBe(0);
+  });
+
+  /* The Action is not spent on nothing: the ledger is returned untouched. */
+  it("does not spend the Action on a refused Move", () => {
+    const shoved = grantMovement(round(), 6, { chargedAgainstCap: true });
+    const attempt = spendMove(shoved);
+
+    expect(attempt.state.movesSpent).toBe(0);
+    expect(attempt.state).toBe(shoved);
+    expect(movesRemaining(attempt.state)).toBe(2);
+  });
+
+  /*
+   * Short is not refused. A partly consumed allowance still permits a Move,
+   * which covers what is left and spends the Action, because the Move
+   * happened — it just did not get far.
+   */
+  it("lets a Move cover only what a partial grant left", () => {
+    const nudged = grantMovement(round(), 5, { chargedAgainstCap: true });
+
+    expect(nudged.remainingMeters).toBeCloseTo(1, 10);
+
+    const move = spendMove(nudged);
+
+    expect(move.refusal).toBeNull();
+    expect(move.distanceMeters).toBeCloseTo(1, 10);
+    expect(move.state.movesSpent).toBe(1);
+    expect(move.state.remainingMeters).toBe(0);
+
+    /* And the next one has nothing left at all. */
+    expect(spendMove(move.state).refusal).toBe("allowance-spent");
+  });
+
+  it("clamps a charged grant to the remaining allowance and records it clamped", () => {
+    const shoved = grantMovement(round(), 100, { chargedAgainstCap: true });
+
+    expect(shoved.consumedMeters).toBe(6);
+    expect(shoved.grantedChargedMeters).toBe(6);
+    expect(totalDistanceTravelledMeters(shoved)).toBe(6);
+  });
+
+  it("keeps charged and uncharged totals apart", () => {
+    let state = grantMovement(round(), 2, { chargedAgainstCap: true });
+    state = grantMovement(state, 9, { chargedAgainstCap: false });
+
+    expect(state.grantedChargedMeters).toBeCloseTo(2, 10);
+    expect(state.grantedUnchargedMeters).toBe(9);
+    expect(state.consumedMeters).toBeCloseTo(2, 10);
+    expect(state.remainingMeters).toBeCloseTo(4, 10);
+    expect(totalDistanceTravelledMeters(state)).toBeCloseTo(11, 10);
+  });
+
+  it("never lets Moves and grants together exceed the cap", () => {
+    let state = round();
+
+    state = spendMove(state).state;
+    state = grantMovement(state, 50, { chargedAgainstCap: true });
+    state = spendMove(state).state;
+
+    expect(state.consumedMeters).toBe(6);
+    expect(state.remainingMeters).toBe(0);
+  });
+
+  /* Refusal precedence, all three cases, in order. */
+  it("orders its refusals deterministically", () => {
+    expect(spendMove(beginRoundMovement(6, 0)).refusal).toBe("no-round-actions");
+
+    let spent = beginRoundMovement(6, 1);
+    spent = spendMove(spent).state;
+    expect(spendMove(spent).refusal).toBe("allowance-spent");
+
+    const drained = grantMovement(round(), 6, { chargedAgainstCap: true });
+    expect(movesRemaining(drained)).toBeGreaterThan(0);
+    expect(spendMove(drained).refusal).toBe("allowance-spent");
+  });
+});
+
+
+describe("Round Action capacity normalizes one way everywhere", () => {
+  it.each([
+    [2, 2],
+    [2.5, 2],
+    [2.999, 2],
+    [1, 1],
+    [0, 0],
+    [-3, 0],
+    [Number.NaN, 0],
+    [Number.POSITIVE_INFINITY, 0],
+  ])("normalizes %s to %i", (given, expected) => {
+    expect(normalizeRoundActionCapacity(given)).toBe(expected);
+  });
+
+  /*
+   * Two normalizations that merely agree today are two that can disagree after
+   * an edit, and a share the ledger cannot spend is the result.
+   */
+  it("floors identically in the share helper and the ledger", () => {
+    for (const capacity of [2.5, 3.7, 0.9, -1, Number.NaN]) {
+      const normalized = normalizeRoundActionCapacity(capacity);
+      const opened = beginRoundMovement(6, capacity);
+
+      expect(opened.allowance.roundActionCapacity).toBe(normalized);
+      expect(resolveMoveShare(capacity))
+        .toBe(opened.allowance.moveShare);
+    }
+  });
+
+  it("gives no usable Move to a capacity that normalizes to zero", () => {
+    for (const capacity of [0, -2, 0.4, Number.NaN, Number.NEGATIVE_INFINITY]) {
+      const opened = beginRoundMovement(6, capacity);
+
+      expect(opened.allowance.moveShare).toBe(0);
+      expect(opened.allowance.moveDistanceMeters).toBe(0);
+      expect(spendMove(opened).refusal).toBe("no-round-actions");
+    }
+  });
+
+  it("divides rather than multiplies as capacity rises", () => {
+    expect(beginRoundMovement(6, 1).allowance.moveDistanceMeters).toBe(6);
+    expect(beginRoundMovement(6, 2).allowance.moveDistanceMeters).toBe(3);
+    expect(beginRoundMovement(6, 4).allowance.moveDistanceMeters).toBe(1.5);
+
+    for (const capacity of [1, 2, 4, 6, 10]) {
+      let state = beginRoundMovement(6, capacity);
+
+      for (let move = 0; move < capacity; move += 1) {
+        state = spendMove(state).state;
+      }
+
+      expect(state.consumedMeters).toBe(6);
+    }
+  });
+
+  /* The snapshot survives whatever happens to the character afterwards. */
+  it("keeps the capacity the ledger opened with", () => {
+    const opened = beginRoundMovement(6, 4);
+    const afterOne = spendMove(opened).state;
+
+    expect(afterOne.allowance.roundActionCapacity).toBe(4);
+    expect(afterOne.allowance.moveDistanceMeters).toBe(1.5);
+    expect(movesRemaining(afterOne)).toBe(3);
   });
 });

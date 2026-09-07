@@ -60,6 +60,18 @@
  * for. Counting makes the last Move of a Round land on the cap exactly.
  *
  *
+ * ONE ALLOWANCE, TWO WAYS TO SPEND IT
+ *
+ * Moves and CHARGED grants draw on the same finite Round distance. A shove
+ * that consumed the whole Round leaves nothing for a Move even though the
+ * character still holds the Action, and the ledger refuses the Move rather
+ * than spending the Action on nothing — see `spendMove`'s refusal order.
+ *
+ * A partially consumed allowance is not a refusal: the Move covers what is
+ * left, which may be short of a full share, and spends the Action because the
+ * Move happened.
+ *
+ *
  * WHAT THIS FILE DOES NOT DECIDE
  *
  * It owns no Speed formula, no terrain, no encumbrance, no Sprint and no
@@ -116,18 +128,34 @@ export interface RoundMovementState {
 
 
 /**
+ * Round Actions as a discrete count.
+ *
+ * ONE rule, used by every helper that divides or records a capacity. Two
+ * normalizations that merely happen to agree today are two that can disagree
+ * after an edit, and a `resolveMoveShare` that floored differently from
+ * `beginRoundMovement` would hand out shares the ledger could not spend.
+ *
+ * Fractional capacity floors: two and a half Actions is two Actions and a
+ * fraction the character cannot act on. Non-finite, zero and negative are all
+ * zero, which is "cannot Move" rather than "moves oddly".
+ */
+export function normalizeRoundActionCapacity(capacity: number): number {
+  return Number.isFinite(capacity) && capacity > 0 ? Math.floor(capacity) : 0;
+}
+
+
+/**
  * The share one Move draws, from a snapshotted Round Action Capacity.
  *
  * Zero Round Actions cannot produce a normal Move, so the share is zero rather
- * than infinite. A fractional or non-finite capacity is treated the same way:
- * there is no meaningful division to perform and no reason to invent one.
+ * than infinite.
  */
 export function resolveMoveShare(roundActionCapacity: number): number {
-  if (!Number.isFinite(roundActionCapacity) || roundActionCapacity <= 0) {
-    return 0;
-  }
+  const capacity = normalizeRoundActionCapacity(roundActionCapacity);
 
-  return 1 / roundActionCapacity;
+  if (capacity <= 0) return 0;
+
+  return 1 / capacity;
 }
 
 
@@ -147,11 +175,7 @@ export function beginRoundMovement(
       ? roundMovementMeters
       : 0;
 
-  const capacity =
-    Number.isFinite(roundActionCapacity) && roundActionCapacity > 0
-      ? Math.floor(roundActionCapacity)
-      : 0;
-
+  const capacity = normalizeRoundActionCapacity(roundActionCapacity);
   const moveShare = resolveMoveShare(capacity);
 
   return {
@@ -251,9 +275,24 @@ export interface MoveOutcome {
 /**
  * Spend one Action on a Move.
  *
- * Extra Actions cannot take a character past the Round cap: once every share
- * is spent, further Moves cover nothing and say so. That is the same rule as
- * "a Round holds one allowance", stated where it can be enforced.
+ * Refusal precedence is fixed, and all three cases are genuinely different:
+ *
+ *   1. No Round Actions at all      -> "no-round-actions"
+ *   2. Every Move share spent       -> "allowance-spent"
+ *   3. Shares left, but charged
+ *      movement already took the
+ *      whole allowance              -> "allowance-spent"
+ *
+ * The third is the one this ledger got wrong. Moves and charged grants draw on
+ * ONE finite allowance, so a character shoved their whole Round's distance has
+ * nothing left to Move with — and the old code let them spend the Action
+ * anyway, incrementing `movesSpent` and reporting a successful Move of zero
+ * metres. A caller counting successful Moves would have believed it, and the
+ * Action was gone either way.
+ *
+ * A PARTIALLY consumed allowance is different again, and still succeeds: the
+ * Move covers whatever remains, which may be less than a full share, and it
+ * spends the Action because the Move was performed. Short is not refused.
  *
  * Reaction Moves come through here too. A Reaction Move is a Move — it draws
  * on the same Round allowance as any other, which is what stops a character
@@ -265,6 +304,14 @@ export function spendMove(state: RoundMovementState): MoveOutcome {
   }
 
   if (movesRemaining(state) <= 0) {
+    return { state, distanceMeters: 0, refusal: "allowance-spent" };
+  }
+
+  /*
+   * Checked BEFORE the Action is spent, so an exhausted allowance costs the
+   * character nothing rather than costing them an Action for no ground.
+   */
+  if (state.remainingMeters <= 0) {
     return { state, distanceMeters: 0, refusal: "allowance-spent" };
   }
 
@@ -300,19 +347,33 @@ export function grantMovement(
 ): RoundMovementState {
   if (!Number.isFinite(meters) || meters <= 0) return state;
 
-  return options.chargedAgainstCap
-    ? withConsumption(
-      state.allowance,
-      state.movesSpent,
-      state.grantedChargedMeters + meters,
-      state.grantedUnchargedMeters,
-    )
-    : withConsumption(
+  if (!options.chargedAgainstCap) {
+    return withConsumption(
       state.allowance,
       state.movesSpent,
       state.grantedChargedMeters,
       state.grantedUnchargedMeters + meters,
     );
+  }
+
+  /*
+   * Clamped to what the allowance can actually pay for, and RECORDED clamped.
+   *
+   * Storing the full 100 metres of a 100-metre shove against a 6-metre Round
+   * would leave `grantedChargedMeters` describing distance that never
+   * happened — the consumption is clamped either way, so the only thing an
+   * unclamped total can do is mislead whoever reads it.
+   */
+  const charged = Math.min(meters, state.remainingMeters);
+
+  if (charged <= 0) return state;
+
+  return withConsumption(
+    state.allowance,
+    state.movesSpent,
+    state.grantedChargedMeters + charged,
+    state.grantedUnchargedMeters,
+  );
 }
 
 

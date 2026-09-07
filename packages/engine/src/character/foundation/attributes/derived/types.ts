@@ -48,8 +48,12 @@ export interface DerivedAttributes {
    *
    * STR, AGI
    *
-   * Converts to an actual velocity — see attributes/speed.ts. Speed 10 is the
-   * Standard Human at 10/3 m/s, and every +3 doubles it.
+   * Converts to a real distance — see attributes/speed.ts. Speed 10 is the
+   * Standard Human at 6 metres per two-second Round (3 m/s), and the curve
+   * accelerates to 700 metres a Round at Speed 30.
+   *
+   * This integer score is the SOLE input to base movement. Nothing downstream
+   * reaches past it for the continuous Strength ladder position underneath.
    *
    * This is the INTACT capability. What a character can currently manage is
    * that rate multiplied by their locomotor condition, which is resolved

@@ -287,20 +287,26 @@ export {
 export type { PhysicalScaleBurden } from "./character/foundation/attributes/physical";
 
 export {
+  MAXIMUM_CURVE_SPEED,
+  MINIMUM_CURVE_SPEED,
   MOVEMENT_PRESENTATION_SIGNIFICANT_FIGURES,
+  NEUTRAL_GAIT_FACTOR,
+  NEUTRAL_MODE_FACTOR,
+  NEUTRAL_PROPULSION_FACTOR,
   REFERENCE_ROUND_MOVEMENT_METERS,
+  REFERENCE_SPEED,
   REFERENCE_SPEED_OF_SOUND_MPS,
-  REFERENCE_SPEED_POSITION,
   SPEED_CURVE_LINEAR_DOUBLINGS,
   SPEED_CURVE_QUADRATIC_DOUBLINGS,
   SPEED_CURVE_SPAN,
   SUPERHUMAN_ROUND_MOVEMENT_METERS,
-  SUPERHUMAN_SPEED_POSITION,
+  SUPERHUMAN_SPEED,
   presentMovementMeters,
+  resolveCurveSpeed,
+  resolveIntegrityFactor,
   resolveMovement,
   resolveMovementRateMps,
   resolveRoundMovementMeters,
-  resolveSpeedPosition,
 } from "./character/foundation/attributes/speed";
 export type { ResolvedMovement } from "./character/foundation/attributes/speed";
 
@@ -309,6 +315,7 @@ export {
   beginRoundMovementFor,
   grantMovement,
   movesRemaining,
+  normalizeRoundActionCapacity,
   resolveMoveShare,
   spendMove,
   totalDistanceTravelledMeters,

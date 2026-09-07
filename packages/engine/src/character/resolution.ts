@@ -144,15 +144,9 @@ import {
   applyPhysicalScaleSteps,
   resolvePhysicalScaleBurden,
 } from "./foundation/attributes/physical";
-import {
-  resolveStrength,
-  ZERO_STRENGTH,
-} from "./foundation/attributes/strength";
+import { resolveStrength } from "./foundation/attributes/strength";
 import { createCharacterStats } from "./foundation/attributes/stats";
-import {
-  resolveMovement,
-  resolveSpeedPosition,
-} from "./foundation/attributes/speed";
+import { resolveMovement } from "./foundation/attributes/speed";
 import type { Attributes } from "./foundation/attributes/types";
 import type { CharacterStats } from "./foundation/attributes/stats";
 import type { PhysicalScaleBurden } from "./foundation/attributes/physical";
@@ -265,9 +259,11 @@ export interface ResolvedCharacter {
   readonly strengthPosition: number | null;
 
   /*
-   * Both movement numbers. baseMovementRateMps is what an intact body of this
-   * Speed manages; currentMovementRateMps is what this one can. A GM seeing
-   * only one cannot explain why a character moved 5 metres instead of 10.
+   * Both movement allowances, and the factors between them.
+   * `baselineRoundMovementMeters` is what an intact body of this Speed covers
+   * in a Round; `currentRoundMovementMeters` is what this one covers after
+   * mode, propulsion, gait and integrity. A GM seeing only one cannot explain
+   * why a character moved 3 metres instead of 6.
    */
   readonly movement: ResolvedMovement;
 
@@ -1135,19 +1131,21 @@ export function resolveCharacter(
   const senses = resolveSensoryProfile(stats, { effects: resolved.sensory });
 
   /*
-   * The CONTINUOUS Strength position, not the displayed Stat.
+   * The CANONICAL Speed score, and nothing else.
    *
-   * `stats.str` is floored and clamped to 1..30 for the sheet, and feeding
-   * that here threw away up to a fifth of a doubling: two characters whose
-   * Structural Capacity differed by 40% both displayed STR 16 and moved
-   * identically. Speed is one of the few consumers that genuinely needs the
-   * unrounded ladder position, so it gets it.
+   * `derivedAttributes.speed` is round((STR + AGI) / 2) off the
+   * physically-resolved stat block, so Volume, Mass and the muscular burden
+   * are already in it. Movement consumes that one number.
    *
-   * `position` is null only for a body producing no force at all, where
-   * ZERO_STRENGTH is the defined answer.
+   * This briefly passed the continuous Strength ladder position instead, to
+   * avoid flooring away real force. It did avoid that, and it broke something
+   * worth more: two characters who both read Speed 11 moved differently, with
+   * nothing on either sheet accounting for the gap. Equal Speed must mean
+   * equal base movement, and any difference between two such characters has to
+   * arrive as an explicit mode, propulsion, gait or integrity factor.
    */
   const movement = resolveMovement(
-    resolveSpeedPosition(strength.position ?? ZERO_STRENGTH, stats.agi),
+    derivedAttributes.speed,
     resolvedBody.locomotion.fraction,
   );
 
