@@ -104,6 +104,7 @@ import { collectItemEffectSources, collectItemState } from "./equipment/index";
 
 import {
   resolveRuleEffects,
+  type RequirementCollection,
   type RequirementContext,
   type RuleEffectSource,
   type ResolvedRuleEffects,
@@ -1283,63 +1284,57 @@ export function buildRequirementContext(
   capabilities: ResolvedCapabilities,
 ): RequirementContext {
   /*
-   * ABSENCE IS PRESERVED, not collapsed to an empty list.
+   * WHAT IS KNOWN, AND WHAT IS ONLY PARTIALLY KNOWN.
    *
-   * Character collections are optional so a partially-built sheet can still be
-   * resolved. This function used to answer `?? []` for every one of them,
-   * which made "nobody has recorded this character's Traits" identical to
-   * "recorded, and they have none" by the time any requirement was evaluated.
+   * This function used to answer `?? []` for every optional collection, which
+   * made "nobody has recorded this character's Traits" identical to "recorded,
+   * and they have none" by the time any requirement was evaluated.
    *
-   * Those are different facts with different remedies — the second refuses an
-   * action, the first asks somebody to finish the sheet — and the requirement
-   * evaluator can now tell them apart. It can only do that if the distinction
-   * survives the trip through here, so each field is present exactly when the
-   * character records the collection behind it.
+   * The fix is two facts rather than one. The lists always carry everything
+   * the engine can actually see — including Traits, Skills and Techniques a
+   * Species or a Sub-species GRANTED, which are on the character whether or
+   * not anybody has finished writing down the authored ones. `incomplete`
+   * then names the collections where the sheet has not been filled in, so a
+   * requirement can tell "not there" from "not there yet".
+   *
+   * That asymmetry is the point: seeing a granted Trait settles a
+   * hasTrait question outright, while not seeing one settles nothing until
+   * the authored list exists.
    */
-  const species = character.species;
+  const incomplete: RequirementCollection[] = [];
+
+  if (character.species === undefined) incomplete.push("species", "subspecies");
+  if (character.clans === undefined) incomplete.push("clans");
+  if (character.traits === undefined) incomplete.push("traits");
+  if (character.skills === undefined) incomplete.push("skills");
+  if (character.techniques === undefined) incomplete.push("techniques");
+  if (character.conditions === undefined) incomplete.push("conditions");
+  if (character.items === undefined) incomplete.push("items");
+
+  const species = character.species ?? [];
 
   return {
     attributes,
 
     level: characterLevel(character),
 
-    ...(species === undefined ? {} : {
-      speciesIds: collectSpeciesAncestry(species),
-      subspeciesIds: declaredSubspeciesIds(species),
-    }),
+    speciesIds: collectSpeciesAncestry(species),
+    subspeciesIds: declaredSubspeciesIds(species),
+    clanIds: (character.clans ?? []).map((clan) => clan.clanId),
 
-    ...(character.clans === undefined ? {} : {
-      clanIds: character.clans.map((clan) => clan.clanId),
-    }),
+    /* Includes granted Traits, which are known regardless of the sheet. */
+    traitIds: resolvedTraitIds(traits),
 
-    /*
-     * Traits key off the AUTHORED list even though the resolved list can also
-     * hold granted ones. If the sheet never recorded traits, a Trait it does
-     * not mention may still be there, so absence cannot be confirmed — and
-     * confirming absence is the only thing an unsatisfied membership result
-     * claims.
-     */
-    ...(character.traits === undefined ? {} : {
-      traitIds: resolvedTraitIds(traits),
-    }),
+    skillMastery: getResolvedSkillMasteryRecord(capabilities),
+    techniqueMastery: getResolvedTechniqueMasteryRecord(capabilities),
 
-    ...(character.skills === undefined ? {} : {
-      skillMastery: getResolvedSkillMasteryRecord(capabilities),
-    }),
+    conditionIds: (character.conditions ?? []).map(
+      (condition) => condition.conditionId,
+    ),
 
-    ...(character.techniques === undefined ? {} : {
-      techniqueMastery: getResolvedTechniqueMasteryRecord(capabilities),
-    }),
+    items: collectItemState(character.items ?? []),
 
-    ...(character.conditions === undefined ? {} : {
-      conditionIds: character.conditions.map(
-        (condition) => condition.conditionId,
-      ),
-    }),
-
-    ...(character.items === undefined ? {} : {
-      items: collectItemState(character.items),
-    }),
+    ...(incomplete.length === 0 ? {} : { incomplete }),
   };
 }
 

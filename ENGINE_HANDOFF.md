@@ -108,7 +108,11 @@ type Effect =
 
 Attribute requirements carry a `layer: "stored" | "base" | "resolved"` — permanent acquisition normally checks `base`, so a temporary Condition can't revoke a capability the character trained for.
 
-**Requirements resolve to three answers, not two.** `resolveRequirement()` returns a `RequirementDisposition` of `satisfied` / `unsatisfied` / `unresolved`. The third exists because Character collections are optional so a half-built sheet still resolves: an **absent** collection means nobody has recorded it (unresolved), while a **recorded empty** one means the character genuinely has none (unsatisfied). `buildRequirementContext()` preserves that distinction rather than collapsing absence to `[]`.
+**Requirements resolve to three answers, not two.** `resolveRequirement()` returns a `RequirementDisposition` of `satisfied` / `unsatisfied` / `unresolved`. The third exists because Character collections are optional so a half-built sheet still resolves.
+
+Presence and absence are **not symmetric**. The context lists hold everything the engine can see — including Traits, Skills and Techniques a Species granted — and `RequirementContext.incomplete` names the collections the sheet has not filled in. So: a **known** id is `satisfied` even when the collection is incomplete; an **unknown** id is `unsatisfied` only when the collection is complete; an unknown id in an incomplete collection is `unresolved`. A recorded Mastery rank is definitive in both directions, since a Skill cannot appear twice.
+
+An unresolved capability requirement is a **warning**, not an error, so an incomplete sheet stays resolvable. That is a diagnostic severity only — the requirement is still unresolved for action preparation, the proposal reads `missing-facts`, and settlement refuses to commit.
 
 Compound propagation: `all` is unsatisfied if any member is, else unresolved if any member is, else satisfied. `any` is satisfied if any member is, else unresolved if any member is, else unsatisfied. `not` inverts the two definite answers and leaves unresolved alone.
 

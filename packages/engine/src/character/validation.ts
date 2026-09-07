@@ -400,6 +400,50 @@ function describeInjuryTreatmentStatusIssue(
   }
 }
 
+/*
+ * Issues that describe an UNFINISHED sheet rather than a wrong one.
+ *
+ * These are warnings, for the same reason a missing Species is: the Workbench
+ * is where characters get finished, and an engine that refuses to resolve a
+ * half-built one cannot help build it. Nothing here says a requirement failed
+ * — only that nobody has recorded enough to judge it.
+ *
+ * This is a diagnostic severity and NOT a rules decision. The requirement is
+ * still unresolved everywhere it matters: action preparation reports it as an
+ * unresolved eligibility finding, the proposal reads missing-facts, and
+ * settlement refuses to commit. Demoting the warning makes a sheet
+ * resolvable; it does not make the requirement pass.
+ */
+const INCOMPLETE_DATA_ISSUES: readonly CharacterReferenceIssue["type"][] = [
+  "unresolved-skill-requirements",
+  "unresolved-technique-requirements",
+];
+
+
+function describesIncompleteData(issue: CharacterReferenceIssue): boolean {
+  return INCOMPLETE_DATA_ISSUES.includes(issue.type);
+}
+
+
+function toWarning(
+  issue: CharacterReferenceIssue,
+  subject: DiagnosticSubject,
+): Warning {
+  const error = toEngineError(issue, subject);
+
+  /*
+   * A Warning carries no `resolution` field, and the guidance is the useful
+   * half of these, so it is folded into the message rather than dropped.
+   */
+  return {
+    code: error.code,
+    message: `${error.message} ${error.resolution ?? ""}`.trim(),
+    audience: error.audience,
+    subject,
+  };
+}
+
+
 function toEngineError(
   issue: CharacterReferenceIssue,
   subject: DiagnosticSubject,
@@ -670,6 +714,12 @@ export function validateCharacter(
   const referenceIssues = findCharacterReferenceIssues(character, resolved);
 
   for (const issue of referenceIssues) {
+    if (describesIncompleteData(issue)) {
+      warnings.push(toWarning(issue, subject));
+
+      continue;
+    }
+
     errors.push(toEngineError(issue, subject));
   }
 

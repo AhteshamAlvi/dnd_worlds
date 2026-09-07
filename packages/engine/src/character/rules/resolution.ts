@@ -741,6 +741,20 @@ export interface RequirementContext {
   readonly conditionIds?: readonly string[];
 
   readonly items?: RequirementItems;
+
+  /**
+   * Collections whose contents are only partially known.
+   *
+   * A list rather than a flag per field, so a context that says nothing about
+   * completeness is treated as complete — which is what every hand-built
+   * context and every finished sheet already means.
+   *
+   * The distinction it buys: a Trait granted by a Species is KNOWN to be on
+   * the character even when the authored Trait list has never been recorded,
+   * so it satisfies a requirement outright, while a Trait nobody has observed
+   * stays unresolved rather than being reported as absent.
+   */
+  readonly incomplete?: readonly RequirementCollection[];
 }
 
 
@@ -781,29 +795,86 @@ function fromBoolean(satisfied: boolean): RequirementDisposition {
 
 
 /**
- * Membership in a collection that may not have been recorded.
+ * The Character collections a requirement can read.
  *
- * An absent collection is unresolved; a recorded one answers definitively,
- * empty or not.
+ * Named so a context can say which of them are only partially known — see
+ * RequirementContext.incomplete.
+ */
+export const REQUIREMENT_COLLECTIONS = [
+  "species",
+  "subspecies",
+  "clans",
+  "traits",
+  "skills",
+  "techniques",
+  "conditions",
+  "items",
+] as const;
+
+export type RequirementCollection = typeof REQUIREMENT_COLLECTIONS[number];
+
+
+function isIncomplete(
+  context: RequirementContext,
+  collection: RequirementCollection,
+): boolean {
+  return context.incomplete?.includes(collection) ?? false;
+}
+
+
+/**
+ * Membership in a collection that may be only partially known.
+ *
+ * PRESENCE AND ABSENCE ARE NOT SYMMETRIC, which is the whole shape of this
+ * function. Seeing the id settles the question outright: a Trait granted by a
+ * Species is on the character whether or not anybody has finished writing
+ * down the authored ones. Not seeing it settles nothing unless the collection
+ * is known to be complete — an id missing from a partial list may simply be
+ * in the part nobody has recorded.
+ *
+ * So a known id is satisfied even when the collection is incomplete, an
+ * unknown id is unsatisfied only when it is complete, and an unknown id in an
+ * incomplete collection is unresolved.
  */
 function membership(
   ids: readonly string[] | undefined,
   id: string,
+  collection: RequirementCollection,
+  context: RequirementContext,
 ): RequirementDisposition {
+  if (ids !== undefined && ids.includes(id)) return "satisfied";
+
+  /* Nothing known at all, so nothing can be confirmed either way. */
   if (ids === undefined) return "unresolved";
 
-  return fromBoolean(ids.includes(id));
+  return isIncomplete(context, collection) ? "unresolved" : "unsatisfied";
 }
 
 
+/**
+ * A mastery rank read from a record that may be only partially known.
+ *
+ * A recorded id answers definitively in BOTH directions: the same Skill
+ * cannot appear twice, so a rank below the minimum is a real shortfall rather
+ * than a hint that a better entry is missing. Only an id that is absent
+ * altogether can be hiding in the unrecorded part.
+ */
 function masteryAtLeast(
   mastery: Readonly<Record<string, number>> | undefined,
   id: string,
   minimum: number,
+  collection: RequirementCollection,
+  context: RequirementContext,
 ): RequirementDisposition {
   if (mastery === undefined) return "unresolved";
 
-  return fromBoolean((mastery[id] ?? 0) >= minimum);
+  const recorded = mastery[id];
+
+  if (recorded !== undefined) return fromBoolean(recorded >= minimum);
+
+  return isIncomplete(context, collection)
+    ? "unresolved"
+    : fromBoolean(0 >= minimum);
 }
 
 
@@ -886,25 +957,43 @@ export function resolveRequirement(
       return fromBoolean(context.level >= requirement.minimum);
 
     case "hasSpecies":
-      return membership(context.speciesIds, requirement.speciesId);
+      return membership(
+        context.speciesIds,
+        requirement.speciesId,
+        "species",
+        context,
+      );
 
     case "hasSubspecies":
-      return membership(context.subspeciesIds, requirement.subspeciesId);
+      return membership(
+        context.subspeciesIds,
+        requirement.subspeciesId,
+        "subspecies",
+        context,
+      );
 
     case "hasClan":
-      return membership(context.clanIds, requirement.clanId);
+      return membership(context.clanIds, requirement.clanId, "clans", context);
 
     case "hasTrait":
-      return membership(context.traitIds, requirement.traitId);
+      return membership(context.traitIds, requirement.traitId, "traits", context);
 
     case "hasSkill":
-      return masteryAtLeast(context.skillMastery, requirement.skillId, 1);
+      return masteryAtLeast(
+        context.skillMastery,
+        requirement.skillId,
+        1,
+        "skills",
+        context,
+      );
 
     case "skillMastery":
       return masteryAtLeast(
         context.skillMastery,
         requirement.skillId,
         requirement.minimumMastery,
+        "skills",
+        context,
       );
 
     case "hasTechnique":
@@ -912,6 +1001,8 @@ export function resolveRequirement(
         context.techniqueMastery,
         requirement.techniqueId,
         1,
+        "techniques",
+        context,
       );
 
     case "techniqueMastery":
@@ -919,10 +1010,17 @@ export function resolveRequirement(
         context.techniqueMastery,
         requirement.techniqueId,
         requirement.minimumMastery,
+        "techniques",
+        context,
       );
 
     case "hasCondition":
-      return membership(context.conditionIds, requirement.conditionId);
+      return membership(
+        context.conditionIds,
+        requirement.conditionId,
+        "conditions",
+        context,
+      );
 
     case "hasItem":
       /*
@@ -936,6 +1034,8 @@ export function resolveRequirement(
           ? context.items.equipped
           : context.items.possessed,
         requirement.itemId,
+        "items",
+        context,
       );
 
     /*

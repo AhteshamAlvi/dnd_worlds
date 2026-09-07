@@ -28,6 +28,41 @@ import {
   registerDefinition,
 } from "../character/catalogs";
 import { findCapabilityValidationIssues } from "../character/capabilities/validation";
+import { validateCharacter } from "../character/validation";
+import { prepareCharacterActionInputs } from "../character/actions/preparation";
+import {
+  NO_FOCUS,
+  NO_STRUCTURED_ACTION_COST,
+  UNSTRUCTURED_EXECUTION,
+  adjudicateAction,
+  prepareAction,
+  settleAction,
+  type ActionIntent,
+  type ActionProfile,
+} from "../actions";
+import { NO_TARGETS } from "../targeting";
+import { seconds } from "../time/duration";
+import { errorCodesOf, payloadOf } from "./fixtures/result";
+
+/* A trivial action, so the only thing deciding its fate is the requirement. */
+const GATED_PROFILE: ActionProfile = {
+  id: "gated-action",
+  source: { type: "skill", id: "presence-warning-skill" },
+  allowedTimings: ["action"],
+  structuredActionCost: NO_STRUCTURED_ACTION_COST,
+  targets: { cardinality: NO_TARGETS },
+  permittedFocusKinds: ["none"],
+  executionDuration: seconds(1),
+};
+
+const GATED_INTENT: ActionIntent = {
+  id: "gated-intent",
+  profileId: GATED_PROFILE.id,
+  actor: { type: "character", id: "gon" },
+  targets: [],
+  focus: NO_FOCUS,
+  executionContext: UNSTRUCTURED_EXECUTION,
+};
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 
 const FLAT: Attributes = {
@@ -255,38 +290,42 @@ describe("compound requirements propagate unresolved", () => {
 });
 
 
-describe("absence survives the context builder", () => {
+describe("incompleteness survives the context builder", () => {
   it.each([
-    "species",
-    "clans",
-    "traits",
-    "skills",
-    "techniques",
-    "conditions",
-    "items",
-  ] as const)("leaves %s absent when the sheet never recorded it", (key) => {
+    ["species", ["species", "subspecies"]],
+    ["clans", ["clans"]],
+    ["traits", ["traits"]],
+    ["skills", ["skills"]],
+    ["techniques", ["techniques"]],
+    ["conditions", ["conditions"]],
+    ["items", ["items"]],
+  ] as const)("marks %s incomplete when the sheet never recorded it", (key, marked) => {
     const context = resolveTestCharacter(without(key)).requirementContext;
 
-    const field = {
-      species: context.speciesIds,
-      clans: context.clanIds,
-      traits: context.traitIds,
-      skills: context.skillMastery,
-      techniques: context.techniqueMastery,
-      conditions: context.conditionIds,
-      items: context.items,
-    }[key];
-
-    expect(field).toBeUndefined();
+    for (const collection of marked) {
+      expect(context.incomplete).toContain(collection);
+    }
   });
 
-  it("records an empty collection as empty rather than absent", () => {
+  it("marks nothing incomplete on a fully recorded sheet", () => {
+    expect(resolveTestCharacter(createTestCharacter()).requirementContext.incomplete)
+      .toBeUndefined();
+  });
+
+  it("records an empty collection as complete and empty", () => {
     const context = resolveTestCharacter(
       createTestCharacter({ traits: [] }),
     ).requirementContext;
 
     expect(context.traitIds).toEqual([]);
+    expect(context.incomplete).toBeUndefined();
     expect(resolveRequirement(HAS_TRAIT, context)).toBe("unsatisfied");
+  });
+
+  it("leaves an unobserved Trait unresolved while the list is unrecorded", () => {
+    const context = resolveTestCharacter(without("traits")).requirementContext;
+
+    expect(resolveRequirement(HAS_TRAIT, context)).toBe("unresolved");
   });
 
   it("gives a fully populated character its established answers", () => {
@@ -307,6 +346,154 @@ describe("absence survives the context builder", () => {
 
     expect(meetsRequirement(DEX_10, context)).toBe(true);
     expect(meetsRequirement(HAS_TRAIT, context)).toBe(false);
+  });
+});
+
+
+describe("a known member satisfies even when the collection is incomplete", () => {
+  /*
+   * The asymmetry this amendment exists for. Seeing the id settles the
+   * question; not seeing it settles nothing until the collection is complete.
+   */
+  const INCOMPLETE_TRAITS = { incomplete: ["traits"] } as const;
+
+  it("satisfies on a known id inside an incomplete collection", () => {
+    expect(resolveRequirement(HAS_TRAIT, contextWith({
+      traitIds: ["firebending"],
+      ...INCOMPLETE_TRAITS,
+    }))).toBe("satisfied");
+  });
+
+  it("stays unresolved for an id the incomplete collection does not show", () => {
+    expect(resolveRequirement(
+      { type: "hasTrait", traitId: "waterbending" },
+      contextWith({ traitIds: ["firebending"], ...INCOMPLETE_TRAITS }),
+    )).toBe("unresolved");
+  });
+
+  it("answers definitively once the collection is complete", () => {
+    expect(resolveRequirement(
+      { type: "hasTrait", traitId: "waterbending" },
+      contextWith({ traitIds: ["firebending"] }),
+    )).toBe("unsatisfied");
+  });
+
+  it("treats a recorded mastery as definitive in both directions", () => {
+    /*
+     * A Skill cannot appear twice, so a rank below the minimum is a real
+     * shortfall rather than a hint that a better entry is unrecorded. Only an
+     * id absent altogether can be hiding in the unwritten part.
+     */
+    const partial = contextWith({
+      skillMastery: { riposte: 1 },
+      incomplete: ["skills"],
+    });
+
+    expect(resolveRequirement({ type: "hasSkill", skillId: "riposte" }, partial))
+      .toBe("satisfied");
+
+    expect(resolveRequirement(
+      { type: "skillMastery", skillId: "riposte", minimumMastery: 3 },
+      partial,
+    )).toBe("unsatisfied");
+
+    expect(resolveRequirement({ type: "hasSkill", skillId: "parry" }, partial))
+      .toBe("unresolved");
+  });
+});
+
+
+describe("a Species-granted Trait is known without an authored Trait list", () => {
+  const GRANTED = "presence-granted-trait";
+  const GRANTING_SPECIES = "presence-granting-species";
+
+  function registerGrantingSpecies(): void {
+    registerDefinition("trait", {
+      id: GRANTED,
+      name: "Granted Trait",
+      description: "A test Trait handed out by a Species.",
+    });
+
+    registerDefinition("species", {
+      id: GRANTING_SPECIES,
+      name: "Granting Species",
+      description: "A test Species that grants a Trait.",
+      parentSpeciesId: "human",
+      effects: [{ type: "grantTrait", traitId: GRANTED }],
+    });
+  }
+
+  const NEEDS_GRANTED: Requirement = { type: "hasTrait", traitId: GRANTED };
+
+  it("satisfies hasTrait even though authored Traits are unrecorded", () => {
+    registerGrantingSpecies();
+
+    const sheet: Character = {
+      ...without("traits"),
+      species: [{ speciesId: GRANTING_SPECIES, percentage: 100 }],
+    };
+
+    const context = resolveTestCharacter(sheet).requirementContext;
+
+    expect(context.incomplete).toContain("traits");
+    expect(context.traitIds).toContain(GRANTED);
+    expect(resolveRequirement(NEEDS_GRANTED, context)).toBe("satisfied");
+
+    clearCustomDefinitions();
+  });
+
+  it("leaves every OTHER Trait unresolved on the same sheet", () => {
+    registerGrantingSpecies();
+
+    const sheet: Character = {
+      ...without("traits"),
+      species: [{ speciesId: GRANTING_SPECIES, percentage: 100 }],
+    };
+
+    const context = resolveTestCharacter(sheet).requirementContext;
+
+    expect(resolveRequirement(HAS_TRAIT, context)).toBe("unresolved");
+
+    clearCustomDefinitions();
+  });
+
+  it("is unresolved when the Species data is also unrecorded", () => {
+    /*
+     * Nothing grants the Trait now, because nothing says what the character
+     * is. Neither the Trait nor the Species can be confirmed or denied.
+     */
+    const bare: Record<string, unknown> = { ...createTestCharacter() };
+
+    delete bare.traits;
+    delete bare.species;
+
+    const context = resolveTestCharacter(bare as never).requirementContext;
+
+    expect(context.incomplete).toEqual(
+      expect.arrayContaining(["species", "subspecies", "traits"]),
+    );
+    expect(resolveRequirement(NEEDS_GRANTED, context)).toBe("unresolved");
+    expect(resolveRequirement(
+      { type: "hasSpecies", speciesId: GRANTING_SPECIES },
+      context,
+    )).toBe("unresolved");
+  });
+
+  it("answers definitively once both collections are recorded", () => {
+    registerGrantingSpecies();
+
+    const complete = createTestCharacter({
+      traits: [],
+      species: [{ speciesId: GRANTING_SPECIES, percentage: 100 }],
+    });
+
+    const context = resolveTestCharacter(complete).requirementContext;
+
+    expect(context.incomplete).toBeUndefined();
+    expect(resolveRequirement(NEEDS_GRANTED, context)).toBe("satisfied");
+    expect(resolveRequirement(HAS_TRAIT, context)).toBe("unsatisfied");
+
+    clearCustomDefinitions();
   });
 });
 
@@ -340,6 +527,130 @@ describe("the boolean helpers are explicitly lossy", () => {
       expect(meetsAllRequirements([HAS_TRAIT], context))
         .toBe(resolveAllRequirements([HAS_TRAIT], context) === "satisfied");
     }
+  });
+});
+
+
+describe("an incomplete sheet warns rather than failing validation", () => {
+  const GATED = "presence-warning-skill";
+
+  function registerGatedSkill(): void {
+    registerDefinition("skill", {
+      id: GATED,
+      name: "Gated Skill",
+      description: "A test Skill gated on one Trait and nothing else.",
+      timings: ["action"],
+      maximumMastery: 10,
+      requirements: [HAS_TRAIT],
+    });
+  }
+
+  function halfBuiltSheet(): Character {
+    return {
+      ...without("traits"),
+      skills: [{ skillId: GATED, mastery: 1 }],
+    };
+  }
+
+  it("validates successfully, with a warning naming the incompleteness", () => {
+    /*
+     * The Workbench is where characters get finished. An engine that refuses
+     * to resolve a half-built one cannot help build it — the same reason a
+     * missing Species has always been a warning.
+     */
+    registerGatedSkill();
+
+    const result = validateCharacter(halfBuiltSheet());
+
+    expect(result.success).toBe(true);
+
+    const codes = result.warnings.map((warning) => warning.code);
+
+    expect(codes).toContain("character.skill.requirements_unresolved");
+
+    if (!result.success) throw new Error("unreachable");
+
+    clearCustomDefinitions();
+  });
+
+  it("keeps the guidance that a Warning has no field for", () => {
+    registerGatedSkill();
+
+    const warning = validateCharacter(halfBuiltSheet()).warnings
+      .find((one) => one.code === "character.skill.requirements_unresolved");
+
+    expect(warning?.message).toContain("cannot be judged");
+    expect(warning?.message).toContain("Record the Species");
+
+    clearCustomDefinitions();
+  });
+
+  it("still fails validation when a requirement is genuinely unmet", () => {
+    registerGatedSkill();
+
+    const complete = createTestCharacter({
+      traits: [],
+      skills: [{ skillId: GATED, mastery: 1 }],
+    });
+
+    const result = validateCharacter(complete);
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((error) => error.code))
+      .toContain("character.skill.requirements_unsatisfied");
+
+    clearCustomDefinitions();
+  });
+
+  it("does NOT make the requirement pass", () => {
+    /*
+     * The distinction the demotion must not blur. A resolvable sheet is not a
+     * satisfied prerequisite: the requirement is still unresolved, the action
+     * adapter still says so, the proposal reads missing-facts, and settlement
+     * refuses to commit.
+     */
+    registerGatedSkill();
+
+    const resolved = resolveTestCharacter(halfBuiltSheet());
+
+    expect(resolveRequirement(HAS_TRAIT, resolved.requirementContext))
+      .toBe("unresolved");
+
+    const inputs = payloadOf(prepareCharacterActionInputs({
+      resolved,
+      requirements: [{ id: "gated", requirement: HAS_TRAIT }],
+    }));
+
+    expect(inputs.eligibility[0]?.status).toBe("unresolved");
+
+    const proposal = payloadOf(prepareAction({
+      operationId: "op-presence",
+      profile: GATED_PROFILE,
+      intent: GATED_INTENT,
+      approach: "mechanical",
+      eligibility: inputs.eligibility,
+    }));
+
+    expect(proposal.disposition).toBe("missing-facts");
+
+    const adjudicated = payloadOf(adjudicateAction({
+      operationId: "op-presence",
+      proposal,
+      approach: "mechanical",
+      decision: { kind: "accept" },
+    }));
+
+    expect(errorCodesOf(settleAction({
+      adjudicated,
+      context: { operationId: "op-presence", occurredAt: 0 },
+      states: {},
+      handlers: { costs: [], effects: [] },
+    }))).toContain("actions.settlement.not-settleable");
+
+    clearCustomDefinitions();
   });
 });
 
