@@ -121,12 +121,11 @@ export const SUPERHUMAN_SPEED = 30;
 export const SUPERHUMAN_ROUND_MOVEMENT_METERS = 700;
 
 /*
- * The bounds of the ordinary base curve, matching the 1..30 Stat ladder.
+ * The bounds of canonical Speed, matching the 1..30 Stat ladder.
  *
- * These clamp the CURVE's input, not the character's Speed. A Speed 35 from
- * some future Trait is a real Speed 35; it simply does not get to ride an
- * exponential built for the mortal range, and whatever grants it owes an
- * explicit modifier on the result.
+ * Inputs above 30 normalize to Speed 30. Faster movement must come from an
+ * explicit movement factor, Trait, Skill, or technique rather than extending
+ * the calibrated Speed curve.
  */
 export const MINIMUM_CURVE_SPEED = 1;
 export const MAXIMUM_CURVE_SPEED = SUPERHUMAN_SPEED;
