@@ -104,6 +104,21 @@ export interface SkillDefinition extends EffectfulDefinition {
    * capabilities/dependencies.ts.
    */
   readonly subsumes?: readonly SkillId[];
+
+  /**
+   * Whether this may only be acquired once something has unlocked it.
+   *
+   * Off by default, which is the ordinary case: anything whose prerequisites a
+   * character meets is theirs to take up. Turning it on says the prerequisites
+   * are NOT the whole gate — a Clan's inner style is closed to outsiders who
+   * would otherwise qualify perfectly well, and the Clan's grant is what opens
+   * it.
+   *
+   * An unlock supplies PERMISSION, never prerequisites. Something declared
+   * this way and reachable by nobody's unlock can never be acquired at all,
+   * which capabilities/dependencies.ts reports.
+   */
+  readonly requiresUnlock?: boolean;
 }
 
 /**

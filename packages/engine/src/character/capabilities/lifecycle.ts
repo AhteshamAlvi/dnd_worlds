@@ -180,16 +180,33 @@ export interface RequirementResolution {
 /**
  * Whether a character may take up a capability, and why.
  *
- * `unlocked` is orthogonal to `disposition`. An unlock grants permission, not
- * eligibility: a Clan opening its style to a member does not thereby give them
- * the Attributes the style asks for. Both have to be true for the character to
- * acquire something that is gated on both, and content that is unlocked by
- * nothing at all is simply not gated that way.
+ * TWO GATES, REPORTED SEPARATELY AND THEN COMBINED.
+ *
+ * `disposition` answers the prerequisites alone. `unlocked` says whether
+ * anything is currently offering the capability. Those are orthogonal — a Clan
+ * opening its style to a member does not thereby give them the Attributes the
+ * style asks for, and meeting the Attributes does not make an outsider welcome
+ * — so neither is the answer on its own.
+ *
+ * `acquisition` is the answer: what a caller asking "may they take this up?"
+ * should act on. Keeping the parts alongside it is what lets a UI say WHICH
+ * gate is shut, which is the difference between "train DEX" and "get invited".
  */
 export interface CapabilityAcquisitionEvaluation {
   readonly capability: CapabilityRef;
+
+  /** The prerequisites, and nothing else. */
   readonly disposition: RequirementDisposition;
+
+  /** Whether some source is currently offering this capability. */
   readonly unlocked: boolean;
+
+  /** Whether an offer is required at all — see the definition's field. */
+  readonly requiresUnlock: boolean;
+
+  /** The decision: both gates, combined. */
+  readonly acquisition: RequirementDisposition;
+
   readonly requirements: readonly RequirementResolution[];
 }
 
@@ -210,6 +227,15 @@ export interface EvaluateCapabilityAcquisitionInput {
 
   /** Sources currently unlocking this capability, if any. */
   readonly unlockedBy?: readonly RuleSourceRef[];
+
+  /**
+   * Whether the capability is gated on being unlocked.
+   *
+   * Passed in for the same reason the requirements are: this file reads no
+   * catalog. dependencies.ts's evaluateAcquisition() supplies it from the
+   * definition.
+   */
+  readonly requiresUnlock?: boolean;
 }
 
 
@@ -232,6 +258,8 @@ export function evaluateCapabilityAcquisition(
 
   const unlocked = (input.unlockedBy ?? []).length > 0;
 
+  const requiresUnlock = input.requiresUnlock ?? false;
+
   const resolutions: RequirementResolution[] = requirements.map(
     (requirement) => ({
       requirement,
@@ -253,7 +281,23 @@ export function evaluateCapabilityAcquisition(
         ? "unresolved"
         : "satisfied";
 
-  return { capability, disposition, unlocked, requirements: resolutions };
+  /*
+   * A missing offer is a DEFINITE refusal, not an unresolved one. The unlock
+   * sources are an explicit input read off resolved state, so their absence
+   * means nobody is offering it rather than that nobody has looked — and the
+   * remedy is to go and get invited, which is something a caller can say.
+   */
+  const acquisition: RequirementDisposition =
+    requiresUnlock && !unlocked ? "unsatisfied" : disposition;
+
+  return {
+    capability,
+    disposition,
+    unlocked,
+    requiresUnlock,
+    acquisition,
+    requirements: resolutions,
+  };
 }
 
 

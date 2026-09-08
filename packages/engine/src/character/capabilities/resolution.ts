@@ -449,14 +449,23 @@ export function resolveCapabilities(
  *   undefined → they do not have it
  *
  * The old signature collapsed the last two onto 0, which is what made a Skill
- * with no Mastery track indistinguishable from one nobody has. Use
- * hasResolvedSkill() to ask about possession.
+ * with no Mastery track indistinguishable from one nobody has.
+ *
+ * A capability that is only UNLOCKED is answered `undefined` rather than
+ * `null`, because the character does not have it. It is in the record so that
+ * its offer can be reported, and reading its absent rank as "held, no Mastery"
+ * would be the same conflation one field further along. Presence in the record
+ * is not possession — ask hasResolvedSkill().
  */
 export function getResolvedSkillMastery(
   capabilities: ResolvedCapabilities,
   skillId: string,
 ): MasteryRank | null | undefined {
-  return capabilities.skills[skillId]?.mastery;
+  const skill = capabilities.skills[skillId];
+
+  if (skill === undefined || !isHeldCapability(skill)) return undefined;
+
+  return skill.mastery;
 }
 
 
@@ -468,7 +477,11 @@ export function getResolvedTechniqueMastery(
   capabilities: ResolvedCapabilities,
   techniqueId: string,
 ): MasteryRank | null | undefined {
-  return capabilities.techniques[techniqueId]?.mastery;
+  const technique = capabilities.techniques[techniqueId];
+
+  if (technique === undefined || !isHeldCapability(technique)) return undefined;
+
+  return technique.mastery;
 }
 
 

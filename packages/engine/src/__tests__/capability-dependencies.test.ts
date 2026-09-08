@@ -439,6 +439,191 @@ describe("impossible acquisition cycles are rejected", () => {
   });
 });
 
+/* ── Unlocks ────────────────────────────────────────────────────────────── */
+
+describe("an unlock permits acquisition without satisfying it", () => {
+  /*
+   * The distinction the whole mode exists for. A Clan offering a Skill whose
+   * requirements can never be met has issued a real invitation to something
+   * still unlearnable — so the offer must not mark it reachable, or the
+   * deadlock this analysis exists to find is hidden by the content that meant
+   * to be generous.
+   */
+  it("does not rescue a self-deadlocked Skill", () => {
+    registerDefinition("skill", {
+      id: "test-deadlocked-skill",
+      name: "Deadlocked Skill",
+      description: "A test Skill that requires itself.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requirements: [{ type: "hasSkill", skillId: "test-deadlocked-skill" }],
+    });
+
+    registerDefinition("trait", {
+      id: "test-clan-membership",
+      name: "Clan Membership",
+      description: "A test Trait offering it anyway.",
+      effects: [
+        {
+          type: "grantSkill",
+          skillId: "test-deadlocked-skill",
+          mode: "unlocked-for-acquisition",
+        },
+      ],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([
+      expect.stringContaining(
+        'Skill "test-deadlocked-skill" can never be acquired',
+      ),
+    ]);
+
+    expect(
+      isCapabilityEverAcquirable({ kind: "skill", id: "test-deadlocked-skill" }),
+    ).toBe(false);
+  });
+
+  /* The same offer against prerequisites somebody can actually meet. */
+  it("makes a Skill reachable when its own prerequisites are reachable", () => {
+    registerDefinition("trait", {
+      id: "test-innate-talent",
+      name: "Innate Talent",
+      description: "A test Trait obtainable on its own.",
+    });
+
+    registerDefinition("skill", {
+      id: "test-inner-style",
+      name: "Inner Style",
+      description: "A test Skill gated on an obtainable Trait.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requirements: [{ type: "hasTrait", traitId: "test-innate-talent" }],
+    });
+
+    registerDefinition("trait", {
+      id: "test-clan-membership",
+      name: "Clan Membership",
+      description: "A test Trait offering the style to its holder.",
+      effects: [
+        {
+          type: "grantSkill",
+          skillId: "test-inner-style",
+          mode: "unlocked-for-acquisition",
+        },
+      ],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([]);
+
+    expect(
+      isCapabilityEverAcquirable({ kind: "skill", id: "test-inner-style" }),
+    ).toBe(true);
+  });
+
+  /*
+   * And the other direction: something declared as needing permission is
+   * unreachable while nobody can ever give it, however easy its prerequisites
+   * are.
+   */
+  it("refuses a capability that requires an unlock nothing supplies", () => {
+    registerDefinition("skill", {
+      id: "test-closed-style",
+      name: "Closed Style",
+      description: "A test Skill nobody is ever invited to.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([
+      expect.stringContaining(
+        'Skill "test-closed-style" can never be acquired: it requires an unlock',
+      ),
+    ]);
+  });
+
+  it("accepts it once something obtainable offers it", () => {
+    registerDefinition("skill", {
+      id: "test-closed-style",
+      name: "Closed Style",
+      description: "A test Skill open only to those invited.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
+    });
+
+    registerDefinition("trait", {
+      id: "test-clan-membership",
+      name: "Clan Membership",
+      description: "A test Trait that issues the invitation.",
+      effects: [
+        {
+          type: "grantSkill",
+          skillId: "test-closed-style",
+          mode: "unlocked-for-acquisition",
+        },
+      ],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([]);
+  });
+
+  it("is not satisfied by an offer from content nobody can obtain", () => {
+    registerDefinition("skill", {
+      id: "test-closed-style",
+      name: "Closed Style",
+      description: "A test Skill open only to those invited.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
+    });
+
+    registerDefinition("trait", {
+      id: "test-unreachable-clan",
+      name: "Unreachable Clan",
+      description: "A test Trait nobody can obtain.",
+      requirements: [{ type: "hasTrait", traitId: "test-unreachable-clan" }],
+      effects: [
+        {
+          type: "grantSkill",
+          skillId: "test-closed-style",
+          mode: "unlocked-for-acquisition",
+        },
+      ],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining(
+          'Skill "test-closed-style" can never be acquired: it requires an unlock',
+        ),
+      ]),
+    );
+  });
+
+  /* An access grant still skips both gates, which is what a gift is. */
+  it("lets an outright grant bypass the unlock requirement", () => {
+    registerDefinition("skill", {
+      id: "test-closed-style",
+      name: "Closed Style",
+      description: "A test Skill open only to those invited.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
+    });
+
+    registerDefinition("trait", {
+      id: "test-heirloom",
+      name: "Heirloom",
+      description: "A test Trait that simply hands it over.",
+      effects: [{ type: "grantSkill", skillId: "test-closed-style" }],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([]);
+  });
+});
+
+
 /* ── Mastery progression ────────────────────────────────────────────────── */
 
 describe("Mastery advancement is checked rank by rank", () => {

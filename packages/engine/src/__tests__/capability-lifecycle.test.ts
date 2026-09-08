@@ -28,6 +28,8 @@ import {
 import { evaluateAcquisition } from "../character/capabilities/dependencies";
 
 import {
+  getResolvedSkillMastery,
+  getResolvedTechniqueMastery,
   hasResolvedSkill,
   hasResolvedTechnique,
   resolveCapabilities,
@@ -51,6 +53,8 @@ const CLAN_STYLE = "test-clan-style";
 const EARNED = "test-earned-trait";
 const GATE = "test-gate-trait";
 const GATED = "test-gated-skill";
+const INNER = "test-inner-style";
+const OFFERED = "test-offered-technique";
 
 function registerLifecycleContent(): void {
   registerDefinition("skill", {
@@ -89,6 +93,23 @@ function registerLifecycleContent(): void {
     timings: ["action"],
     mastery: { maximumMastery: 3 },
     requirements: [{ type: "hasTrait", traitId: GATE }],
+  });
+
+  registerDefinition("skill", {
+    id: INNER,
+    name: "Inner Style",
+    description: "A test Skill gated on a Trait AND on being invited.",
+    timings: ["action"],
+    mastery: { maximumMastery: 3 },
+    requiresUnlock: true,
+    requirements: [{ type: "hasTrait", traitId: GATE }],
+  });
+
+  registerDefinition("technique", {
+    id: OFFERED,
+    name: "Offered Discipline",
+    description: "A test Technique something offers rather than teaches.",
+    mastery: { maximumMastery: 5 },
   });
 }
 
@@ -586,6 +607,175 @@ describe("losing a prerequisite does not unlearn what it gated", () => {
     );
   });
 });
+
+/* ── What an offer is worth to a reader ─────────────────────────────────── */
+
+describe("an offer is reported without being mistaken for a possession", () => {
+  function offering(): Character {
+    registerLifecycleContent();
+
+    registerDefinition("trait", {
+      id: "test-clan-membership",
+      name: "Clan Membership",
+      description: "A test Trait offering a Skill and a Technique.",
+      effects: [
+        {
+          type: "grantSkill",
+          skillId: CLAN_STYLE,
+          mode: "unlocked-for-acquisition",
+        },
+        {
+          type: "grantTechnique",
+          techniqueId: OFFERED,
+          mode: "unlocked-for-acquisition",
+        },
+      ],
+    });
+
+    return createTestCharacter({ traits: [{ traitId: "test-clan-membership" }] });
+  }
+
+  /*
+   * `null` is a claim: "they have this, and it has no Mastery." An offer is
+   * not a possession, so answering null for one would be the same conflation
+   * the three-way Mastery reading was built to remove, one field further
+   * along. Undefined is the honest answer.
+   */
+  it("answers undefined, not null, for the Mastery of an unlocked Skill", () => {
+    const resolved = resolveTestCharacter(offering());
+
+    expect(resolved.capabilities.skills[CLAN_STYLE]).toBeDefined();
+
+    expect(
+      getResolvedSkillMastery(resolved.capabilities, CLAN_STYLE),
+    ).toBeUndefined();
+  });
+
+  it("answers the same way for an unlocked Technique", () => {
+    const resolved = resolveTestCharacter(offering());
+
+    expect(resolved.capabilities.techniques[OFFERED]).toBeDefined();
+
+    expect(
+      getResolvedTechniqueMastery(resolved.capabilities, OFFERED),
+    ).toBeUndefined();
+  });
+
+  it("still answers null for something held that has no Mastery", () => {
+    registerDefinition("skill", {
+      id: "test-door-rune",
+      name: "Door Rune",
+      description: "A test Skill with no Mastery at all.",
+      timings: ["action"],
+    });
+
+    const resolved = resolveCapabilities({
+      authoredSkills: [{ skillId: "test-door-rune" }],
+    });
+
+    expect(getResolvedSkillMastery(resolved, "test-door-rune")).toBeNull();
+  });
+
+  it("answers undefined for a capability nobody has mentioned", () => {
+    expect(
+      getResolvedSkillMastery(resolveCapabilities({}), "test-door-rune"),
+    ).toBeUndefined();
+  });
+});
+
+
+/* ── Two gates ──────────────────────────────────────────────────────────── */
+
+describe("a capability may be gated on permission as well as prerequisites", () => {
+  /*
+   * The two gates are orthogonal, so neither is the answer on its own: meeting
+   * the Attributes does not make an outsider welcome, and being invited does
+   * not confer the Attributes. `acquisition` is the decision; `disposition`
+   * and `unlocked` are kept so a UI can say which gate is shut, which is the
+   * difference between "train DEX" and "get invited".
+   */
+  it("refuses an unoffered capability whose prerequisites are met", () => {
+    registerLifecycleContent();
+
+    const context = resolveTestCharacter(
+      createTestCharacter({ traits: [{ traitId: GATE }] }),
+    ).requirementContext;
+
+    const evaluation = evaluateAcquisition({ kind: "skill", id: INNER }, context);
+
+    expect(evaluation.requiresUnlock).toBe(true);
+    expect(evaluation.unlocked).toBe(false);
+
+    /* The prerequisites really are met. Permission is what is missing. */
+    expect(evaluation.disposition).toBe("satisfied");
+    expect(evaluation.acquisition).toBe("unsatisfied");
+  });
+
+  it("accepts it once it is offered and the prerequisites are met", () => {
+    registerLifecycleContent();
+
+    const context = resolveTestCharacter(
+      createTestCharacter({ traits: [{ traitId: GATE }] }),
+    ).requirementContext;
+
+    const evaluation = evaluateAcquisition(
+      { kind: "skill", id: INNER },
+      context,
+      [{ type: "clan", id: "kurta" }],
+    );
+
+    expect(evaluation.unlocked).toBe(true);
+    expect(evaluation.acquisition).toBe("satisfied");
+  });
+
+  it("still refuses an offered capability whose prerequisites are not met", () => {
+    registerLifecycleContent();
+
+    const context = resolveTestCharacter(
+      createTestCharacter({ traits: [] }),
+    ).requirementContext;
+
+    const evaluation = evaluateAcquisition(
+      { kind: "skill", id: INNER },
+      context,
+      [{ type: "clan", id: "kurta" }],
+    );
+
+    expect(evaluation.unlocked).toBe(true);
+    expect(evaluation.disposition).toBe("unsatisfied");
+    expect(evaluation.acquisition).toBe("unsatisfied");
+  });
+
+  it("leaves an ungated capability's decision to its prerequisites alone", () => {
+    registerLifecycleContent();
+
+    const context = resolveTestCharacter(
+      createTestCharacter({ traits: [{ traitId: GATE }] }),
+    ).requirementContext;
+
+    const evaluation = evaluateAcquisition({ kind: "skill", id: GATED }, context);
+
+    expect(evaluation.requiresUnlock).toBe(false);
+    expect(evaluation.unlocked).toBe(false);
+    expect(evaluation.acquisition).toBe("satisfied");
+  });
+
+  /* An unfinished sheet stays unresolved rather than becoming a refusal. */
+  it("carries an unresolved prerequisite through to the decision", () => {
+    registerLifecycleContent();
+
+    const { traits: _unrecorded, ...halfBuilt } = createTestCharacter();
+
+    const evaluation = evaluateAcquisition(
+      { kind: "skill", id: INNER },
+      resolveTestCharacter(halfBuilt).requirementContext,
+      [{ type: "clan", id: "kurta" }],
+    );
+
+    expect(evaluation.acquisition).toBe("unresolved");
+  });
+});
+
 
 /* ── Grants create nothing from nothing ─────────────────────────────────── */
 

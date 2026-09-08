@@ -41,15 +41,28 @@
  * blockers here would bury that one real message under a cascade of derived
  * ones about everything downstream.
  *
- * Grants and subsumption widen reachability. Anything a reachable capability
- * grants is itself reachable — that is what "a seeded grant cycle resolves to
- * a stable closure" means — and anything a reachable capability subsumes is
- * reachable through it, because a replacement satisfies requirements naming
- * what it replaced. An entirely UNSEEDED grant cycle adds nothing, since
- * neither end is ever reached to do the granting.
+ * ACCESS grants and subsumption widen reachability. Anything a reachable
+ * capability GIVES is itself reachable — that is what "a seeded grant cycle
+ * resolves to a stable closure" means — and anything a reachable capability
+ * subsumes is reachable through it, because a replacement satisfies
+ * requirements naming what it replaced. An entirely UNSEEDED grant cycle adds
+ * nothing, since neither end is ever reached to do the granting.
+ *
+ * An UNLOCK does not widen reachability, and that distinction is the mode's
+ * entire meaning. It supplies permission and no prerequisites, so a Clan
+ * offering a Skill whose requirements can never be met has issued a real
+ * invitation to something still unlearnable. Treating an offer as a grant here
+ * would hide exactly the deadlocks this file exists to find. It works the
+ * other way too: a capability declared `requiresUnlock` is reachable only if
+ * something reachable offers it, so an offer nobody can ever make is caught
+ * as well.
  */
 
-import type { Effect } from "../rules/effects";
+import {
+  capabilityGrantMode,
+  type CapabilityGrantMode,
+  type Effect,
+} from "../rules/effects";
 import type { Requirement } from "../rules/requirements";
 import type {
   RequirementContext,
@@ -153,6 +166,25 @@ export function capabilitySubsumes(
 }
 
 
+/**
+ * Whether the capability may only be taken up once something has unlocked it.
+ */
+export function capabilityRequiresUnlock(
+  capability: CapabilityRef,
+): boolean {
+  switch (capability.kind) {
+    case "trait":
+      return getTraitDefinition(capability.id)?.requiresUnlock ?? false;
+
+    case "skill":
+      return getSkillDefinition(capability.id)?.requiresUnlock ?? false;
+
+    case "technique":
+      return getTechniqueDefinition(capability.id)?.requiresUnlock ?? false;
+  }
+}
+
+
 /** The capability's own effects, before any rank is reached. */
 function capabilityEffects(capability: CapabilityRef): readonly Effect[] {
   switch (capability.kind) {
@@ -244,6 +276,8 @@ export function evaluateAcquisition(
       capability,
       disposition: "unresolved",
       unlocked: unlockedBy.length > 0,
+      requiresUnlock: false,
+      acquisition: "unresolved",
       requirements: [],
     };
   }
@@ -253,6 +287,7 @@ export function evaluateAcquisition(
     requirements,
     context,
     unlockedBy,
+    requiresUnlock: capabilityRequiresUnlock(capability),
   });
 }
 
@@ -385,20 +420,46 @@ function computeReachability(): Reachability {
 
   const reached = new Set<string>();
 
-  /* Ids granted by a reachable node, which bypass their own requirements. */
+  /*
+   * Ids an ACCESS grant hands over, which bypass their own requirements
+   * because the character is given the thing rather than qualifying for it.
+   */
   const granted = new Set<string>();
 
-  const grantsOf = (effects: readonly Effect[]): readonly CapabilityRef[] =>
-    effects.flatMap((effect): readonly CapabilityRef[] => {
+  /*
+   * Ids something reachable OFFERS.
+   *
+   * Kept apart from `granted`, and that separation is the whole meaning of the
+   * mode. An unlock supplies permission and no prerequisites, so a Skill whose
+   * requirements can never be met is not rescued by a Clan offering it — the
+   * invitation is real and the Skill is still unlearnable. Folding the two
+   * together would make every unlock a grant with extra words, and would hide
+   * exactly the deadlocks this analysis exists to find.
+   */
+  const unlocked = new Set<string>();
+
+  const grantsOf = (
+    effects: readonly Effect[],
+  ): readonly { readonly target: CapabilityRef; readonly mode: CapabilityGrantMode }[] =>
+    effects.flatMap((effect) => {
       switch (effect.type) {
         case "grantTrait":
-          return [{ kind: "trait", id: effect.traitId }];
+          return [{
+            target: { kind: "trait", id: effect.traitId } as CapabilityRef,
+            mode: capabilityGrantMode(effect.mode),
+          }];
 
         case "grantSkill":
-          return [{ kind: "skill", id: effect.skillId }];
+          return [{
+            target: { kind: "skill", id: effect.skillId } as CapabilityRef,
+            mode: capabilityGrantMode(effect.mode),
+          }];
 
         case "grantTechnique":
-          return [{ kind: "technique", id: effect.techniqueId }];
+          return [{
+            target: { kind: "technique", id: effect.techniqueId } as CapabilityRef,
+            mode: capabilityGrantMode(effect.mode),
+          }];
 
         default:
           return [];
@@ -435,8 +496,14 @@ function computeReachability(): Reachability {
         : (capabilityRanks(capability).find((one) => one.rank === rank)
             ?.effects ?? []);
 
-      for (const target of grantsOf(effects)) {
-        granted.add(nodeKey(target, acquisitionRank(target)));
+      for (const { target, mode } of grantsOf(effects)) {
+        const key = nodeKey(target, acquisitionRank(target));
+
+        if (mode === "unlocked-for-acquisition") {
+          unlocked.add(key);
+        } else {
+          granted.add(key);
+        }
       }
     };
 
@@ -444,15 +511,25 @@ function computeReachability(): Reachability {
       const base = acquisitionRank(capability);
 
       if (!reached.has(nodeKey(capability, base))) {
+        const key = nodeKey(capability, base);
+
         const requirements = capabilityRequirements(capability) ?? [];
 
-        const acquirable =
-          granted.has(nodeKey(capability, base)) ||
-          requirements.every((requirement) =>
-            requirementReachable(requirement, reached),
-          );
+        /*
+         * Two gates, and an access grant skips both. Qualifying for something
+         * gated on an unlock is not enough on its own, and neither is being
+         * offered something whose prerequisites are impossible.
+         */
+        const qualifies = requirements.every((requirement) =>
+          requirementReachable(requirement, reached),
+        );
 
-        if (acquirable) reach(capability, base);
+        const permitted =
+          !capabilityRequiresUnlock(capability) || unlocked.has(key);
+
+        if (granted.has(key) || (qualifies && permitted)) {
+          reach(capability, base);
+        }
       }
 
       if (!reached.has(nodeKey(capability, base))) continue;
@@ -661,8 +738,15 @@ export function findCapabilityDependencyIssues(): readonly string[] {
     const base = acquisitionRank(capability);
 
     if (!reached.has(nodeKey(capability, base))) {
+      /*
+       * Which gate is shut changes the fix entirely — write a prerequisite the
+       * character can meet, or write the content that offers this — so the
+       * message says which.
+       */
       issues.push(
-        `${label} "${capability.id}" can never be acquired: its prerequisites cannot all be satisfied by anything that is itself obtainable.`,
+        capabilityRequiresUnlock(capability)
+          ? `${label} "${capability.id}" can never be acquired: it requires an unlock, and nothing obtainable unlocks it (or its prerequisites cannot be satisfied).`
+          : `${label} "${capability.id}" can never be acquired: its prerequisites cannot all be satisfied by anything that is itself obtainable.`,
       );
 
       continue;

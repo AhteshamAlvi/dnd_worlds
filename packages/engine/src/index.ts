@@ -1040,6 +1040,7 @@ export {
 // Whether the capability graph authored content forms is one anybody can walk.
 export {
   capabilityRequirements,
+  capabilityRequiresUnlock,
   capabilitySubsumes,
   evaluateAcquisition,
   findCapabilityDependencyIssues,
