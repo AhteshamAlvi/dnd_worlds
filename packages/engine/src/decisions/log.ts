@@ -813,7 +813,16 @@ export const ENGINE_DECISIONS = {
         chosen:
             "A guard goes before every READ, not once at the top of the function. The kind predicates take `unknown` too, since they are used over collections whose contents may be anything. A permanent sweep in spatial.test.ts runs sixteen hostile values through every structural validator and both measurement entry points and asserts none throws.",
         rationale:
-            "Collecting an error and then dereferencing the value it was about is a specific and repeatable mistake, and it looks fixed in review: the guard IS there, at the top, doing nothing for the line that actually crashes. Each instance was found only by running hostile input through the function rather than by reading it, which is why the coverage is a sweep over a value list rather than a case per bug — a case per bug tests the ones already found, and the value list catches the next function that grows a read.",
+            "Collecting an error and then dereferencing the value it was about is a specific and repeatable mistake, and it looks fixed in review: the guard IS there, at the top, doing nothing for the line that actually crashes. Each instance was found only by running hostile input through the function rather than by reading it, which is why the coverage is a sweep over a value list rather than a case per bug — a case per bug tests the ones already found, and the value list catches the next function that grows a read. INSUFFICIENT ON ITS OWN, and extended by spatial.validation.not-throwing-is-not-correct: a sweep that asserts only 'does not throw' passes on a function that returns a wrong answer or a NaN.",
+    },
+    "spatial.validation.not-throwing-is-not-correct": {
+        id: "spatial.validation.not-throwing-is-not-correct",
+        question:
+            "Hardening the spatial validators against hostile input was verified by asserting they do not throw. Two defects survived that: findPathIssues() reported a context MISMATCH for waypoints that name no context at all, and isMetricPosition() returned true for `{ kind: \"metric\" }`, so measurement proceeded on absent coordinates and put NaN in a failure trace.",
+        chosen:
+            "A context mismatch is reported only when both the path and the waypoint carry a valid context identifier. The kind predicates verify the shape they assert — finite coordinates for metric, a non-empty reference for host — rather than the discriminant alone. Neither measurement computes anything while any structural issue stands, and both build their failure trace from the diagnostic rather than from a half-finished calculation.",
+        rationale:
+            "Not throwing is a much weaker property than being right, and testing for it produced exactly the failure it deserved: a guard that stopped the crash and left the wrong diagnostic, and a predicate that stopped reading null and kept lying about the type it narrows to. `position is MetricPosition` is a claim about three finite coordinates, so accepting the tag alone made every caller's cast unsound. Refusing to compute while issues stand is the general form: arithmetic on a value already known to be invalid produces a number nobody should read, and NaN in a trace is not JSON — a caller serializing a failure to show a GM gets null where a number should be. A failure trace has to survive the trip as much as a successful one.",
     },
 } as const satisfies Record<string, EngineDecision>;
 

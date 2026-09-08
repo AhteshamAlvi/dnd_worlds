@@ -19,6 +19,7 @@ import {
   findDistanceIntervalIssues,
   findPathIssues,
   findPositionIssues,
+  isMetricPosition,
   findRangeBand,
   findRangeBandScaleIssues,
   findSpatialFactsIssues,
@@ -275,18 +276,45 @@ describe("paths", () => {
 
   it("reports the malformed waypoint rather than a context mismatch", () => {
     /*
-     * An array waypoint is an object, so the guard has to be about whether
-     * it is a POSITION rather than merely about null — an array has no
-     * contextId, and reporting "in a different spatial context" for one
-     * would describe a problem it does not have.
+     * "In a DIFFERENT context" is only coherent when both ends name one. A
+     * waypoint with no valid contextId is not somewhere else, it is nowhere,
+     * and it has already been reported for exactly that.
+     *
+     * The earlier version guarded only against null, which stopped the throw
+     * and not the wrong diagnostic: an array and a bare object are both
+     * objects, so both fell through to the comparison.
      */
+    const malformed: readonly unknown[] = [
+      null,
+      undefined,
+      "over there",
+      [],
+      [at(0)],
+      {},
+      { kind: "metric" },
+      { kind: "metric", contextId: "" },
+      { kind: "metric", contextId: null },
+      { contextId: 42 },
+    ];
+
+    for (const point of malformed) {
+      const codes = findPathIssues({
+        contextId: SCENE,
+        points: [at(0), point],
+      } as unknown as SpatialPath).map((error) => error.code);
+
+      expect(codes.length).toBeGreaterThan(0);
+      expect(codes).not.toContain("spatial.path.context.mixed");
+    }
+  });
+
+  it("still reports a genuine mismatch between two named contexts", () => {
     const codes = findPathIssues({
       contextId: SCENE,
-      points: [at(0), null],
-    } as unknown as SpatialPath).map((error) => error.code);
+      points: [at(0), at(1, 0, 0, "scene-2")],
+    }).map((error) => error.code);
 
-    expect(codes).toContain("spatial.position.malformed");
-    expect(codes).not.toContain("spatial.path.context.mixed");
+    expect(codes).toContain("spatial.path.context.mixed");
   });
 
   it("measures nothing from a path with a malformed waypoint", () => {
@@ -496,6 +524,105 @@ describe("invalid spatial data", () => {
     for (const degree of COVER_DEGREES) {
       expect(findSpatialFactsIssues({ cover: { degree } })).toEqual([]);
     }
+  });
+});
+
+
+describe("measurements refuse structurally invalid positions", () => {
+  /*
+   * `{ kind: "metric" }` is metric-SHAPED and has no coordinates. The kind
+   * guard used to accept it on the tag alone — lying about the type it
+   * narrows to — so measurement went ahead, subtracted undefined from
+   * undefined, and carried NaN into the distance and into the trace.
+   *
+   * NaN in a trace is not JSON: a caller serializing a failure to show a GM
+   * gets null where a number should be, or a crash, depending on the
+   * serializer. A failure trace has to survive the trip as much as a
+   * successful one.
+   */
+  const COORDINATELESS = { kind: "metric", contextId: SCENE } as never;
+
+  function isJsonSafe(value: unknown): boolean {
+    if (typeof value === "number") return Number.isFinite(value);
+    if (value === null || typeof value !== "object") return true;
+
+    return Object.values(value as Record<string, unknown>).every(isJsonSafe);
+  }
+
+  it("rejects a coordinateless position as metric", () => {
+    expect(isMetricPosition(COORDINATELESS)).toBe(false);
+    expect(isMetricPosition({ kind: "metric", contextId: SCENE, xMetres: 1 }))
+      .toBe(false);
+    expect(isMetricPosition(at(0))).toBe(true);
+  });
+
+  it("refuses to measure a direct distance from one", () => {
+    const result = measureDirectDistance(at(0), COORDINATELESS);
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((error) => error.code))
+      .toContain("spatial.position.coordinate.invalid");
+  });
+
+  it("refuses to sum a path containing one", () => {
+    const result = measurePathLength({
+      contextId: SCENE,
+      points: [at(0), COORDINATELESS],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("leaves no NaN in either failure trace", () => {
+    const distance = measureDirectDistance(at(0), COORDINATELESS);
+    const path = measurePathLength({
+      contextId: SCENE,
+      points: [at(0), COORDINATELESS],
+    });
+
+    /*
+     * Asserted as "every number is finite" rather than by searching the
+     * serialized form for "null" — NaN does serialize to null, but so could
+     * a legitimately null field somebody adds later, and a test that fails
+     * for that reason teaches people to weaken it.
+     */
+    for (const result of [distance, path]) {
+      expect(isJsonSafe(result.trace)).toBe(true);
+    }
+  });
+
+  it("keeps every hostile failure trace JSON-safe", () => {
+    const hostile: readonly unknown[] = [
+      null,
+      undefined,
+      {},
+      { kind: "metric" },
+      { kind: "metric", contextId: SCENE, xMetres: Number.NaN },
+      { kind: "host", contextId: SCENE },
+    ];
+
+    for (const value of hostile) {
+      const distance = measureDirectDistance(at(0), value as never);
+      const path = measurePathLength({
+        contextId: SCENE,
+        points: [at(0), value],
+      } as never);
+
+      expect(isJsonSafe(distance.trace)).toBe(true);
+      expect(isJsonSafe(path.trace)).toBe(true);
+    }
+  });
+
+  it("still measures correctly when everything is well-formed", () => {
+    const distance = measureDirectDistance(at(0), at(3, 4));
+
+    if (!distance.success) throw new Error("unreachable");
+
+    expect(distance.payload.metres).toBe(5);
+    expect(isJsonSafe(distance.trace)).toBe(true);
   });
 });
 

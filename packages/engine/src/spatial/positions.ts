@@ -90,18 +90,36 @@ export type SpatialPosition = MetricPosition | HostPosition;
 export function isMetricPosition(
   position: unknown,
 ): position is MetricPosition {
-  return typeof position === "object" &&
-    position !== null &&
-    (position as { readonly kind?: unknown }).kind === "metric";
+  if (typeof position !== "object" || position === null) return false;
+
+  const candidate = position as Partial<MetricPosition>;
+
+  /*
+   * The coordinates are checked, not just the tag.
+   *
+   * This predicate asserts `position is MetricPosition`, and a
+   * MetricPosition has three finite coordinates — so returning true for
+   * `{ kind: "metric" }` was the guard lying about the type it narrows to.
+   * Callers then subtracted undefined from undefined and carried NaN into a
+   * distance and into a trace.
+   */
+  return candidate.kind === "metric" &&
+    Number.isFinite(candidate.xMetres) &&
+    Number.isFinite(candidate.yMetres) &&
+    Number.isFinite(candidate.zMetres);
 }
 
 
 export function isHostPosition(
   position: unknown,
 ): position is HostPosition {
-  return typeof position === "object" &&
-    position !== null &&
-    (position as { readonly kind?: unknown }).kind === "host";
+  if (typeof position !== "object" || position === null) return false;
+
+  const candidate = position as Partial<HostPosition>;
+
+  return candidate.kind === "host" &&
+    typeof candidate.reference === "string" &&
+    candidate.reference.trim().length > 0;
 }
 
 
@@ -373,15 +391,36 @@ export function measureDirectDistance(
     ));
   }
 
+  const firstIssue = issues[0];
+
+  /*
+   * Nothing is COMPUTED once anything is wrong.
+   *
+   * Arithmetic on a structurally invalid position produces NaN, and NaN in a
+   * trace is not JSON — a caller serializing the failure to show a GM gets
+   * null where a number should be, or a crash, depending on the serializer.
+   * A failure trace has to survive the trip as much as a successful one, so
+   * the calculation happens only after the issues are known to be empty.
+   */
+  if (firstIssue !== undefined) {
+    return engineFailure({
+      root: createTraceNode({
+        id: "spatial.distance.direct",
+        label: "Measure Direct Distance",
+        formula: "rejected before measurement",
+        inputs: { supplied: { value: suppliedSeparation === undefined ? 0 : 1 } },
+        output: firstIssue.code,
+      }),
+    }, [firstIssue, ...issues.slice(1)]);
+  }
+
   const metres = suppliedSeparation !== undefined
     ? suppliedSeparation.metres
-    : measurable
-      ? Math.hypot(
-        (to as MetricPosition).xMetres - (from as MetricPosition).xMetres,
-        (to as MetricPosition).yMetres - (from as MetricPosition).yMetres,
-        (to as MetricPosition).zMetres - (from as MetricPosition).zMetres,
-      )
-      : 0;
+    : Math.hypot(
+      (to as MetricPosition).xMetres - (from as MetricPosition).xMetres,
+      (to as MetricPosition).yMetres - (from as MetricPosition).yMetres,
+      (to as MetricPosition).zMetres - (from as MetricPosition).zMetres,
+    );
 
   const trace: EngineTrace = {
     root: createTraceNode({
@@ -391,18 +430,12 @@ export function measureDirectDistance(
         ? "host-supplied separation"
         : "sqrt(dx^2 + dy^2 + dz^2)",
       inputs: {
-        context: { value: readable ? from.contextId : "unreadable" },
+        context: { value: from.contextId },
         supplied: { value: suppliedSeparation === undefined ? 0 : 1 },
       },
       output: metres,
     }),
   };
-
-  const firstIssue = issues[0];
-
-  if (firstIssue !== undefined) {
-    return engineFailure(trace, [firstIssue, ...issues.slice(1)]);
-  }
 
   return engineSuccess(directDistance(metres), trace);
 }

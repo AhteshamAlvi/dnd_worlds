@@ -94,21 +94,22 @@ export function findPathIssues(value: unknown): readonly EngineError[] {
     errors.push(...findPositionIssues(point));
 
     /*
-     * The cross-context check reads the waypoint, so it only runs once the
-     * waypoint has been established as an object to read.
+     * "In a DIFFERENT context" is only a coherent complaint when both ends
+     * name a context. A waypoint with no valid contextId — an array, a bare
+     * object, a position whose context is empty — has already been reported
+     * for exactly that, and adding a mismatch on top describes a problem it
+     * does not have: it is not somewhere else, it is nowhere.
      *
-     * findPositionIssues() has already REPORTED a malformed waypoint by this
-     * line, which is what made the missing guard easy to miss: the error was
-     * collected and then execution carried on into the dereference anyway. A
-     * null waypoint threw rather than returning the issue that had just been
-     * recorded for it.
+     * The earlier version guarded only against null, which was enough to
+     * stop the throw and not enough to stop the wrong diagnostic.
      */
-    if (typeof point !== "object" || point === null) return;
-
-    const contextId = (point as { readonly contextId?: unknown }).contextId;
+    const contextId = typeof point === "object" && point !== null
+      ? (point as { readonly contextId?: unknown }).contextId
+      : undefined;
 
     if (
       isValidSpatialContextId(path.contextId) &&
+      isValidSpatialContextId(contextId) &&
       contextId !== path.contextId
     ) {
       errors.push({
@@ -176,16 +177,38 @@ export function measurePathLength(
     ));
   }
 
+  const firstIssue = issues[0];
+
+  /*
+   * Nothing is summed once anything is wrong. A waypoint that is metric-
+   * shaped but missing its coordinates would otherwise contribute NaN to the
+   * total and put NaN in the trace, which is not JSON — a caller serializing
+   * the failure gets null where a number should be, or a crash.
+   */
+  if (firstIssue !== undefined) {
+    return engineFailure({
+      root: createTraceNode({
+        id: "spatial.path.length",
+        label: "Measure Path Length",
+        formula: "rejected before measurement",
+        inputs: {
+          waypoints: { value: points.length },
+          supplied: { value: suppliedLength === undefined ? 0 : 1 },
+        },
+        output: firstIssue.code,
+      }),
+    }, [firstIssue, ...issues.slice(1)]);
+  }
+
   let metres = 0;
 
   if (suppliedLength !== undefined) {
     metres = suppliedLength.metres;
-  } else if (allMetric) {
+  } else {
     for (let index = 1; index < points.length; index += 1) {
       const from = points[index - 1];
       const to = points[index];
 
-      if (from === undefined || to === undefined) continue;
       if (!isMetricPosition(from) || !isMetricPosition(to)) continue;
 
       metres += segmentLength(from, to);
@@ -206,12 +229,6 @@ export function measurePathLength(
       output: metres,
     }),
   };
-
-  const firstIssue = issues[0];
-
-  if (firstIssue !== undefined) {
-    return engineFailure(trace, [firstIssue, ...issues.slice(1)]);
-  }
 
   return engineSuccess(pathDistance(metres), trace);
 }
