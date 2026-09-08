@@ -804,7 +804,16 @@ export const ENGINE_DECISIONS = {
         chosen:
             "The structural validators themselves take `unknown`: findTargetIssues(), findPositionIssues(), findAreaIssues(), findDirectionIssues() and findPathIssues() each guard their own shape before reading it. Nothing casts an unverified record into a domain type on the way past.",
         rationale:
-            "Guarding only the outermost level moves the throw one layer down rather than removing it, and the layer it moves to is the one a caller cannot see. Putting the guard in the validator that owns each shape means every caller gets it — the authorization path, content validation, and anything later that reads a target out of JSON — rather than each having to remember. It also makes the signatures honest: these values arrive from hosts and from serialized state, so `unknown` is what they actually are.",
+            "Guarding only the outermost level moves the throw one layer down rather than removing it, and the layer it moves to is the one a caller cannot see. Putting the guard in the validator that owns each shape means every caller gets it — the authorization path, content validation, and anything later that reads a target out of JSON — rather than each having to remember. It also makes the signatures honest: these values arrive from hosts and from serialized state, so `unknown` is what they actually are. EXTENDED by spatial.validation.guard-before-every-read, after a guard at the top of a function turned out not to protect a dereference further down it.",
+    },
+    "spatial.validation.guard-before-every-read": {
+        id: "spatial.validation.guard-before-every-read",
+        question:
+            "findPathIssues() accepted `unknown` and guarded its own shape, and still threw on a null waypoint: findPositionIssues() reported the malformed point and execution then carried on into `point.contextId` two lines later. The same pattern was in measureDirectDistance, measurePathLength, and the isMetricPosition/isHostPosition guards.",
+        chosen:
+            "A guard goes before every READ, not once at the top of the function. The kind predicates take `unknown` too, since they are used over collections whose contents may be anything. A permanent sweep in spatial.test.ts runs sixteen hostile values through every structural validator and both measurement entry points and asserts none throws.",
+        rationale:
+            "Collecting an error and then dereferencing the value it was about is a specific and repeatable mistake, and it looks fixed in review: the guard IS there, at the top, doing nothing for the line that actually crashes. Each instance was found only by running hostile input through the function rather than by reading it, which is why the coverage is a sweep over a value list rather than a case per bug — a case per bug tests the ones already found, and the value list catches the next function that grows a read.",
     },
 } as const satisfies Record<string, EngineDecision>;
 

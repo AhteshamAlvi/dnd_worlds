@@ -18,6 +18,7 @@ import {
   findDirectionIssues,
   findDistanceIntervalIssues,
   findPathIssues,
+  findPositionIssues,
   findRangeBand,
   findRangeBandScaleIssues,
   findSpatialFactsIssues,
@@ -243,6 +244,65 @@ describe("paths", () => {
       .toContain("spatial.path.too-short");
   });
 
+  it("rejects a malformed waypoint without throwing", () => {
+    /*
+     * The regression. findPositionIssues() reports a malformed waypoint and
+     * then execution used to carry on into `point.contextId` anyway, so a
+     * null waypoint threw instead of returning the issue just recorded for
+     * it — the one input the guard exists to handle.
+     */
+    const malformed: readonly unknown[] = [
+      null,
+      undefined,
+      "over there",
+      42,
+      true,
+      [],
+      [at(0)],
+      {},
+      { kind: "metric" },
+      { kind: "metric", contextId: null },
+      { kind: "host", contextId: SCENE },
+    ];
+
+    for (const point of malformed) {
+      const path = { contextId: SCENE, points: [at(0), point] } as SpatialPath;
+
+      expect(() => findPathIssues(path)).not.toThrow();
+      expect(findPathIssues(path).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("reports the malformed waypoint rather than a context mismatch", () => {
+    /*
+     * An array waypoint is an object, so the guard has to be about whether
+     * it is a POSITION rather than merely about null — an array has no
+     * contextId, and reporting "in a different spatial context" for one
+     * would describe a problem it does not have.
+     */
+    const codes = findPathIssues({
+      contextId: SCENE,
+      points: [at(0), null],
+    } as unknown as SpatialPath).map((error) => error.code);
+
+    expect(codes).toContain("spatial.position.malformed");
+    expect(codes).not.toContain("spatial.path.context.mixed");
+  });
+
+  it("measures nothing from a path with a malformed waypoint", () => {
+    const result = measurePathLength({
+      contextId: SCENE,
+      points: [at(0), null],
+    } as unknown as SpatialPath);
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((error) => error.code))
+      .toContain("spatial.position.malformed");
+  });
+
   it("rejects waypoints from another context", () => {
     const path: SpatialPath = {
       contextId: SCENE,
@@ -435,6 +495,65 @@ describe("invalid spatial data", () => {
 
     for (const degree of COVER_DEGREES) {
       expect(findSpatialFactsIssues({ cover: { degree } })).toEqual([]);
+    }
+  });
+});
+
+
+describe("no structural entry point throws on hostile input", () => {
+  /*
+   * A sweep rather than a list of cases, because the defect this covers was
+   * never one function: a guard was added at the top of a validator, the
+   * error was collected, and execution carried on into a dereference two
+   * lines later. Each one looked fixed in isolation.
+   *
+   * Every value here has reached one of these functions from a host, a
+   * serialized authorization, or a malformed test fixture at some point in
+   * this phase.
+   */
+  const HOSTILE: readonly unknown[] = [
+    null,
+    undefined,
+    "over there",
+    0,
+    true,
+    [],
+    [null],
+    {},
+    { kind: null },
+    { kind: "metric" },
+    { kind: "metric", contextId: null },
+    { kind: "sphere", centre: null },
+    { kind: "cone", origin: null, direction: null },
+    { contextId: SCENE, points: null },
+    { contextId: SCENE, points: [null] },
+    { contextId: SCENE, points: [at(0), null] },
+  ];
+
+  it.each([
+    ["findPositionIssues", findPositionIssues],
+    ["findAreaIssues", findAreaIssues],
+    ["findDirectionIssues", findDirectionIssues],
+    ["findPathIssues", findPathIssues],
+  ] as const)("%s returns issues instead of throwing", (_name, validate) => {
+    for (const value of HOSTILE) {
+      expect(() => validate(value as never)).not.toThrow();
+    }
+  });
+
+  it("measurePathLength refuses rather than throwing", () => {
+    for (const value of HOSTILE) {
+      expect(() => measurePathLength(value as never)).not.toThrow();
+      expect(measurePathLength(value as never).success).toBe(false);
+    }
+  });
+
+  it("measureDirectDistance refuses rather than throwing", () => {
+    for (const value of HOSTILE) {
+      expect(() => measureDirectDistance(value as never, value as never))
+        .not.toThrow();
+      expect(measureDirectDistance(value as never, value as never).success)
+        .toBe(false);
     }
   });
 });

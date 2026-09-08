@@ -90,19 +90,33 @@ export function findPathIssues(value: unknown): readonly EngineError[] {
     });
   }
 
-  path.points.forEach((point, index) => {
+  path.points.forEach((point: unknown, index) => {
     errors.push(...findPositionIssues(point));
+
+    /*
+     * The cross-context check reads the waypoint, so it only runs once the
+     * waypoint has been established as an object to read.
+     *
+     * findPositionIssues() has already REPORTED a malformed waypoint by this
+     * line, which is what made the missing guard easy to miss: the error was
+     * collected and then execution carried on into the dereference anyway. A
+     * null waypoint threw rather than returning the issue that had just been
+     * recorded for it.
+     */
+    if (typeof point !== "object" || point === null) return;
+
+    const contextId = (point as { readonly contextId?: unknown }).contextId;
 
     if (
       isValidSpatialContextId(path.contextId) &&
-      point.contextId !== path.contextId
+      contextId !== path.contextId
     ) {
       errors.push({
         code: "spatial.path.context.mixed",
         message: `Waypoint ${index + 1} is in a different spatial context from its path.`,
         audience: "developer",
         required: path.contextId,
-        actual: String(point.contextId),
+        actual: String(contextId),
       });
     }
   });
@@ -132,7 +146,18 @@ export function measurePathLength(
   suppliedLength?: Distance,
 ): EngineResult<Distance> {
   const issues = [...findPathIssues(path)];
-  const allMetric = path.points.every(isMetricPosition);
+
+  /*
+   * Nothing below reads the path until findPathIssues() has established it
+   * is a path. A measurement is an entry point like any other and takes
+   * whatever a host hands it.
+   */
+  const points: readonly unknown[] =
+    typeof path === "object" && path !== null && Array.isArray(path.points)
+      ? path.points
+      : [];
+
+  const allMetric = points.length > 0 && points.every(isMetricPosition);
 
   if (suppliedLength !== undefined && suppliedLength.kind !== "path") {
     issues.push({
@@ -156,9 +181,9 @@ export function measurePathLength(
   if (suppliedLength !== undefined) {
     metres = suppliedLength.metres;
   } else if (allMetric) {
-    for (let index = 1; index < path.points.length; index += 1) {
-      const from = path.points[index - 1];
-      const to = path.points[index];
+    for (let index = 1; index < points.length; index += 1) {
+      const from = points[index - 1];
+      const to = points[index];
 
       if (from === undefined || to === undefined) continue;
       if (!isMetricPosition(from) || !isMetricPosition(to)) continue;
@@ -175,7 +200,7 @@ export function measurePathLength(
         ? "host-supplied path length"
         : "sum of segment lengths",
       inputs: {
-        waypoints: { value: path.points.length },
+        waypoints: { value: points.length },
         supplied: { value: suppliedLength === undefined ? 0 : 1 },
       },
       output: metres,

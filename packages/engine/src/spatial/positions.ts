@@ -78,17 +78,30 @@ export interface HostPosition {
 export type SpatialPosition = MetricPosition | HostPosition;
 
 
+/*
+ * The kind guards take `unknown` for the same reason the validators do.
+ *
+ * They are used as predicates over collections that can arrive from a host
+ * or out of JSON — `points.every(isMetricPosition)` is the case that found
+ * this — so "is it a position at all" is part of what they are being asked.
+ * Reading `.kind` off a null waypoint threw from inside a function whose
+ * whole job is to answer whether the value is that shape.
+ */
 export function isMetricPosition(
-  position: SpatialPosition,
+  position: unknown,
 ): position is MetricPosition {
-  return position.kind === "metric";
+  return typeof position === "object" &&
+    position !== null &&
+    (position as { readonly kind?: unknown }).kind === "metric";
 }
 
 
 export function isHostPosition(
-  position: SpatialPosition,
+  position: unknown,
 ): position is HostPosition {
-  return position.kind === "host";
+  return typeof position === "object" &&
+    position !== null &&
+    (position as { readonly kind?: unknown }).kind === "host";
 }
 
 
@@ -315,7 +328,17 @@ export function measureDirectDistance(
 ): EngineResult<Distance> {
   const issues = [...findPositionIssues(from), ...findPositionIssues(to)];
 
-  if (from.contextId !== to.contextId) {
+  /*
+   * The context comparison reads both ends, so it only runs once both have
+   * been established as objects to read. findPositionIssues() has already
+   * reported a malformed one by this line — which is exactly what made the
+   * missing guard easy to miss, since the error was collected and then
+   * execution carried on into the dereference anyway.
+   */
+  const readable = typeof from === "object" && from !== null &&
+    typeof to === "object" && to !== null;
+
+  if (readable && from.contextId !== to.contextId) {
     issues.push(spatialContextMismatchError(from.contextId, to.contextId));
   }
 
@@ -368,7 +391,7 @@ export function measureDirectDistance(
         ? "host-supplied separation"
         : "sqrt(dx^2 + dy^2 + dz^2)",
       inputs: {
-        context: { value: from.contextId },
+        context: { value: readable ? from.contextId : "unreadable" },
         supplied: { value: suppliedSeparation === undefined ? 0 : 1 },
       },
       output: metres,
