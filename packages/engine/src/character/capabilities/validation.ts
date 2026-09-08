@@ -17,6 +17,14 @@
  * built by character/resolution.ts and passed in, which is why this file
  * takes a RequirementContext instead of assembling one.
  *
+ * What that check MEANS changed with the capability lifecycle. A definition's
+ * requirements are ACQUISITION requirements — what had to be true when the
+ * character took the thing up — so an entry whose prerequisites no longer hold
+ * is a note about history, not an invalid sheet. character/validation.ts
+ * reports both dispositions as warnings for that reason. Whether a retained
+ * Skill can currently be USED is a separate question asked of the application,
+ * and belongs to Ticket 3.3.
+ *
  * These return issues rather than EngineResults because they are domain
  * helpers, not public entry points. validateCharacter turns them into
  * EngineErrors so every diagnostic the UI sees is built in one place.

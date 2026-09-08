@@ -586,7 +586,14 @@ describe("an incomplete sheet warns rather than failing validation", () => {
     clearCustomDefinitions();
   });
 
-  it("still fails validation when a requirement is genuinely unmet", () => {
+  /*
+   * Both dispositions are warnings now, for different reasons that both come
+   * down to the same thing: neither says the sheet is wrong. "Unresolved"
+   * means nobody has recorded enough to judge, and "unsatisfied" means the
+   * character no longer meets prerequisites they DID meet when they learned
+   * it. The engine still distinguishes them, and refuses neither.
+   */
+  it("warns rather than failing when a requirement is genuinely unmet", () => {
     registerGatedSkill();
 
     const complete = createTestCharacter({
@@ -596,11 +603,9 @@ describe("an incomplete sheet warns rather than failing validation", () => {
 
     const result = validateCharacter(complete);
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
 
-    if (result.success) throw new Error("unreachable");
-
-    expect(result.errors.map((error) => error.code))
+    expect(result.warnings.map((warning) => warning.code))
       .toContain("character.skill.requirements_unsatisfied");
 
     clearCustomDefinitions();

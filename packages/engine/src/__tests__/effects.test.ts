@@ -317,7 +317,10 @@ describe("grant effects", () => {
     );
 
     expect(resolved.traits["firebending"]?.grantedBy).toEqual([
-      { type: "species", id: "firebender" },
+      {
+        source: { type: "species", id: "firebender" },
+        mode: "granted-while-present",
+      },
     ]);
   });
 

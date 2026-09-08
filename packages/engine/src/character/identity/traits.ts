@@ -34,7 +34,15 @@ import {
 } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
-import type { RuleSourceRef, TraitGrant } from "../rules/resolution";
+import type { TraitGrant } from "../rules/resolution";
+
+import {
+  collectCapabilityAwards,
+  foldCapabilityLifecycle,
+  isHeldCapability,
+  type CapabilityAward,
+  type CapabilityLifecycleEntry,
+} from "../capabilities/lifecycle";
 
 /**
  * Stable semantic identifier for a Trait definition.
@@ -48,9 +56,29 @@ export interface TraitDefinition extends EffectfulDefinition {
    * The Trait this one is part of.
    *
    * Present makes this a Sub-trait. It does not by itself grant anything —
-   * the parent's grantTrait Effect does that.
+   * the parent's grantTrait Effect does that. TAXONOMY ONLY: a parent does not
+   * subsume its children, and a child does not replace its parent. Awakened
+   * Sharingan replacing Sharingan is a `subsumes` claim, and Mangekyo
+   * Sharingan coexisting with Sharingan is the same taxonomy with no such
+   * claim — which is why one cannot be read off the other.
    */
   readonly parentTraitId?: TraitId;
+
+  /**
+   * The Traits this one REPLACES.
+   *
+   * Declared, never inferred. A name that reads like a successor, a parent
+   * Trait, and a prerequisite are all things content authors use for other
+   * reasons, so guessing from any of them would silently retire capabilities
+   * nobody meant to retire.
+   *
+   * Holding this one makes each listed Trait subsumed rather than gone:
+   * the acquisition stays on the record, requirements naming it are still
+   * satisfied, and its effects and grants are inherited by this one instead of
+   * applying separately. Chains work — and are checked for cycles by
+   * capabilities/dependencies.ts.
+   */
+  readonly subsumes?: readonly TraitId[];
 }
 
 /**
@@ -182,18 +210,34 @@ export function listSubtraits(
 /**
  * A Trait the character currently has, and how they came by it.
  *
- * The distinction matters when something is removed. A Trait the sheet lists
- * survives its granter disappearing; one that exists only through a grant
- * disappears with the last source that supplied it.
+ * The SHARED lifecycle entry, not a Trait-shaped copy of it. What a grant mode
+ * does, what provenance means and what subsumption does are the same questions
+ * for a Trait as for a Skill, and the previous arrangement — Traits with their
+ * own small resolver — is exactly how two answers to one question get written.
+ *
+ * There is no Mastery here, and deliberately no field for one. A Trait is had
+ * or not had; a Trait at rank III is not a thing the system has.
  */
-export interface ResolvedTrait {
-  readonly traitId: TraitId;
-
-  readonly isAuthored: boolean;
-  readonly grantedBy: readonly RuleSourceRef[];
-}
+export type ResolvedTrait = CapabilityLifecycleEntry;
 
 export type ResolvedTraits = Readonly<Record<TraitId, ResolvedTrait>>;
+
+/**
+ * The Trait side of a resolved character.
+ *
+ * `inherited` says which subsumed Traits each surviving Trait carries the
+ * effects of, and `awards` are the permanent grants a caller may commit. Both
+ * are returned rather than applied, because resolution never writes.
+ */
+export interface ResolvedTraitState {
+  readonly traits: ResolvedTraits;
+  readonly inherited: Readonly<Record<TraitId, readonly TraitId[]>>;
+  readonly awards: readonly CapabilityAward[];
+}
+
+function traitSubsumes(traitId: TraitId): readonly TraitId[] {
+  return getTraitDefinition(traitId)?.subsumes ?? [];
+}
 
 /**
  * Fold a character's own Traits together with the ones granted to them.
@@ -204,43 +248,39 @@ export type ResolvedTraits = Readonly<Record<TraitId, ResolvedTrait>>;
 export function resolveTraits(
   authored: readonly CharacterTrait[] = [],
   grants: readonly TraitGrant[] = [],
-): ResolvedTraits {
-  const resolved: Record<TraitId, ResolvedTrait> = {};
+): ResolvedTraitState {
+  const entries = grants.map((grant) => ({
+    id: grant.traitId,
+    source: grant.source,
+    mode: grant.mode,
+  }));
 
-  for (const trait of authored) {
-    resolved[trait.traitId] = {
-      traitId: trait.traitId,
-      isAuthored: true,
-      grantedBy: [],
-    };
-  }
+  const lifecycle = foldCapabilityLifecycle({
+    kind: "trait",
+    authoredIds: authored.map((trait) => trait.traitId),
+    grants: entries,
+    subsumes: traitSubsumes,
+  });
 
-  for (const grant of grants) {
-    const existing = resolved[grant.traitId] ?? {
-      traitId: grant.traitId,
-      isAuthored: false,
-      grantedBy: [],
-    };
-
-    const alreadyRecorded = existing.grantedBy.some(
-      (source) =>
-        source.type === grant.source.type && source.id === grant.source.id,
-    );
-
-    resolved[grant.traitId] = {
-      ...existing,
-      grantedBy: alreadyRecorded
-        ? existing.grantedBy
-        : [...existing.grantedBy, grant.source],
-    };
-  }
-
-  return resolved;
+  return {
+    traits: lifecycle.entries,
+    inherited: lifecycle.inherited,
+    awards: collectCapabilityAwards("trait", entries),
+  };
 }
 
-/** Every Trait id the character currently has, authored or granted. */
+/**
+ * Every Trait id the character currently HAS, authored or granted.
+ *
+ * A merely unlocked Trait is excluded: an unlock is permission to acquire,
+ * and a requirement asking whether the character has the Trait must not be
+ * satisfied by an offer nobody has taken up. A subsumed one is included — they
+ * have it, through whatever replaced it.
+ */
 export function resolvedTraitIds(traits: ResolvedTraits): readonly TraitId[] {
-  return Object.keys(traits);
+  return Object.entries(traits)
+    .filter(([, trait]) => isHeldCapability(trait))
+    .map(([id]) => id);
 }
 
 /* ── Validation ─────────────────────────────────────────────────────────── */

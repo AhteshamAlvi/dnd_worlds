@@ -75,6 +75,7 @@ import {
   resolveTraits,
   resolvedTraitIds,
   type ResolvedTraits,
+  type TraitDefinition,
 } from "./identity/traits";
 
 import {
@@ -82,12 +83,14 @@ import {
   getTechniqueDefinition,
   techniqueMasteryTrack,
   toTechniqueMasteryRecord,
+  type TechniqueDefinition,
 } from "./capabilities/techniques";
 import {
   collectSkillEffects,
   getSkillDefinition,
   skillMasteryTrack,
   toSkillMasteryRecord,
+  type SkillDefinition,
 } from "./capabilities/skills";
 import {
   getResolvedSkillIds,
@@ -98,7 +101,15 @@ import {
   type AuthoredCapabilityMastery,
   type ResolvedCapabilities,
 } from "./capabilities/resolution";
-import { trackMastery, type MasteryRank } from "./capabilities/mastery";
+import type {
+  CapabilityAward,
+  CapabilityGrantMode,
+} from "./capabilities/lifecycle";
+import {
+  trackMastery,
+  type MasteryRank,
+  type MasteryTrack,
+} from "./capabilities/mastery";
 
 import { deriveCharacterLevelFromLifetimeXp } from "./progression/levels";
 
@@ -384,6 +395,18 @@ export interface ResolvedCharacter {
    * means the Base score.
    */
   readonly requirementContext: RequirementContext;
+
+  /**
+   * Capabilities permanently awarded by content that currently applies.
+   *
+   * A permanent grant gives access now AND is meant to survive its granter, so
+   * it appears both in the resolved capabilities above and here, as a record
+   * the host can write to the sheet. Committing it is idempotent: the award is
+   * reproduced on every resolution for as long as the granting content
+   * applies, and commitCapabilityAwards() leaves an already-acquired
+   * capability — rank included — exactly as it found it.
+   */
+  readonly capabilityAwards: readonly CapabilityAward[];
 }
 
 /**
@@ -482,57 +505,123 @@ function seedSources(character: Character): readonly RuleEffectSource[] {
 
 // The effects a Trait contributes. Split out because a Trait reached through
 // a grant contributes exactly the same way one on the sheet does.
-function traitSource(traitId: string): RuleEffectSource | undefined {
+/*
+ * `inherited` is what this capability has SUBSUMED and now answers for.
+ *
+ * The replacement's own source carries them, so the trace says "Intermediate
+ * Swordsmanship" for a benefit that was authored on Basic — which is the
+ * honest attribution once Basic no longer stands on its own. Stature
+ * allowances travel with the effects for the same reason: a subsumed Trait
+ * that explained an unusual height must go on explaining it.
+ */
+function traitSource(
+  traitId: string,
+  inherited: readonly string[] = [],
+): RuleEffectSource | undefined {
   const definition = getTraitDefinition(traitId);
 
   if (definition === undefined) return undefined;
 
-  const effects = definition.effects ?? [];
+  const inheritedDefinitions = inherited
+    .map((id) => getTraitDefinition(id))
+    .filter((one): one is TraitDefinition => one !== undefined);
 
-  if (contributesNothing(definition, effects)) return undefined;
+  const effects = [
+    ...(definition.effects ?? []),
+    ...inheritedDefinitions.flatMap((one) => one.effects ?? []),
+  ];
+
+  const allowances = [
+    ...(definition.statureAllowances ?? []),
+    ...inheritedDefinitions.flatMap((one) => one.statureAllowances ?? []),
+  ];
+
+  if (effects.length === 0 && allowances.length === 0) return undefined;
 
   return {
     source: { type: "trait", id: traitId },
     effects,
-    ...sourceContributions(definition),
+    ...(allowances.length > 0 ? { statureAllowances: allowances } : {}),
   };
 }
 
 function techniqueSource(
   techniqueId: string,
   mastery: MasteryRank | null,
+  inherited: readonly string[] = [],
+  masteryOf: (id: string) => MasteryRank | null = () => null,
 ): RuleEffectSource | undefined {
   const definition = getTechniqueDefinition(techniqueId);
 
   if (definition === undefined) return undefined;
 
-  const effects = collectTechniqueEffects(definition, mastery);
+  const inheritedDefinitions = inherited
+    .map((id) => ({ id, definition: getTechniqueDefinition(id) }))
+    .filter(
+      (one): one is { id: string; definition: TechniqueDefinition } =>
+        one.definition !== undefined,
+    );
 
-  if (contributesNothing(definition, effects)) return undefined;
+  const effects = [
+    ...collectTechniqueEffects(definition, mastery),
+    ...inheritedDefinitions.flatMap((one) =>
+      collectTechniqueEffects(one.definition, masteryOf(one.id)),
+    ),
+  ];
+
+  const allowances = [
+    ...(definition.statureAllowances ?? []),
+    ...inheritedDefinitions.flatMap(
+      (one) => one.definition.statureAllowances ?? [],
+    ),
+  ];
+
+  if (effects.length === 0 && allowances.length === 0) return undefined;
 
   return {
     source: { type: "technique", id: techniqueId },
     effects,
-    ...sourceContributions(definition),
+    ...(allowances.length > 0 ? { statureAllowances: allowances } : {}),
   };
 }
 
 function skillSource(
   skillId: string,
   mastery: MasteryRank | null,
+  inherited: readonly string[] = [],
+  masteryOf: (id: string) => MasteryRank | null = () => null,
 ): RuleEffectSource | undefined {
   const definition = getSkillDefinition(skillId);
 
   if (definition === undefined) return undefined;
 
-  const effects = collectSkillEffects(definition, mastery);
+  const inheritedDefinitions = inherited
+    .map((id) => ({ id, definition: getSkillDefinition(id) }))
+    .filter(
+      (one): one is { id: string; definition: SkillDefinition } =>
+        one.definition !== undefined,
+    );
 
-  if (contributesNothing(definition, effects)) return undefined;
+  const effects = [
+    ...collectSkillEffects(definition, mastery),
+    ...inheritedDefinitions.flatMap((one) =>
+      collectSkillEffects(one.definition, masteryOf(one.id)),
+    ),
+  ];
+
+  const allowances = [
+    ...(definition.statureAllowances ?? []),
+    ...inheritedDefinitions.flatMap(
+      (one) => one.definition.statureAllowances ?? [],
+    ),
+  ];
+
+  if (effects.length === 0 && allowances.length === 0) return undefined;
 
   return {
     source: { type: "skill", id: skillId },
     effects,
-    ...sourceContributions(definition),
+    ...(allowances.length > 0 ? { statureAllowances: allowances } : {}),
   };
 }
 
@@ -605,6 +694,105 @@ interface CharacterResolutionPass {
 }
 
 /**
+ * Add the ids that ACCESS grants supply, leaving the rest alone.
+ *
+ * An unlock is filtered out here and nowhere else, which is what keeps
+ * "permission is not possession" a single decision rather than three.
+ */
+function withAccessGrants(
+  held: readonly string[],
+  grants: readonly { readonly id: string; readonly mode: CapabilityGrantMode }[],
+): readonly string[] {
+  const next = [...held];
+  const seen = new Set(held);
+
+  for (const grant of grants) {
+    if (grant.mode === "unlocked-for-acquisition") continue;
+
+    if (seen.has(grant.id)) continue;
+
+    seen.add(grant.id);
+    next.push(grant.id);
+  }
+
+  return next;
+}
+
+
+/**
+ * The effect sources every held capability contributes, with subsumption
+ * applied.
+ *
+ * A subsumed capability contributes NOTHING on its own account, and whatever
+ * replaced it contributes on its behalf. Both halves matter: dropping the
+ * subsumed one alone would silently delete a Technique's granted Skills the
+ * moment a successor arrived, and keeping both would apply everything twice.
+ *
+ * An inherited capability contributes at ITS OWN Mastery, not the successor's.
+ * A character who trained Basic Swordsmanship to IV and then took up the
+ * Intermediate discipline still has four ranks of basic work behind them; the
+ * successor did not undo it.
+ */
+function capabilitySources(
+  traitIds: readonly string[],
+  techniqueIds: readonly string[],
+  skillIds: readonly string[],
+  techniqueMasteryOf: (id: string) => MasteryRank | null,
+  skillMasteryOf: (id: string) => MasteryRank | null,
+): readonly RuleEffectSource[] {
+  const sources: RuleEffectSource[] = [];
+
+  const traits = resolveTraits(
+    traitIds.map((traitId) => ({ traitId })),
+    [],
+  );
+
+  for (const traitId of traitIds) {
+    if (traits.traits[traitId]?.availability === "subsumed") continue;
+
+    const source = traitSource(traitId, traits.inherited[traitId] ?? []);
+
+    if (source !== undefined) sources.push(source);
+  }
+
+  const capabilities = resolveCapabilities({
+    authoredSkills: skillIds.map((skillId) => ({ skillId })),
+    authoredTechniques: techniqueIds.map((techniqueId) => ({ techniqueId })),
+  });
+
+  for (const techniqueId of techniqueIds) {
+    if (capabilities.techniques[techniqueId]?.availability === "subsumed") {
+      continue;
+    }
+
+    const source = techniqueSource(
+      techniqueId,
+      techniqueMasteryOf(techniqueId),
+      capabilities.inheritedTechniques[techniqueId] ?? [],
+      techniqueMasteryOf,
+    );
+
+    if (source !== undefined) sources.push(source);
+  }
+
+  for (const skillId of skillIds) {
+    if (capabilities.skills[skillId]?.availability === "subsumed") continue;
+
+    const source = skillSource(
+      skillId,
+      skillMasteryOf(skillId),
+      capabilities.inheritedSkills[skillId] ?? [],
+      skillMasteryOf,
+    );
+
+    if (source !== undefined) sources.push(source);
+  }
+
+  return sources;
+}
+
+
+/**
  * One resolution pass: every applicable Effect, the Attribute layers they
  * produce, and the Body those layers resolve to.
  *
@@ -630,124 +818,101 @@ function resolveCharacterPass(
   const authoredSkills = toSkillMasteryRecord(character.skills);
   const authoredTechniques = toTechniqueMasteryRecord(character.techniques);
 
-  /*
-   * Expanded ids, not expanded *sources*: the same Trait reached from two
-   * different granters contributes its effects once, while both grants are
-   * still recorded against it by capability and trait resolution.
-   */
-  const expandedTraits = new Set<string>();
-  const expandedTechniques = new Set<string>();
-  const expandedSkills = new Set<string>();
+  const authoredTraitIds = (character.traits ?? []).map(
+    (trait) => trait.traitId,
+  );
 
-  const sources: RuleEffectSource[] = [
+  const seed: readonly RuleEffectSource[] = [
     ...seedSources(character),
     ...collectInjuryEffectSources(manifestedInjuries),
   ];
 
-  const addTrait = (traitId: string): boolean => {
-    if (expandedTraits.has(traitId)) return false;
+  /*
+   * The capabilities the character HAS, as opposed to the ones something is
+   * merely offering them.
+   *
+   * Grants arrive in three modes. Two of them supply access — a loan and a
+   * gift — and both belong here. The third, unlocked-for-acquisition, supplies
+   * permission and must not: a Clan opening its style to a member has not
+   * taught them it, and adding it here would make every unlock a grant with
+   * extra words.
+   */
+  let heldTraits: readonly string[] = authoredTraitIds;
+  let heldTechniques: readonly string[] = Object.keys(authoredTechniques);
+  let heldSkills: readonly string[] = Object.keys(authoredSkills);
 
-    expandedTraits.add(traitId);
+  const masteryOf = (
+    authored: AuthoredCapabilityMastery,
+    track: (id: string) => MasteryTrack | undefined,
+  ) => (id: string): MasteryRank | null => {
+    /*
+     * A recorded null is a capability the character has with no rank to raise,
+     * so `?? 1` would be wrong here in both directions — hence the explicit
+     * `undefined` test rather than a nullish default.
+     */
+    const stored = authored[id];
 
-    const source = traitSource(traitId);
-
-    if (source !== undefined) sources.push(source);
-
-    return true;
+    return stored !== undefined ? stored : trackMastery(track(id), undefined);
   };
 
-  const addTechnique = (
-    techniqueId: string,
-    mastery: MasteryRank | null,
-  ): boolean => {
-    if (expandedTechniques.has(techniqueId)) return false;
-
-    expandedTechniques.add(techniqueId);
-
-    const source = techniqueSource(techniqueId, mastery);
-
-    if (source !== undefined) sources.push(source);
-
-    return true;
-  };
-
-  const addSkill = (skillId: string, mastery: MasteryRank | null): boolean => {
-    if (expandedSkills.has(skillId)) return false;
-
-    expandedSkills.add(skillId);
-
-    const source = skillSource(skillId, mastery);
-
-    if (source !== undefined) sources.push(source);
-
-    return true;
-  };
-
-  for (const trait of character.traits ?? []) addTrait(trait.traitId);
+  const techniqueMasteryOf = masteryOf(authoredTechniques, techniqueMasteryTrack);
+  const skillMasteryOf = masteryOf(authoredSkills, skillMasteryTrack);
 
   /*
-   * Seeded from the Mastery records rather than the arrays they came from.
+   * Follow the grants to a fixed point.
    *
-   * A sheet listing the same Skill twice at different ranks is a validation
-   * error, but resolution runs before and during validation and has to give
-   * one answer either way. Reading the arrays would take the first entry's
-   * rank for the effects while the record took the last one's for the
-   * resolved Mastery — a character shown at IV with I's numbers.
-   */
-  for (const [techniqueId, mastery] of Object.entries(authoredTechniques)) {
-    addTechnique(techniqueId, mastery);
-  }
-
-  for (const [skillId, mastery] of Object.entries(authoredSkills)) {
-    addSkill(skillId, mastery);
-  }
-
-  /*
-   * Follow the grants.
+   * The whole source list is rebuilt each round rather than appended to,
+   * because subsumption can REMOVE a contributor: a Technique that was
+   * standing on its own last round may have been replaced by one this round's
+   * grants just handed over, and an append-only list has no way to take the
+   * older one back out.
    *
-   * Resolution is re-run each pass rather than the grants being read off the
-   * newly added sources, because that is the same code path the final answer
-   * uses — one interpretation of an Effect, not two that can disagree.
+   * Effects are re-resolved through the same code path the final answer uses,
+   * so there is one interpretation of an Effect rather than two that can
+   * disagree.
    */
+  let sources: RuleEffectSource[] = [
+    ...seed,
+    ...capabilitySources(heldTraits, heldTechniques, heldSkills,
+      techniqueMasteryOf, skillMasteryOf),
+  ];
+
   let resolved = resolveRuleEffects(sources);
 
   for (let pass = 0; pass < MAX_EXPANSION_PASSES; pass += 1) {
-    let added = false;
+    const nextTraits = withAccessGrants(
+      heldTraits,
+      resolved.traitGrants.map((grant) => ({ id: grant.traitId, mode: grant.mode })),
+    );
 
-    for (const grant of resolved.traitGrants) {
-      if (addTrait(grant.traitId)) added = true;
-    }
+    const nextTechniques = withAccessGrants(
+      heldTechniques,
+      resolved.techniqueGrants.map(
+        (grant) => ({ id: grant.techniqueId, mode: grant.mode }),
+      ),
+    );
 
-    for (const grant of resolved.techniqueGrants) {
-      /*
-       * A grant supplies Mastery I to a Technique that HAS Mastery, and bare
-       * access to one that does not. Anything the character trained themselves
-       * is already in the authored record and wins there.
-       *
-       * `?? 1` would be wrong on both counts if the record's null values were
-       * read as absence, which is why the lookup is written out: a recorded
-       * null is a Technique the character has, with no rank to raise.
-       */
-      const authored = authoredTechniques[grant.techniqueId];
+    const nextSkills = withAccessGrants(
+      heldSkills,
+      resolved.skillGrants.map((grant) => ({ id: grant.skillId, mode: grant.mode })),
+    );
 
-      const mastery = authored !== undefined
-        ? authored
-        : trackMastery(techniqueMasteryTrack(grant.techniqueId), undefined);
+    const settled =
+      nextTraits.length === heldTraits.length &&
+      nextTechniques.length === heldTechniques.length &&
+      nextSkills.length === heldSkills.length;
 
-      if (addTechnique(grant.techniqueId, mastery)) added = true;
-    }
+    if (settled) break;
 
-    for (const grant of resolved.skillGrants) {
-      const authored = authoredSkills[grant.skillId];
+    heldTraits = nextTraits;
+    heldTechniques = nextTechniques;
+    heldSkills = nextSkills;
 
-      const mastery = authored !== undefined
-        ? authored
-        : trackMastery(skillMasteryTrack(grant.skillId), undefined);
-
-      if (addSkill(grant.skillId, mastery)) added = true;
-    }
-
-    if (!added) break;
+    sources = [
+      ...seed,
+      ...capabilitySources(heldTraits, heldTechniques, heldSkills,
+        techniqueMasteryOf, skillMasteryOf),
+    ];
 
     resolved = resolveRuleEffects(sources);
   }
@@ -1173,7 +1338,9 @@ export function resolveCharacter(
     resolvedBody.locomotion.fraction,
   );
 
-  const traits = resolveTraits(character.traits ?? [], resolved.traitGrants);
+  const traitState = resolveTraits(character.traits ?? [], resolved.traitGrants);
+
+  const traits = traitState.traits;
 
   const capabilities = resolveCapabilities({
     authoredSkills: character.skills ?? [],
@@ -1255,6 +1422,17 @@ export function resolveCharacter(
 
     traits,
     capabilities,
+
+    /*
+     * Everything permanently awarded by content that currently applies,
+     * gathered from all three kinds.
+     *
+     * RETURNED, NOT APPLIED. resolveCharacter is pure, so a permanent grant
+     * cannot reach into the sheet it was resolved from; the caller commits
+     * these through commitCapabilityAwards() when it is ready to write.
+     */
+    capabilityAwards: [...traitState.awards, ...capabilities.awards],
+
     effects: resolved,
 
     baseAttributeModifiers: resolved.baseAttributeModifiers,

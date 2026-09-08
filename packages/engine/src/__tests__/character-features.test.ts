@@ -114,12 +114,16 @@ describe("traits", () => {
 
 describe("resolved traits", () => {
   it("marks a Trait on the sheet as authored", () => {
-    const resolved = resolveTraits([{ traitId: "one-armed" }], []);
+    const resolved = resolveTraits([{ traitId: "one-armed" }], []).traits;
 
     expect(resolved["one-armed"]).toEqual({
-      traitId: "one-armed",
+      id: "one-armed",
       isAuthored: true,
+      isGranted: false,
       grantedBy: [],
+      availability: "available",
+      unlockedBy: [],
+      subsumedBy: [],
     });
   });
 
@@ -130,13 +134,17 @@ describe("resolved traits", () => {
         {
           source: { type: "species", id: "firebender" },
           traitId: "firebending",
+          mode: "granted-while-present",
         },
       ],
-    );
+    ).traits;
 
     expect(resolved["firebending"]?.isAuthored).toBe(false);
     expect(resolved["firebending"]?.grantedBy).toEqual([
-      { type: "species", id: "firebender" },
+      {
+        source: { type: "species", id: "firebender" },
+        mode: "granted-while-present",
+      },
     ]);
   });
 
@@ -149,13 +157,15 @@ describe("resolved traits", () => {
         {
           source: { type: "species", id: "firebender" },
           traitId: "firebending",
+          mode: "granted-while-present",
         },
         {
           source: { type: "item", id: "ember-ring" },
           traitId: "firebending",
+          mode: "granted-while-present",
         },
       ],
-    );
+    ).traits;
 
     expect(resolved["firebending"]?.grantedBy).toHaveLength(2);
   });
@@ -164,9 +174,10 @@ describe("resolved traits", () => {
     const grant = {
       source: { type: "trait", id: "spider-mutation" },
       traitId: "superstrength",
-    };
+      mode: "granted-while-present",
+    } as const;
 
-    const resolved = resolveTraits([], [grant, grant]);
+    const resolved = resolveTraits([], [grant, grant]).traits;
 
     expect(resolved["superstrength"]?.grantedBy).toHaveLength(1);
   });
@@ -178,9 +189,10 @@ describe("resolved traits", () => {
         {
           source: { type: "species", id: "firebender" },
           traitId: "firebending",
+          mode: "granted-while-present",
         },
       ],
-    );
+    ).traits;
 
     expect(resolved["firebending"]?.isAuthored).toBe(true);
     expect(resolved["firebending"]?.grantedBy).toHaveLength(1);
@@ -193,9 +205,10 @@ describe("resolved traits", () => {
         {
           source: { type: "species", id: "firebender" },
           traitId: "firebending",
+          mode: "granted-while-present",
         },
       ],
-    );
+    ).traits;
 
     expect([...resolvedTraitIds(resolved)].sort()).toEqual([
       "firebending",

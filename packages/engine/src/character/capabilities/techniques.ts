@@ -65,6 +65,22 @@ export interface TechniqueDefinition extends EffectfulDefinition {
    * discipline, and deliberately possible — see mastery.ts's MasteryTrack.
    */
   readonly mastery?: MasteryTrack;
+
+  /**
+   * The Techniques this one REPLACES.
+   *
+   * Declared, never inferred. A name that reads like a successor, a parent
+   * Trait, and a prerequisite are all things content authors use for other
+   * reasons, so guessing from any of them would silently retire capabilities
+   * nobody meant to retire.
+   *
+   * Holding this one makes each listed Technique subsumed rather than gone:
+   * the acquisition stays on the record, requirements naming it are still
+   * satisfied, and its effects and grants are inherited by this one instead of
+   * applying separately. Chains work — and are checked for cycles by
+   * capabilities/dependencies.ts.
+   */
+  readonly subsumes?: readonly TechniqueId[];
 }
 
 /**

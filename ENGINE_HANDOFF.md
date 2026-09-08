@@ -656,7 +656,29 @@ Numeric 1–10 internally, Roman I–X for display. `NO_MASTERY = 0`, `STANDARD_
 
 `SkillTiming` = `"action" | "reaction"`, relevant only under structured timing. `attempts.ts` defines `DefinedSkillAttempt` / `ImprovisedSkillAttempt` (types only — improvised attempts have no resolution yet).
 
-`capabilities/resolution.ts` folds authored capabilities with granted access, keeping both visible: `ResolvedCapability` records `isAuthored`, `isGranted`, `grantedBy` sources, `supportsMastery`, an optional `authoredMastery`, and a `mastery` of a rank **or `null`**. It takes the authored `CharacterSkill` / `CharacterTechnique` entries rather than an id→rank record, since a record cannot describe a capability that is held and has no rank. **Possession is presence in the record, never `mastery > 0`** — enforced by `architecture.test.ts`. A grant supplies Mastery I to a capability with a track and bare access to one without.
+`capabilities/resolution.ts` folds authored capabilities with granted access, keeping both visible: `ResolvedCapability` records `isAuthored`, `isGranted`, `grantedBy` sources, `supportsMastery`, an optional `authoredMastery`, a `mastery` of a rank **or `null`**, plus `availability`, `unlockedBy` and `subsumedBy`. It takes the authored `CharacterSkill` / `CharacterTechnique` entries rather than an id→rank record, since a record cannot describe a capability that is held and has no rank. **Possession is never `mastery > 0`** — enforced by `architecture.test.ts` — and it is no longer bare presence either, since the record also holds capabilities that are only unlocked; use `hasResolvedSkill` / `isHeldCapability`.
+
+### Capability lifecycle (`capabilities/lifecycle.ts`, `capabilities/dependencies.ts`)
+
+`CapabilityKind` (`trait` | `technique` | `skill`), `CapabilityRef` and `CapabilityGrantMode` are declared in `rules/effects.ts` — the mode is a field on the three grant Effects — and re-exported from `lifecycle.ts`.
+
+**Grant modes.** `grantTrait` / `grantSkill` / `grantTechnique` each take an optional `mode`:
+
+| mode | means |
+|---|---|
+| `granted-while-present` (default) | access for as long as some source supplies it |
+| `unlocked-for-acquisition` | permission to acquire; **no access** |
+| `granted-permanently` | access now, plus a `CapabilityAward` the caller commits |
+
+An omitted mode is a loan, so every grant authored before modes still means what it said. `resolveCharacter` returns `capabilityAwards` and never writes them — commit with `commitCapabilityAwards` / `commitCapabilityAwardsToCharacter`, which are idempotent.
+
+**Availability.** `available` (theirs), `subsumed` (superseded, still on the record and still satisfying requirements naming it), `inaccessible` (on the record without access — what an unlock produces). Application-level inaccessibility is Ticket 3.3's.
+
+**Acquisition requirements are a moment, not a lease.** A definition's `requirements` are checked when the capability is taken up. Losing one afterwards does not delete the capability; character validation reports it as a **warning** (`character.skill.requirements_unsatisfied`), never an error. `evaluateCapabilityAcquisition` (requirements passed in) and `evaluateAcquisition` (catalog-aware) are pure and answer `satisfied` / `unsatisfied` / `unresolved`.
+
+**Subsumption.** `subsumes?: readonly Id[]` on a Skill, Technique or Trait definition, same-kind only. Declared, never inferred — `parentTraitId` is taxonomy and implies nothing. The survivor inherits the subsumed capability's effects and grants, transitively, **once** even when two replacements name the same predecessor, and at the subsumed capability's own Mastery.
+
+**Dependency analysis.** `findCapabilityDependencyIssues()` (folded into `findCatalogReferenceIssues()`) runs a least fixed point over what is obtainable rather than a cycle search, so `A requires B OR C` with `B requires A` and an obtainable `C` is accepted while a direct `A ⇄ B` deadlock is rejected. Nodes are (capability, rank), so unreachable Mastery ranks are caught separately. It also rejects self-, cross-kind and cyclic subsumption, and Traits requiring Skills or Techniques (a learnable Trait is *awarded* after training, never gated on a Skill).
 
 ### Species — 8 authored
 

@@ -83,10 +83,12 @@ import type { AttributeModifier } from "../foundation/attributes/modifiers";
 import type { AttributeLayers, Attributes } from "../foundation/attributes/types";
 import { resolveDerivedAttribute } from "../foundation/attributes/derived/resolution";
 
-import type {
-  BodyAnatomyOperation,
-  BodyMorphologyProperty,
-  Effect,
+import {
+  capabilityGrantMode,
+  type BodyAnatomyOperation,
+  type BodyMorphologyProperty,
+  type CapabilityGrantMode,
+  type Effect,
 } from "./effects";
 import type {
   CheckModifierActivation,
@@ -174,29 +176,37 @@ export interface SourcedAttributeModifier extends AttributeModifier {
 
 
 /**
- * A granted Trait and the source providing it.
+ * A granted Trait, the source providing it, and what the grant does.
+ *
+ * `mode` is RESOLVED here rather than optional: the Effect may omit it, and
+ * applying the default once at the boundary means no later reader has to know
+ * that an absent mode meant temporary access. See effects.ts's
+ * CapabilityGrantMode for what the three modes are.
  */
 export interface TraitGrant {
   readonly source: RuleSourceRef;
   readonly traitId: string;
+  readonly mode: CapabilityGrantMode;
 }
 
 
 /**
- * A granted Skill and the source providing it.
+ * A granted Skill, the source providing it, and what the grant does.
  */
 export interface SkillGrant {
   readonly source: RuleSourceRef;
   readonly skillId: string;
+  readonly mode: CapabilityGrantMode;
 }
 
 
 /**
- * A granted Technique and the source providing it.
+ * A granted Technique, the source providing it, and what the grant does.
  */
 export interface TechniqueGrant {
   readonly source: RuleSourceRef;
   readonly techniqueId: string;
+  readonly mode: CapabilityGrantMode;
 }
 
 
@@ -539,6 +549,7 @@ export function resolveRuleEffects(
         traitGrants.push({
           source,
           traitId: effect.traitId,
+          mode: capabilityGrantMode(effect.mode),
         });
         break;
 
@@ -546,6 +557,7 @@ export function resolveRuleEffects(
         skillGrants.push({
           source,
           skillId: effect.skillId,
+          mode: capabilityGrantMode(effect.mode),
         });
         break;
 
@@ -553,6 +565,7 @@ export function resolveRuleEffects(
         techniqueGrants.push({
           source,
           techniqueId: effect.techniqueId,
+          mode: capabilityGrantMode(effect.mode),
         });
         break;
 

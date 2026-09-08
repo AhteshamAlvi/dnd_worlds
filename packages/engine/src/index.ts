@@ -172,6 +172,7 @@ export type {
   CharacterTrait,
   ResolvedTrait,
   ResolvedTraits,
+  ResolvedTraitState,
   TraitDefinition,
   TraitId,
   TraitValidationIssue,
@@ -978,7 +979,6 @@ export {
 // Authored Mastery versus access something else is currently supplying.
 export type {
   AuthoredCapabilityMastery,
-  CapabilityGrantSource,
   ResolvedCapability,
   ResolvedCapabilities,
   ResolvedSkills,
@@ -997,6 +997,56 @@ export {
   getResolvedSkillMasteryRecord,
   getResolvedTechniqueMasteryRecord,
 } from "./character/capabilities/resolution";
+
+/* ── Character: capability lifecycle ────────────────────────────────────── */
+
+// How a character comes to have something, and what happens to it afterwards.
+export type {
+  CapabilityAcquisitionEvaluation,
+  CapabilityAcquisitions,
+  CapabilityAvailability,
+  CapabilityAward,
+  CapabilityGrantEntry,
+  CapabilityGrantMode,
+  CapabilityGrantSource,
+  CapabilityKind,
+  CapabilityLifecycle,
+  CapabilityLifecycleEntry,
+  CapabilityRef,
+  EvaluateCapabilityAcquisitionInput,
+  FoldCapabilityLifecycleInput,
+  RequirementResolution,
+} from "./character/capabilities/lifecycle";
+
+export {
+  CAPABILITY_AVAILABILITIES,
+  CAPABILITY_GRANT_MODES,
+  CAPABILITY_KINDS,
+  DEFAULT_CAPABILITY_GRANT_MODE,
+  capabilityGrantMode,
+  capabilityKey,
+  capabilityRef,
+  collectCapabilityAwards,
+  commitCapabilityAwards,
+  commitCapabilityAwardsToCharacter,
+  evaluateCapabilityAcquisition,
+  foldCapabilityLifecycle,
+  isCapabilityAvailability,
+  isCapabilityGrantMode,
+  isHeldCapability,
+  isSameCapability,
+} from "./character/capabilities/lifecycle";
+
+// Whether the capability graph authored content forms is one anybody can walk.
+export {
+  capabilityRequirements,
+  capabilitySubsumes,
+  evaluateAcquisition,
+  findCapabilityDependencyIssues,
+  isCapabilityEverAcquirable,
+  isKnownCapability,
+  isMasteryRankEverReachable,
+} from "./character/capabilities/dependencies";
 
 export type {
   DefinedSkillAttempt,

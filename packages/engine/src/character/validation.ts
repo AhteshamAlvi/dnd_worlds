@@ -190,9 +190,9 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
   "unsatisfied-technique-requirements": {
     code: "character.technique.requirements_unsatisfied",
     describe: (issue) =>
-      `Technique "${issue.techniqueId}" requires something the character does not have.`,
+      `Technique "${issue.techniqueId}" was acquired under prerequisites the character no longer meets.`,
     resolution:
-      "Meet the Technique's prerequisites, or remove the Technique.",
+      "Nothing, unless this is a mistake: the training happened, and losing a prerequisite afterwards does not undo it.",
   },
   /*
    * Deliberately not phrased as a failure. The sheet is unfinished, which is
@@ -233,9 +233,9 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
   "unsatisfied-skill-requirements": {
     code: "character.skill.requirements_unsatisfied",
     describe: (issue) =>
-      `Skill "${issue.skillId}" requires something the character does not have.`,
+      `Skill "${issue.skillId}" was acquired under prerequisites the character no longer meets.`,
     resolution:
-      "Meet the Skill's prerequisites, or remove the Skill.",
+      "Nothing, unless this is a mistake: the Skill was learned, and losing a prerequisite afterwards does not unlearn it.",
   },
   "unresolved-skill-requirements": {
     code: "character.skill.requirements_unresolved",
@@ -415,7 +415,8 @@ function describeInjuryTreatmentStatusIssue(
 }
 
 /*
- * Issues that describe an UNFINISHED sheet rather than a wrong one.
+ * Issues that describe an UNFINISHED or HISTORICAL sheet rather than a wrong
+ * one.
  *
  * These are warnings, for the same reason a missing Species is: the Workbench
  * is where characters get finished, and an engine that refuses to resolve a
@@ -431,6 +432,24 @@ function describeInjuryTreatmentStatusIssue(
 const INCOMPLETE_DATA_ISSUES: readonly CharacterReferenceIssue["type"][] = [
   "unresolved-skill-requirements",
   "unresolved-technique-requirements",
+
+  /*
+   * Acquisition requirements are a MOMENT, not a lease.
+   *
+   * These used to be errors, and that was the engine rechecking, on every
+   * validation forever, a question that was answered once when the character
+   * learned the thing. It made a Skill vanish from a legal sheet because a
+   * Trait that had been a prerequisite was later lost — Flame Lance erased by
+   * losing Fire Control, when what the character actually lost was the ability
+   * to use it, which is an execution question and not this one.
+   *
+   * Kept as warnings rather than dropped, because the information is still
+   * worth showing: a sheet whose history no longer adds up is usually a sheet
+   * somebody edited wrongly, and the Workbench should be able to say so
+   * without refusing to open it.
+   */
+  "unsatisfied-skill-requirements",
+  "unsatisfied-technique-requirements",
 ];
 
 

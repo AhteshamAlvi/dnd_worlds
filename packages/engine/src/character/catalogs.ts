@@ -42,6 +42,7 @@ import { clanRegistry, type ClanDefinition } from "./identity/clans";
 import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
 import { traitRegistry, type TraitDefinition } from "./identity/traits";
 
+import { findCapabilityDependencyIssues } from "./capabilities/dependencies";
 import {
   techniqueMasteryTrack,
   techniqueRegistry,
@@ -520,6 +521,15 @@ export function findCatalogReferenceIssues(): readonly string[] {
       );
     }
   }
+
+  /*
+   * And whether the capability graph the references form is one anybody can
+   * actually walk. A Skill requiring a Technique that requires it back is two
+   * definitions that each resolve perfectly and cannot both exist on a
+   * character — a claim about the pair, which is why it is checked here rather
+   * than in either domain. See capabilities/dependencies.ts.
+   */
+  issues.push(...findCapabilityDependencyIssues());
 
   return issues;
 }

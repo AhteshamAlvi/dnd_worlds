@@ -279,8 +279,97 @@ export interface ModifyActionCapacityEffect {
 }
 
 
+/* -------------------------------------------------------------------------- */
+/* Capability grants                                                          */
+/* -------------------------------------------------------------------------- */
+
 /**
- * Grants a Trait while the source of this effect is applicable.
+ * The three kinds of capability a character can be given.
+ *
+ * Declared here rather than in capabilities/ because the grant Effects below
+ * ARE this enumeration — there are exactly three of them, one per kind, and
+ * naming the set is what stops a fourth from being added on one side only.
+ * capabilities/lifecycle.ts re-exports it so the lifecycle vocabulary reads as
+ * one piece.
+ */
+export const CAPABILITY_KINDS = ["trait", "technique", "skill"] as const;
+
+export type CapabilityKind = typeof CAPABILITY_KINDS[number];
+
+
+/**
+ * Which capability, of which kind.
+ *
+ * The three grant Effects each name their own id field, which is right for
+ * authoring — `grantSkill` should say `skillId` — and wrong for anything that
+ * has to hold a capability without knowing its kind first. Subsumption lists,
+ * acquisition awards and dependency analysis all need the kind-agnostic shape.
+ */
+export interface CapabilityRef {
+  readonly kind: CapabilityKind;
+  readonly id: string;
+}
+
+
+/**
+ * What a grant actually does for the character.
+ *
+ * Three genuinely different things wore one name before this existed:
+ *
+ * granted-while-present:
+ *   Access for exactly as long as some source supplies it. An Item's Skill
+ *   goes when the Item does. This is the default and the common case.
+ *
+ * unlocked-for-acquisition:
+ *   Permission, not possession. The character MAY acquire it — a Clan opening
+ *   its style to a member — and has nothing until they do. Losing the unlock
+ *   afterwards takes nothing away, because the acquisition was theirs.
+ *
+ * granted-permanently:
+ *   An award. The character has it now and keeps it once the award is
+ *   committed to their sheet, so a Trait earned from an Injury does not vanish
+ *   when the Injury heals.
+ *
+ * An OMITTED mode means granted-while-present. Every grant authored before
+ * modes existed meant exactly that, so the default is not a convenience: it is
+ * the only reading that leaves existing content saying what it said.
+ */
+export const CAPABILITY_GRANT_MODES = [
+  "granted-while-present",
+  "unlocked-for-acquisition",
+  "granted-permanently",
+] as const;
+
+export type CapabilityGrantMode = typeof CAPABILITY_GRANT_MODES[number];
+
+
+export const DEFAULT_CAPABILITY_GRANT_MODE: CapabilityGrantMode =
+  "granted-while-present";
+
+
+/**
+ * The mode a grant Effect means, with the default applied.
+ *
+ * One function, so no reader of a grant has to remember which absence means
+ * what.
+ */
+export function capabilityGrantMode(
+  mode: CapabilityGrantMode | undefined,
+): CapabilityGrantMode {
+  return mode ?? DEFAULT_CAPABILITY_GRANT_MODE;
+}
+
+
+export function isCapabilityGrantMode(
+  value: unknown,
+): value is CapabilityGrantMode {
+  return typeof value === "string" &&
+    (CAPABILITY_GRANT_MODES as readonly string[]).includes(value);
+}
+
+
+/**
+ * Grants a Trait.
  *
  * Sub-traits use the same Trait system, so this effect is also used when a
  * parent Trait grants one of its Sub-traits.
@@ -288,33 +377,37 @@ export interface ModifyActionCapacityEffect {
 export interface GrantTraitEffect {
   readonly type: "grantTrait";
   readonly traitId: string;
+  readonly mode?: CapabilityGrantMode;
 }
 
 
 /**
- * Grants a Skill while the source of this effect is applicable.
+ * Grants a Skill.
  *
  * Examples include:
  *
  * - a Trait granting an innate Skill;
  * - Technique Mastery granting one of the Technique's associated Skills;
- * - an Item temporarily granting a Skill.
+ * - an Item temporarily granting a Skill;
+ * - a Clan unlocking its style for a member to learn.
  */
 export interface GrantSkillEffect {
   readonly type: "grantSkill";
   readonly skillId: string;
+  readonly mode?: CapabilityGrantMode;
 }
 
 
 /**
- * Grants a Technique while the source of this effect is applicable.
+ * Grants a Technique.
  *
  * This supports content such as Traits, Items, transformations, or other
- * Techniques unlocking access to a broader discipline.
+ * Techniques opening access to a broader discipline.
  */
 export interface GrantTechniqueEffect {
   readonly type: "grantTechnique";
   readonly techniqueId: string;
+  readonly mode?: CapabilityGrantMode;
 }
 
 

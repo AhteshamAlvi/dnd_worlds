@@ -41,7 +41,7 @@ import {
 import { isValidActionCapacityAmount } from "../foundation/actions/validation";
 import { isSenseId } from "../foundation/senses/scopes";
 import { isValidSenseSelector } from "../foundation/senses/validation";
-import type { Effect } from "./effects";
+import { isCapabilityGrantMode, type Effect } from "./effects";
 import type { Requirement } from "./requirements";
 
 
@@ -70,6 +70,7 @@ export type RuleValidationIssue =
   | InvalidCheckActivationIssue
   | InvalidActionCapacityKindIssue
   | MissingEffectReferenceIssue
+  | InvalidGrantModeIssue
   | InvalidRequirementNumberIssue
   | InvalidRequirementMasteryIssue
   | MissingRequirementReferenceIssue
@@ -79,6 +80,32 @@ export type RuleValidationIssue =
   | SuppressOnBaseAnatomyIssue
   | MissingAnatomyReferenceIssue
   | InvalidSenseEffectIssue;
+
+/*
+ * An omitted mode is legal and means granted-while-present; anything present
+ * has to be one the engine knows.
+ */
+function findGrantModeIssues(
+  path: string,
+  effect: {
+    readonly type: "grantTrait" | "grantSkill" | "grantTechnique";
+    readonly mode?: unknown;
+  },
+): readonly InvalidGrantModeIssue[] {
+  if (effect.mode === undefined) return [];
+
+  if (isCapabilityGrantMode(effect.mode)) return [];
+
+  return [
+    {
+      type: "invalid-grant-mode",
+      path: `${path}.mode`,
+      effectType: effect.type,
+      mode: effect.mode,
+    },
+  ];
+}
+
 
 export interface InvalidSenseEffectIssue {
   readonly type: "invalid-sense-effect";
@@ -206,6 +233,24 @@ export interface MissingEffectReferenceIssue {
     | "traitId"
     | "skillId"
     | "techniqueId";
+}
+
+
+/**
+ * A grant naming a mode the engine does not have.
+ *
+ * Worth its own issue rather than being ignored: an unrecognised mode string
+ * would fall through to the default and grant temporary access, so a typo in
+ * "granted-permanently" would silently produce an award that never happens.
+ */
+export interface InvalidGrantModeIssue {
+  readonly type: "invalid-grant-mode";
+  readonly path: string;
+  readonly effectType:
+    | "grantTrait"
+    | "grantSkill"
+    | "grantTechnique";
+  readonly mode: unknown;
 }
 
 
@@ -488,6 +533,8 @@ export function findEffectValidationIssues(
         });
       }
 
+      issues.push(...findGrantModeIssues(path, effect));
+
       break;
     }
 
@@ -502,6 +549,8 @@ export function findEffectValidationIssues(
         });
       }
 
+      issues.push(...findGrantModeIssues(path, effect));
+
       break;
     }
 
@@ -515,6 +564,8 @@ export function findEffectValidationIssues(
           field: "techniqueId",
         });
       }
+
+      issues.push(...findGrantModeIssues(path, effect));
 
       break;
     }

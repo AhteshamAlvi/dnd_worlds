@@ -195,7 +195,13 @@ describe("validateCharacter", () => {
     }
   });
 
-  it("reports an unsatisfied Skill prerequisite as a character error", () => {
+  /*
+   * A WARNING, not an error, and that is the capability lifecycle's doing.
+   * Acquisition requirements are checked when the Skill is taken up; they are
+   * not a lease the engine re-reads forever. A sheet whose history no longer
+   * adds up is worth remarking on and is not invalid.
+   */
+  it("reports an unsatisfied Skill prerequisite as a warning, not an error", () => {
     const result = validateCharacter(
       createTestCharacter({
         skills: [
@@ -206,17 +212,15 @@ describe("validateCharacter", () => {
       }),
     );
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
 
-    if (!result.success) {
-      expect(result.errors).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            code: "character.skill.requirements_unsatisfied",
-          }),
-        ]),
-      );
-    }
+    expect(result.warnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "character.skill.requirements_unsatisfied",
+        }),
+      ]),
+    );
   });
 
   // Prerequisites are judged against the resolved character, so a Skill the
@@ -244,10 +248,10 @@ describe("validateCharacter", () => {
     expect(result.success).toBe(true);
   });
 
-  // The same character without the ancestry that grants the Trait: the
-  // training alone is not enough, which is the rule the old two-part gate
-  // expressed and this one still does.
-  it("rejects the same Skill when the granting ancestry is absent", () => {
+  // The same character without the ancestry that grants the Trait. The
+  // prerequisite is genuinely unmet — which the engine still says — but it says
+  // it about an acquisition that already happened, so the sheet stands.
+  it("remarks on the same Skill when the granting ancestry is absent", () => {
     const result = validateCharacter(
       createTestCharacter({
         techniques: [{ techniqueId: "firebending-forms" }],
@@ -255,13 +259,11 @@ describe("validateCharacter", () => {
       }),
     );
 
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
 
-    if (!result.success) {
-      expect(result.errors.map((error) => error.code)).toContain(
-        "character.skill.requirements_unsatisfied",
-      );
-    }
+    expect(result.warnings.map((warning) => warning.code)).toContain(
+      "character.skill.requirements_unsatisfied",
+    );
   });
 
   it("rejects a Mastery beyond what the capability's track allows", () => {

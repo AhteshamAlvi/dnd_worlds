@@ -970,3 +970,138 @@ describe("capability possession is never inferred from a Mastery rank", () => {
     ).toBe(true);
   });
 });
+
+
+/*
+ * The capability lifecycle, and the one import that would break it.
+ *
+ * capabilities/lifecycle.ts is imported by identity/traits.ts as well as by
+ * the Skill and Technique resolvers — that is what makes it SHARED, and what
+ * makes "a grant mode means the same thing for a Trait as for a Skill" true by
+ * construction rather than by two files agreeing.
+ *
+ * It also means a value import of any catalog from that file closes a cycle:
+ *
+ *   identity/traits.ts -> capabilities/lifecycle.ts -> identity/traits.ts
+ *
+ * TypeScript will not complain, because `import type` and value imports look
+ * the same to a reader and the type graph resolves either way. What breaks is
+ * module initialisation, at runtime, in whichever entry point happens to load
+ * first. So the rule is checked against the source text, which is the only
+ * place the difference is visible.
+ */
+describe("the capability lifecycle stays importable from below", () => {
+  const LIFECYCLE = join(SRC, "character", "capabilities", "lifecycle.ts");
+
+  it("finds the source it is checking", () => {
+    expect(readFileSync(LIFECYCLE, "utf8").length).toBeGreaterThan(0);
+  });
+
+  it("value-imports no capability catalog", () => {
+    /*
+     * `import type { X } from "./skills"` is fine and is erased. An
+     * `import { getSkillDefinition }` is the edge that would close the loop —
+     * so what is checked is the FORM of each import statement, not whether the
+     * module is named.
+     */
+    const source = readFileSync(LIFECYCLE, "utf8");
+
+    const catalogs = [
+      "../identity/traits",
+      "./skills",
+      "./techniques",
+      "../catalogs",
+    ];
+
+    const offenders = [...source.matchAll(/^import\s+([\s\S]*?)from\s+"([^"]+)";/gm)]
+      .filter(([, clause, specifier]) =>
+        catalogs.includes(specifier!) && !clause!.trimStart().startsWith("type"),
+      )
+      .map(([, , specifier]) => specifier);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the catalog-aware lookups in dependencies.ts, above the loop", () => {
+    /*
+     * Guards the exception rather than only the rule: the kind-agnostic
+     * lookups have to live SOMEWHERE, and if they migrate back down into
+     * lifecycle.ts the check above starts failing for a reason nobody
+     * remembers. They belong in the module nothing below imports.
+     */
+    const dependencies = readFileSync(
+      join(SRC, "character", "capabilities", "dependencies.ts"),
+      "utf8",
+    );
+
+    expect(/export function capabilityRequirements\b/.test(dependencies)).toBe(true);
+    expect(/export function capabilitySubsumes\b/.test(dependencies)).toBe(true);
+  });
+});
+
+
+/*
+ * One vocabulary for capability kinds and grant modes.
+ *
+ * The mode is a field on the three grant Effects, so effects.ts declares it and
+ * everything else — including capabilities/lifecycle.ts, which re-exports the
+ * lot — imports it. A second declaration would be two enumerations of one
+ * closed set, and the failure mode is silent: a fourth mode added to one copy
+ * type-checks against the other for exactly as long as they stay structurally
+ * identical.
+ */
+describe("capability kinds and grant modes are declared once", () => {
+  const EFFECTS = join("character", "rules", "effects.ts");
+
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  const CLOSED_LISTS = ["CAPABILITY_KINDS", "CAPABILITY_GRANT_MODES"] as const;
+
+  const TYPES = [
+    "CapabilityKind",
+    "CapabilityRef",
+    "CapabilityGrantMode",
+  ] as const;
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.some((path) => path.endsWith(EFFECTS))).toBe(true);
+  });
+
+  it.each(CLOSED_LISTS)("declares %s exactly once, in rules/effects.ts", (name) => {
+    const declarers = everySource.filter((path) =>
+      new RegExp(`\\bconst\\s+${name}\\b\\s*=`).test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(EFFECTS)).toBe(true);
+  });
+
+  it.each(TYPES)("declares %s exactly once, in rules/effects.ts", (name) => {
+    const declarers = everySource.filter((path) =>
+      new RegExp(`\\binterface\\s+${name}\\b|\\btype\\s+${name}\\s*=`).test(
+        readFileSync(path, "utf8"),
+      ),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(EFFECTS)).toBe(true);
+  });
+
+  it("leaves the default in one function rather than at each reader", () => {
+    /*
+     * An omitted mode means granted-while-present. Applying that default at
+     * every call site is how one reader eventually gets it wrong and treats an
+     * absent mode as an unlock — so the default is applied once, at the
+     * boundary where an Effect becomes a resolved grant, and the literal is
+     * spelled out in exactly the two places that own it.
+     */
+    const declarers = everySource.filter((path) =>
+      /\bDEFAULT_CAPABILITY_GRANT_MODE\s*:/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(EFFECTS)).toBe(true);
+  });
+});

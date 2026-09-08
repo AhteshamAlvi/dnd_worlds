@@ -423,7 +423,7 @@ describe("authored versus granted capabilities", () => {
     const resolved = resolveCapabilities({
       authoredTechniques: [{ techniqueId: "swordsmanship", mastery: 4 }],
       techniqueGrants: [
-        { source: { type: "item", id: "spirit-blade" }, techniqueId: "swordsmanship" },
+        { source: { type: "item", id: "spirit-blade" }, techniqueId: "swordsmanship", mode: "granted-while-present" },
       ],
     });
 
@@ -437,7 +437,7 @@ describe("authored versus granted capabilities", () => {
   it("gives a purely granted capability Mastery I", () => {
     const resolved = resolveCapabilities({
       skillGrants: [
-        { source: { type: "trait", id: "spider-mutation" }, skillId: "wall-sticking" },
+        { source: { type: "trait", id: "spider-mutation" }, skillId: "wall-sticking", mode: "granted-while-present" },
       ],
     });
 
@@ -448,8 +448,8 @@ describe("authored versus granted capabilities", () => {
   it("remembers every source granting the same capability", () => {
     const resolved = resolveCapabilities({
       skillGrants: [
-        { source: { type: "trait", id: "spider-mutation" }, skillId: "wall-sticking" },
-        { source: { type: "item", id: "climbing-gloves" }, skillId: "wall-sticking" },
+        { source: { type: "trait", id: "spider-mutation" }, skillId: "wall-sticking", mode: "granted-while-present" },
+        { source: { type: "item", id: "climbing-gloves" }, skillId: "wall-sticking", mode: "granted-while-present" },
       ],
     });
 
@@ -461,14 +461,14 @@ describe("authored versus granted capabilities", () => {
   it("keeps access when one of two granters is removed", () => {
     const withBoth = resolveCapabilities({
       skillGrants: [
-        { source: { type: "trait", id: "spider-mutation" }, skillId: "wall-sticking" },
-        { source: { type: "item", id: "climbing-gloves" }, skillId: "wall-sticking" },
+        { source: { type: "trait", id: "spider-mutation" }, skillId: "wall-sticking", mode: "granted-while-present" },
+        { source: { type: "item", id: "climbing-gloves" }, skillId: "wall-sticking", mode: "granted-while-present" },
       ],
     });
 
     const withOne = resolveCapabilities({
       skillGrants: [
-        { source: { type: "item", id: "climbing-gloves" }, skillId: "wall-sticking" },
+        { source: { type: "item", id: "climbing-gloves" }, skillId: "wall-sticking", mode: "granted-while-present" },
       ],
     });
 

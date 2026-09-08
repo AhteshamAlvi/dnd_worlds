@@ -94,11 +94,25 @@ import { trackMastery } from "./mastery";
 import type { MasteryRank, MasteryTrack } from "./mastery";
 
 import {
+  collectCapabilityAwards,
+  foldCapabilityLifecycle,
+  isHeldCapability,
+  type CapabilityAvailability,
+  type CapabilityAward,
+  type CapabilityGrantEntry,
+  type CapabilityGrantSource,
+  type CapabilityKind,
+  type CapabilityRef,
+} from "./lifecycle";
+
+import {
+  getSkillDefinition,
   skillMasteryTrack,
   type CharacterSkill,
 } from "./skills";
 
 import {
+  getTechniqueDefinition,
   techniqueMasteryTrack,
   type CharacterTechnique,
 } from "./techniques";
@@ -126,14 +140,6 @@ export type AuthoredCapabilityMastery =
 /* -------------------------------------------------------------------------- */
 /* Resolved capability state                                                  */
 /* -------------------------------------------------------------------------- */
-
-/**
- * A source currently granting access to a capability.
- */
-export interface CapabilityGrantSource {
-  readonly source: RuleSourceRef;
-}
-
 
 /**
  * The resolved state of one Skill or Technique the character HAS.
@@ -169,6 +175,22 @@ export interface ResolvedCapability {
    * combined, or null when the capability has no Mastery.
    */
   readonly mastery: MasteryRank | null;
+
+  /**
+   * Whether this is theirs to use, superseded, or merely on offer.
+   *
+   * PRESENCE IS NO LONGER THE WHOLE ANSWER. An unlock puts a capability on the
+   * record without giving it to the character, so a reader asking "do they
+   * have this" must consult availability rather than the key alone — which is
+   * what hasResolvedSkill() does.
+   */
+  readonly availability: CapabilityAvailability;
+
+  /** Sources that permit the character to acquire this, without giving it. */
+  readonly unlockedBy: readonly RuleSourceRef[];
+
+  /** Capabilities they hold that replace this one. Empty unless subsumed. */
+  readonly subsumedBy: readonly CapabilityRef[];
 }
 
 
@@ -192,6 +214,27 @@ export type ResolvedTechniques =
 export interface ResolvedCapabilities {
   readonly skills: ResolvedSkills;
   readonly techniques: ResolvedTechniques;
+
+  /**
+   * Which subsumed capabilities each surviving one carries the contributions
+   * of, keyed by the surviving capability's id.
+   *
+   * Effect resolution reads this so that a replaced Technique's effects and
+   * grants keep applying — once — through whatever replaced it, rather than
+   * disappearing with it or applying twice alongside it.
+   */
+  readonly inheritedSkills: Readonly<Record<string, readonly string[]>>;
+  readonly inheritedTechniques: Readonly<Record<string, readonly string[]>>;
+
+  /**
+   * Capabilities permanently awarded by currently applicable content.
+   *
+   * Returned rather than written: resolution is pure. A caller that owns the
+   * character's stored state commits these through commitCapabilityAwards(),
+   * which is idempotent precisely because this list is reproduced on every
+   * resolution for as long as the awarding content applies.
+   */
+  readonly awards: readonly CapabilityAward[];
 }
 
 
@@ -216,29 +259,79 @@ export interface ResolveCapabilitiesInput {
 /* Shared capability resolution                                               */
 /* -------------------------------------------------------------------------- */
 
-interface GenericCapabilityGrant {
-  readonly id: string;
-  readonly source: RuleSourceRef;
-}
-
-
 /**
- * Prevent the same content source from appearing multiple times in the
- * resolved provenance list for one capability.
+ * Resolve one category of capability.
+ *
+ * The lifecycle half — authored versus granted, provenance, unlocks,
+ * subsumption — is lifecycle.ts's shared fold, which Traits use too. What this
+ * adds is the half that only a ranked capability has: which Mastery the
+ * character ends up with.
+ *
+ * A grant supplies Mastery I to a capability that has Mastery, and bare access
+ * to one that does not. Authored Mastery is at least I, so it wins wherever
+ * there is one.
  */
-function addGrantSource(
-  sources: CapabilityGrantSource[],
-  source: RuleSourceRef,
-): void {
-  const alreadyPresent = sources.some(
-    (existing) =>
-      existing.source.type === source.type &&
-      existing.source.id === source.id,
-  );
+function resolveCapabilitySet(
+  kind: CapabilityKind,
+  authored: readonly AuthoredCapabilityEntry[],
+  grants: readonly CapabilityGrantEntry[],
+  masteryTrack: (id: string) => MasteryTrack | undefined,
+  subsumes: (id: string) => readonly string[],
+): {
+  readonly resolved: Readonly<Record<string, ResolvedCapability>>;
+  readonly inherited: Readonly<Record<string, readonly string[]>>;
+} {
+  /*
+   * Last entry wins for a repeated id.
+   *
+   * A sheet listing the same Skill twice is a validation error, but resolution
+   * still has to give ONE answer for it, and it has to be the same answer
+   * every other reader of that sheet gives — see toSkillMasteryRecord, which
+   * is built by the same rule.
+   */
+  const authoredById = new Map<string, AuthoredCapabilityEntry>();
 
-  if (!alreadyPresent) {
-    sources.push({ source });
+  for (const entry of authored) authoredById.set(entry.id, entry);
+
+  const lifecycle = foldCapabilityLifecycle({
+    kind,
+    authoredIds: authored.map((entry) => entry.id),
+    grants,
+    subsumes,
+  });
+
+  const resolved: Record<string, ResolvedCapability> = {};
+
+  for (const [id, entry] of Object.entries(lifecycle.entries)) {
+    const stored = authoredById.get(id);
+
+    const track = masteryTrack(id);
+
+    const authoredMastery =
+      stored === undefined ? null : trackMastery(track, stored.storedMastery);
+
+    /*
+     * An UNLOCKED capability has no Mastery of any kind, because it is not
+     * held. Reading it as I would turn permission into possession, which is
+     * the one thing an unlock must never do.
+     */
+    const mastery: MasteryRank | null =
+      track === undefined || !isHeldCapability(entry)
+        ? null
+        : authoredMastery ?? 1;
+
+    resolved[id] = {
+      ...entry,
+
+      supportsMastery: track !== undefined,
+
+      ...(authoredMastery === null ? {} : { authoredMastery }),
+
+      mastery,
+    };
   }
+
+  return { resolved, inherited: lifecycle.inherited };
 }
 
 
@@ -255,123 +348,26 @@ interface AuthoredCapabilityEntry {
 }
 
 
-/**
- * Resolve one category of capability.
- *
- * A grant supplies Mastery I to a capability that has Mastery, and bare access
- * to one that does not.
- *
- * Authored Mastery always remains authoritative if it is higher.
- *
- * `masteryTrack` is how this stays ignorant of which category it is resolving
- * while still being able to tell a rank-bearing capability from one that has
- * no ranks — a question only the definition can answer.
- */
-function resolveCapabilitySet(
-  authored: readonly AuthoredCapabilityEntry[],
-  grants: readonly GenericCapabilityGrant[],
-  masteryTrack: (id: string) => MasteryTrack | undefined,
-): Readonly<Record<string, ResolvedCapability>> {
-  const grantSources = new Map<string, CapabilityGrantSource[]>();
-
-
-  for (const grant of grants) {
-    const existing = grantSources.get(grant.id) ?? [];
-
-    addGrantSource(
-      existing,
-      grant.source,
-    );
-
-    grantSources.set(
-      grant.id,
-      existing,
-    );
-  }
-
-
-  /*
-   * Last entry wins for a repeated id.
-   *
-   * A sheet listing the same Skill twice is a validation error, but resolution
-   * still has to give ONE answer for it, and it has to be the same answer
-   * every other reader of that sheet gives — see toSkillMasteryRecord, which
-   * is built by the same rule.
-   */
-  const authoredById = new Map<string, AuthoredCapabilityEntry>();
-
-  for (const entry of authored) authoredById.set(entry.id, entry);
-
-
-  const ids = new Set<string>([
-    ...authoredById.keys(),
-    ...grantSources.keys(),
-  ]);
-
-
-  const resolved: Record<string, ResolvedCapability> = {};
-
-
-  for (const id of ids) {
-    const entry = authoredById.get(id);
-
-    const track = masteryTrack(id);
-
-    const grantedBy =
-      grantSources.get(id) ?? [];
-
-    /*
-     * Authored means LISTED, not ranked. A Skill with no Mastery track is
-     * authored by appearing on the sheet at all, and reading a rank to decide
-     * that would make such a Skill impossible to own.
-     */
-    const isAuthored =
-      entry !== undefined;
-
-    const isGranted =
-      grantedBy.length > 0;
-
-    const authoredMastery =
-      entry === undefined ? null : trackMastery(track, entry.storedMastery);
-
-    /*
-     * A grant supplies Mastery I, and any authored rank is at least I, so the
-     * authored value wins wherever there is one. A capability with no track
-     * resolves to null however it was come by.
-     */
-    const mastery: MasteryRank | null =
-      track === undefined ? null : authoredMastery ?? 1;
-
-
-    resolved[id] = {
-      id,
-
-      isAuthored,
-      isGranted,
-
-      grantedBy,
-
-      supportsMastery: track !== undefined,
-
-      ...(authoredMastery === null ? {} : { authoredMastery }),
-
-      mastery,
-    };
-  }
-
-
-  return resolved;
-}
-
-
 /* -------------------------------------------------------------------------- */
 /* Public resolution                                                          */
 /* -------------------------------------------------------------------------- */
 
+function skillSubsumes(skillId: string): readonly string[] {
+  return getSkillDefinition(skillId)?.subsumes ?? [];
+}
+
+
+function techniqueSubsumes(techniqueId: string): readonly string[] {
+  return getTechniqueDefinition(techniqueId)?.subsumes ?? [];
+}
+
+
 /**
  * Resolve the Skills and Techniques currently available to a character.
  *
- * This function is pure and never modifies authored character state.
+ * This function is pure and never modifies authored character state. Anything
+ * a permanent grant awards comes back as data on the result; writing it down
+ * is the caller's, through lifecycle.ts's commitCapabilityAwards.
  */
 export function resolveCapabilities(
   input: ResolveCapabilitiesInput,
@@ -392,32 +388,49 @@ export function resolveCapabilities(
     }));
 
 
-  const skillGrants: GenericCapabilityGrant[] =
+  const skillGrants: CapabilityGrantEntry[] =
     (input.skillGrants ?? []).map((grant) => ({
       id: grant.skillId,
       source: grant.source,
+      mode: grant.mode,
     }));
 
 
-  const techniqueGrants: GenericCapabilityGrant[] =
+  const techniqueGrants: CapabilityGrantEntry[] =
     (input.techniqueGrants ?? []).map((grant) => ({
       id: grant.techniqueId,
       source: grant.source,
+      mode: grant.mode,
     }));
 
 
-  return {
-    skills: resolveCapabilitySet(
-      authoredSkills,
-      skillGrants,
-      skillMasteryTrack,
-    ),
+  const skills = resolveCapabilitySet(
+    "skill",
+    authoredSkills,
+    skillGrants,
+    skillMasteryTrack,
+    skillSubsumes,
+  );
 
-    techniques: resolveCapabilitySet(
-      authoredTechniques,
-      techniqueGrants,
-      techniqueMasteryTrack,
-    ),
+  const techniques = resolveCapabilitySet(
+    "technique",
+    authoredTechniques,
+    techniqueGrants,
+    techniqueMasteryTrack,
+    techniqueSubsumes,
+  );
+
+  return {
+    skills: skills.resolved,
+    techniques: techniques.resolved,
+
+    inheritedSkills: skills.inherited,
+    inheritedTechniques: techniques.inherited,
+
+    awards: [
+      ...collectCapabilityAwards("technique", techniqueGrants),
+      ...collectCapabilityAwards("skill", skillGrants),
+    ],
   };
 }
 
@@ -462,14 +475,19 @@ export function getResolvedTechniqueMastery(
 /**
  * Determine whether the character currently has access to a Skill.
  *
- * PRESENCE, not a rank comparison. A Skill with no Mastery is had exactly as
- * fully as one at rank X.
+ * NOT a rank comparison: a Skill with no Mastery is had exactly as fully as
+ * one at rank X. Nor is it bare presence any more — the record also holds
+ * capabilities that are only UNLOCKED, and an offer is not a possession. A
+ * subsumed Skill counts, because the character has it through whatever
+ * replaced it.
  */
 export function hasResolvedSkill(
   capabilities: ResolvedCapabilities,
   skillId: string,
 ): boolean {
-  return capabilities.skills[skillId] !== undefined;
+  const skill = capabilities.skills[skillId];
+
+  return skill !== undefined && isHeldCapability(skill);
 }
 
 
@@ -480,7 +498,9 @@ export function hasResolvedTechnique(
   capabilities: ResolvedCapabilities,
   techniqueId: string,
 ): boolean {
-  return capabilities.techniques[techniqueId] !== undefined;
+  const technique = capabilities.techniques[techniqueId];
+
+  return technique !== undefined && isHeldCapability(technique);
 }
 
 
@@ -494,11 +514,17 @@ export function hasResolvedTechnique(
  * This is what a hasSkill requirement reads. It is a separate projection from
  * the Mastery record below because the two questions are separate: a Skill
  * with no Mastery belongs in this list and in no Mastery record.
+ *
+ * A merely UNLOCKED Skill belongs in neither. The character may acquire it and
+ * does not have it, so a requirement naming it is unsatisfied — putting it
+ * here would turn every unlock into a grant.
  */
 export function getResolvedSkillIds(
   capabilities: ResolvedCapabilities,
 ): readonly string[] {
-  return Object.keys(capabilities.skills);
+  return Object.entries(capabilities.skills)
+    .filter(([, skill]) => isHeldCapability(skill))
+    .map(([id]) => id);
 }
 
 
@@ -508,7 +534,9 @@ export function getResolvedSkillIds(
 export function getResolvedTechniqueIds(
   capabilities: ResolvedCapabilities,
 ): readonly string[] {
-  return Object.keys(capabilities.techniques);
+  return Object.entries(capabilities.techniques)
+    .filter(([, technique]) => isHeldCapability(technique))
+    .map(([id]) => id);
 }
 
 
