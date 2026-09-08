@@ -92,9 +92,29 @@ export function isHostPosition(
 }
 
 
+/*
+ * Structural validators take `unknown`.
+ *
+ * A position can arrive from a host, from JSON, or out of a persisted
+ * authorization, so "is this even an object" is part of the question rather
+ * than something the caller has already established. A validator that
+ * dereferenced a null and threw would fail on exactly the input it exists to
+ * reject — and a throw escapes the result type every other refusal uses.
+ */
 export function findPositionIssues(
-  position: SpatialPosition,
+  value: unknown,
 ): readonly EngineError[] {
+  if (typeof value !== "object" || value === null) {
+    return [{
+      code: "spatial.position.malformed",
+      message: "A position must be an object.",
+      audience: "developer",
+      required: "a metric or host position",
+      actual: value === null ? "null" : typeof value,
+    }];
+  }
+
+  const position = value as SpatialPosition;
   const errors: EngineError[] = [];
 
   if (!isValidSpatialContextId(position.contextId)) {
@@ -194,8 +214,20 @@ export function directionMagnitude(direction: Direction): number {
 
 
 export function findDirectionIssues(
-  direction: Direction,
+  value: unknown,
 ): readonly EngineError[] {
+  if (typeof value !== "object" || value === null) {
+    return [{
+      code: "spatial.direction.malformed",
+      message: "A direction must be an object.",
+      audience: "developer",
+      required: "a direction vector",
+      actual: value === null ? "null" : typeof value,
+    }];
+  }
+
+  const direction = value as Direction;
+
   const components: readonly (readonly [string, number])[] = [
     ["x", direction.x],
     ["y", direction.y],

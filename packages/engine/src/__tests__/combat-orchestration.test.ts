@@ -74,7 +74,7 @@ describe("finding who is acting", () => {
 
 
 describe("resolving one Action", () => {
-  it("declares six failure reasons", () => {
+  it("declares eight failure reasons", () => {
     expect([...COMBAT_RESOLUTION_FAILURE_REASONS]).toEqual([
       "no-active-state",
       "active-combatant-missing",
@@ -82,6 +82,8 @@ describe("resolving one Action", () => {
       "active-state-not-turn",
       "active-state-not-reaction",
       "reaction-open-failed",
+      "reaction-queue-refused",
+      "reaction-queue-required",
     ]);
   });
 
@@ -300,8 +302,18 @@ describe("the Reaction sequence, end to end", () => {
       actorCombatantId: "c",
     });
 
-    /* The Reaction cap is 1, so it must now end. */
-    const settled = settleActiveStateAfterAction(reacted);
+    /*
+     * The Reaction cap is 1, so it must now end — through the queue the gate
+     * produced. Settling a Reaction without one is refused, because closing
+     * it outside the queue leaves the queue believing it is still running.
+     */
+    const withoutQueue = settleActiveStateAfterAction(reacted);
+
+    if (withoutQueue.success) throw new Error("unreachable");
+
+    expect(withoutQueue.reason).toBe("reaction-queue-required");
+
+    const settled = settleActiveStateAfterAction(reacted, opened.queue);
 
     if (!settled.success) throw new Error("unreachable");
 
@@ -321,17 +333,25 @@ describe("the Reaction sequence, end to end", () => {
 
     if (!opened.success) throw new Error("unreachable");
 
-    const ended = resolveVoluntaryReactionEnd(opened.round);
+    /*
+     * Ended through the queue the gate produced. Voluntary ending used to
+     * clear the state and advance on its own, which was a second lifecycle
+     * beside the queue's.
+     */
+    const ended = resolveVoluntaryReactionEnd(opened.round, opened.queue);
 
     if (!ended.success) throw new Error("unreachable");
 
     expect(findRoundCombatant(ended.round, "a")?.remainingActions).toBe(3);
 
+    /* The queue advanced to B; one more rotation brings A back. */
+    expect(ended.round.activeState).toEqual(turnState("b", 2));
+
     const backToA = advanceToNextTurn(
-      advanceToNextTurn(setRoundActiveState(ended.round, null)).round,
+      setRoundActiveState(ended.round, null),
     );
 
-    expect(backToA.round.activeState).toEqual(turnState("a", 2));
+    expect(backToA.round.activeState).toEqual(turnState("c", 2));
   });
 
   it("refuses to open a Reaction while a Reaction is already active", () => {
@@ -428,7 +448,18 @@ describe("voluntary endings", () => {
   });
 
   it("refuses to end a Reaction when a Turn is active", () => {
-    const result = resolveVoluntaryReactionEnd(threeCombatantRound());
+    const round = threeCombatantRound();
+
+    const result = resolveVoluntaryReactionEnd(round, {
+      phase: "resolving-reactions",
+      trigger: { kind: "action", actionId: "x", actorCombatantId: "a" },
+      interruptedCombatantId: "a",
+      roundNumber: round.number,
+      queued: [],
+      activeResponder: "c",
+      skipped: [],
+      openedAny: true,
+    });
 
     if (result.success) throw new Error("unreachable");
 

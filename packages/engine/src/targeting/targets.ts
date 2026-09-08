@@ -146,7 +146,25 @@ function findIdIssue(
 }
 
 
-export function findTargetIssues(target: TargetRef): readonly EngineError[] {
+/*
+ * Takes `unknown`, for the reason spatial's validators do: a target may
+ * arrive from a host, from JSON, or out of a persisted authorization, so
+ * whether it is an object at all is part of the question. Nested values are
+ * handed to validators that guard themselves rather than being cast into
+ * trusted shapes on the way past.
+ */
+export function findTargetIssues(value: unknown): readonly EngineError[] {
+  if (typeof value !== "object" || value === null) {
+    return [{
+      code: "targeting.target.malformed",
+      message: "A target must be an object.",
+      audience: "developer",
+      required: [...TARGET_KINDS],
+      actual: value === null ? "null" : typeof value,
+    }];
+  }
+
+  const target = value as TargetRef;
   const errors: EngineError[] = [];
 
   switch (target.kind) {

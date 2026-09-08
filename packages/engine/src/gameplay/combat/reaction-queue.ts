@@ -686,15 +686,28 @@ export function continueReactionQueue(
   round: CombatRound,
   queue: ReactionQueue,
 ): ReactionQueueContinueResult {
+  /*
+   * Identity is checked FIRST, for every phase including complete.
+   *
+   * A queue is a small record a caller holds across several calls, and the
+   * cheapest way to corrupt Combat is to keep a finished one and continue it
+   * again. The staleness check catches that on its own: once Initiative has
+   * advanced it no longer points at the interrupted combatant, so a replay
+   * of a completed queue fails here rather than advancing a second time.
+   */
+  const stale = findStalenessReason(round, queue);
+
+  if (stale !== null) return { success: false, reason: stale };
+
   if (queue.phase === "resolving-gates") {
     return { success: false, reason: "gates-unresolved" };
   }
 
   /*
    * Refuses while ANY Reaction is still open, and never clears one on the
-   * way past. The old version nulled the active state before advancing,
+   * way past. An earlier version nulled the active state before advancing,
    * which meant a running Reaction could be discarded by continuing instead
-   * of by ending — the transition finishQueuedReaction() exists to own.
+   * of by ending — the transition finishQueuedReaction() owns.
    */
   if (round.activeState !== null && round.activeState.kind === "reaction") {
     return {
@@ -736,20 +749,44 @@ export function continueReactionQueue(
 
 /*
  * What a completed queue does next, which depends entirely on whether a
- * Reaction ever opened.
+ * Reaction ever opened — and on the Round still being in the state that
+ * completion implies.
  *
- * If one did, the triggering Turn is gone and Initiative continues from the
- * interrupted combatant. If none did — every Gate failed, or every responder
- * turned out to be ineligible — the Turn was never ended and is still the
- * active state, so Initiative must NOT move and the caller settles the
- * Action through the ordinary no-Reaction path.
+ * If none opened, the triggering Turn was never ended and must still be
+ * active; Initiative does not move and the caller settles the Action through
+ * the ordinary no-Reaction path. If one did, the Turn is gone, the last
+ * Reaction must have been closed canonically, and Initiative continues from
+ * the interrupted combatant.
+ *
+ * Both conditions are checked rather than assumed. A completed queue is
+ * exactly the thing a caller is most likely to still be holding when the
+ * Round has moved on underneath it.
  */
 function completionOutcome(
   round: CombatRound,
   queue: CompleteQueue,
 ): ReactionQueueContinueResult {
   if (!queue.openedAny) {
+    const state = round.activeState;
+
+    if (
+      state === null ||
+      state.kind !== "turn" ||
+      state.combatantId !== queue.interruptedCombatantId
+    ) {
+      return { success: false, reason: "queue-trigger-mismatch" };
+    }
+
     return { success: true, outcome: "no-reactions", round, queue };
+  }
+
+  /*
+   * A Reaction opened, so the Turn is gone. Anything still active means the
+   * final Reaction was not closed through finishQueuedReaction(), and
+   * advancing over it would lose it.
+   */
+  if (round.activeState !== null) {
+    return { success: false, reason: "reaction-still-active" };
   }
 
   const progress = advanceToNextTurn(round);

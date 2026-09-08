@@ -12,7 +12,6 @@ import {
   COMBAT_ROUND_DURATION_SECONDS,
   advanceToNextTurn,
   applyActionSpendToRound,
-  continueAfterReaction,
   continueAfterTurn,
   countRoundEligibleCombatants,
   createCombatantRoundState,
@@ -338,10 +337,16 @@ describe("a Reaction does not move the Initiative position", () => {
      * A -> B -> C, A's Turn interrupted by C's Reaction. When the Reaction
      * closes, the Round advances to B — not back to A, and not on to a
      * second C Turn.
+     *
+     * The Reaction is closed through the queue now; continueAfterReaction()
+     * is gone, because clearing the active state and advancing was a second
+     * way to end a Reaction that left the queue believing it was still
+     * running. advanceToNextTurn() on a cleared Round is what the queue
+     * itself calls at this point, and the rule it demonstrates is unchanged.
      */
     const round = activateReaction(threeCombatantRound(), reactionState("c", "a"));
 
-    const next = continueAfterReaction(round);
+    const next = advanceToNextTurn(setRoundActiveState(round, null));
 
     expect(next.complete).toBe(false);
     expect(next.round.initiativeIndex).toBe(1);
@@ -354,6 +359,7 @@ describe("a Reaction does not move the Initiative position", () => {
       activateReaction(threeCombatantRound(), reactionState("c", "a")),
     );
 
-    expect(continueAfterReaction(drained).complete).toBe(true);
+    expect(advanceToNextTurn(setRoundActiveState(drained, null)).complete)
+      .toBe(true);
   });
 });

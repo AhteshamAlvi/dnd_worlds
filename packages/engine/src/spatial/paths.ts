@@ -45,7 +45,29 @@ export interface SpatialPath {
 }
 
 
-export function findPathIssues(path: SpatialPath): readonly EngineError[] {
+export function findPathIssues(value: unknown): readonly EngineError[] {
+  if (typeof value !== "object" || value === null) {
+    return [{
+      code: "spatial.path.malformed",
+      message: "A path must be an object.",
+      audience: "developer",
+      required: "a path with waypoints",
+      actual: value === null ? "null" : typeof value,
+    }];
+  }
+
+  const path = value as SpatialPath;
+
+  if (!Array.isArray(path.points)) {
+    return [{
+      code: "spatial.path.malformed",
+      message: "A path's waypoints must be a list.",
+      audience: "developer",
+      required: "an array of positions",
+      actual: path.points === null ? "null" : typeof path.points,
+    }];
+  }
+
   const errors: EngineError[] = [];
 
   if (!isValidSpatialContextId(path.contextId)) {

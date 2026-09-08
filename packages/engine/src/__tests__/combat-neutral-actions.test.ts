@@ -50,6 +50,7 @@ import {
   openNextQueuedReaction,
   openReactionQueue,
   queueReactionAfterGateSuccess,
+  setRoundActiveState,
   resolveCombatAction,
   resolveSuccessfulReactionGate,
   resolveVoluntaryReactionEnd,
@@ -568,6 +569,93 @@ describe("the authorization is narrow evidence", () => {
     expect(round.combatants.map((one) => one.remainingActions))
       .toEqual([4, 4, 4]);
     expect(round.activeState).toEqual(turnState("a", 2));
+  });
+
+  it("safely rejects malformed nested targets of every kind", () => {
+    /*
+     * The deepest level. A null position, an area with a null centre, a cone
+     * with no direction — each used to reach a dereference inside the
+     * spatial validators, because the authorization validator cast an
+     * unverified record into a trusted target on the way past.
+     */
+    const valid = authorize(STRIKE, intent({ targets: [AT_C] }));
+
+    const badTargets: readonly unknown[] = [
+      null,
+      "c",
+      42,
+      {},
+      { kind: "entity" },
+      { kind: "entity", entityId: null },
+      { kind: "position" },
+      { kind: "position", position: null },
+      { kind: "position", position: "over there" },
+      { kind: "position", position: { kind: "metric" } },
+      { kind: "area" },
+      { kind: "area", area: null },
+      { kind: "area", area: { kind: "sphere" } },
+      { kind: "area", area: { kind: "sphere", centre: null, radiusMetres: 2 } },
+      {
+        kind: "area",
+        area: { kind: "cone", origin: null, direction: null, lengthMetres: 1, apertureDegrees: 60 },
+      },
+      { kind: "body-part", bodyOwnerId: null, bodyPartId: null },
+      { kind: "anatomical-point" },
+      { kind: "object", objectId: null },
+      { kind: "unheard-of" },
+    ];
+
+    for (const target of badTargets) {
+      const authorization = { ...valid, declaredTargets: [target] };
+
+      expect(() => findAuthorizationIssues(authorization)).not.toThrow();
+      expect(findAuthorizationIssues(authorization).length).toBeGreaterThan(0);
+    }
+  });
+
+  it("accepts every well-formed target kind from unknown", () => {
+    const valid = authorize(STRIKE, intent({ targets: [AT_C] }));
+
+    const goodTargets: readonly unknown[] = [
+      { kind: "self" },
+      { kind: "entity", entityId: "c" },
+      { kind: "object", objectId: "door" },
+      { kind: "body-part", bodyOwnerId: "c", bodyPartId: "arm-1" },
+      {
+        kind: "anatomical-point",
+        bodyOwnerId: "c",
+        criticalPointId: "wrist:hand-1",
+      },
+      {
+        kind: "position",
+        position: {
+          kind: "metric",
+          contextId: "yard",
+          xMetres: 1,
+          yMetres: 0,
+          zMetres: 0,
+        },
+      },
+      {
+        kind: "area",
+        area: {
+          kind: "sphere",
+          centre: {
+            kind: "metric",
+            contextId: "yard",
+            xMetres: 0,
+            yMetres: 0,
+            zMetres: 0,
+          },
+          radiusMetres: 3,
+        },
+      },
+    ];
+
+    for (const target of goodTargets) {
+      expect(findAuthorizationIssues({ ...valid, declaredTargets: [target] }))
+        .toEqual([]);
+    }
   });
 
   it("accepts a valid authorization that made the same round trip", () => {
@@ -1602,6 +1690,143 @@ describe("every threatened combatant gets their turn to answer", () => {
 });
 
 
+describe("a completed queue cannot be replayed", () => {
+  function sweepQueue(round: CombatRound) {
+    const action = scheduled(round, {
+      authorization: authorize(SWEEP, intent({
+        profileId: SWEEP.id,
+        targets: [AT_C, AT_B],
+      })),
+    });
+
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const result = openReactionQueue(
+      spent.round,
+      { kind: "action", actionId: action.id, actorCombatantId: "a" },
+      action.threatenedCombatantIds,
+    );
+
+    if (!result.success) throw new Error("unreachable");
+
+    return { round: spent.round, queue: result.queue };
+  }
+
+  it("advances Initiative once and refuses a second time", () => {
+    /*
+     * A completed queue is exactly the record a caller is most likely to
+     * still be holding once the Round has moved on. Replaying it used to
+     * advance Initiative again, skipping a Turn nobody took.
+     */
+    const { round, queue } = sweepQueue(threeCombatantRound());
+
+    const declined = skipReactionOpportunity(
+      queueReactionAfterGateSuccess(queue),
+    );
+
+    const first = opened(openNextQueuedReaction(round, declined));
+    const finished = finish(first.round, first.queue);
+
+    const advanced = continueReactionQueue(finished.round, finished.queue);
+
+    if (!advanced.success) throw new Error("unreachable");
+
+    expect(advanced.outcome).toBe("initiative-advanced");
+    expect(advanced.round.initiativeIndex).toBe(1);
+
+    const replayed = continueReactionQueue(advanced.round, advanced.queue);
+
+    if (replayed.success) throw new Error("unreachable");
+
+    expect(replayed.reason).toBe("queue-trigger-mismatch");
+    expect(advanced.round.initiativeIndex).toBe(1);
+  });
+
+  it("refuses a completed queue against a later Round", () => {
+    const { round, queue } = sweepQueue(threeCombatantRound());
+
+    const declined = skipReactionOpportunity(
+      queueReactionAfterGateSuccess(queue),
+    );
+
+    const first = opened(openNextQueuedReaction(round, declined));
+    const finished = finish(first.round, first.queue);
+
+    const laterRound = startedRound(
+      [combatantInput("a"), combatantInput("b"), combatantInput("c")],
+      undefined,
+      2,
+    );
+
+    const result = continueReactionQueue(laterRound, finished.queue);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("queue-trigger-mismatch");
+  });
+
+  it("refuses a completed queue when Initiative has moved", () => {
+    const { round, queue } = sweepQueue(threeCombatantRound());
+
+    const allDeclined = skipReactionOpportunity(
+      skipReactionOpportunity(queue),
+    );
+
+    const moved = { ...round, initiativeIndex: 2 };
+
+    const result = continueReactionQueue(moved, allDeclined);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("queue-trigger-mismatch");
+  });
+
+  it("refuses a no-Reaction completion whose Turn is no longer active", () => {
+    /*
+     * openedAny is false, so the triggering Turn must still be there. A
+     * Round whose active state is something else means the caller is
+     * continuing a queue that no longer describes it.
+     */
+    const { round, queue } = sweepQueue(threeCombatantRound());
+
+    const allDeclined = skipReactionOpportunity(
+      skipReactionOpportunity(queue),
+    );
+
+    const cleared = setRoundActiveState(round, null);
+
+    const result = continueReactionQueue(cleared, allDeclined);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("queue-trigger-mismatch");
+    expect(cleared.activeState).toBeNull();
+  });
+
+  it("refuses to advance over a Reaction that was never closed", () => {
+    const { round, queue } = sweepQueue(threeCombatantRound());
+
+    const declined = skipReactionOpportunity(
+      queueReactionAfterGateSuccess(queue),
+    );
+
+    const first = opened(openNextQueuedReaction(round, declined));
+
+    /* The queue thinks it is done; the Round still holds the Reaction. */
+    const forged = { ...first.queue, activeResponder: null } as ReactionQueue;
+
+    const result = continueReactionQueue(first.round, forged);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.reason).toBe("reaction-still-active");
+    expect(first.round.activeState?.kind).toBe("reaction");
+  });
+});
+
+
 describe("single-target Reactions use the same lifecycle", () => {
   it("runs the direct helper through a one-entry queue", () => {
     const round = threeCombatantRound();
@@ -1662,6 +1887,67 @@ describe("single-target Reactions use the same lifecycle", () => {
     expect(continued.round.activeState).toEqual(turnState("b", 2));
   });
 
+  it("ends voluntarily through the queue, never around it", () => {
+    const round = threeCombatantRound();
+    const action = scheduled(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const gate = createReactionOpportunity(action, "c");
+
+    if (!gate.success) throw new Error("unreachable");
+
+    const result = resolveSuccessfulReactionGate(spent.round, gate.opportunity);
+
+    if (!result.success) throw new Error("unreachable");
+
+    const ended = resolveVoluntaryReactionEnd(result.round, result.queue);
+
+    if (!ended.success) throw new Error("unreachable");
+
+    /* The queue completed and then advanced; nothing did either alone. */
+    expect(ended.queue.phase).toBe("complete");
+    expect(ended.round.activeState).toEqual(turnState("b", 2));
+    expect(ended.round.initiativeIndex).toBe(1);
+
+    /* And the completed queue cannot be run again. */
+    const replayed = resolveVoluntaryReactionEnd(ended.round, ended.queue);
+
+    expect(replayed.success).toBe(false);
+  });
+
+  it("refuses a voluntary end whose queue does not match the Round", () => {
+    const round = threeCombatantRound();
+    const action = scheduled(round);
+    const spent = resolveCombatAction(round, action);
+
+    if (!spent.success) throw new Error("unreachable");
+
+    const gate = createReactionOpportunity(action, "c");
+
+    if (!gate.success) throw new Error("unreachable");
+
+    const result = resolveSuccessfulReactionGate(spent.round, gate.opportunity);
+
+    if (!result.success) throw new Error("unreachable");
+
+    const foreign = {
+      ...result.queue,
+      activeResponder: "b",
+    } as ReactionQueue;
+
+    const ended = resolveVoluntaryReactionEnd(result.round, foreign);
+
+    if (ended.success) throw new Error("unreachable");
+
+    expect(ended.reason).toBe("reaction-queue-refused");
+    expect(ended.queueFailureReason).toBe("reaction-mismatch");
+
+    /* Nothing moved. */
+    expect(result.round.activeState?.kind).toBe("reaction");
+  });
+
   it("still refuses a trigger whose actor is not the interrupted combatant", () => {
     const round = threeCombatantRound();
     const spent = resolveCombatAction(round, scheduled(round));
@@ -1720,7 +2006,7 @@ describe("Reactions are limited only by the shared Round pool", () => {
 
       if (!opened.success) throw new Error("unreachable");
 
-      const ended = resolveVoluntaryReactionEnd(opened.round);
+      const ended = resolveVoluntaryReactionEnd(opened.round, opened.queue);
 
       if (!ended.success) throw new Error("unreachable");
 

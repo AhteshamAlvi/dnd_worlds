@@ -121,7 +121,18 @@ function findExtentIssues(
 }
 
 
-export function findAreaIssues(area: SpatialArea): readonly EngineError[] {
+export function findAreaIssues(value: unknown): readonly EngineError[] {
+  if (typeof value !== "object" || value === null) {
+    return [{
+      code: "spatial.area.malformed",
+      message: "An area must be an object.",
+      audience: "developer",
+      required: "a sphere, cylinder, cone, line, or box",
+      actual: value === null ? "null" : typeof value,
+    }];
+  }
+
+  const area = value as SpatialArea;
   const errors: EngineError[] = [];
 
   switch (area.kind) {

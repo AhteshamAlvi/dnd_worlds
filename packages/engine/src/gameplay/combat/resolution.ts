@@ -55,7 +55,6 @@ import {
 } from "./actions";
 
 import {
-  continueAfterReaction,
   continueAfterTurn,
   activateReaction,
   applyActionSpendToRound,
@@ -78,9 +77,13 @@ import {
 } from "./reaction";
 
 import {
+  continueReactionQueue,
+  finishQueuedReaction,
   openNextQueuedReaction,
   openReactionQueue,
   queueReactionAfterGateSuccess,
+  type ReactionQueue,
+  type ReactionQueueFailureReason,
   type ReactionResolvingQueue,
 } from "./reaction-queue";
 
@@ -96,6 +99,8 @@ export const COMBAT_RESOLUTION_FAILURE_REASONS = [
   "active-state-not-turn",
   "active-state-not-reaction",
   "reaction-open-failed",
+  "reaction-queue-refused",
+  "reaction-queue-required",
 ] as const;
 
 export type CombatResolutionFailureReason =
@@ -103,6 +108,9 @@ export type CombatResolutionFailureReason =
 
 
 export interface CombatResolutionFailure {
+  /** Present when the Reaction queue refused the transition. */
+  readonly queueFailureReason?: ReactionQueueFailureReason;
+
   readonly success: false;
 
   readonly reason: CombatResolutionFailureReason;
@@ -154,6 +162,9 @@ export type CombatActionResolution =
 // ---------------------------------------------------------------------------
 
 export interface CombatStateSettlementSuccess {
+  /** Present when a queued Reaction ended: the queue after continuation. */
+  readonly queue?: ReactionQueue;
+
   readonly success: true;
 
   /*
@@ -232,6 +243,9 @@ export interface VoluntaryReactionEndSuccess {
   readonly success: true;
 
   readonly reactionEnd: ReactionEnd;
+
+  /** The queue after this Reaction finished and the lifecycle advanced. */
+  readonly queue: ReactionQueue;
 
   readonly roundComplete: boolean;
 
@@ -452,6 +466,7 @@ export function resolveCombatAction(
  */
 export function settleActiveStateAfterAction(
   round: CombatRound,
+  queue?: ReactionQueue,
 ): CombatStateSettlementResult {
   const state =
     round.activeState;
@@ -525,18 +540,60 @@ export function settleActiveStateAfterAction(
         };
       }
 
-      const progress =
-        continueAfterReaction(
+      /*
+       * A Reaction that has hit its cap still ends through the queue.
+       *
+       * This branch used to close it and advance Initiative directly, which
+       * left the queue believing its Reaction was still running and every
+       * later transition judged against a state that no longer existed. The
+       * queue is required rather than optional here for exactly that reason:
+       * there is no correct way to end a queued Reaction without it.
+       */
+      if (queue === undefined) {
+        return {
+          success: false,
+          reason: "reaction-queue-required",
+        };
+      }
+
+      const finished =
+        finishQueuedReaction(
           round,
+          queue,
+          reactionEnd,
         );
+
+      if (!finished.success) {
+        return {
+          success: false,
+          reason: "reaction-queue-refused",
+          queueFailureReason: finished.reason,
+        };
+      }
+
+      const continued =
+        continueReactionQueue(
+          finished.round,
+          finished.queue,
+        );
+
+      if (!continued.success) {
+        return {
+          success: false,
+          reason: "reaction-queue-refused",
+          queueFailureReason: continued.reason,
+        };
+      }
 
       return {
         success: true,
         stateEnded: true,
         roundComplete:
-          progress.complete,
-        round:
-          progress.round,
+          continued.outcome === "initiative-advanced"
+            ? continued.roundComplete
+            : false,
+        round: continued.round,
+        queue: continued.queue,
         reactionEnd,
       };
     }
@@ -768,6 +825,7 @@ export function resolveVoluntaryTurnEnd(
  */
 export function resolveVoluntaryReactionEnd(
   round: CombatRound,
+  queue: ReactionQueue,
 ): VoluntaryReactionEndResult {
   const state =
     round.activeState;
@@ -787,23 +845,67 @@ export function resolveVoluntaryReactionEnd(
     };
   }
 
-  const reactionEnd =
-    endReactionVoluntarily(
-      state,
+  return finishThroughQueue(
+    round,
+    queue,
+    endReactionVoluntarily(state),
+  );
+}
+
+
+/*
+ * The one way a queued Reaction ends.
+ *
+ * Produces nothing itself: the caller supplies a ReactionEnd from a
+ * canonical ending operation, this hands it to the queue, and the queue
+ * decides what happens next — open the next responder, complete without
+ * moving Initiative, or advance it.
+ *
+ * Nothing here clears activeState or advances Initiative on its own. The
+ * versions that did were the second lifecycle this ticket removes: a
+ * Reaction closed outside the queue left the queue believing it was still
+ * running, and every later transition was then judged against a state that
+ * no longer existed.
+ */
+function finishThroughQueue(
+  round: CombatRound,
+  queue: ReactionQueue,
+  end: ReactionEnd,
+): VoluntaryReactionEndResult {
+  const finished =
+    finishQueuedReaction(round, queue, end);
+
+  if (!finished.success) {
+    return {
+      success: false,
+      reason: "reaction-queue-refused",
+      queueFailureReason: finished.reason,
+    };
+  }
+
+  const continued =
+    continueReactionQueue(
+      finished.round,
+      finished.queue,
     );
 
-  const progress =
-    continueAfterReaction(
-      round,
-    );
+  if (!continued.success) {
+    return {
+      success: false,
+      reason: "reaction-queue-refused",
+      queueFailureReason: continued.reason,
+    };
+  }
 
   return {
     success: true,
-    reactionEnd,
+    reactionEnd: end,
+    queue: continued.queue,
+    round: continued.round,
     roundComplete:
-      progress.complete,
-    round:
-      progress.round,
+      continued.outcome === "initiative-advanced"
+        ? continued.roundComplete
+        : false,
   };
 }
 

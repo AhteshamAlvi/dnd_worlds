@@ -750,7 +750,7 @@ export const ENGINE_DECISIONS = {
         chosen:
             "Finishing verifies the end against the ROUND'S ACTIVE REACTION — responder, interrupted combatant, trigger and Actions spent — and returns the Round with that Reaction closed. It is the only operation that clears an active Reaction. Continuation refuses outright while any Reaction is active and never clears one.",
         rationale:
-            "Checking against the queue alone was the same error as trusting an authorization because it had a name: a ReactionEnd is a plain record, so an end built from a ReactionState nobody was in, or carrying a spent count that never happened, passed. Comparing it to what is actually running closes that, and returning the cleared Round means the caller cannot end a Reaction and forget to close it, or close one without ending it. Making finishing the single owner of the transition is what turns 'do not discard a Reaction by continuing' from a caller's responsibility into a refusal.",
+            "Checking against the queue alone was the same error as trusting an authorization because it had a name: a ReactionEnd is a plain record, so an end built from a ReactionState nobody was in, or carrying a spent count that never happened, passed. Comparing it to what is actually running closes that, and returning the cleared Round means the caller cannot end a Reaction and forget to close it, or close one without ending it. Making finishing the single owner of the transition is what turns 'do not discard a Reaction by continuing' from a caller's responsibility into a refusal. COMPLETED by combat.reactions.queue-is-the-only-lifecycle, which removed the remaining paths that ended a Reaction without it.",
     },
     "combat.reactions.completion-depends-on-what-opened": {
         id: "combat.reactions.completion-depends-on-what-opened",
@@ -778,6 +778,33 @@ export const ENGINE_DECISIONS = {
             "It takes `unknown`, guards every access, and returns diagnostics for malformed top-level and nested data alike. Nothing it can be handed makes it throw.",
         rationale:
             "A validator that trusts its parameter type is only useful against inputs that were already well-formed, which is the opposite of its job once the value has been persisted and handed back. Worse, a thrown error at a scheduling boundary escapes the EngineResult every other refusal travels in, so a host handling failures correctly still crashes on the one input nobody anticipated. Accepting unknown makes the signature tell the truth about where these values come from.",
+    },
+    "combat.reactions.queue-is-the-only-lifecycle": {
+        id: "combat.reactions.queue-is-the-only-lifecycle",
+        question:
+            "Two paths still closed a queued Reaction without the queue: resolveVoluntaryReactionEnd() ended it and advanced Initiative directly, and settleActiveStateAfterAction() did the same when a Reaction hit its Action cap. Both predate the queue and both were reachable while one was running.",
+        chosen:
+            "Every Reaction ends the same way: a canonical ending operation produces a ReactionEnd, finishQueuedReaction() closes it in the Round, and continueReactionQueue() decides what happens next — open the next responder, complete without moving Initiative, or advance. Both former paths delegate; settlement requires the queue when the active state is a Reaction and refuses with reaction-queue-required without one. round.ts::continueAfterReaction() is deleted rather than kept as a convenience.",
+        rationale:
+            "A Reaction closed outside the queue left the queue believing it was still running, so every later transition was judged against a state that no longer existed — the queue would refuse a legitimate continuation, or open a second Reaction over a Round that had already moved on. Requiring the queue rather than accepting its absence is deliberate: there is no correct way to end a QUEUED Reaction without it, and an optional parameter that silently does the wrong thing when omitted is how the two paths coexisted in the first place. Deleting continueAfterReaction() rather than leaving it unused removes the shape somebody would reach for next.",
+    },
+    "combat.reactions.completed-queues-cannot-replay": {
+        id: "combat.reactions.completed-queues-cannot-replay",
+        question:
+            "Identity was checked when opening and finishing a Reaction, but a COMPLETED queue was continued without any check — so continuing one twice advanced Initiative twice, skipping a Turn nobody took.",
+        chosen:
+            "Identity is validated first, for every phase including complete. Completion additionally checks that the Round is in the state completion implies: openedAny false requires the original interrupted Turn to still be active, and openedAny true requires no active state at all, since the final Reaction must have been closed canonically. Once Initiative advances the queue no longer matches the parked position, so a replay refuses structurally.",
+        rationale:
+            "A completed queue is the record a caller is most likely to still be holding when the Round has moved on, which makes it the most likely thing to be used twice — and the least likely to be noticed, because the second call looked like it worked. The staleness rule already knew enough to catch it; it simply was not consulted on that path. Checking the Round state against openedAny closes the other half: advancing while a Reaction is still open would lose it, and reporting no-reactions while the Turn is gone would tell a caller to settle an Action whose Turn no longer exists.",
+    },
+    "actions.authorization.validation-guards-every-level": {
+        id: "actions.authorization.validation-guards-every-level",
+        question:
+            "findAuthorizationIssues() took `unknown` at the top level and then cast declared targets into trusted shapes, so a null position or an area with a null centre still reached a dereference inside the spatial validators.",
+        chosen:
+            "The structural validators themselves take `unknown`: findTargetIssues(), findPositionIssues(), findAreaIssues(), findDirectionIssues() and findPathIssues() each guard their own shape before reading it. Nothing casts an unverified record into a domain type on the way past.",
+        rationale:
+            "Guarding only the outermost level moves the throw one layer down rather than removing it, and the layer it moves to is the one a caller cannot see. Putting the guard in the validator that owns each shape means every caller gets it — the authorization path, content validation, and anything later that reads a target out of JSON — rather than each having to remember. It also makes the signatures honest: these values arrive from hosts and from serialized state, so `unknown` is what they actually are.",
     },
 } as const satisfies Record<string, EngineDecision>;
 

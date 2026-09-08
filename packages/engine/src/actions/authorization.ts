@@ -265,20 +265,14 @@ export function findAuthorizationIssues(
     return errors;
   }
 
+  /*
+   * Handed straight through as `unknown`. findTargetIssues() guards its own
+   * structure and every nested position, area and direction below it, so
+   * nothing here casts an unverified record into a trusted shape on the way
+   * past — which is how a null centre used to reach a dereference.
+   */
   for (const target of targets) {
-    if (!isRecord(target)) {
-      errors.push({
-        code: "actions.authorization.targets.invalid",
-        message: "Every declared target must be an object.",
-        audience: "developer",
-        required: "a target reference",
-        actual: target === null ? "null" : typeof target,
-      });
-
-      continue;
-    }
-
-    errors.push(...findTargetIssues(target as unknown as TargetRef));
+    errors.push(...findTargetIssues(target));
   }
 
   return errors;

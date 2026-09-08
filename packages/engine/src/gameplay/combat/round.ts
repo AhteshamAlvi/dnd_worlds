@@ -816,36 +816,19 @@ export function activateReaction(
 // ---------------------------------------------------------------------------
 
 /*
- * Advances Combat after a Reaction closes.
+ * There is deliberately no continueAfterReaction() here any more.
  *
- * The interrupted Turn is NEVER resumed.
+ * It cleared the active state and advanced Initiative, which made it a
+ * second way to end a Reaction alongside the queue — and a Reaction closed
+ * outside the queue left the queue believing it was still running, so every
+ * later transition was judged against a state that no longer existed.
  *
- * Because entering Reaction does not move initiativeIndex, the next
- * Initiative search begins after the combatant whose Turn was interrupted.
- *
- * Example:
- *
- *   A -> B -> C
- *
- *   A Turn
- *     ↓
- *   C Reaction
- *     ↓
- *   Reaction closes
- *     ↓
- *   B Turn
+ * Reactions end through reaction-queue.ts::finishQueuedReaction() followed
+ * by continueReactionQueue(), which is the only path that knows whether to
+ * open the next responder, complete without moving Initiative, or advance.
+ * advanceToNextTurn() above remains available to the queue for the last of
+ * those.
  */
-export function continueAfterReaction(
-  round: CombatRound,
-): RoundProgressResult {
-  return advanceToNextTurn(
-    {
-      ...round,
-      activeState: null,
-    },
-  );
-}
-
 
 // ---------------------------------------------------------------------------
 // Initiative-position consistency

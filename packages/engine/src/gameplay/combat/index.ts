@@ -319,7 +319,6 @@ export {
   continueAfterTurn,
 
   activateReaction,
-  continueAfterReaction,
 
   setInitiativePositionForCombatant,
 
