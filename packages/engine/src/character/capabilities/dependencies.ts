@@ -317,6 +317,16 @@ function acquisitionRank(capability: CapabilityRef): number {
 
 interface Reachability {
   readonly reached: ReadonlySet<string>;
+
+  /**
+   * Nodes something obtainable OFFERS.
+   *
+   * Returned alongside the reachable set so the reporter can tell which of the
+   * two gates is shut. Recomputing it there would be a second implementation
+   * of "who can ever unlock this", and the two would eventually disagree.
+   */
+  readonly unlocked: ReadonlySet<string>;
+
   readonly capabilities: readonly CapabilityRef[];
 }
 
@@ -563,7 +573,7 @@ function computeReachability(): Reachability {
     if (!added) break;
   }
 
-  return { reached, capabilities };
+  return { reached, unlocked, capabilities };
 }
 
 
@@ -727,7 +737,7 @@ function findTraitPrerequisiteIssues(): readonly string[] {
 export function findCapabilityDependencyIssues(): readonly string[] {
   const issues: string[] = [];
 
-  const { reached, capabilities } = computeReachability();
+  const { reached, unlocked, capabilities } = computeReachability();
 
   issues.push(...findSubsumptionIssues(capabilities));
   issues.push(...findTraitPrerequisiteIssues());
@@ -739,15 +749,31 @@ export function findCapabilityDependencyIssues(): readonly string[] {
 
     if (!reached.has(nodeKey(capability, base))) {
       /*
-       * Which gate is shut changes the fix entirely — write a prerequisite the
-       * character can meet, or write the content that offers this — so the
-       * message says which.
+       * WHICH gate is shut, not merely that one is.
+       *
+       * The fixes are entirely different — write a prerequisite somebody can
+       * meet, or write the content that offers this — and a capability gated
+       * both ways with a perfectly good invitation would otherwise be reported
+       * as possibly needing an invitation. So both gates are asked here,
+       * against the settled reachable set, rather than inferred from the
+       * declaration alone.
        */
-      issues.push(
-        capabilityRequiresUnlock(capability)
-          ? `${label} "${capability.id}" can never be acquired: it requires an unlock, and nothing obtainable unlocks it (or its prerequisites cannot be satisfied).`
-          : `${label} "${capability.id}" can never be acquired: its prerequisites cannot all be satisfied by anything that is itself obtainable.`,
+      const key = nodeKey(capability, base);
+
+      const qualifies = (capabilityRequirements(capability) ?? []).every(
+        (requirement) => requirementReachable(requirement, reached),
       );
+
+      const permitted =
+        !capabilityRequiresUnlock(capability) || unlocked.has(key);
+
+      const reason = permitted
+        ? "its prerequisites cannot all be satisfied by anything that is itself obtainable"
+        : qualifies
+          ? "it requires an unlock, and nothing obtainable unlocks it"
+          : "it requires an unlock that nothing obtainable supplies, and its prerequisites cannot all be satisfied either";
+
+      issues.push(`${label} "${capability.id}" can never be acquired: ${reason}.`);
 
       continue;
     }

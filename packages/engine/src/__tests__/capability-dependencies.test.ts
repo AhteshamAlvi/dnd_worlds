@@ -483,8 +483,13 @@ describe("an unlock permits acquisition without satisfying it", () => {
     ).toBe(false);
   });
 
-  /* The same offer against prerequisites somebody can actually meet. */
-  it("makes a Skill reachable when its own prerequisites are reachable", () => {
+  /*
+   * The same offer against prerequisites somebody can actually meet — and the
+   * Skill is declared requiresUnlock, so the offer is genuinely load-bearing.
+   * Without that the Skill would be reachable on its prerequisites alone and
+   * the test would pass whatever the unlock did.
+   */
+  function registerInnerStyle(): void {
     registerDefinition("trait", {
       id: "test-innate-talent",
       name: "Innate Talent",
@@ -494,12 +499,15 @@ describe("an unlock permits acquisition without satisfying it", () => {
     registerDefinition("skill", {
       id: "test-inner-style",
       name: "Inner Style",
-      description: "A test Skill gated on an obtainable Trait.",
+      description: "A test Skill gated on a Trait AND on being invited.",
       timings: ["action"],
       mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
       requirements: [{ type: "hasTrait", traitId: "test-innate-talent" }],
     });
+  }
 
+  function registerClanMembership(): void {
     registerDefinition("trait", {
       id: "test-clan-membership",
       name: "Clan Membership",
@@ -512,12 +520,32 @@ describe("an unlock permits acquisition without satisfying it", () => {
         },
       ],
     });
+  }
+
+  it("makes a doubly gated Skill reachable when both gates open", () => {
+    registerInnerStyle();
+    registerClanMembership();
 
     expect(findCapabilityDependencyIssues()).toEqual([]);
 
     expect(
       isCapabilityEverAcquirable({ kind: "skill", id: "test-inner-style" }),
     ).toBe(true);
+  });
+
+  /* The negative control for the pair above: remove the offer, lose the Skill. */
+  it("leaves the same Skill unreachable when nothing offers it", () => {
+    registerInnerStyle();
+
+    expect(
+      isCapabilityEverAcquirable({ kind: "skill", id: "test-inner-style" }),
+    ).toBe(false);
+
+    expect(findCapabilityDependencyIssues()).toEqual([
+      expect.stringContaining(
+        'Skill "test-inner-style" can never be acquired: it requires an unlock, and nothing obtainable unlocks it.',
+      ),
+    ]);
   });
 
   /*
@@ -536,9 +564,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
     });
 
     expect(findCapabilityDependencyIssues()).toEqual([
-      expect.stringContaining(
-        'Skill "test-closed-style" can never be acquired: it requires an unlock',
-      ),
+      'Skill "test-closed-style" can never be acquired: it requires an unlock, and nothing obtainable unlocks it.',
     ]);
   });
 
@@ -599,6 +625,56 @@ describe("an unlock permits acquisition without satisfying it", () => {
         ),
       ]),
     );
+  });
+
+  /*
+   * Which gate is shut, said out loud. A capability gated both ways with a
+   * perfectly good invitation must not be reported as possibly needing one —
+   * the author would go looking for content that already exists.
+   */
+  it("names the prerequisite gate when the offer is fine", () => {
+    registerDefinition("skill", {
+      id: "test-closed-style",
+      name: "Closed Style",
+      description: "A test Skill offered to everyone and impossible anyway.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
+      requirements: [{ type: "hasSkill", skillId: "test-closed-style" }],
+    });
+
+    registerDefinition("trait", {
+      id: "test-clan-membership",
+      name: "Clan Membership",
+      description: "A test Trait that issues a perfectly good invitation.",
+      effects: [
+        {
+          type: "grantSkill",
+          skillId: "test-closed-style",
+          mode: "unlocked-for-acquisition",
+        },
+      ],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([
+      'Skill "test-closed-style" can never be acquired: its prerequisites cannot all be satisfied by anything that is itself obtainable.',
+    ]);
+  });
+
+  it("names both gates when both are shut", () => {
+    registerDefinition("skill", {
+      id: "test-closed-style",
+      name: "Closed Style",
+      description: "A test Skill nobody offers and nobody could qualify for.",
+      timings: ["action"],
+      mastery: { maximumMastery: 3 },
+      requiresUnlock: true,
+      requirements: [{ type: "hasSkill", skillId: "test-closed-style" }],
+    });
+
+    expect(findCapabilityDependencyIssues()).toEqual([
+      'Skill "test-closed-style" can never be acquired: it requires an unlock that nothing obtainable supplies, and its prerequisites cannot all be satisfied either.',
+    ]);
   });
 
   /* An access grant still skips both gates, which is what a gift is. */
