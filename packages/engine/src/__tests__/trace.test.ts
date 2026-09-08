@@ -206,21 +206,23 @@ describe("attribute provenance", () => {
       name: "Twin Boost",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 3,
-      ranks: [
-        {
-          rank: 1,
-          effects: [
-            { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
-          ],
-        },
-        {
-          rank: 2,
-          effects: [
-            { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
-          ],
-        },
-      ],
+      mastery: {
+        maximumMastery: 3,
+        ranks: [
+          {
+            rank: 1,
+            effects: [
+              { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
+            ],
+          },
+          {
+            rank: 2,
+            effects: [
+              { type: "modifyBaseAttribute", attribute: "agi", amount: 1 },
+            ],
+          },
+        ],
+      },
     });
 
     const resolved = resolveTestCharacter(

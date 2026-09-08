@@ -242,7 +242,7 @@ describe("grant effects", () => {
       name: "Wall Sticking",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 3,
+      mastery: { maximumMastery: 3 },
     });
 
     registerDefinition("trait", {
@@ -279,7 +279,7 @@ describe("grant effects", () => {
       name: "Wall Sticking",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 3,
+      mastery: { maximumMastery: 3 },
     });
 
     registerDefinition("trait", {

@@ -180,6 +180,13 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
       `Technique "${issue.techniqueId}" is at Mastery ${issue.mastery}, but its track ends at ${issue.maximumMastery}.`,
     resolution: "Lower the Mastery to one the Technique defines.",
   },
+  "technique-mastery-not-supported": {
+    code: "character.technique.mastery_unsupported",
+    describe: (issue) =>
+      `Technique "${issue.techniqueId}" has a stored Mastery of ${issue.mastery}, but the Technique has no Mastery.`,
+    resolution:
+      "Remove the Mastery: this Technique is held or not held, with no ranks to reach.",
+  },
   "unsatisfied-technique-requirements": {
     code: "character.technique.requirements_unsatisfied",
     describe: (issue) =>
@@ -215,6 +222,13 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     describe: (issue) =>
       `Skill "${issue.skillId}" is at Mastery ${issue.mastery}, but its track ends at ${issue.maximumMastery}.`,
     resolution: "Lower the Mastery to one the Skill defines.",
+  },
+  "skill-mastery-not-supported": {
+    code: "character.skill.mastery_unsupported",
+    describe: (issue) =>
+      `Skill "${issue.skillId}" has a stored Mastery of ${issue.mastery}, but the Skill has no Mastery.`,
+    resolution:
+      "Remove the Mastery: this Skill is held or not held, with no ranks to reach.",
   },
   "unsatisfied-skill-requirements": {
     code: "character.skill.requirements_unsatisfied",

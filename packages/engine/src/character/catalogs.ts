@@ -31,6 +31,7 @@ import { createId, idPattern } from "../infrastructure/id";
 import {
   collectGrantedIds,
   collectRequirementReferences,
+  type RequirementReference,
   type RequirementReferenceDomain,
 } from "./rules/content";
 import type { Effect } from "./rules/effects";
@@ -42,10 +43,15 @@ import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
 import { traitRegistry, type TraitDefinition } from "./identity/traits";
 
 import {
+  techniqueMasteryTrack,
   techniqueRegistry,
   type TechniqueDefinition,
 } from "./capabilities/techniques";
-import { skillRegistry, type SkillDefinition } from "./capabilities/skills";
+import {
+  skillMasteryTrack,
+  skillRegistry,
+  type SkillDefinition,
+} from "./capabilities/skills";
 
 import {
   conditionRegistry,
@@ -286,11 +292,20 @@ function rulesOf(
   const effectful = definition as {
     readonly effects?: readonly Effect[];
     readonly requirements?: readonly Requirement[];
-    readonly ranks?: readonly {
-      readonly rank: number;
-      readonly effects?: readonly Effect[];
-      readonly requirements?: readonly Requirement[];
-    }[];
+    /*
+     * Skill and Technique ranks hang off an OPTIONAL Mastery track, because a
+     * capability may have no ranks at all. The walk has to reach through it —
+     * a rank whose grantSkill points at nothing is exactly what this function
+     * exists to catch, and it would escape silently if the field were still
+     * read off the definition directly.
+     */
+    readonly mastery?: {
+      readonly ranks?: readonly {
+        readonly rank: number;
+        readonly effects?: readonly Effect[];
+        readonly requirements?: readonly Requirement[];
+      }[];
+    };
     // Conditions progress through stages rather than Skill/Technique ranks —
     // see status/stage.ts — but the walk is identical.
     readonly stages?: readonly {
@@ -312,7 +327,7 @@ function rulesOf(
     requirements: effectful.requirements ?? [],
   });
 
-  for (const rank of effectful.ranks ?? []) {
+  for (const rank of effectful.mastery?.ranks ?? []) {
     bundles.push({
       where: `rank ${rank.rank}`,
       effects: rank.effects ?? [],
@@ -360,6 +375,51 @@ const REQUIREMENT_DOMAINS: Readonly<
   condition: "condition",
   item: "item",
 };
+
+/*
+ * Whether a rank a requirement asks for is a rank the target can ever hold.
+ *
+ * Two ways it cannot be, and they are different mistakes. Requiring Mastery in
+ * a capability that HAS no Mastery is a requirement nothing can ever satisfy —
+ * the author reached for depth in something that has none. Requiring a rank
+ * past the end of a real track is the same unsatisfiable requirement arrived
+ * at by miscounting, and it is the one that looks right in the file.
+ *
+ * Neither can be caught by the capability's own catalog check: the requirement
+ * lives on one definition and the track it names lives on another.
+ */
+function findMasteryRequirementIssues(
+  where: string,
+  targetDomain: CatalogDomain,
+  reference: RequirementReference,
+): readonly string[] {
+  const minimum = reference.minimumMastery;
+
+  if (minimum === undefined) return [];
+
+  if (targetDomain !== "skill" && targetDomain !== "technique") return [];
+
+  const track = targetDomain === "skill"
+    ? skillMasteryTrack(reference.id)
+    : techniqueMasteryTrack(reference.id);
+
+  const targetLabel = CATALOG_DOMAIN_LABELS[targetDomain];
+
+  if (track === undefined) {
+    return [
+      `${where} requires Mastery ${minimum} in ${targetLabel} "${reference.id}", which has no Mastery.`,
+    ];
+  }
+
+  if (minimum > track.maximumMastery) {
+    return [
+      `${where} requires Mastery ${minimum} in ${targetLabel} "${reference.id}", whose track ends at ${track.maximumMastery}.`,
+    ];
+  }
+
+  return [];
+}
+
 
 /**
  * Every reference an authored or registered definition makes that does not
@@ -415,7 +475,17 @@ export function findCatalogReferenceIssues(): readonly string[] {
             issues.push(
               `${label} "${definition.id}"${where} requires unknown ${CATALOG_DOMAIN_LABELS[targetDomain]} "${reference.id}".`,
             );
+
+            continue;
           }
+
+          issues.push(
+            ...findMasteryRequirementIssues(
+              `${label} "${definition.id}"${where}`,
+              targetDomain,
+              reference,
+            ),
+          );
         }
       }
     }

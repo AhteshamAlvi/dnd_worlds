@@ -118,7 +118,7 @@ describe("registerDefinition", () => {
         description: "Registered in every domain.",
         // Skills and Techniques are the domains with required extra fields.
         timings: ["action"],
-        maximumMastery: 10,
+        mastery: { maximumMastery: 10 },
       });
 
       expect(result).toEqual({ ok: true });
@@ -187,7 +187,7 @@ describe("findCatalogReferenceIssues", () => {
       name: "Riposte",
       description: "A test Skill.",
       timings: ["reaction"],
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       requirements: [
         { type: "techniqueMastery", techniqueId: "swordsmanshp", minimumMastery: 4 },
       ],
@@ -204,7 +204,7 @@ describe("findCatalogReferenceIssues", () => {
       name: "Twin Strike",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       requirements: [
         {
           type: "all",
@@ -232,10 +232,12 @@ describe("findCatalogReferenceIssues", () => {
       id: "swordsmanship",
       name: "Swordsmanship",
       description: "A test Technique.",
-      maximumMastery: 10,
-      ranks: [
-        { rank: 1, effects: [{ type: "grantSkill", skillId: "direct-thrust" }] },
-      ],
+      mastery: {
+        maximumMastery: 10,
+        ranks: [
+          { rank: 1, effects: [{ type: "grantSkill", skillId: "direct-thrust" }] },
+        ],
+      },
     });
 
     expect(findCatalogReferenceIssues()).toEqual([
@@ -305,7 +307,7 @@ describe("findCatalogReferenceIssues", () => {
       name: "Wall Sticking",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 3,
+      mastery: { maximumMastery: 3 },
     });
 
     registerDefinition("trait", {

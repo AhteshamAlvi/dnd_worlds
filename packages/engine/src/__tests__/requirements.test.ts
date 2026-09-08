@@ -204,7 +204,7 @@ describe("derived attribute requirements", () => {
       name: "Riposte",
       description: "A test Skill gated on Combat Ability.",
       timings: ["reaction"],
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       requirements: [
         {
           type: "derivedAttributeMinimum",
@@ -289,11 +289,13 @@ describe("identity requirements", () => {
 
 describe("capability requirements", () => {
   const context = contextWith({
+    skillIds: ["parry"],
+    techniqueIds: ["swordsmanship"],
     skillMastery: { parry: 2 },
     techniqueMastery: { swordsmanship: 5 },
   });
 
-  it("treats a missing capability as Mastery 0", () => {
+  it("refuses a capability the character does not have", () => {
     expect(
       meetsRequirement({ type: "hasSkill", skillId: "riposte" }, context),
     ).toBe(false);
@@ -386,6 +388,7 @@ describe("composition", () => {
         base: { ...FLAT_ATTRIBUTES, dex: 16 },
         resolved: { ...FLAT_ATTRIBUTES, dex: 16 },
       },
+      techniqueIds: ["swordsmanship"],
       techniqueMastery: { swordsmanship: 5 },
       ...overrides,
     });
@@ -398,7 +401,10 @@ describe("composition", () => {
     expect(
       meetsRequirement(
         TWIN_BLADE,
-        swordsman({ skillMastery: { "two-weapon-training": 1 } }),
+        swordsman({
+          skillIds: ["two-weapon-training"],
+          skillMastery: { "two-weapon-training": 1 },
+        }),
       ),
     ).toBe(true);
   });
@@ -411,7 +417,10 @@ describe("composition", () => {
     expect(
       meetsRequirement(
         TWIN_BLADE,
-        swordsman({ traitIds: ["ambidextrous"], techniqueMastery: { swordsmanship: 4 } }),
+        swordsman({
+          traitIds: ["ambidextrous"],
+          techniqueMastery: { swordsmanship: 4 },
+        }),
       ),
     ).toBe(false);
   });
@@ -451,7 +460,7 @@ describe("requirements against a real character", () => {
       id: "dragon-forms",
       name: "Dragon Forms",
       description: "A test Technique.",
-      maximumMastery: 5,
+      mastery: { maximumMastery: 5 },
     });
 
     registerDefinition("trait", {
@@ -466,7 +475,7 @@ describe("requirements against a real character", () => {
       name: "Dragon Breath",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 5,
+      mastery: { maximumMastery: 5 },
       requirements: [{ type: "hasTechnique", techniqueId: "dragon-forms" }],
     });
 

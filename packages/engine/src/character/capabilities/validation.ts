@@ -38,7 +38,7 @@ import {
 import {
   getTechniqueDefinition,
   isKnownTechniqueId,
-  techniqueMastery,
+  techniqueMasteryTrack,
   type CharacterTechnique,
   type TechniqueDefinition,
   type TechniqueId,
@@ -47,7 +47,7 @@ import {
 import {
   getSkillDefinition,
   isKnownSkillId,
-  skillMastery,
+  skillMasteryTrack,
   type CharacterSkill,
   type SkillDefinition,
   type SkillId,
@@ -73,6 +73,16 @@ export type TechniqueValidationIssue =
       readonly techniqueId: TechniqueId;
       readonly mastery: number;
       readonly maximumMastery: MasteryRank;
+    }
+  | {
+      /*
+       * A rank stored against a Technique that has no Mastery at all. Not a
+       * rank that is too high — there is no track for it to be too high on,
+       * and lowering it would not help.
+       */
+      readonly type: "technique-mastery-not-supported";
+      readonly techniqueId: TechniqueId;
+      readonly mastery: number;
     }
   | {
       /*
@@ -107,6 +117,12 @@ export type SkillValidationIssue =
       readonly skillId: SkillId;
       readonly mastery: number;
       readonly maximumMastery: MasteryRank;
+    }
+  | {
+      /* A rank stored against a Skill that has no Mastery at all. */
+      readonly type: "skill-mastery-not-supported";
+      readonly skillId: SkillId;
+      readonly mastery: number;
     }
   | {
       readonly type: "unsatisfied-skill-requirements";
@@ -158,15 +174,33 @@ export function findTechniqueValidationIssues(
 
     if (definition === undefined) continue;
 
-    const mastery = techniqueMastery(technique);
+    const track = techniqueMasteryTrack(id);
 
-    if (!isMasteryRank(mastery) || mastery > definition.maximumMastery) {
-      issues.push({
-        type: "invalid-technique-mastery",
-        techniqueId: id,
-        mastery,
-        maximumMastery: definition.maximumMastery,
-      });
+    /*
+     * Two different complaints, kept apart because they have two different
+     * fixes. A rank past the end of a track is lowered; a rank on a Technique
+     * that has no track at all is REMOVED, and telling the author to lower it
+     * would send them looking for a maximum that does not exist.
+     */
+    if (track === undefined) {
+      if (technique.mastery !== undefined) {
+        issues.push({
+          type: "technique-mastery-not-supported",
+          techniqueId: id,
+          mastery: technique.mastery,
+        });
+      }
+    } else if (technique.mastery !== undefined) {
+      const mastery = technique.mastery;
+
+      if (!isMasteryRank(mastery) || mastery > track.maximumMastery) {
+        issues.push({
+          type: "invalid-technique-mastery",
+          techniqueId: id,
+          mastery,
+          maximumMastery: track.maximumMastery,
+        });
+      }
     }
 
     if (context !== undefined) {
@@ -229,15 +263,27 @@ export function findSkillValidationIssues(
 
     if (definition === undefined) continue;
 
-    const mastery = skillMastery(skill);
+    const track = skillMasteryTrack(id);
 
-    if (!isMasteryRank(mastery) || mastery > definition.maximumMastery) {
-      issues.push({
-        type: "invalid-skill-mastery",
-        skillId: id,
-        mastery,
-        maximumMastery: definition.maximumMastery,
-      });
+    if (track === undefined) {
+      if (skill.mastery !== undefined) {
+        issues.push({
+          type: "skill-mastery-not-supported",
+          skillId: id,
+          mastery: skill.mastery,
+        });
+      }
+    } else if (skill.mastery !== undefined) {
+      const mastery = skill.mastery;
+
+      if (!isMasteryRank(mastery) || mastery > track.maximumMastery) {
+        issues.push({
+          type: "invalid-skill-mastery",
+          skillId: id,
+          mastery,
+          maximumMastery: track.maximumMastery,
+        });
+      }
     }
 
     if (context !== undefined) {

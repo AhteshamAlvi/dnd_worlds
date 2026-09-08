@@ -132,6 +132,16 @@ export type RequirementReferenceDomain =
 export interface RequirementReference {
   readonly domain: RequirementReferenceDomain;
   readonly id: string;
+
+  /**
+   * The rank the requirement asks for, when it asks for one.
+   *
+   * Carried here so a cross-catalog check can ask the target definition
+   * whether that rank is reachable at all — a requirement for Pick Lock VII
+   * against a Skill whose track ends at V is a claim about another catalog,
+   * and this is the walk that already visits both.
+   */
+  readonly minimumMastery?: number;
 }
 
 export function collectRequirementReferences(
@@ -160,13 +170,27 @@ export function collectRequirementReferences(
         break;
 
       case "hasSkill":
-      case "skillMastery":
         references.push({ domain: "skill", id: requirement.skillId });
         break;
 
+      case "skillMastery":
+        references.push({
+          domain: "skill",
+          id: requirement.skillId,
+          minimumMastery: requirement.minimumMastery,
+        });
+        break;
+
       case "hasTechnique":
-      case "techniqueMastery":
         references.push({ domain: "technique", id: requirement.techniqueId });
+        break;
+
+      case "techniqueMastery":
+        references.push({
+          domain: "technique",
+          id: requirement.techniqueId,
+          minimumMastery: requirement.minimumMastery,
+        });
         break;
 
       case "hasCondition":

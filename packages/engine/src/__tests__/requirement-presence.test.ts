@@ -151,8 +151,8 @@ describe("every collection a requirement reads keeps the distinction", () => {
     [
       "skills",
       { type: "hasSkill", skillId: "riposte" },
-      { skillMastery: {} },
-      { skillMastery: { riposte: 1 } },
+      { skillIds: [] },
+      { skillIds: ["riposte"] },
     ],
     [
       "skill mastery",
@@ -163,8 +163,8 @@ describe("every collection a requirement reads keeps the distinction", () => {
     [
       "techniques",
       { type: "hasTechnique", techniqueId: "ten" },
-      { techniqueMastery: {} },
-      { techniqueMastery: { ten: 1 } },
+      { techniqueIds: [] },
+      { techniqueIds: ["ten"] },
     ],
     [
       "technique mastery",
@@ -385,6 +385,7 @@ describe("a known member satisfies even when the collection is incomplete", () =
      * id absent altogether can be hiding in the unwritten part.
      */
     const partial = contextWith({
+      skillIds: ["riposte"],
       skillMastery: { riposte: 1 },
       incomplete: ["skills"],
     });
@@ -540,7 +541,7 @@ describe("an incomplete sheet warns rather than failing validation", () => {
       name: "Gated Skill",
       description: "A test Skill gated on one Trait and nothing else.",
       timings: ["action"],
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       requirements: [HAS_TRAIT],
     });
   }
@@ -671,7 +672,7 @@ describe("capability validation does not call incomplete data a failure", () => 
       name: "Gated Skill",
       description: "A test Skill gated on one Trait and nothing else.",
       timings: ["action"],
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       requirements: [HAS_TRAIT],
     });
   }

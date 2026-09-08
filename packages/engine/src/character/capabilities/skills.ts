@@ -17,6 +17,12 @@
  * early: three ranks is a complete Skill if the third is everything the Skill
  * has to give.
  *
+ * A Skill may also declare no track at all. Activating a door rune is a thing
+ * a character can either do or not do; there is no better way to do it and
+ * nothing to advance. Such a Skill is held with NO Mastery rather than held at
+ * Mastery I — see mastery.ts's trackMastery() — because a rank that can never
+ * change is a rank a player will keep trying to spend Growth Points on.
+ *
  * ── Requirements ────────────────────────────────────────────────────────
  *
  * Skills used to carry their own requirement shape — lists of Ability and
@@ -39,10 +45,13 @@
 import { createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
+import type { Effect } from "../rules/effects";
 
 import {
+  collectMasteryRankEffects,
   findMasteryTrackIssues,
   STANDARD_MASTERY_MAX,
+  trackMastery,
   type MasteryRank,
   type MasteryTrack,
   type MasteryValue,
@@ -66,18 +75,28 @@ export type SkillTiming = "action" | "reaction";
  * `requirements` gate learning or being granted it; `effects` apply while it
  * is known, with rank-specific ones on the ranks themselves.
  */
-export interface SkillDefinition extends EffectfulDefinition, MasteryTrack {
+export interface SkillDefinition extends EffectfulDefinition {
   /**
    * Relevant only when structured timing is active. A Skill may support both
    * normal Action and Reaction execution.
    */
   readonly timings: readonly SkillTiming[];
+
+  /**
+   * How far this Skill can be deepened, and what each rank of it carries.
+   *
+   * Absent means the Skill has no Mastery: it is held or it is not.
+   */
+  readonly mastery?: MasteryTrack;
 }
 
 /**
  * A Skill the character knows.
  *
- * Mastery is optional, and absent means I — see CharacterTechnique for why.
+ * The stored rank is optional, and what its absence means depends on the
+ * definition rather than on this entry: I for a Skill with a Mastery track,
+ * and no Mastery at all for one without. Storing a rank against a Skill that
+ * has no track is a validation error — see capabilities/validation.ts.
  */
 export interface CharacterSkill {
   readonly skillId: SkillId;
@@ -90,7 +109,7 @@ export const SKILL_DEFINITIONS = {
     name: "Punch",
     description: "Deliver a trained unarmed strike using the fist.",
     timings: ["action"],
-    maximumMastery: STANDARD_MASTERY_MAX,
+    mastery: { maximumMastery: STANDARD_MASTERY_MAX },
     requirements: [
       { type: "hasTechnique", techniqueId: "martial-arts" },
     ],
@@ -101,7 +120,7 @@ export const SKILL_DEFINITIONS = {
     name: "Parry",
     description: "React to an incoming attack by actively deflecting it.",
     timings: ["reaction"],
-    maximumMastery: STANDARD_MASTERY_MAX,
+    mastery: { maximumMastery: STANDARD_MASTERY_MAX },
     requirements: [
       { type: "techniqueMastery", techniqueId: "martial-arts", minimumMastery: 2 },
     ],
@@ -112,7 +131,7 @@ export const SKILL_DEFINITIONS = {
     name: "Defensive Stance",
     description: "Enter a trained defensive fighting stance.",
     timings: ["action"],
-    maximumMastery: STANDARD_MASTERY_MAX,
+    mastery: { maximumMastery: STANDARD_MASTERY_MAX },
     requirements: [
       { type: "techniqueMastery", techniqueId: "martial-arts", minimumMastery: 3 },
     ],
@@ -124,7 +143,7 @@ export const SKILL_DEFINITIONS = {
     description:
       "Manipulate a mechanical lock using trained lockpicking methods.",
     timings: ["action"],
-    maximumMastery: 5,
+    mastery: { maximumMastery: 5 },
     requirements: [
       { type: "hasTechnique", techniqueId: "lockpicking" },
     ],
@@ -141,7 +160,7 @@ export const SKILL_DEFINITIONS = {
     name: "Fire Blast",
     description: "Project fire offensively using trained Firebending.",
     timings: ["action"],
-    maximumMastery: STANDARD_MASTERY_MAX,
+    mastery: { maximumMastery: STANDARD_MASTERY_MAX },
     requirements: [
       {
         type: "all",
@@ -171,16 +190,49 @@ export function getSkillDefinition(
   return SKILL_REGISTRY.get(skillId);
 }
 
-/** The Mastery a character entry represents; absent means I. */
-export function skillMastery(skill: CharacterSkill): MasteryRank {
-  return skill.mastery ?? 1;
+/**
+ * The Mastery track a Skill declares, if it has one.
+ *
+ * An UNKNOWN id is treated as carrying the standard track rather than as
+ * having none. Validation reports the unknown id; reading it as non-mastered
+ * here would additionally discard whatever rank the sheet stored against it,
+ * which is a second wrong answer to a problem that already has a message.
+ */
+export function skillMasteryTrack(
+  skillId: SkillId,
+): MasteryTrack | undefined {
+  const definition = getSkillDefinition(skillId);
+
+  if (definition === undefined) return { maximumMastery: STANDARD_MASTERY_MAX };
+
+  return definition.mastery;
 }
 
-/** A character's Skills as the id → Mastery record resolution consumes. */
+/** Whether a Skill has Mastery at all. */
+export function skillSupportsMastery(skillId: SkillId): boolean {
+  return skillMasteryTrack(skillId) !== undefined;
+}
+
+/**
+ * The Mastery a character entry represents.
+ *
+ * Null means the Skill has no Mastery, which is NOT the same as not having the
+ * Skill — absence from the character's list is what means that.
+ */
+export function skillMastery(skill: CharacterSkill): MasteryRank | null {
+  return trackMastery(skillMasteryTrack(skill.skillId), skill.mastery);
+}
+
+/**
+ * A character's Skills as the id → Mastery record resolution consumes.
+ *
+ * A null value is a Skill held with no Mastery, and is as real an entry as a
+ * ranked one; a caller must not read it the way it reads a missing key.
+ */
 export function toSkillMasteryRecord(
   skills: readonly CharacterSkill[] = [],
-): Readonly<Record<SkillId, MasteryRank>> {
-  const record: Record<SkillId, MasteryRank> = {};
+): Readonly<Record<SkillId, MasteryRank | null>> {
+  const record: Record<SkillId, MasteryRank | null> = {};
 
   for (const skill of skills) {
     record[skill.skillId] = skillMastery(skill);
@@ -190,30 +242,30 @@ export function toSkillMasteryRecord(
 }
 
 /**
- * The maximum rank a Skill allows.
+ * The maximum rank a Skill allows, or null when it has no Mastery.
  *
  * Unknown ids fall back to the standard maximum rather than throwing.
  */
-export function skillMaximumMastery(skillId: SkillId): MasteryRank {
-  return getSkillDefinition(skillId)?.maximumMastery ?? STANDARD_MASTERY_MAX;
+export function skillMaximumMastery(skillId: SkillId): MasteryRank | null {
+  return skillMasteryTrack(skillId)?.maximumMastery ?? null;
 }
 
 /**
  * Everything a character knowing this Skill at this Mastery contributes.
  *
  * Ranks are cumulative, so a Skill at III contributes the effects of I, II
- * and III.
+ * and III. A Skill with no Mastery still contributes its own effects: having
+ * no ranks is not the same as having nothing to give.
  */
 export function collectSkillEffects(
   definition: SkillDefinition,
-  mastery: MasteryValue,
-) {
+  mastery: MasteryValue | null,
+): readonly Effect[] {
+  const track = definition.mastery;
+
   return [
     ...(definition.effects ?? []),
-    ...(definition.ranks ?? [])
-      .filter((rank) => rank.rank <= mastery)
-      .sort((left, right) => left.rank - right.rank)
-      .flatMap((rank) => rank.effects ?? []),
+    ...(track === undefined ? [] : collectMasteryRankEffects(track, mastery)),
   ];
 }
 
@@ -232,7 +284,9 @@ export function findSkillCatalogIssues(): readonly string[] {
       issues.push(`Skill "${skill.id}" has no valid timing.`);
     }
 
-    issues.push(...findMasteryTrackIssues("Skill", skill.id, skill));
+    if (skill.mastery !== undefined) {
+      issues.push(...findMasteryTrackIssues("Skill", skill.id, skill.mastery));
+    }
   }
 
   return issues;

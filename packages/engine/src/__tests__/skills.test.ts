@@ -239,23 +239,25 @@ describe("skill mastery: depth", () => {
       name: "Wall Sticking",
       description: "Adhere to surfaces.",
       timings: ["action"],
-      maximumMastery: 3,
-      ranks: [
-        {
-          rank: 2,
-          description: "Controlled movement while adhered.",
-          effects: [
-            { type: "modifyResolvedAttribute", attribute: "agi", amount: 1 },
-          ],
-        },
-        {
-          rank: 3,
-          description: "Adhesion under much greater force.",
-          effects: [
-            { type: "modifyResolvedAttribute", attribute: "agi", amount: 1 },
-          ],
-        },
-      ],
+      mastery: {
+        maximumMastery: 3,
+        ranks: [
+          {
+            rank: 2,
+            description: "Controlled movement while adhered.",
+            effects: [
+              { type: "modifyResolvedAttribute", attribute: "agi", amount: 1 },
+            ],
+          },
+          {
+            rank: 3,
+            description: "Adhesion under much greater force.",
+            effects: [
+              { type: "modifyResolvedAttribute", attribute: "agi", amount: 1 },
+            ],
+          },
+        ],
+      },
     });
 
     const definition = getSkillDefinition("wall-sticking");
@@ -306,7 +308,7 @@ describe("skill requirements", () => {
           name: "Improvised Shove",
           description: "A Skill with no prerequisite path.",
           timings: ["action"],
-          maximumMastery: 3,
+          mastery: { maximumMastery: 3 },
         },
         context(),
       ),
@@ -323,7 +325,10 @@ describe("skill requirements", () => {
     expect(
       satisfiesSkillRequirements(
         definition,
-        context({ techniqueMastery: { "martial-arts": 1 } }),
+        context({
+          techniqueIds: ["martial-arts"],
+          techniqueMastery: { "martial-arts": 1 },
+        }),
       ),
     ).toBe(true);
   });
@@ -350,14 +355,20 @@ describe("skill requirements", () => {
     expect(
       satisfiesSkillRequirements(
         definition,
-        context({ techniqueMastery: { "martial-arts": 1 } }),
+        context({
+          techniqueIds: ["martial-arts"],
+          techniqueMastery: { "martial-arts": 1 },
+        }),
       ),
     ).toBe(false);
 
     expect(
       satisfiesSkillRequirements(
         definition,
-        context({ techniqueMastery: { "martial-arts": 2 } }),
+        context({
+          techniqueIds: ["martial-arts"],
+          techniqueMastery: { "martial-arts": 2 },
+        }),
       ),
     ).toBe(true);
   });
@@ -372,7 +383,10 @@ describe("skill requirements", () => {
     expect(
       satisfiesSkillRequirements(
         definition,
-        context({ techniqueMastery: { "firebending-forms": 1 } }),
+        context({
+          techniqueIds: ["firebending-forms"],
+          techniqueMastery: { "firebending-forms": 1 },
+        }),
       ),
     ).toBe(false);
 
@@ -381,6 +395,7 @@ describe("skill requirements", () => {
         definition,
         context({
           traitIds: ["firebending"],
+          techniqueIds: ["firebending-forms"],
           techniqueMastery: { "firebending-forms": 1 },
         }),
       ),
@@ -406,7 +421,7 @@ describe("skill requirements", () => {
 describe("authored versus granted capabilities", () => {
   it("keeps trained Mastery when something also grants the capability", () => {
     const resolved = resolveCapabilities({
-      authoredTechniques: { swordsmanship: 4 },
+      authoredTechniques: [{ techniqueId: "swordsmanship", mastery: 4 }],
       techniqueGrants: [
         { source: { type: "item", id: "spirit-blade" }, techniqueId: "swordsmanship" },
       ],
@@ -469,7 +484,7 @@ describe("authored versus granted capabilities", () => {
 
   it("keeps a trained capability when its granter goes", () => {
     const resolved = resolveCapabilities({
-      authoredSkills: { "wall-sticking": 3 },
+      authoredSkills: [{ skillId: "wall-sticking", mastery: 3 }],
     });
 
     expect(getResolvedSkillMastery(resolved, "wall-sticking")).toBe(3);
@@ -527,21 +542,23 @@ describe("a capability listed twice", () => {
       name: "Stacker",
       description: "A test Skill.",
       timings: ["action"],
-      maximumMastery: 5,
-      ranks: [
-        {
-          rank: 1,
-          effects: [
-            { type: "modifyBaseAttribute", attribute: "con", amount: 1 },
-          ],
-        },
-        {
-          rank: 4,
-          effects: [
-            { type: "modifyBaseAttribute", attribute: "con", amount: 5 },
-          ],
-        },
-      ],
+      mastery: {
+        maximumMastery: 5,
+        ranks: [
+          {
+            rank: 1,
+            effects: [
+              { type: "modifyBaseAttribute", attribute: "con", amount: 1 },
+            ],
+          },
+          {
+            rank: 4,
+            effects: [
+              { type: "modifyBaseAttribute", attribute: "con", amount: 5 },
+            ],
+          },
+        ],
+      },
     });
 
     const resolved = resolveTestCharacter(

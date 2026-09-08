@@ -705,9 +705,11 @@ export interface RequirementItems {
  *   2 = II
  *   3 = III
  *
- * capabilities/mastery.ts will own display conversion and rank validation.
+ * capabilities/mastery.ts owns display conversion and rank validation.
  *
- * A missing Skill or Technique is equivalent to Mastery 0.
+ * A Skill or Technique missing from the id lists is one the character does not
+ * have. One present there but missing from the Mastery records is one they
+ * have that carries no Mastery.
  */
 export interface RequirementContext {
   readonly attributes: RequirementAttributes;
@@ -735,6 +737,25 @@ export interface RequirementContext {
 
   readonly traitIds?: readonly string[];
 
+  /**
+   * Every Skill the character has, whatever Mastery it carries.
+   *
+   * PRESENCE AND RANK ARE SEPARATE FIELDS, and they have to be. A Skill with
+   * no Mastery track is held without any rank at all, so a single id → rank
+   * record could not record it: entering it as 0 would make it satisfy
+   * nothing, and entering it as 1 would make it satisfy a rank requirement it
+   * has no rank to meet.
+   */
+  readonly skillIds?: readonly string[];
+  readonly techniqueIds?: readonly string[];
+
+  /**
+   * The Mastery of those capabilities that HAVE Mastery.
+   *
+   * A capability without a Mastery track belongs in the id lists above and in
+   * neither of these records, which is exactly what makes it satisfy hasSkill
+   * and never satisfy skillMastery.
+   */
   readonly skillMastery?: Readonly<Record<string, number>>;
   readonly techniqueMastery?: Readonly<Record<string, number>>;
 
@@ -858,9 +879,15 @@ function membership(
  * cannot appear twice, so a rank below the minimum is a real shortfall rather
  * than a hint that a better entry is missing. Only an id that is absent
  * altogether can be hiding in the unrecorded part.
+ *
+ * An id the character HAS but which carries no Mastery is also absent from
+ * this record, and falls out as unsatisfied for any minimum of I or more —
+ * which is the right answer. There is no rank there to meet the requirement
+ * with, and there never will be.
  */
 function masteryAtLeast(
   mastery: Readonly<Record<string, number>> | undefined,
+  held: readonly string[] | undefined,
   id: string,
   minimum: number,
   collection: RequirementCollection,
@@ -871,6 +898,13 @@ function masteryAtLeast(
   const recorded = mastery[id];
 
   if (recorded !== undefined) return fromBoolean(recorded >= minimum);
+
+  /*
+   * Held, and carrying no Mastery. Settled either way, incomplete collection
+   * or not: the capability is in front of us and has no rank, so no
+   * unrecorded entry elsewhere could raise it.
+   */
+  if (held?.includes(id) === true) return fromBoolean(0 >= minimum);
 
   return isIncomplete(context, collection)
     ? "unresolved"
@@ -978,11 +1012,16 @@ export function resolveRequirement(
     case "hasTrait":
       return membership(context.traitIds, requirement.traitId, "traits", context);
 
+    /*
+     * Possession, read off the id list rather than off a rank. Asking the
+     * Mastery record whether the rank is at least I would refuse every Skill
+     * that has no Mastery to hold — which is precisely the class of Skill
+     * hasSkill exists to ask about.
+     */
     case "hasSkill":
-      return masteryAtLeast(
-        context.skillMastery,
+      return membership(
+        context.skillIds,
         requirement.skillId,
-        1,
         "skills",
         context,
       );
@@ -990,6 +1029,7 @@ export function resolveRequirement(
     case "skillMastery":
       return masteryAtLeast(
         context.skillMastery,
+        context.skillIds,
         requirement.skillId,
         requirement.minimumMastery,
         "skills",
@@ -997,10 +1037,9 @@ export function resolveRequirement(
       );
 
     case "hasTechnique":
-      return masteryAtLeast(
-        context.techniqueMastery,
+      return membership(
+        context.techniqueIds,
         requirement.techniqueId,
-        1,
         "techniques",
         context,
       );
@@ -1008,6 +1047,7 @@ export function resolveRequirement(
     case "techniqueMastery":
       return masteryAtLeast(
         context.techniqueMastery,
+        context.techniqueIds,
         requirement.techniqueId,
         requirement.minimumMastery,
         "techniques",

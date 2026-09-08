@@ -278,7 +278,7 @@ describe("modifiers come through the canonical invocation path", () => {
       name: "Contort",
       description: "A test Skill granting a situational AGI bonus.",
       timings: ["action"],
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       effects: [{
         type: "modifyCheck",
         check: { kind: "attribute", attribute: "agi" },

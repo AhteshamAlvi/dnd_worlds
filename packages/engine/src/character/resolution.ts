@@ -80,20 +80,25 @@ import {
 import {
   collectTechniqueEffects,
   getTechniqueDefinition,
+  techniqueMasteryTrack,
   toTechniqueMasteryRecord,
 } from "./capabilities/techniques";
 import {
   collectSkillEffects,
   getSkillDefinition,
+  skillMasteryTrack,
   toSkillMasteryRecord,
 } from "./capabilities/skills";
 import {
+  getResolvedSkillIds,
   getResolvedSkillMasteryRecord,
+  getResolvedTechniqueIds,
   getResolvedTechniqueMasteryRecord,
   resolveCapabilities,
+  type AuthoredCapabilityMastery,
   type ResolvedCapabilities,
 } from "./capabilities/resolution";
-import { NO_MASTERY, type MasteryRank } from "./capabilities/mastery";
+import { trackMastery, type MasteryRank } from "./capabilities/mastery";
 
 import { deriveCharacterLevelFromLifetimeXp } from "./progression/levels";
 
@@ -495,7 +500,7 @@ function traitSource(traitId: string): RuleEffectSource | undefined {
 
 function techniqueSource(
   techniqueId: string,
-  mastery: MasteryRank,
+  mastery: MasteryRank | null,
 ): RuleEffectSource | undefined {
   const definition = getTechniqueDefinition(techniqueId);
 
@@ -514,7 +519,7 @@ function techniqueSource(
 
 function skillSource(
   skillId: string,
-  mastery: MasteryRank,
+  mastery: MasteryRank | null,
 ): RuleEffectSource | undefined {
   const definition = getSkillDefinition(skillId);
 
@@ -595,8 +600,8 @@ interface CharacterResolutionPass {
   readonly speciesForm: ReferenceFormDefinition;
   readonly bodyInput: BodyResolutionInput;
   readonly body: EngineResult<ResolvedBody>;
-  readonly authoredSkills: Readonly<Record<string, MasteryRank>>;
-  readonly authoredTechniques: Readonly<Record<string, MasteryRank>>;
+  readonly authoredSkills: AuthoredCapabilityMastery;
+  readonly authoredTechniques: AuthoredCapabilityMastery;
 }
 
 /**
@@ -651,7 +656,10 @@ function resolveCharacterPass(
     return true;
   };
 
-  const addTechnique = (techniqueId: string, mastery: MasteryRank): boolean => {
+  const addTechnique = (
+    techniqueId: string,
+    mastery: MasteryRank | null,
+  ): boolean => {
     if (expandedTechniques.has(techniqueId)) return false;
 
     expandedTechniques.add(techniqueId);
@@ -663,7 +671,7 @@ function resolveCharacterPass(
     return true;
   };
 
-  const addSkill = (skillId: string, mastery: MasteryRank): boolean => {
+  const addSkill = (skillId: string, mastery: MasteryRank | null): boolean => {
     if (expandedSkills.has(skillId)) return false;
 
     expandedSkills.add(skillId);
@@ -711,15 +719,30 @@ function resolveCharacterPass(
     }
 
     for (const grant of resolved.techniqueGrants) {
-      // A grant supplies Mastery I; anything the character trained themselves
-      // is already in the authored record and wins there.
-      const mastery = authoredTechniques[grant.techniqueId] ?? 1;
+      /*
+       * A grant supplies Mastery I to a Technique that HAS Mastery, and bare
+       * access to one that does not. Anything the character trained themselves
+       * is already in the authored record and wins there.
+       *
+       * `?? 1` would be wrong on both counts if the record's null values were
+       * read as absence, which is why the lookup is written out: a recorded
+       * null is a Technique the character has, with no rank to raise.
+       */
+      const authored = authoredTechniques[grant.techniqueId];
+
+      const mastery = authored !== undefined
+        ? authored
+        : trackMastery(techniqueMasteryTrack(grant.techniqueId), undefined);
 
       if (addTechnique(grant.techniqueId, mastery)) added = true;
     }
 
     for (const grant of resolved.skillGrants) {
-      const mastery = authoredSkills[grant.skillId] ?? 1;
+      const authored = authoredSkills[grant.skillId];
+
+      const mastery = authored !== undefined
+        ? authored
+        : trackMastery(skillMasteryTrack(grant.skillId), undefined);
 
       if (addSkill(grant.skillId, mastery)) added = true;
     }
@@ -1153,8 +1176,8 @@ export function resolveCharacter(
   const traits = resolveTraits(character.traits ?? [], resolved.traitGrants);
 
   const capabilities = resolveCapabilities({
-    authoredSkills,
-    authoredTechniques,
+    authoredSkills: character.skills ?? [],
+    authoredTechniques: character.techniques ?? [],
     skillGrants: resolved.skillGrants,
     techniqueGrants: resolved.techniqueGrants,
   });
@@ -1325,6 +1348,14 @@ export function buildRequirementContext(
     /* Includes granted Traits, which are known regardless of the sheet. */
     traitIds: resolvedTraitIds(traits),
 
+    /*
+     * Presence and rank, as two projections rather than one. A Skill with no
+     * Mastery appears in the id list and in no Mastery record, which is what
+     * makes it satisfy hasSkill and never satisfy skillMastery.
+     */
+    skillIds: getResolvedSkillIds(capabilities),
+    techniqueIds: getResolvedTechniqueIds(capabilities),
+
     skillMastery: getResolvedSkillMasteryRecord(capabilities),
     techniqueMastery: getResolvedTechniqueMasteryRecord(capabilities),
 
@@ -1371,15 +1402,16 @@ function declaredSubspeciesIds(
 
 /* ── Convenience ────────────────────────────────────────────────────────── */
 
-/** Whether the character currently has a Skill at all, however they got it. */
+/**
+ * Whether the character currently has a Skill at all, however they got it.
+ *
+ * Presence, not a rank. A Skill with no Mastery is had as fully as one at X.
+ */
 export function hasSkill(
   resolvedCharacter: ResolvedCharacter,
   skillId: string,
 ): boolean {
-  return (
-    (resolvedCharacter.capabilities.skills[skillId]?.mastery ?? NO_MASTERY) >
-    NO_MASTERY
-  );
+  return resolvedCharacter.capabilities.skills[skillId] !== undefined;
 }
 
 /** Whether the character currently has a Trait, authored or granted. */

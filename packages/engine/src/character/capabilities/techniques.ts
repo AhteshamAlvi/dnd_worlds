@@ -36,10 +36,13 @@
 import { createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
+import type { Effect } from "../rules/effects";
 
 import {
+  collectMasteryRankEffects,
   findMasteryTrackIssues,
   STANDARD_MASTERY_MAX,
+  trackMastery,
   type MasteryRank,
   type MasteryTrack,
   type MasteryValue,
@@ -53,16 +56,26 @@ export type TechniqueId = string;
  * `effects` apply from the moment the character has the Technique at all;
  * per-rank effects live on the ranks. `requirements` gate acquiring it.
  */
-export interface TechniqueDefinition
-  extends EffectfulDefinition,
-    MasteryTrack {}
+export interface TechniqueDefinition extends EffectfulDefinition {
+  /**
+   * How far this discipline widens, and what each rank of it hands over.
+   *
+   * Absent means the Technique has no Mastery: a body of training that is
+   * either had or not had, with nothing further to reach. Rare for a
+   * discipline, and deliberately possible — see mastery.ts's MasteryTrack.
+   */
+  readonly mastery?: MasteryTrack;
+}
 
 /**
  * A Technique the character has trained.
  *
- * Mastery is optional, and absent means I. A sheet being filled in should be
- * able to say "they know Swordsmanship" before deciding how far, and the one
- * rank every known capability has is the sensible reading of that.
+ * The stored rank is optional. On a Technique WITH a Mastery track its absence
+ * means I: a sheet being filled in should be able to say "they know
+ * Swordsmanship" before deciding how far, and the one rank every held track
+ * starts at is the sensible reading of that. On a Technique with no track it
+ * means what it says — no Mastery — and storing a rank there is a validation
+ * error rather than a rank to honour.
  */
 export interface CharacterTechnique {
   readonly techniqueId: TechniqueId;
@@ -75,24 +88,26 @@ export const TECHNIQUE_DEFINITIONS = {
     name: "Martial Arts",
     description:
       "Structured training in unarmed combat and bodily fighting techniques.",
-    maximumMastery: STANDARD_MASTERY_MAX,
-    ranks: [
-      {
-        rank: 1,
-        description: "The trained strike.",
-        effects: [{ type: "grantSkill", skillId: "punch" }],
-      },
-      {
-        rank: 2,
-        description: "Turning an incoming attack aside.",
-        effects: [{ type: "grantSkill", skillId: "parry" }],
-      },
-      {
-        rank: 3,
-        description: "Fighting from a held position.",
-        effects: [{ type: "grantSkill", skillId: "defensive-stance" }],
-      },
-    ],
+    mastery: {
+      maximumMastery: STANDARD_MASTERY_MAX,
+      ranks: [
+        {
+          rank: 1,
+          description: "The trained strike.",
+          effects: [{ type: "grantSkill", skillId: "punch" }],
+        },
+        {
+          rank: 2,
+          description: "Turning an incoming attack aside.",
+          effects: [{ type: "grantSkill", skillId: "parry" }],
+        },
+        {
+          rank: 3,
+          description: "Fighting from a held position.",
+          effects: [{ type: "grantSkill", skillId: "defensive-stance" }],
+        },
+      ],
+    },
   },
 
   lockpicking: {
@@ -100,13 +115,15 @@ export const TECHNIQUE_DEFINITIONS = {
     name: "Lockpicking",
     description:
       "Structured knowledge of manually bypassing mechanical locks.",
-    maximumMastery: 5,
-    ranks: [
-      {
-        rank: 1,
-        effects: [{ type: "grantSkill", skillId: "pick-lock" }],
-      },
-    ],
+    mastery: {
+      maximumMastery: 5,
+      ranks: [
+        {
+          rank: 1,
+          effects: [{ type: "grantSkill", skillId: "pick-lock" }],
+        },
+      ],
+    },
   },
 
   "firebending-forms": {
@@ -114,19 +131,21 @@ export const TECHNIQUE_DEFINITIONS = {
     name: "Firebending Forms",
     description:
       "Structured training in the controlled application of Firebending.",
-    maximumMastery: STANDARD_MASTERY_MAX,
 
     // The training is only meaningful to someone who can bend fire at all.
     // The capability is a Trait, so the discipline asks for the Trait rather
     // than for the Sub-species that usually supplies it.
     requirements: [{ type: "hasTrait", traitId: "firebending" }],
 
-    ranks: [
-      {
-        rank: 1,
-        effects: [{ type: "grantSkill", skillId: "fire-blast" }],
-      },
-    ],
+    mastery: {
+      maximumMastery: STANDARD_MASTERY_MAX,
+      ranks: [
+        {
+          rank: 1,
+          effects: [{ type: "grantSkill", skillId: "fire-blast" }],
+        },
+      ],
+    },
   },
 } as const satisfies Record<string, TechniqueDefinition>;
 
@@ -150,23 +169,52 @@ export function getTechniqueDefinition(
 }
 
 /**
+ * The Mastery track a Technique declares, if it has one.
+ *
+ * Unknown ids fall back to the standard track rather than throwing, and
+ * rather than reading as non-mastered: validation reports them, and resolution
+ * should neither stop at one bad id nor silently drop the rank stored on it.
+ */
+export function techniqueMasteryTrack(
+  techniqueId: TechniqueId,
+): MasteryTrack | undefined {
+  const definition = getTechniqueDefinition(techniqueId);
+
+  if (definition === undefined) return { maximumMastery: STANDARD_MASTERY_MAX };
+
+  return definition.mastery;
+}
+
+/** Whether a Technique has Mastery at all. */
+export function techniqueSupportsMastery(techniqueId: TechniqueId): boolean {
+  return techniqueMasteryTrack(techniqueId) !== undefined;
+}
+
+/**
  * The Mastery a character entry represents.
  *
- * One place decides that an absent rank means I, so no caller has to.
+ * One place decides that an absent rank means I on a track and no Mastery
+ * without one, so no caller has to.
  */
 export function techniqueMastery(
   technique: CharacterTechnique,
-): MasteryRank {
-  return technique.mastery ?? 1;
+): MasteryRank | null {
+  return trackMastery(
+    techniqueMasteryTrack(technique.techniqueId),
+    technique.mastery,
+  );
 }
 
 /**
  * A character's Techniques as the id → Mastery record resolution consumes.
+ *
+ * A null value is a Technique held with no Mastery, which is a possession as
+ * real as a ranked one.
  */
 export function toTechniqueMasteryRecord(
   techniques: readonly CharacterTechnique[] = [],
-): Readonly<Record<TechniqueId, MasteryRank>> {
-  const record: Record<TechniqueId, MasteryRank> = {};
+): Readonly<Record<TechniqueId, MasteryRank | null>> {
+  const record: Record<TechniqueId, MasteryRank | null> = {};
 
   for (const technique of techniques) {
     record[technique.techniqueId] = techniqueMastery(technique);
@@ -176,16 +224,12 @@ export function toTechniqueMasteryRecord(
 }
 
 /**
- * The maximum rank a Technique allows, for a Technique that exists.
- *
- * Unknown ids fall back to the standard maximum rather than throwing:
- * validation reports them, and resolution should not stop at one bad id.
+ * The maximum rank a Technique allows, or null when it has no Mastery.
  */
 export function techniqueMaximumMastery(
   techniqueId: TechniqueId,
-): MasteryRank {
-  return getTechniqueDefinition(techniqueId)?.maximumMastery ??
-    STANDARD_MASTERY_MAX;
+): MasteryRank | null {
+  return techniqueMasteryTrack(techniqueId)?.maximumMastery ?? null;
 }
 
 /**
@@ -193,18 +237,18 @@ export function techniqueMaximumMastery(
  *
  * The Technique's own effects plus the cumulative effects of every rank
  * reached — which is what turns "Swordsmanship III" into three granted
- * Skills without anything Swordsmanship-specific in the engine.
+ * Skills without anything Swordsmanship-specific in the engine. A Technique
+ * with no Mastery contributes its own effects and nothing further.
  */
 export function collectTechniqueEffects(
   definition: TechniqueDefinition,
-  mastery: MasteryValue,
-) {
+  mastery: MasteryValue | null,
+): readonly Effect[] {
+  const track = definition.mastery;
+
   return [
     ...(definition.effects ?? []),
-    ...(definition.ranks ?? [])
-      .filter((rank) => rank.rank <= mastery)
-      .sort((left, right) => left.rank - right.rank)
-      .flatMap((rank) => rank.effects ?? []),
+    ...(track === undefined ? [] : collectMasteryRankEffects(track, mastery)),
   ];
 }
 
@@ -218,9 +262,11 @@ export function findTechniqueCatalogIssues(): readonly string[] {
   const issues = [...TECHNIQUE_REGISTRY.findCatalogIssues()];
 
   for (const technique of TECHNIQUE_REGISTRY.all()) {
-    issues.push(
-      ...findMasteryTrackIssues("Technique", technique.id, technique),
-    );
+    if (technique.mastery !== undefined) {
+      issues.push(
+        ...findMasteryTrackIssues("Technique", technique.id, technique.mastery),
+      );
+    }
   }
 
   return issues;

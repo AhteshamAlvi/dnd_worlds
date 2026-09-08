@@ -108,7 +108,7 @@ function registerContort(): void {
     name: "Contort",
     description: "A test Skill granting a situational AGI bonus.",
     timings: ["action"],
-    maximumMastery: 10,
+    mastery: { maximumMastery: 10 },
     effects: [{ type: "modifyCheck", check: AGI_CHECK, amount: 3 }],
   });
 }
@@ -265,7 +265,7 @@ describe("activation: knowing is not using", () => {
       id: "sense-honing",
       name: "Sense Honing",
       description: "A test Technique with one standing and one used bonus.",
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       effects: [
         {
           type: "modifyCheck",

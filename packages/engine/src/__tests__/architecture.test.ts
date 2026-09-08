@@ -894,3 +894,79 @@ describe("Combat schedules neutral actions without owning them", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+
+/*
+ * Possession is not a rank, enforced rather than remembered.
+ *
+ * Optional Mastery only holds if nothing goes back to reading "has it" off a
+ * rank comparison. That inference is easy to write, reads as harmless, and
+ * silently deletes every capability that has no Mastery to compare — the
+ * exact class the feature exists for. It was spelled `mastery > NO_MASTERY` in
+ * three places before this ticket.
+ *
+ * Nen is deliberately outside the rule: its principles all carry real tracks,
+ * NO_MASTERY genuinely means "not learned" there, and the ranks are its own
+ * state rather than a capability record.
+ */
+describe("capability possession is never inferred from a Mastery rank", () => {
+  /*
+   * mastery.ts is exempt: it DECLARES NO_MASTERY, and its own
+   * `value === NO_MASTERY` is the rank vocabulary saying what a legal value
+   * is, not a capability claiming to be held.
+   */
+  const capabilityFiles = [
+    ...sourceFilesUnder(join(SRC, "character", "capabilities")).filter(
+      (path) => !path.endsWith(join("capabilities", "mastery.ts")),
+    ),
+    join(SRC, "character", "resolution.ts"),
+    join(SRC, "character", "validation.ts"),
+    join(SRC, "character", "rules", "resolution.ts"),
+  ];
+
+  it("finds the sources it is checking", () => {
+    expect(capabilityFiles.length).toBeGreaterThan(5);
+
+    for (const path of capabilityFiles) {
+      expect(readFileSync(path, "utf8").length).toBeGreaterThan(0);
+    }
+  });
+
+  it("compares no Mastery value against zero to decide possession", () => {
+    /*
+     * Comparisons in prose are what the comments explaining the rule are made
+     * of, so only code is checked: a comparison operator with NO_MASTERY or a
+     * bare 0 on one side of it.
+     */
+    const offenders = capabilityFiles.filter((path) => {
+      const code = readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+
+      return /(?:>|>=|<|<=|===|!==)\s*NO_MASTERY\b/.test(code) ||
+        /\bNO_MASTERY\s*(?:>|>=|<|<=|===|!==)/.test(code) ||
+        /\bmastery\s*(?:>|>=)\s*0\b/i.test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the three-way resolved Mastery reading in one place", () => {
+    /*
+     * trackMastery() decides what a stored rank means against a track. A
+     * second `?? 1` on a stored Mastery elsewhere is that decision copied, and
+     * a copy that does not know about trackless capabilities is how "no
+     * Mastery" becomes Mastery I again.
+     */
+    const declarers = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) =>
+        /\bfunction\s+trackMastery\b/.test(readFileSync(path, "utf8")),
+      );
+
+    expect(declarers).toHaveLength(1);
+    expect(
+      declarers[0]!.endsWith(join("character", "capabilities", "mastery.ts")),
+    ).toBe(true);
+  });
+});

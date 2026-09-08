@@ -77,7 +77,7 @@ function registerContort(): void {
     name: "Contort",
     description: "A test Skill granting a situational AGI bonus.",
     timings: ["action"],
-    maximumMastery: 10,
+    mastery: { maximumMastery: 10 },
     effects: [{ type: "modifyCheck", check: AGI_CHECK, amount: 3 }],
   });
 }
@@ -410,7 +410,7 @@ describe("the ticket's worked example, end to end", () => {
       id: "tumbling",
       name: "Tumbling",
       description: "A test Technique granting an Acrobatics check bonus.",
-      maximumMastery: 10,
+      mastery: { maximumMastery: 10 },
       effects: [{ type: "modifyCheck", check: ACROBATICS_CHECK, amount: 2 }],
     });
 

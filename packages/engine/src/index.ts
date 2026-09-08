@@ -933,6 +933,7 @@ export {
   getMasteryRankDefinition,
   collectMasteryRankEffects,
   findMasteryTrackIssues,
+  trackMastery,
 } from "./character/capabilities/mastery";
 
 export type {
@@ -946,7 +947,9 @@ export {
   getTechniqueDefinition,
   isKnownTechniqueId,
   techniqueMastery,
+  techniqueMasteryTrack,
   techniqueMaximumMastery,
+  techniqueSupportsMastery,
   toTechniqueMasteryRecord,
   collectTechniqueEffects,
   findTechniqueCatalogIssues,
@@ -964,7 +967,9 @@ export {
   getSkillDefinition,
   isKnownSkillId,
   skillMastery,
+  skillMasteryTrack,
   skillMaximumMastery,
+  skillSupportsMastery,
   toSkillMasteryRecord,
   collectSkillEffects,
   findSkillCatalogIssues,
@@ -987,6 +992,8 @@ export {
   getResolvedTechniqueMastery,
   hasResolvedSkill,
   hasResolvedTechnique,
+  getResolvedSkillIds,
+  getResolvedTechniqueIds,
   getResolvedSkillMasteryRecord,
   getResolvedTechniqueMasteryRecord,
 } from "./character/capabilities/resolution";

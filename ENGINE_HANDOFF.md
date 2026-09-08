@@ -112,6 +112,8 @@ Attribute requirements carry a `layer: "stored" | "base" | "resolved"` — perma
 
 Presence and absence are **not symmetric**. The context lists hold everything the engine can see — including Traits, Skills and Techniques a Species granted — and `RequirementContext.incomplete` names the collections the sheet has not filled in. So: a **known** id is `satisfied` even when the collection is incomplete; an **unknown** id is `unsatisfied` only when the collection is complete; an unknown id in an incomplete collection is `unresolved`. A recorded Mastery rank is definitive in both directions, since a Skill cannot appear twice.
 
+Presence and rank are **separate context fields**: `skillIds` / `techniqueIds` hold everything the character has, `skillMastery` / `techniqueMastery` hold only what carries a rank. `hasSkill` and `hasTechnique` read the id lists; `skillMastery` and `techniqueMastery` read the records. A capability with no Mastery track therefore satisfies `hasSkill` and is definitively `unsatisfied` for any rank requirement — there is no rank there to meet it with.
+
 An unresolved capability requirement is a **warning**, not an error, so an incomplete sheet stays resolvable. That is a diagnostic severity only — the requirement is still unresolved for action preparation, the proposal reads `missing-facts`, and settlement refuses to commit.
 
 Compound propagation: `all` is unsatisfied if any member is, else unresolved if any member is, else satisfied. `any` is satisfied if any member is, else unresolved if any member is, else unsatisfied. `not` inverts the two definite answers and leaves unresolved alone.
@@ -630,7 +632,9 @@ Concealment is a **situational modifier to the ordinary Concealment Derived Attr
 
 ### Mastery (`capabilities/mastery.ts`)
 
-Numeric 1–10 internally, Roman I–X for display. `NO_MASTERY = 0`, `STANDARD_MASTERY_MAX = 10`. A capability may declare a shorter track. `MasteryRankDefinition {rank, description?, growthPointCost?, requirements?, effects?}` — **cumulative**: holding III means I, II and III all apply. `MasteryTrack {maximumMastery, ranks?}` (sparse by design). Technique Mastery = breadth (usually grants a Skill); Skill Mastery = depth.
+Numeric 1–10 internally, Roman I–X for display. `NO_MASTERY = 0`, `STANDARD_MASTERY_MAX = 10`. `MasteryRankDefinition {rank, description?, growthPointCost?, requirements?, effects?}` — **cumulative**: holding III means I, II and III all apply. `MasteryTrack {maximumMastery, ranks?}` (sparse by design). Technique Mastery = breadth (usually grants a Skill); Skill Mastery = depth.
+
+**Mastery is optional and definition-specific.** A Skill or Technique declares `mastery?: MasteryTrack` — a track of any length, or none at all. `trackMastery(track, stored)` is the single reading of a stored rank: I when a track exists and nothing is stored, the stored rank when there is one, and `null` when there is no track. A rank stored against a trackless capability is a validation error (`character.skill.mastery_unsupported`), not a rank to honour. **Null is not zero**: null means held with no Mastery, while not being held at all is absence from the resolved record.
 
 ### Techniques — 3 authored
 
@@ -652,7 +656,7 @@ Numeric 1–10 internally, Roman I–X for display. `NO_MASTERY = 0`, `STANDARD_
 
 `SkillTiming` = `"action" | "reaction"`, relevant only under structured timing. `attempts.ts` defines `DefinedSkillAttempt` / `ImprovisedSkillAttempt` (types only — improvised attempts have no resolution yet).
 
-`capabilities/resolution.ts` folds authored Mastery with granted access, keeping both visible (`ResolvedCapability` records `authoredMastery` and `grantedBy` sources).
+`capabilities/resolution.ts` folds authored capabilities with granted access, keeping both visible: `ResolvedCapability` records `isAuthored`, `isGranted`, `grantedBy` sources, `supportsMastery`, an optional `authoredMastery`, and a `mastery` of a rank **or `null`**. It takes the authored `CharacterSkill` / `CharacterTechnique` entries rather than an id→rank record, since a record cannot describe a capability that is held and has no rank. **Possession is presence in the record, never `mastery > 0`** — enforced by `architecture.test.ts`. A grant supplies Mastery I to a capability with a track and bare access to one without.
 
 ### Species — 8 authored
 

@@ -335,10 +335,17 @@ export interface MasteryRankDefinition {
 /**
  * A capability that advances through Mastery ranks.
  *
- * Skills and Techniques both extend this. `maximumMastery` is where the track
- * ends, which is X for most content but deliberately not all of it — a narrow
- * Skill that has nowhere left to go by III should say III rather than leave
- * seven ranks nobody will ever author.
+ * Skills and Techniques both OPTIONALLY carry one. `maximumMastery` is where
+ * the track ends, which is X for most content but deliberately not all of it —
+ * a narrow Skill that has nowhere left to go by III should say III rather than
+ * leave seven ranks nobody will ever author.
+ *
+ * A capability with no track at all is not a capability at Mastery I. Some
+ * things a character can do have no depth to them: you can activate the door
+ * rune or you cannot, and there is no better way to do it. Modelling that as a
+ * one-rank track would put a rank in front of a player that can never change
+ * and can never be advanced, so the track is absent instead — see
+ * trackMastery() for what that means when a character holds one.
  */
 export interface MasteryTrack {
   readonly maximumMastery: MasteryRank;
@@ -354,6 +361,35 @@ export interface MasteryTrack {
 
 
 /**
+ * The Mastery a stored entry represents on a particular track.
+ *
+ * Four cases, decided in one place so that no caller has to:
+ *
+ *   track, no stored rank    → I, the rank every held capability starts at
+ *   track, stored rank       → that rank
+ *   no track, no stored rank → null: held, and Mastery does not apply to it
+ *   no track, stored rank    → null, and validation reports the stored rank
+ *
+ * The last case is a data error rather than something to interpret. Returning
+ * the stored rank would invent a track the definition does not have; returning
+ * null and letting validation say which capability stored what keeps one
+ * answer here and one complaint there.
+ *
+ * NULL IS NOT ZERO. Null means "this capability has no Mastery", which a
+ * character can perfectly well hold; absence from a resolved capability record
+ * is what means they do not have it at all.
+ */
+export function trackMastery(
+  track: MasteryTrack | undefined,
+  stored: MasteryRank | undefined,
+): MasteryRank | null {
+  if (track === undefined) return null;
+
+  return stored ?? 1;
+}
+
+
+/**
  * The rank definitions a character at `mastery` currently holds, in rank
  * order.
  *
@@ -362,8 +398,10 @@ export interface MasteryTrack {
  */
 export function getHeldMasteryRanks(
   track: MasteryTrack,
-  mastery: MasteryValue,
+  mastery: MasteryValue | null,
 ): readonly MasteryRankDefinition[] {
+  if (mastery === null) return [];
+
   return [...(track.ranks ?? [])]
     .filter((definition) => definition.rank <= mastery)
     .sort((left, right) => left.rank - right.rank);
@@ -379,7 +417,7 @@ export function getHeldMasteryRanks(
  */
 export function collectMasteryRankEffects(
   track: MasteryTrack,
-  mastery: MasteryValue,
+  mastery: MasteryValue | null,
 ): readonly Effect[] {
   return getHeldMasteryRanks(track, mastery).flatMap(
     (definition) => definition.effects ?? [],
