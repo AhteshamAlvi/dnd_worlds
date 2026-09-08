@@ -19,6 +19,7 @@ import {
   findDistanceIntervalIssues,
   findPathIssues,
   findPositionIssues,
+  isHostPosition,
   isMetricPosition,
   findRangeBand,
   findRangeBandScaleIssues,
@@ -554,6 +555,98 @@ describe("measurements refuse structurally invalid positions", () => {
     expect(isMetricPosition({ kind: "metric", contextId: SCENE, xMetres: 1 }))
       .toBe(false);
     expect(isMetricPosition(at(0))).toBe(true);
+  });
+
+  it("requires a context on both predicates", () => {
+    /*
+     * The context is as load-bearing as the coordinates. Three numbers with
+     * no space attached describe a point in no particular place, and
+     * comparing them against another position is the silent wrong answer
+     * this whole domain exists to refuse — a Skill resolving against a
+     * target on a different map whose coordinates happen to be nearby.
+     *
+     * A guard that narrows to a type while leaving any of its fields
+     * unverified is lying about the value, and every caller's access after
+     * it is unsound on the strength of that.
+     */
+    const badContexts: readonly unknown[] = [
+      undefined,
+      "",
+      "   ",
+      null,
+      42,
+      {},
+      [],
+      true,
+    ];
+
+    for (const contextId of badContexts) {
+      expect(isMetricPosition({
+        kind: "metric",
+        contextId,
+        xMetres: 0,
+        yMetres: 0,
+        zMetres: 0,
+      })).toBe(false);
+
+      expect(isHostPosition({
+        kind: "host",
+        contextId,
+        reference: "token-1",
+      })).toBe(false);
+    }
+
+    /* And the same shapes with a real context still pass. */
+    expect(isMetricPosition({
+      kind: "metric",
+      contextId: SCENE,
+      xMetres: 0,
+      yMetres: 0,
+      zMetres: 0,
+    })).toBe(true);
+
+    expect(isHostPosition({
+      kind: "host",
+      contextId: SCENE,
+      reference: "token-1",
+    })).toBe(true);
+  });
+
+  it("still requires a reference on a host position", () => {
+    for (const reference of [undefined, "", "  ", null, 7]) {
+      expect(isHostPosition({ kind: "host", contextId: SCENE, reference }))
+        .toBe(false);
+    }
+  });
+
+  it("keeps each predicate exclusive to its own kind", () => {
+    expect(isHostPosition(at(0))).toBe(false);
+    expect(isMetricPosition({
+      kind: "host",
+      contextId: SCENE,
+      reference: "token-1",
+    })).toBe(false);
+  });
+
+  it("refuses to measure to a position with no context", () => {
+    const contextless = {
+      kind: "metric",
+      xMetres: 3,
+      yMetres: 4,
+      zMetres: 0,
+    } as never;
+
+    const result = measureDirectDistance(at(0), contextless);
+
+    expect(result.success).toBe(false);
+
+    if (result.success) throw new Error("unreachable");
+
+    expect(result.errors.map((error) => error.code))
+      .toContain("spatial.position.context.missing");
+
+    /* Not measured as 5 m in some unnamed space. */
+    expect(isJsonSafe(result.trace)).toBe(true);
   });
 
   it("refuses to measure a direct distance from one", () => {

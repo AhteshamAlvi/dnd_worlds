@@ -95,15 +95,21 @@ export function isMetricPosition(
   const candidate = position as Partial<MetricPosition>;
 
   /*
-   * The coordinates are checked, not just the tag.
+   * EVERY field of the type is checked, not just the tag.
    *
    * This predicate asserts `position is MetricPosition`, and a
-   * MetricPosition has three finite coordinates — so returning true for
-   * `{ kind: "metric" }` was the guard lying about the type it narrows to.
-   * Callers then subtracted undefined from undefined and carried NaN into a
-   * distance and into a trace.
+   * MetricPosition is a spatial context plus three finite coordinates. A
+   * guard that narrows to a type while leaving any of its fields unverified
+   * is lying about the value, and every caller's subsequent access is
+   * unsound on the strength of it.
+   *
+   * The context is as load-bearing as the coordinates: without it, three
+   * numbers describe a point in no particular space, and comparing them
+   * against another position is the silent wrong answer the whole spatial
+   * domain was built to refuse.
    */
   return candidate.kind === "metric" &&
+    isValidSpatialContextId(candidate.contextId) &&
     Number.isFinite(candidate.xMetres) &&
     Number.isFinite(candidate.yMetres) &&
     Number.isFinite(candidate.zMetres);
@@ -118,6 +124,7 @@ export function isHostPosition(
   const candidate = position as Partial<HostPosition>;
 
   return candidate.kind === "host" &&
+    isValidSpatialContextId(candidate.contextId) &&
     typeof candidate.reference === "string" &&
     candidate.reference.trim().length > 0;
 }
