@@ -108,7 +108,9 @@ describe("attribute provenance", () => {
         attributes: { dex: 16 },
         traits: [{ traitId: "quickened" }, { traitId: "one-armed" }],
         conditions: [{ conditionId: "poisoned" }],
-        items: [{ itemId: "swift-boots", quantity: 1, equipped: true }],
+        items: [
+          { entryId: "boots", itemId: "swift-boots", quantity: 1, state: "worn" },
+        ],
       }),
     );
   }
@@ -132,10 +134,46 @@ describe("attribute provenance", () => {
       { source: "trait:one-armed", amount: -2 },
     ]);
 
+    /*
+     * The boots name their ENTRY as well as their definition. An Item is the
+     * one source a character can own two of, so "item:swift-boots" alone would
+     * be an explanation that cannot say which pair contributed the +1.
+     */
     expect(explanation.resolvedContributions).toEqual([
       { source: "condition:poisoned", amount: -3 },
-      { source: "item:swift-boots", amount: 1 },
+      { source: "item:swift-boots#boots", amount: 1 },
     ]);
+  });
+
+  it("tells two copies of one Item apart in the ladder", () => {
+    /*
+     * The failure this replaces: both idols described themselves as
+     * "item:cursed-idol", so the trace disambiguated them with a "(2)" suffix
+     * that named neither. Two -1s that add up correctly and explain nothing is
+     * exactly what an explanation must not be.
+     */
+    const resolved = resolveTestCharacter(
+      createTestCharacter({
+        items: [
+          { entryId: "shelf", itemId: "cursed-idol", quantity: 1, state: "carried" },
+          { entryId: "pocket", itemId: "cursed-idol", quantity: 1, state: "carried" },
+        ],
+      }),
+    );
+
+    const explanation = explainAttribute(
+      "cha",
+      resolved.attributes,
+      resolved.baseAttributeModifiers,
+      resolved.resolvedAttributeModifiers,
+    );
+
+    expect(explanation.resolvedContributions).toEqual([
+      { source: "item:cursed-idol#shelf", amount: -1 },
+      { source: "item:cursed-idol#pocket", amount: -1 },
+    ]);
+
+    expect(explanation.resolved).toBe(8);
   });
 
   // The arithmetic has to close: stored plus every listed contribution is the

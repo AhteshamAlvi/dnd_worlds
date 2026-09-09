@@ -35,6 +35,9 @@ import type { Definition } from "../../infrastructure/registry";
 import type { Effect } from "../rules/effects";
 import type { Requirement } from "../rules/requirements";
 
+import { isEquippedItemState, type ItemEquipmentState } from "./state";
+import type { InventoryEntryId } from "./references";
+
 
 /* -------------------------------------------------------------------------- */
 /* Item definitions                                                           */
@@ -116,29 +119,56 @@ export interface ItemDefinition extends Definition {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The portion of an Item that belongs in persisted character state.
+ * One owned inventory ENTRY.
  *
  * The character stores a reference to the Item definition rather than copying
  * its Effects, Requirements, name, description, and other authored content.
+ *
+ * An entry is not an Item and is not a quantity of Items: it is a line in an
+ * inventory that has its own identity, names a definition, and says how much
+ * of it there is and how it is currently engaged. Two entries may name the
+ * same definition, which is what makes a character with two identical swords
+ * representable — one in the hand, one in the pack — and what a single
+ * `itemId`-keyed line could never express.
+ *
+ * The identity is `entryId` and nothing else. It is emphatically NOT the array
+ * position: an inventory that is sorted, filtered or re-serialized changes
+ * every position in it while changing nothing about what the character owns,
+ * so a reference by index is a reference that silently starts pointing at a
+ * different object. See references.ts.
  */
 export interface CharacterItem {
+  /**
+   * Stable identity of this owned inventory entry.
+   *
+   * Unique within one character, and unrelated to `itemId` — two entries of
+   * Reinforced Gauntlets share a definition id and must not share this one.
+   */
+  readonly entryId: InventoryEntryId;
+
+
+  /** Catalog definition used by this entry. */
   readonly itemId: string;
 
+
   /**
-   * Number of this Item currently possessed.
+   * Number currently contained in this entry.
    *
-   * Unique equipment will normally have quantity 1.
+   * Zero is legal and means an emptied entry that still exists — a quiver with
+   * no arrows left in it — which is why possession is a positive quantity
+   * rather than the presence of a line.
    */
   readonly quantity: number;
 
 
   /**
-   * Whether this Item is currently equipped.
+   * How this entry is currently engaged by the character.
    *
-   * Equipment-slot handling can be added separately when the equipment/body
-   * systems require it.
+   * Held and worn are both equipped; ask isEquippedItemState() rather than
+   * comparing against "carried". Only an entry of exactly one may be held or
+   * worn, because a stack of three has no way to say which one is in the hand.
    */
-  readonly equipped: boolean;
+  readonly state: ItemEquipmentState;
 }
 
 
@@ -147,11 +177,21 @@ export interface CharacterItem {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Return the passive Effects contributed by an Item in its current character
+ * Return the passive Effects contributed by one inventory entry in its current
  * state.
  *
- * Possessed Effects always apply while at least one copy is owned.
- * Equipped Effects additionally apply while the Item is equipped.
+ * Possessed Effects apply at any positive quantity: a Cursed Idol unsettles
+ * the people around whoever carries it whether they are carrying one or three.
+ * Equipped Effects apply on top while the entry is held or worn.
+ *
+ * An emptied entry contributes nothing at all. It is still a line in the
+ * inventory — the quiver exists — but a rule that applied because a container
+ * of nothing was still on the sheet would be a rule applying to an object the
+ * character does not have.
+ *
+ * `useEffects` are excluded here and always will be: they are events produced
+ * when a player uses the Item, not passive derived state, and collecting them
+ * with the rest is how a Healing Potion heals continuously for being in a bag.
  *
  * This function only collects declared Effects. It does not execute them.
  */
@@ -167,7 +207,7 @@ export function getActiveItemEffects(
     ...(definition.possessedEffects ?? []),
   ];
 
-  if (state.equipped) {
+  if (isEquippedItemState(state.state)) {
     effects.push(
       ...(definition.equippedEffects ?? []),
     );

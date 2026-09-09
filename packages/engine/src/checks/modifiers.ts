@@ -229,7 +229,7 @@ export function createCheckModifierTraceNode(
   for (const contribution of resolution.baseContributions) {
     const prefix = contribution.source === undefined
       ? "base"
-      : `${contribution.source.type}:${contribution.source.id}`;
+      : contributionSourceKey(contribution.source);
 
     addModifierTraceInput(
       inputs,
@@ -241,7 +241,7 @@ export function createCheckModifierTraceNode(
   for (const modifier of resolution.applicableModifiers) {
     addModifierTraceInput(
       inputs,
-      `${modifier.channel}.${modifier.source.type}:${modifier.source.id}`,
+      `${modifier.channel}.${contributionSourceKey(modifier.source)}`,
       modifier.amount,
     );
   }

@@ -1368,16 +1368,44 @@ export type {
   ItemDefinition,
 } from "./character/equipment/types";
 
-export type { ItemId, ItemValidationIssue } from "./character/equipment/index";
+/*
+ * Inventory identity and engagement state.
+ *
+ * An entry id is what a host, a macro or a later Shū selection must hold onto
+ * to name one owned object; an array index is not identity and a definition id
+ * names every copy at once. InventoryItemRef is the reference type for that
+ * job, and resolveInventoryItemRef() answers with a result rather than
+ * throwing when the object it names is gone.
+ */
+export type {
+  InventoryEntryId,
+  InventoryEntryResolution,
+  InventoryItemRef,
+  InventoryReferenceIssue,
+  ItemEquipmentState,
+  ItemId,
+  ItemValidationIssue,
+} from "./character/equipment/index";
 
 export {
   ITEM_DEFINITIONS,
-  getItemDefinition,
-  isKnownItemId,
-  getActiveItemEffects,
+  ITEM_EQUIPMENT_STATES,
   collectItemEffectSources,
   collectItemState,
+  createInventoryItemRef,
+  findInventoryEntry,
   findItemValidationIssues,
+  getActiveItemEffects,
+  getItemDefinition,
+  isConcreteInventoryObject,
+  isEquippedItemState,
+  isInventoryEntryId,
+  isInventoryItemRef,
+  isInventoryQuantity,
+  isItemEquipmentState,
+  isKnownItemId,
+  isValidCharacterItem,
+  resolveInventoryItemRef,
 } from "./character/equipment/index";
 
 /* ── Character: progression ─────────────────────────────────────────────── */

@@ -25,6 +25,10 @@
  */
 
 import { createTraceNode, type TraceNode } from "../../../infrastructure/trace";
+import {
+  contributionSourceKey,
+  type ContributionSourceRef,
+} from "../../../infrastructure/contribution-source";
 
 import { applyAttributeModifiers, type AttributeModifier } from "./modifiers";
 import { ATTRIBUTE_KEYS } from "./base";
@@ -190,13 +194,23 @@ export interface AttributeExplanation {
 // A modifier may or may not carry provenance; unattributed ones still have to
 // appear in the explanation, or the arithmetic will not add up on screen.
 type PossiblySourcedModifier = AttributeModifier & {
-  readonly source?: { readonly type: string; readonly id: string };
+  readonly source?: ContributionSourceRef;
 };
 
+/*
+ * Named by the shared key rather than by a local `type:id` template.
+ *
+ * The template was a second spelling of contributionSourceKey(), and the two
+ * agreed right up until a source grew an instance: a character carrying two
+ * Cursed Idols got two contributions that described themselves identically,
+ * and the trace disambiguated them with a "(2)" suffix that says nothing about
+ * WHICH idol. An explanation that cannot name the object it is explaining is
+ * the failure the entry model exists to remove.
+ */
 function describeSource(modifier: PossiblySourcedModifier): string {
   return modifier.source === undefined
     ? "unattributed"
-    : `${modifier.source.type}:${modifier.source.id}`;
+    : contributionSourceKey(modifier.source);
 }
 
 function contributionsFor(

@@ -178,7 +178,17 @@ export interface Character {
 
 
   /*
-   * What the character is carrying, and what of it is worn.
+   * What the character owns, as ENTRIES rather than as Item lines.
+   *
+   * Each entry has its own identity, names a definition, holds a quantity and
+   * records how it is currently engaged — carried, held or worn. Two entries
+   * may name the same Item, because one sword in the hand and another in the
+   * pack are two objects and no single quantity can say so; the entry id is
+   * what tells them apart, and the array position never is.
+   *
+   * The order of this list carries no meaning. Sorting it, filtering it or
+   * round-tripping it through JSON must not change what any reference to an
+   * entry identifies.
    */
   readonly items?: readonly CharacterItem[];
 

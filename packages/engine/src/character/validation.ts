@@ -54,6 +54,7 @@ import type { StagedEntryValidationIssue } from "./status/stage";
 
 import {
   findItemValidationIssues,
+  ITEM_EQUIPMENT_STATES,
   type ItemValidationIssue,
 } from "./equipment/index";
 
@@ -331,24 +332,76 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     resolution: "Point the injury's location at the Special Point's actual host BodyParts.",
   },
 
+  /*
+   * Inventory entries, not Item lines.
+   *
+   * `character.item.duplicate` is gone rather than renamed: it reported a
+   * repeated `itemId`, which is now legal and is how a character holds one
+   * sword and packs another. What must be unique is the entry, and
+   * `entry_duplicate` says so about the right field.
+   *
+   * Every message names the ENTRY, because with repeated definition ids
+   * permitted, "Item gauntlets has a quantity of 1.5" no longer points at a
+   * line anyone can find.
+   */
+  "invalid-item-entry-id": {
+    code: "character.item.entry_id_invalid",
+    describe: (issue) =>
+      `Inventory entry ${issue.entryIndex + 1} has an unusable id (${describeValue(issue.entryId)}).`,
+    resolution: "Give every inventory entry a non-empty id of its own.",
+  },
+  "duplicate-item-entry-id": {
+    code: "character.item.entry_duplicate",
+    describe: (issue) =>
+      `Inventory entry id "${issue.entryId}" is used more than once.`,
+    resolution: "Give each entry its own id; two of one Item are two entries.",
+  },
   "unknown-item": {
     code: "character.item.unknown",
-    describe: (issue) => `Unknown Item "${issue.itemId}".`,
-    resolution: "Choose an Item the engine defines, or remove it.",
-  },
-  "duplicate-item": {
-    code: "character.item.duplicate",
     describe: (issue) =>
-      `Item "${issue.itemId}" appears in the inventory more than once.`,
-    resolution: "Merge the entries and set the quantity.",
+      `Inventory entry "${issue.entryId}" names unknown Item ${describeValue(issue.itemId)}.`,
+    resolution: "Choose an Item the engine defines, or remove the entry.",
   },
   "invalid-item-quantity": {
     code: "character.item.quantity_invalid",
     describe: (issue) =>
-      `Item "${issue.itemId}" has a quantity of ${issue.quantity}.`,
+      `Inventory entry "${issue.entryId}" has a quantity of ${describeValue(issue.quantity)}.`,
     resolution: "Set the quantity to a whole number of zero or more.",
   },
+  "invalid-item-state": {
+    code: "character.item.state_invalid",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" has an unrecognised state ${describeValue(issue.state)}.`,
+    resolution: `Set the state to one of ${ITEM_EQUIPMENT_STATES.join(", ")}.`,
+  },
+  "invalid-engaged-item-quantity": {
+    code: "character.item.engaged_quantity_invalid",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" is ${issue.state} with a quantity of ${issue.quantity}.`,
+    resolution:
+      "A held or worn entry must hold exactly one; split the stack or carry it.",
+  },
 };
+
+
+/**
+ * Renders a value that was NOT the type it was supposed to be.
+ *
+ * These fields reached validation as `unknown` precisely because the stored
+ * value was wrong, so the message has to survive `undefined`, an object, a
+ * NaN and an empty string without any of them printing as the same thing —
+ * "has a quantity of undefined" and "has a quantity of " are two problems a
+ * player would report identically.
+ */
+function describeValue(value: unknown): string {
+  if (typeof value === "string") return `"${value}"`;
+  if (value === undefined) return "undefined";
+  if (typeof value === "number" || typeof value === "boolean" || value === null) {
+    return String(value);
+  }
+
+  return Array.isArray(value) ? "a list" : "a value of the wrong kind";
+}
 
 // Renders the one nested issue a Condition's or injury's lifecycle fields
 // can produce. Shared by both descriptors above rather than duplicated,

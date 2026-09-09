@@ -345,19 +345,20 @@ describe("items", () => {
   it("accepts a known Item", () => {
     expect(
       findItemValidationIssues([
-        { itemId: "gauntlets", quantity: 1, equipped: true },
+        { entryId: "e1", itemId: "gauntlets", quantity: 1, state: "worn" },
       ]),
     ).toEqual([]);
   });
 
-  it("rejects an unknown Item", () => {
+  it("rejects an unknown Item, naming the entry rather than the line", () => {
     expect(
       findItemValidationIssues([
-        { itemId: "not-real", quantity: 1, equipped: false },
+        { entryId: "e1", itemId: "not-real", quantity: 1, state: "carried" },
       ]),
     ).toEqual([
       {
         type: "unknown-item",
+        entryId: "e1",
         itemId: "not-real",
       },
     ]);
@@ -366,13 +367,40 @@ describe("items", () => {
   it("rejects a fractional quantity", () => {
     expect(
       findItemValidationIssues([
-        { itemId: "gauntlets", quantity: 1.5, equipped: false },
+        { entryId: "e1", itemId: "gauntlets", quantity: 1.5, state: "carried" },
       ]),
     ).toEqual([
       {
         type: "invalid-item-quantity",
-        itemId: "gauntlets",
+        entryId: "e1",
         quantity: 1.5,
+      },
+    ]);
+  });
+
+  /*
+   * The rule that replaced duplicate-item. Two gauntlets on one sheet is a
+   * character with two gauntlets, and the old check called it a lost quantity.
+   */
+  it("accepts two entries naming the same Item", () => {
+    expect(
+      findItemValidationIssues([
+        { entryId: "left", itemId: "gauntlets", quantity: 1, state: "worn" },
+        { entryId: "right", itemId: "gauntlets", quantity: 1, state: "carried" },
+      ]),
+    ).toEqual([]);
+  });
+
+  it("rejects a repeated entry id", () => {
+    expect(
+      findItemValidationIssues([
+        { entryId: "same", itemId: "gauntlets", quantity: 1, state: "worn" },
+        { entryId: "same", itemId: "cursed-idol", quantity: 1, state: "carried" },
+      ]),
+    ).toEqual([
+      {
+        type: "duplicate-item-entry-id",
+        entryId: "same",
       },
     ]);
   });

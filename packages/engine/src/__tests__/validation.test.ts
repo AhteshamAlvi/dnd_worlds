@@ -289,7 +289,9 @@ describe("validateCharacter", () => {
   it("reports a broken inventory reference", () => {
     const result = validateCharacter(
       createTestCharacter({
-        items: [{ itemId: "not-real", quantity: 1, equipped: false }],
+        items: [
+          { entryId: "e1", itemId: "not-real", quantity: 1, state: "carried" },
+        ],
       }),
     );
 
@@ -298,6 +300,73 @@ describe("validateCharacter", () => {
     if (!result.success) {
       expect(result.errors.map((error) => error.code)).toContain(
         "character.item.unknown",
+      );
+    }
+  });
+
+  /*
+   * Every inventory-entry rule reaches the validator with its own code.
+   *
+   * A shared "invalid item" code would tell a player their inventory is wrong
+   * and leave them to work out which of five rules they broke — and the five
+   * have genuinely different fixes: name the entry, rename it, pick a real
+   * Item, count properly, or put the stack down.
+   */
+  it.each([
+    [
+      "an entry with no id",
+      { entryId: "  ", itemId: "gauntlets", quantity: 1, state: "carried" },
+      "character.item.entry_id_invalid",
+    ],
+    [
+      "a fractional quantity",
+      { entryId: "e1", itemId: "gauntlets", quantity: 1.5, state: "carried" },
+      "character.item.quantity_invalid",
+    ],
+    [
+      "an unrecognised state",
+      { entryId: "e1", itemId: "gauntlets", quantity: 1, state: "sheathed" },
+      "character.item.state_invalid",
+    ],
+    [
+      "a held stack",
+      { entryId: "e1", itemId: "gauntlets", quantity: 3, state: "held" },
+      "character.item.engaged_quantity_invalid",
+    ],
+  ])("reports %s", (_label, item, code) => {
+    const result = validateCharacter(
+      createTestCharacter({ items: [item as never] }),
+    );
+
+    expect(result.success).toBe(false);
+
+    if (!result.success) {
+      expect(result.errors.map((error) => error.code)).toContain(code);
+    }
+  });
+
+  it("reports a repeated entry id and accepts a repeated Item id", () => {
+    const twoGauntlets = [
+      { entryId: "left", itemId: "gauntlets", quantity: 1, state: "worn" },
+      { entryId: "right", itemId: "gauntlets", quantity: 1, state: "carried" },
+    ] as const;
+
+    /* Two of one Item is a character with two of it, not a lost quantity. */
+    expect(
+      validateCharacter(createTestCharacter({ items: [...twoGauntlets] })).success,
+    ).toBe(true);
+
+    const collided = validateCharacter(
+      createTestCharacter({
+        items: [twoGauntlets[0], { ...twoGauntlets[1], entryId: "left" }],
+      }),
+    );
+
+    expect(collided.success).toBe(false);
+
+    if (!collided.success) {
+      expect(collided.errors.map((error) => error.code)).toContain(
+        "character.item.entry_duplicate",
       );
     }
   });

@@ -184,6 +184,183 @@ describe("Checks does not depend on Rules", () => {
 });
 
 
+/*
+ * The decision log is prose stored as data, and both suites below exempt it.
+ *
+ * Its entries QUOTE the patterns they retired — the `type:id` template, the
+ * `equipped` boolean — because an entry that cannot say what it replaced
+ * explains nothing. Those quotes live inside string literals rather than
+ * comments, so comment-stripping does not reach them, and a rule that flagged
+ * them would force the archive to describe its own decisions in paraphrase.
+ * Nothing in this file is executed as a mechanic; it is read.
+ */
+const DECISION_LOG = join(SRC, "decisions", "log.ts");
+
+
+/*
+ * Source identity has exactly one spelling.
+ *
+ * contributionSourceKey() and a `${source.type}:${source.id}` template agreed
+ * perfectly for as long as a source had exactly two fields, so five files had
+ * quietly grown their own copy — in trace labels, in modifier selection, and
+ * in the attribute ladder. The moment provenance gained an optional instance,
+ * every one of those copies started dropping it: two owned copies of one Item
+ * described themselves identically, and the traces disambiguated them with a
+ * numeric suffix that named neither.
+ *
+ * The failure is invisible in review, because the template LOOKS like the key
+ * and produces the same string for every source that predates instances. So it
+ * is checked against the source text instead.
+ *
+ * actorKey() is deliberately outside the rule: ActorRef is a separately
+ * declared shape answering a different question — who is acting, rather than
+ * what supplied the mechanic — and identity.ts's own header says why the two
+ * must not be merged.
+ */
+describe("a contribution source is keyed in one place", () => {
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  const stripComments = (path: string) =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+  const PERMITTED = [
+    join(SRC, "infrastructure", "contribution-source.ts"),
+    /* actorKey(), over ActorRef — a different question with a different type. */
+    join(SRC, "actions", "identity.ts"),
+    DECISION_LOG,
+  ];
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.length).toBeGreaterThan(50);
+  });
+
+  it("builds no second `type:id` source template", () => {
+    const offenders = everySource
+      .filter((path) => !PERMITTED.includes(path))
+      .filter((path) => /\.type\}:\$\{/.test(stripComments(path)));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("implements the key and the comparison exactly once", () => {
+    for (const name of ["contributionSourceKey", "isSameContributionSource"]) {
+      const declarers = everySource.filter((path) =>
+        new RegExp(`\\bfunction\\s+${name}\\b`).test(readFileSync(path, "utf8")),
+      );
+
+      expect(declarers).toHaveLength(1);
+      expect(declarers[0]).toBe(join(SRC, "infrastructure", "contribution-source.ts"));
+    }
+  });
+
+  it("keeps the actor key over ActorRef, so the exception is real", () => {
+    /*
+     * Guards the exception rather than only the rule. If actorKey ever starts
+     * taking a ContributionSourceRef, the two questions have been merged and
+     * this exception is hiding it.
+     */
+    const identity = readFileSync(join(SRC, "actions", "identity.ts"), "utf8");
+
+    expect(/export function actorKey\(actor: ActorRef\)/.test(identity)).toBe(true);
+  });
+});
+
+
+/*
+ * The inventory state vocabulary, and the boolean it replaced.
+ *
+ * `equipped: boolean` answered one question with one bit. Held and worn are
+ * different facts — a hand versus a body — and the difference is needed by
+ * hands, body slots, Shū and weapon selection, none of which exist yet. While
+ * the field was a boolean, each of those would have had to recover the
+ * distinction from the Item definition separately, which is how four systems
+ * end up disagreeing about what "equipped" means.
+ *
+ * Two things therefore have to stay true. The boolean must not come back, in
+ * source OR in a fixture — a migrated engine with one surviving
+ * `equipped: true` in a test is an engine with two inventory models. And the
+ * question "is this equipped?" must keep going through isEquippedItemState(),
+ * because an inline `state !== "carried"` is the same rule spelled a second
+ * way, and it is the spelling that silently changes meaning the day a fourth
+ * state is added: a stowed or sheathed object would become equipped by
+ * default, which is exactly backwards.
+ */
+describe("equipment state is a vocabulary, not a boolean", () => {
+  const STATE = join("character", "equipment", "state.ts");
+
+  const everySource = sourceFilesUnder(SRC);
+
+  const stripComments = (path: string) =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.some((path) => path.endsWith(STATE))).toBe(true);
+  });
+
+  it("has no surviving `equipped` boolean, in source or in a fixture", () => {
+    /*
+     * The requirement vocabulary's `state: "equipped"` and an Item's
+     * `equippedEffects` are untouched and correct — a requirement asks about
+     * equipment in general, and a definition's Effects apply while equipped
+     * whichever way. What is retired is the FIELD.
+     */
+    const offenders = everySource
+      .filter((path) => path !== DECISION_LOG)
+      .filter((path) =>
+        /\bequipped\s*:\s*(?:true|false|boolean)\b/.test(stripComments(path)),
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("declares the state vocabulary exactly once, under equipment/", () => {
+    const named = ["ITEM_EQUIPMENT_STATES", "ItemEquipmentState"] as const;
+
+    for (const name of named) {
+      const declarers = everySource
+        .filter((path) => !path.includes("__tests__"))
+        .filter((path) =>
+          new RegExp(
+            `\\bconst\\s+${name}\\b\\s*=|\\btype\\s+${name}\\s*=`,
+          ).test(readFileSync(path, "utf8")),
+        );
+
+      expect(declarers).toHaveLength(1);
+      expect(declarers[0]!.endsWith(STATE)).toBe(true);
+    }
+  });
+
+  it("asks whether a state is equipped in one place", () => {
+    const declarers = everySource.filter((path) =>
+      /\bfunction\s+isEquippedItemState\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(STATE)).toBe(true);
+  });
+
+  it("compares no state against a literal outside the vocabulary", () => {
+    /*
+     * `state !== "carried"` and `state === "held" || state === "worn"` are the
+     * two ways the question gets re-derived. Only state.ts, which DECLARES the
+     * three values, may name them in code.
+     */
+    const offenders = everySource
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => !path.endsWith(STATE))
+      .filter((path) => /"carried"|"held"|"worn"/.test(stripComments(path)));
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+
 describe("provenance has exactly one structural definition", () => {
   it("declares the shape only in infrastructure/contribution-source.ts", () => {
     /*

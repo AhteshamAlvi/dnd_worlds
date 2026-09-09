@@ -62,6 +62,7 @@ import type { RuntimeRequest } from "../runtime/requests";
 import { isQuantitativeRequest } from "../runtime/requests";
 import type { TargetRef } from "../targeting";
 import type { ResolutionApproach } from "./approach";
+import { actorKey } from "./identity";
 import {
   findStructuredActionCostIssues,
   type StructuredActionCost,
@@ -861,7 +862,7 @@ export function adjudicateAction(
   const publicView: PublicActionView = {
     operationId: proposal.operationId,
     intentId: proposal.intentId,
-    actorId: `${proposal.actor.type}:${proposal.actor.id}`,
+    actorId: actorKey(proposal.actor),
     ...(reveal.narration === undefined ? {} : { narration: reveal.narration }),
     ...(succeeded === undefined || !revealsAtLeast(detail, "outcome")
       ? {}

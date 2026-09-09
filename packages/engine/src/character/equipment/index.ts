@@ -39,9 +39,36 @@ import {
   contributesNothing,
   sourceContributions,
 } from "../rules/content";
-import { createRegistry, scanReferences } from "../../infrastructure/registry";
+import { createRegistry } from "../../infrastructure/registry";
 
 import type { RuleEffectSource } from "../rules/resolution";
+
+import {
+  findInventoryEntryIssues,
+  isInventoryQuantity,
+  isValidInventoryEntry,
+  type ItemValidationIssue,
+} from "./validation";
+
+import {
+  createInventoryItemRef,
+  findInventoryEntry,
+  isInventoryEntryId,
+  isInventoryItemRef,
+  resolveInventoryItemRef,
+  type InventoryEntryId,
+  type InventoryEntryResolution,
+  type InventoryItemRef,
+  type InventoryReferenceIssue,
+} from "./references";
+
+import {
+  ITEM_EQUIPMENT_STATES,
+  isConcreteInventoryObject,
+  isEquippedItemState,
+  isItemEquipmentState,
+  type ItemEquipmentState,
+} from "./state";
 
 import { getActiveItemEffects, type CharacterItem, type ItemDefinition } from "./types";
 
@@ -139,7 +166,19 @@ export function collectItemEffectSources(
     if (contributesNothing(definition, effects)) continue;
 
     sources.push({
-      source: { type: "item", id: item.itemId },
+      /*
+       * BOTH facts, not one. The definition id is what a requirement asks
+       * about and what a player recognises; the entry id is which of the two
+       * gauntlets this particular +2 came from. Replacing the first with the
+       * second would make `hasItem` unanswerable and every trace unreadable;
+       * omitting the second makes two owned objects one indistinguishable
+       * source, which anything deduplicating by provenance would collapse.
+       */
+      source: {
+        type: "item",
+        id: item.itemId,
+        instanceId: item.entryId,
+      },
       effects,
       ...sourceContributions(definition),
     });
@@ -148,63 +187,57 @@ export function collectItemEffectSources(
   return sources;
 }
 
-/** The ids an Item requirement is tested against. */
+/**
+ * The ids an Item requirement is tested against.
+ *
+ * DEFINITION ids, deliberately, and never entry ids. A requirement asks
+ * whether the character has a rope, not whether they have that rope, so
+ * feeding it entry identities would make every authored `hasItem` unsatisfiable
+ * — the requirement names something from the catalog and an entry id names
+ * something on one sheet.
+ *
+ * Which is also why repeats are collapsed. Two swords answer "do you have a
+ * sword" exactly as loudly as one does, so the second occurrence carries no
+ * information the question can use, and leaving it in would invite a later
+ * reader to start counting a list that was never a count.
+ *
+ * An emptied entry contributes to neither list: a quiver with no arrows is not
+ * possession of an arrow.
+ */
 export function collectItemState(
   items: readonly CharacterItem[] = [],
 ): { readonly possessed: readonly string[]; readonly equipped: readonly string[] } {
-  const possessed: string[] = [];
-  const equipped: string[] = [];
+  const possessed = new Set<string>();
+  const equipped = new Set<string>();
 
   for (const item of items) {
     if (item.quantity <= 0) continue;
 
-    possessed.push(item.itemId);
+    possessed.add(item.itemId);
 
-    if (item.equipped) equipped.push(item.itemId);
+    if (isEquippedItemState(item.state)) equipped.add(item.itemId);
   }
 
-  return { possessed, equipped };
+  return { possessed: [...possessed], equipped: [...equipped] };
 }
 
-export type ItemValidationIssue =
-  | {
-      readonly type: "unknown-item";
-      readonly itemId: ItemId;
-    }
-  | {
-      readonly type: "duplicate-item";
-      readonly itemId: ItemId;
-    }
-  | {
-      readonly type: "invalid-item-quantity";
-      readonly itemId: ItemId;
-      readonly quantity: number;
-    };
-
+/**
+ * Every problem in a character's inventory, against the authored catalog.
+ *
+ * The rules live in equipment/validation.ts and take the catalog as an
+ * argument; this is the binding that supplies the engine's own. See that file
+ * for why the dependency points this way.
+ */
 export function findItemValidationIssues(
-  items: readonly CharacterItem[],
+  items: readonly CharacterItem[] | undefined,
 ): readonly ItemValidationIssue[] {
-  // One inventory line per Item: two entries for the same id is an inventory
-  // that has lost track of a quantity, not a character with two piles.
-  const issues: ItemValidationIssue[] = scanReferences(
-    items.map((item) => item.itemId),
-    isKnownItemId,
-  ).map((issue) => ({
-    type: issue.kind === "unknown" ? "unknown-item" : "duplicate-item",
-    itemId: issue.id,
-  }));
+  return findInventoryEntryIssues(items, isKnownItemId);
+}
 
-  for (const item of items) {
-    if (!Number.isInteger(item.quantity) || item.quantity < 0) {
-      issues.push({
-        type: "invalid-item-quantity",
-        itemId: item.itemId,
-        quantity: item.quantity,
-      });
-    }
-  }
 
-  return issues;
+/** Whether one entry is sound against the authored catalog. */
+export function isValidCharacterItem(value: unknown): value is CharacterItem {
+  return isValidInventoryEntry(value, isKnownItemId);
 }
 
 export function findItemCatalogIssues(): readonly string[] {
@@ -214,5 +247,29 @@ export function findItemCatalogIssues(): readonly string[] {
 // Exposed for the catalog index, which needs every registry in one map.
 export const itemRegistry = ITEM_REGISTRY;
 
-export type { CharacterItem, ItemDefinition };
-export { getActiveItemEffects };
+/* ── The public inventory contracts ─────────────────────────────────────── */
+
+export type {
+  CharacterItem,
+  ItemDefinition,
+  ItemEquipmentState,
+  ItemValidationIssue,
+  InventoryEntryId,
+  InventoryEntryResolution,
+  InventoryItemRef,
+  InventoryReferenceIssue,
+};
+
+export {
+  ITEM_EQUIPMENT_STATES,
+  createInventoryItemRef,
+  findInventoryEntry,
+  getActiveItemEffects,
+  isConcreteInventoryObject,
+  isEquippedItemState,
+  isInventoryEntryId,
+  isInventoryItemRef,
+  isInventoryQuantity,
+  isItemEquipmentState,
+  resolveInventoryItemRef,
+};

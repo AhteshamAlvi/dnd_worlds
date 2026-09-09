@@ -310,7 +310,15 @@ mechanic in order to test a protocol.
 ## 9 · What this does not do
 
 No active Ten/Ren/Zetsu/Chū, no upkeep values, no concrete transformations, no injury transfer
-between forms, no Items, no Skill execution, no attacks or damage, no positions or ranges, no
-Condition stacking, no universal dice roller, no event sourcing, and no repository-wide rewrite of
-every legacy transition. The protocol being ready does not make any of them ready; deferred
+between forms, no Item operations, no Skill execution, no attacks or damage, no positions or ranges,
+no Condition stacking, no universal dice roller, no event sourcing, and no repository-wide rewrite
+of every legacy transition.
+
+Items have identity now and still have no operations. `CharacterItem` carries a stable `entryId` and
+an engagement state of `carried` / `held` / `worn`, and `InventoryItemRef { characterId, entryId }`
+is the reference an operation would name one owned object with — but no operation names one yet.
+Equipping, unequipping, using an Item, decrementing a quantity and splitting a stack are all
+unbuilt, so nothing in the inventory is a transition and none of it reaches this protocol. The
+identity exists so that when those operations arrive they can address a particular object rather
+than an array index. The protocol being ready does not make any of them ready; deferred
 migrations and unbuilt mechanics are listed in [`BACKLOG.md`](BACKLOG.md).

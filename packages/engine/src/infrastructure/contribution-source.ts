@@ -34,6 +34,25 @@
 export interface ContributionSourceRef {
   readonly type: string;
   readonly id: string;
+
+  /**
+   * The concrete source INSTANCE, when the rule came from one owned object
+   * rather than from the definition itself.
+   *
+   * A character carrying two Reinforced Gauntlets has one Item DEFINITION and
+   * two owned objects, and both facts are load-bearing: a requirement asks
+   * whether the definition is present, while a trace has to be able to say
+   * which of the two produced a particular +2. Recording only the definition
+   * id makes the two contributions indistinguishable — they compare equal and
+   * key identically — so the second one looks like a duplicate of the first to
+   * anything that deduplicates by source.
+   *
+   * It is OPTIONAL because most content has no instances. A Species, a Clan
+   * and a Trait exist once per character by construction, so an instance id
+   * there would be a second spelling of the definition id, and every existing
+   * source must keep the identity and the key it already had.
+   */
+  readonly instanceId?: string;
 }
 
 /**
@@ -47,12 +66,37 @@ export function isSameContributionSource(
   left: ContributionSourceRef,
   right: ContributionSourceRef,
 ): boolean {
-  return left.type === right.type && left.id === right.id;
+  return left.type === right.type &&
+    left.id === right.id &&
+    left.instanceId === right.instanceId;
 }
 
-/** A stable key for a source reference, for maps and set membership. */
+/**
+ * A stable key for a source reference, for maps and set membership.
+ *
+ * An instance-less source keys exactly as it always did — `type:id` — because
+ * changing that would change the identity of every Species, Clan, Trait and
+ * Condition contribution in the engine for the sake of a field they do not
+ * carry.
+ *
+ * An instanced source appends its instance, with `\` and `#` escaped in both
+ * halves so that two different instances of one definition can never produce
+ * one key. The remaining theoretical collision is between an instanced key and
+ * an instance-less source whose own id contains an unescaped `#` — which
+ * DEFINITION_ID_PATTERN (lowercase alphanumerics and hyphens) does not permit,
+ * and which is the price of leaving the instance-less form untouched.
+ */
 export function contributionSourceKey(
   source: ContributionSourceRef,
 ): string {
-  return `${source.type}:${source.id}`;
+  if (source.instanceId === undefined) {
+    return `${source.type}:${source.id}`;
+  }
+
+  return `${source.type}:${escapeKeyPart(source.id)}#${escapeKeyPart(source.instanceId)}`;
+}
+
+
+function escapeKeyPart(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/#/g, "\\#");
 }

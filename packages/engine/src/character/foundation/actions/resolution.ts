@@ -107,6 +107,8 @@ import {
   type TraceNode,
 } from "../../../infrastructure/trace";
 
+import { contributionSourceKey } from "../../../infrastructure/contribution-source";
+
 import type {
   ActionCapacity,
   ActionCapacityContribution,
@@ -457,7 +459,7 @@ function addActionContributionInputs(
   contributions: readonly ActionCapacityContribution[],
 ): void {
   for (const contribution of contributions) {
-    const desiredKey = `${contribution.source.type}:${contribution.source.id}`;
+    const desiredKey = contributionSourceKey(contribution.source);
 
     let key = desiredKey;
     let suffix = 2;

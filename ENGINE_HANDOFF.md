@@ -39,7 +39,7 @@ infrastructure/          JsonValue · EngineResult · TraceNode · Warning/Engin
         ├── character/identity/       species · clans · traits
         ├── character/capabilities/   mastery · skills · techniques · resolution · attempts
         ├── character/status/         stage · conditions · injuries · resolution
-        ├── character/equipment/      items
+        ├── character/equipment/      items · inventory entries · equipment state
         ├── character/foundation/     attributes (+ derived) · body · aura · nen
         ├── character/progression/    levels · stats · growth
         ├── character/mechanics/      recovery
@@ -777,7 +777,25 @@ CharacterInjury { id, injuryId, location: {bodyPartIds: NonEmpty, specialPointDe
 
 ### Equipment — 2 authored items
 
-`gauntlets` (equippedEffects: STR +2), `cursed-idol` (possessedEffects: CHA -1). `ItemDefinition` supports `possessedEffects`, `equippedEffects`, `useEffects`, `equipRequirements`, `useRequirements`. `useEffects` are declared but **not executed anywhere** — no use-item pipeline exists.
+`gauntlets` (equippedEffects: +2 to Combat Ability checks), `cursed-idol` (possessedEffects: CHA -1). `ItemDefinition` supports `possessedEffects`, `equippedEffects`, `useEffects`, `equipRequirements`, `useRequirements`. `useEffects` are declared but **not executed anywhere** — no use-item pipeline exists, and `equipRequirements` are **not evaluated anywhere** either.
+
+#### Inventory entries, not Item lines
+
+```ts
+CharacterItem { entryId, itemId, quantity, state }
+
+ITEM_EQUIPMENT_STATES = ["carried", "held", "worn"]
+```
+
+`entryId` is the identity of one owned inventory ENTRY and is unique within a character. `itemId` is **not** unique: two entries may name one definition, which is how a character holds one sword and packs another. Array position is never identity — sorting, filtering or re-serializing an inventory must not change what any reference identifies.
+
+`InventoryItemRef { characterId, entryId }` is the reference type for naming one concrete owned object. `resolveInventoryItemRef(ref, characterId, items)` answers `{ ok: true, entry }` or `{ ok: false, issue }` where the issue is `invalid-reference` / `character-mismatch` / `unknown-entry`. Nothing here throws. Later Shū and action-selection work must use this rather than an array index or a bare `itemId`.
+
+**State.** `held` and `worn` are distinct states that are both equipped; ask `isEquippedItemState()` rather than comparing against `"carried"` (architecture.test.ts enforces this). An entry may be held or worn only at quantity exactly one — a stack of three swords names no particular sword. Quantity zero is legal and means an emptied entry that still exists; it contributes no effects and no requirement presence.
+
+**Provenance.** An Item's Effect sources carry `{ type: "item", id: itemId, instanceId: entryId }`. Both facts are required: the definition id is what `hasItem` asks about, the entry id is which of two identical gauntlets produced a given bonus. `ContributionSourceRef.instanceId` is optional and absent everywhere else, so every non-Item source keeps the identity and key it always had. Source keys come from `contributionSourceKey()` and nowhere else.
+
+**Not built:** equip/unequip actions, `equipRequirements` evaluation, Item use, quantity decrement, stack splitting or merging, hands, body slots, conflicts, dual-wielding, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū.
 
 ---
 
@@ -934,19 +952,22 @@ Key decisions:
 
 ### `character/validation.ts` — the validator
 
-`validateCharacter(character) → EngineResult<ResolvedCharacter>`. The single place every domain's plain issue objects become `EngineError`s, so codes/audiences/subjects stay consistent. **36 error codes:**
+`validateCharacter(character) → EngineResult<ResolvedCharacter>`. The single place every domain's plain issue objects become `EngineError`s, so codes/audiences/subjects stay consistent. **43 error codes**, counted from the descriptor table rather than remembered:
 
 ```
 character.id.empty · character.name.empty
 character.species.{unknown,duplicate,missing,percentage_invalid,mix_incomplete}
 character.clan.{unknown,duplicate}
 character.trait.{unknown,duplicate}
-character.skill.{unknown,duplicate,mastery_invalid,requirements_unsatisfied}
-character.technique.{unknown,duplicate,mastery_invalid,requirements_unsatisfied}
+character.skill.{unknown,duplicate,mastery_invalid,mastery_unsupported,
+                 requirements_unsatisfied,requirements_unresolved}
+character.technique.{unknown,duplicate,mastery_invalid,mastery_unsupported,
+                     requirements_unsatisfied,requirements_unresolved}
 character.condition.{unknown,duplicate,lifecycle_invalid}
-character.item.{unknown,duplicate,quantity_invalid}
+character.item.{unknown,entry_id_invalid,entry_duplicate,quantity_invalid,
+                state_invalid,engaged_quantity_invalid}
 character.injury.{unknown,instance_id_invalid,instance_id_duplicate,location_invalid,
-                  body_part_unknown,body_part_not_applicable,special_point_unknown,
+                  continuity_unknown,body_part_not_applicable,special_point_unknown,
                   special_point_missing,special_point_not_hosted,special_point_not_applicable,
                   treatment_status_invalid}
 ```

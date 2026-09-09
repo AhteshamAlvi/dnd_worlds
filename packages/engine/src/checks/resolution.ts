@@ -6,6 +6,7 @@ import {
   type TraceInput,
   type TraceNode,
 } from "../infrastructure/trace";
+import { contributionSourceKey } from "../infrastructure/contribution-source";
 import type { EngineError } from "../infrastructure/diagnostics";
 import {
   engineFailure,
@@ -243,6 +244,15 @@ function createDiceTraceNode(dice: CheckDiceResolution): TraceNode {
   });
 }
 
+/*
+ * Labelled by contributionSourceKey(), never by a local `type:id` template.
+ *
+ * The template and the function agreed exactly until a source grew an
+ * instance, at which point two owned copies of one Item began describing
+ * themselves identically and the trace disambiguated them with a numeric
+ * suffix that named neither. One spelling of source identity, owned by the
+ * file that declares the shape.
+ */
 function createModifierTraceNode(
   baseContributions: readonly CheckBaseContribution[],
   modifiers: readonly CheckModifierContribution[],
@@ -252,7 +262,7 @@ function createModifierTraceNode(
   for (const contribution of baseContributions) {
     const prefix = contribution.source === undefined
       ? "base"
-      : `${contribution.source.type}:${contribution.source.id}`;
+      : contributionSourceKey(contribution.source);
 
     addTraceInput(inputs, `${prefix}.${contribution.id}`, contribution.amount);
   }
@@ -260,7 +270,7 @@ function createModifierTraceNode(
   for (const modifier of modifiers) {
     addTraceInput(
       inputs,
-      `${modifier.channel}.${modifier.source.type}:${modifier.source.id}`,
+      `${modifier.channel}.${contributionSourceKey(modifier.source)}`,
       modifier.amount,
     );
   }

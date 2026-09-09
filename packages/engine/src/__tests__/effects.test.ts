@@ -148,16 +148,20 @@ describe("effects reaching a character", () => {
     expect(resolved.attributes.resolved.con).toBe(10);
   });
 
-  it("applies an equipped Item and ignores it once unequipped", () => {
+  it("applies an equipped Item and ignores it once carried", () => {
     const equipped = resolveTestCharacter(
       createTestCharacter({
-        items: [{ itemId: "gauntlets", quantity: 1, equipped: true }],
+        items: [
+          { entryId: "worn-gauntlets", itemId: "gauntlets", quantity: 1, state: "worn" },
+        ],
       }),
     );
 
     const carried = resolveTestCharacter(
       createTestCharacter({
-        items: [{ itemId: "gauntlets", quantity: 1, equipped: false }],
+        items: [
+          { entryId: "packed-gauntlets", itemId: "gauntlets", quantity: 1, state: "carried" },
+        ],
       }),
     );
 
@@ -182,10 +186,50 @@ describe("effects reaching a character", () => {
     expect(carried.attributes.resolved.agi).toBe(10);
   });
 
+  /*
+   * Held and worn are DIFFERENT states that make no difference here, and both
+   * halves of that matter. The distinction exists for hands and body slots;
+   * an `equippedEffects` bundle has no opinion about which part of a body is
+   * doing the engaging, so a rule that behaved differently for a sword and a
+   * breastplate would be inventing one.
+   */
+  it("treats held and worn identically for equipped effects", () => {
+    const inState = (state: "held" | "worn") =>
+      resolveTestCharacter(
+        createTestCharacter({
+          items: [
+            { entryId: "gauntlets", itemId: "gauntlets", quantity: 1, state },
+          ],
+        }),
+      ).effects.persistentCheckModifiers.map(({ amount }) => amount);
+
+    expect(inState("held")).toEqual([2]);
+    expect(inState("worn")).toEqual(inState("held"));
+  });
+
+  it("gives an emptied entry no effects at all", () => {
+    /*
+     * The quiver still exists on the sheet; the arrows do not. A possessed
+     * Effect that fired for a container of nothing would be a rule applying to
+     * an object the character does not have.
+     */
+    const resolved = resolveTestCharacter(
+      createTestCharacter({
+        items: [
+          { entryId: "idol", itemId: "cursed-idol", quantity: 0, state: "carried" },
+        ],
+      }),
+    );
+
+    expect(resolved.attributes.resolved.cha).toBe(10);
+  });
+
   it("applies a possessed Item's effect without it being worn", () => {
     const resolved = resolveTestCharacter(
       createTestCharacter({
-        items: [{ itemId: "cursed-idol", quantity: 1, equipped: false }],
+        items: [
+          { entryId: "idol", itemId: "cursed-idol", quantity: 1, state: "carried" },
+        ],
       }),
     );
 
@@ -225,7 +269,9 @@ describe("effects reaching a character", () => {
         attributes: { dex: 16 },
         traits: [{ traitId: "one-armed" }, { traitId: "quickened" }],
         conditions: [{ conditionId: "poisoned" }],
-        items: [{ itemId: "swift-boots", quantity: 1, equipped: true }],
+        items: [
+          { entryId: "boots", itemId: "swift-boots", quantity: 1, state: "worn" },
+        ],
       }),
     );
 

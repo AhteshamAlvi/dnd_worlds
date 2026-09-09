@@ -55,6 +55,7 @@ import {
   type ResolutionApproach,
 } from "./approach";
 import type { EligibilityFinding } from "./eligibility";
+import { actorKey } from "./identity";
 import {
   findActionIntentIssues,
   evaluateActionIntent,
@@ -516,7 +517,7 @@ function proposalTrace(
     inputs: {
       profile: { value: input.profile.id },
       intent: { value: input.intent.id },
-      actor: { value: `${input.intent.actor.type}:${input.intent.actor.id}` },
+      actor: { value: actorKey(input.intent.actor) },
       approach: { value: input.approach },
       declaredTargets: { value: input.intent.targets.length },
       focus: { value: input.intent.focus.kind },
