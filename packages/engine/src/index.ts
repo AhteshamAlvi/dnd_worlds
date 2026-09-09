@@ -995,6 +995,7 @@ export type {
   SkillApplicationNumericField,
   SkillApplicationPermission,
   SkillApplicationValue,
+  SkillRangeSpecification,
   SkillAuraCostProfile,
   SkillAuraCostProjection,
   SkillMechanicalRole,
@@ -1006,6 +1007,7 @@ export type {
 
 export {
   NO_SKILL_AURA_COST,
+  NO_SKILL_RANGE,
   SKILL_APPLICATION_NUMERIC_FIELDS,
   SKILL_MECHANICAL_ROLES,
   findSkillApplicationIssues,

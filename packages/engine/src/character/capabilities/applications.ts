@@ -143,8 +143,33 @@ export function contextDerivedApplicationValue<T>(
 }
 
 
-export function isContextDerived<T>(
-  value: SkillApplicationValue<T> | undefined,
+/**
+ * A Skill's Range, which is required and has THREE answers.
+ *
+ * `none` is the third, and it has to be spelled out for the same reason the
+ * Aura cost does: an omitted Range and a Range that does not exist are
+ * different facts, and leaving the field off cannot tell them apart. A stance
+ * is pointed at nothing and genuinely has no distance requirement; a Skill
+ * whose author forgot to say how far it reaches is unfinished. Optional made
+ * those the same value, and the permissive reading — no requirement — is the
+ * one that would have won.
+ *
+ * Travel stays optional on purpose, because it answers a different question:
+ * whether the Skill sends anything across space at all. Range governs
+ * eligibility and every Skill has an answer to it.
+ */
+export type SkillRangeSpecification =
+  | { readonly kind: "none" }
+  | { readonly kind: "fixed"; readonly value: DistanceInterval }
+  | { readonly kind: "context-derived"; readonly profileId: string };
+
+
+/** The Range of something pointed at nothing. Stated, never omitted. */
+export const NO_SKILL_RANGE: SkillRangeSpecification = { kind: "none" };
+
+
+export function isContextDerived(
+  value: { readonly kind: string } | undefined,
 ): value is { readonly kind: "context-derived"; readonly profileId: string } {
   return value?.kind === "context-derived";
 }
@@ -175,13 +200,13 @@ export interface SkillActionSpecification
     "id" | "source" | "check" | "range" | "executionDuration" | "travel"
   > {
   /**
-   * How far away the subject may be.
+   * How far away the subject may be. REQUIRED, with `none` as a real answer.
    *
-   * Optional for the same reason ActionProfile's is: a stance reaches nowhere
-   * because it is pointed at nothing. Absent means "no distance requirement",
-   * which is a third answer and not a context-derived one.
+   * ActionProfile's own `range` is optional because a resolved profile either
+   * has a distance requirement or does not; there is no author left to have
+   * forgotten. A specification has one, so it says which of the three it means.
    */
-  readonly range?: SkillApplicationValue<DistanceInterval>;
+  readonly range: SkillRangeSpecification;
 
   /** How long performing it takes. Required, as on the profile. */
   readonly executionDuration: SkillApplicationValue<GameDuration>;
@@ -931,6 +956,7 @@ export function minimalSkillApplication(
       structuredActionCost: { actions: 1 },
       targets: { cardinality: { minimum: 0, maximum: 0 } },
       permittedFocusKinds: ["none"],
+      range: { kind: "none" },
       executionDuration: { kind: "fixed", value: 0 },
     },
     role: "utility",
@@ -1042,7 +1068,7 @@ function writeNumericField(
       };
 
     case "executionDuration":
-      if (action.executionDuration.kind !== "fixed") return application;
+      if (action.executionDuration?.kind !== "fixed") return application;
 
       return {
         ...application,
@@ -1569,9 +1595,18 @@ export function resolveSkillActionValues(
   readonly values?: ResolvedSkillActionValues;
   readonly errors: readonly EngineError[];
 } {
+  /*
+   * `none` is handed to the resolver as "this Skill declares no Range", which
+   * is exactly what it means and exactly what the resolver already refuses to
+   * accept a supplied value for. The neutral profile then carries no `range`
+   * at all — a resolved profile has a distance requirement or has none, and
+   * there is no author left to have forgotten one.
+   */
   const range = resolveContextualValue(
     "Range",
-    action.range,
+    action.range?.kind === "none" || action.range === undefined
+      ? undefined
+      : action.range,
     supplied.range,
     findDistanceIntervalIssues,
   );
@@ -1613,6 +1648,7 @@ export function requiredApplicationContext(
 ): readonly { readonly field: string; readonly profileId: string }[] {
   const required: { field: string; profileId: string }[] = [];
 
+  /* `none` and `fixed` need nothing; only a named profile is outstanding. */
   if (isContextDerived(action.range)) {
     required.push({ field: "range", profileId: action.range.profileId });
   }
@@ -2449,7 +2485,37 @@ function findActionValueIssues(
   ): void => {
     if (value === undefined) return;
 
+    /*
+     * `typeof null === "object"`, so the shape guard has to name null. This is
+     * the read that threw before the hostile-value sweep was written.
+     */
+    if (value === null || typeof value !== "object") {
+      errors.push(issue(
+        "capabilities.application.value.kind.invalid",
+        `A Skill's ${field} must be a fixed value or context-derived.`,
+        ["fixed", "context-derived"],
+        value === null ? "null" : typeof value,
+      ));
+
+      return;
+    }
+
     if (value.kind === "fixed") {
+      /*
+       * A fixed value with nothing in it is refused here rather than handed to
+       * a domain validator that would be asked about `undefined`.
+       */
+      if (value.value === undefined || value.value === null) {
+        errors.push(issue(
+          "capabilities.application.value.missing-value",
+          `A fixed ${field} carries no value.`,
+          `a ${field} value`,
+          String(value.value),
+        ));
+
+        return;
+      }
+
       errors.push(...findValueIssues(value.value));
 
       return;
@@ -2479,7 +2545,38 @@ function findActionValueIssues(
     ));
   };
 
-  check("Range", action.range, findDistanceIntervalIssues);
+  /*
+   * Range is checked ahead of the shared helper because it has a third legal
+   * answer and, unlike travel, no legal ABSENCE. Host JSON written against the
+   * old optional shape arrives here, and reading its missing Range as "no
+   * distance requirement" would be the permissive answer to a question nobody
+   * answered — a Skill usable from anywhere.
+   */
+  if (
+    action.range === undefined ||
+    action.range === null ||
+    typeof action.range !== "object"
+  ) {
+    errors.push(issue(
+      "capabilities.application.value.range.missing",
+      "A Skill must state its Range — write { kind: \"none\" } when it has no distance requirement, because an omitted one cannot be told from a forgotten one.",
+      ["none", "fixed", "context-derived"],
+      action.range === null ? "null" : String(action.range),
+    ));
+  } else if (action.range.kind !== "none") {
+    check("Range", action.range, findDistanceIntervalIssues);
+  }
+
+  /* Required, so absence is an error rather than the no-op `check` treats it as. */
+  if (action.executionDuration === undefined) {
+    errors.push(issue(
+      "capabilities.application.value.duration.missing",
+      "A Skill must state how long performing it takes.",
+      ["fixed", "context-derived"],
+      "absent",
+    ));
+  }
+
   check("execution duration", action.executionDuration, findDurationIssues);
   check("travel", action.travel, findTravelIssues);
 
@@ -2505,9 +2602,14 @@ function validationValues(
   action: SkillActionSpecification,
 ): ResolvedSkillActionValues {
   return {
-    executionDuration: action.executionDuration.kind === "fixed"
+    executionDuration: action.executionDuration?.kind === "fixed"
       ? action.executionDuration.value
       : 0,
+    /*
+     * Guarded even though the type says required. Host JSON reaches validation
+     * before it reaches the compiler, and a validator that dereferences the
+     * field it is about to report as missing throws instead of reporting it.
+     */
     ...(action.range?.kind === "fixed" ? { range: action.range.value } : {}),
     ...(action.travel?.kind === "fixed" ? { travel: action.travel.value } : {}),
   };

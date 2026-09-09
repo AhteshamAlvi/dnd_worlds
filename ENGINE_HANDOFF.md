@@ -682,7 +682,7 @@ Difficulty, the opposing character, dice and situational facts are **not** store
 
 **Outcome identifiers are handles, so they are validated as such.** Branch, output and consequence ids must be non-empty and unique *across the whole application*; a consequence must carry a summary. An output id is what a Mastery change addresses and what a proposal carries; a repeat resolves to whichever was indexed last.
 
-**Range, execution duration and travel are `SkillApplicationValue<T>`:** `{kind:"fixed", value}` or `{kind:"context-derived", profileId}`. They are the fields that genuinely depend on *who* is acting and *what* they declared, and a literal in a catalog is a rule — "every punch reaches 1.5 m" and "a punch reaches as far as the arm throwing it" are different claims, and a bare `1.5` is the first one whatever the author meant. A `profileId` implies **no default**; nothing resolves it yet.
+**Range, execution duration and travel are specified rather than stated.** Duration and travel are `SkillApplicationValue<T>` — `{kind:"fixed", value}` or `{kind:"context-derived", profileId}`. **Range is required** and is `SkillRangeSpecification`, which adds a third variant: `{kind:"none"}` for a Skill pointed at nothing. It has to be spelled out for the same reason the Aura cost does — an omitted Range and a Range that does not exist are different facts, and the permissive reading (no requirement, usable from anywhere) is the one an optional field would have handed out. `none` resolves to an absent `ActionProfile.range`, supplying context for it is refused, and `requiredApplicationContext()` ignores it. Travel stays optional because it answers a different question: whether the Skill sends anything across space at all. They are the fields that genuinely depend on *who* is acting and *what* they declared, and a literal in a catalog is a rule — "every punch reaches 1.5 m" and "a punch reaches as far as the arm throwing it" are different claims, and a bare `1.5` is the first one whatever the author meant. A `profileId` implies **no default**; nothing resolves it yet.
 
 `buildSkillActionProfile(resolved, context?)` takes `SkillApplicationContextValues` — each entry carrying the `profileId` it answers *and* the value — and fails structurally when a context-derived field is unsupplied, answers a different profile, is supplied for a field authored as fixed (refused, not ignored), or fails its neutral-domain validator. All missing fields are reported at once. **The finished `ActionProfile` holds only resolved metres and milliseconds**; no contextual specification reaches `actions/` or `spatial/`, and `architecture.test.ts` asserts `DistanceInterval` still has exactly `kind` / `minimumMetres` / `maximumMetres` and that `spatial/` names no Skill, Body, Aura or Reaction concept.
 
@@ -698,7 +698,7 @@ A Mastery change can move a Range or duration only while it is **fixed** — the
 |---|---|---|---|
 | `punch` | `body.reach` | `combat.action-duration` | fixed instantaneous |
 | `parry` | `reaction.trigger-range` | `combat.reaction-duration` | fixed instantaneous |
-| `defensive-stance` | *(none — pointed at nothing)* | `combat.action-duration` | — |
+| `defensive-stance` | `{kind:"none"}` — declared, not omitted | `combat.action-duration` | — |
 | `pick-lock` | `task.lockpicking-range` | `task.lockpicking-duration` | — |
 | `fire-blast` | `aura.declared-power.range` | `combat.action-duration` | `aura.declared-power.travel` |
 

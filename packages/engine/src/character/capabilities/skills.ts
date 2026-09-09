@@ -360,7 +360,8 @@ export const SKILL_DEFINITIONS = {
          */
         targets: { cardinality: { minimum: 0, maximum: 0 } },
         permittedFocusKinds: ["none"],
-        /* No Range at all: a stance is pointed at nothing. */
+        /* Pointed at nothing, so there is no distance to require. Said, not omitted. */
+        range: { kind: "none" },
         executionDuration: {
           kind: "context-derived",
           profileId: "combat.action-duration",

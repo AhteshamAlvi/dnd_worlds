@@ -87,6 +87,7 @@ const MINIMAL_APPLICATION: SkillApplicationDefinition = {
     allowedTimings: ["action"],
     structuredActionCost: { actions: 1 },
     targets: { cardinality: { minimum: 0, maximum: 0 } },
+    range: { kind: "none" },
     executionDuration: { kind: "fixed", value: 1000 },
   },
   role: "utility",
@@ -217,7 +218,7 @@ function fixedRangeOf(
 ): DistanceInterval | undefined {
   const range = application.action.range;
 
-  return range?.kind === "fixed" ? range.value : undefined;
+  return range.kind === "fixed" ? range.value : undefined;
 }
 
 
@@ -385,9 +386,13 @@ describe("every authored Skill carries a valid application", () => {
         .toEqual(profiles);
 
       /* No authored Range or duration figure survives anywhere. */
-      expect(action.range?.kind).not.toBe("fixed");
+      expect(action.range.kind).not.toBe("fixed");
       expect(action.executionDuration.kind).toBe("context-derived");
     }
+
+    /* And the one Skill with no Range says so rather than omitting it. */
+    expect(getSkillDefinition("defensive-stance")?.application?.action.range)
+      .toEqual({ kind: "none" });
 
     /* Instantaneous travel is the sole authored constant, and it is not a number. */
     expect(getSkillDefinition("punch")?.application?.action.travel)
@@ -510,6 +515,58 @@ describe("application validation refuses incoherent contracts", () => {
     expect(issuesFor(applicationOf({
       cost: { exertionLoad: 0, aura: { kind: "fixed" } },
     }))).toContain("capabilities.application.cost.aura.empty");
+  });
+
+  it("rejects an application that states no Range at all", () => {
+    /*
+     * What host JSON written against the old optional shape looks like.
+     * Reading a missing Range as "no distance requirement" would be the
+     * permissive answer to a question nobody answered — a Skill usable from
+     * anywhere — which is the same conflation the Aura cost union removed.
+     */
+    const { range: _range, ...action } = MINIMAL_APPLICATION.action;
+
+    const codes = issuesFor(applicationOf({
+      action: action as typeof MINIMAL_APPLICATION.action,
+    }));
+
+    expect(codes).toContain("capabilities.application.value.range.missing");
+  });
+
+  it("reports rather than throws on any hostile contextual value", () => {
+    /*
+     * Written after a validator dereferenced the very field it was about to
+     * report as missing. Host JSON reaches validation before it reaches the
+     * compiler, so "required" is a claim about authored content and not about
+     * what arrives — and a sweep catches the next read to grow, which a case
+     * per bug does not.
+     */
+    const hostile = [
+      undefined, null, {}, [], 0, 1, "fixed", true,
+      { kind: "fixed" },
+      { kind: "context-derived" },
+      { kind: "context-derived", profileId: 7 },
+      { kind: "elsewhere" },
+      { value: { kind: "direct", minimumMetres: 0, maximumMetres: 1 } },
+    ];
+
+    for (const value of hostile) {
+      for (const field of ["range", "executionDuration", "travel"] as const) {
+        const application = applicationOf({
+          action: {
+            ...MINIMAL_APPLICATION.action,
+            [field]: value,
+          } as typeof MINIMAL_APPLICATION.action,
+        });
+
+        expect(() => issuesFor(application)).not.toThrow();
+
+        /* And not throwing is not enough: it has to actually complain. */
+        if (field !== "travel" || value !== undefined) {
+          expect(issuesFor(application).length).toBeGreaterThan(0);
+        }
+      }
+    }
   });
 
   it("rejects a context-derived value that names no profile", () => {
@@ -1574,6 +1631,75 @@ describe("an available application projects into a neutral action profile", () =
     expect(built.payload.travel).toEqual({ kind: "speed", metresPerSecond: 25 });
     expect(built.payload.executionDuration).toBe(2000);
     expect(built.payload.range).not.toHaveProperty("profileId");
+  });
+
+  it("projects a Range of none into a profile with no Range", () => {
+    /*
+     * `none` is a real answer, and it resolves to the profile's own absence —
+     * a resolved profile either has a distance requirement or does not, and
+     * there is no author left to have forgotten one.
+     */
+    const resolved = resolveSkillApplication({
+      skillId: "defensive-stance",
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: "defensive-stance", mastery: 1 }],
+      }),
+      context: emptyContext(),
+    });
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    expect(resolved.payload.application?.action.range)
+      .toEqual({ kind: "none" });
+
+    /* Range needs nothing supplied; only the duration is outstanding. */
+    expect(
+      requiredApplicationContext(resolved.payload.application!.action)
+        .map((one) => one.field),
+    ).toEqual(["executionDuration"]);
+
+    const built = buildSkillActionProfile(resolved.payload, {
+      executionDuration: { profileId: "combat.action-duration", value: 2000 },
+    });
+
+    expect(built.success).toBe(true);
+
+    if (!built.success) return;
+
+    expect(findActionProfileIssues(built.payload)).toEqual([]);
+    expect(built.payload.range).toBeUndefined();
+    expect(built.payload).not.toHaveProperty("range");
+  });
+
+  it("refuses Range context for a Skill that has no Range", () => {
+    const resolved = resolveSkillApplication({
+      skillId: "defensive-stance",
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: "defensive-stance", mastery: 1 }],
+      }),
+      context: emptyContext(),
+    });
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    const built = buildSkillActionProfile(resolved.payload, {
+      executionDuration: { profileId: "combat.action-duration", value: 2000 },
+      range: {
+        profileId: "body.reach",
+        value: { kind: "direct", minimumMetres: 0, maximumMetres: 2 },
+      },
+    });
+
+    expect(built.success).toBe(false);
+
+    if (built.success) return;
+
+    expect(built.errors[0].code)
+      .toBe("capabilities.application.value.unexpected");
   });
 
   it("refuses a value supplied for a field the Skill authors as fixed", () => {
