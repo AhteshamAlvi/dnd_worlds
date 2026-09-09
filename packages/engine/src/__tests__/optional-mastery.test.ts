@@ -95,7 +95,6 @@ function registerCapabilities(): void {
     id: PICKING,
     name: "Precision Picking",
     description: "A test Skill with a three-rank track.",
-    timings: ["action"],
     mastery: {
       maximumMastery: 3,
       ranks: [
@@ -135,7 +134,6 @@ function registerCapabilities(): void {
     id: DOOR_RUNE,
     name: "Door Rune",
     description: "A test Skill with no Mastery at all.",
-    timings: ["action"],
     effects: [{ type: "modifyBaseAttribute", attribute: "wis", amount: 2 }],
   });
 
@@ -567,7 +565,6 @@ describe("validation of Mastery a capability does not have", () => {
       id: "test-overreaching",
       name: "Overreaching",
       description: "A test Skill with an impossible maximum.",
-      timings: ["action"],
       mastery: { maximumMastery: 12 as MasteryRank },
     });
 
@@ -581,7 +578,6 @@ describe("validation of Mastery a capability does not have", () => {
       id: "test-overreaching",
       name: "Overreaching",
       description: "A test Skill with a rank beyond its track.",
-      timings: ["action"],
       mastery: { maximumMastery: 3, ranks: [{ rank: 5 }] },
     });
 
@@ -617,7 +613,6 @@ describe("Mastery requirements are checked against the target's own track", () =
       id: "test-rune-scholar",
       name: "Rune Scholar",
       description: "A test Skill asking for depth that does not exist.",
-      timings: ["action"],
       requirements: [
         { type: "skillMastery", skillId: DOOR_RUNE, minimumMastery: 2 },
       ],
@@ -637,7 +632,6 @@ describe("Mastery requirements are checked against the target's own track", () =
       id: "test-master-picker",
       name: "Master Picker",
       description: "A test Skill asking for a rank the target cannot reach.",
-      timings: ["action"],
       requirements: [
         { type: "skillMastery", skillId: PICKING, minimumMastery: 5 },
       ],
@@ -680,7 +674,6 @@ describe("Mastery requirements are checked against the target's own track", () =
       id: "test-competent-picker",
       name: "Competent Picker",
       description: "A test Skill asking for a rank that exists.",
-      timings: ["action"],
       requirements: [
         { type: "skillMastery", skillId: PICKING, minimumMastery: 3 },
         { type: "hasSkill", skillId: DOOR_RUNE },

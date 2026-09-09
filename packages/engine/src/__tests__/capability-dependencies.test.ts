@@ -72,7 +72,6 @@ describe("Skills and Techniques may depend on each other", () => {
       id: "test-direct-thrust",
       name: "Direct Thrust",
       description: "A test Skill gated on the discipline.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [{ type: "hasTechnique", techniqueId: "test-swordsmanship" }],
     });
@@ -107,7 +106,6 @@ describe("Skills and Techniques may depend on each other", () => {
       id: "test-direct-thrust",
       name: "Direct Thrust",
       description: "A test Skill gated on the discipline.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [{ type: "hasTechnique", techniqueId: "test-swordsmanship" }],
     });
@@ -228,7 +226,6 @@ describe("impossible acquisition cycles are rejected", () => {
       id: "test-deadlocked-skill",
       name: "Deadlocked Skill",
       description: "A test Skill requiring the Technique that requires it.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [
         { type: "hasTechnique", techniqueId: "test-deadlocked-technique" },
@@ -289,7 +286,6 @@ describe("impossible acquisition cycles are rejected", () => {
       id: "test-branching-skill",
       name: "Branching Skill",
       description: "A test Skill with two ways in.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [
         {
@@ -336,7 +332,6 @@ describe("impossible acquisition cycles are rejected", () => {
       id: "test-branching-skill",
       name: "Branching Skill",
       description: "A test Skill whose every way in is blocked.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [
         {
@@ -373,7 +368,6 @@ describe("impossible acquisition cycles are rejected", () => {
       id: "test-gift-only",
       name: "Gift Only",
       description: "A test Skill nobody can qualify for.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [{ type: "hasSkill", skillId: "test-gift-only" }],
     });
@@ -393,7 +387,6 @@ describe("impossible acquisition cycles are rejected", () => {
       id: "test-gift-only",
       name: "Gift Only",
       description: "A test Skill nobody can qualify for.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [{ type: "hasSkill", skillId: "test-gift-only" }],
     });
@@ -426,7 +419,6 @@ describe("impossible acquisition cycles are rejected", () => {
       id: "test-typo",
       name: "Typo",
       description: "A test Skill naming a Technique that does not exist.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [{ type: "hasTechnique", techniqueId: "swordsmanshp" }],
     });
@@ -454,7 +446,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-deadlocked-skill",
       name: "Deadlocked Skill",
       description: "A test Skill that requires itself.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requirements: [{ type: "hasSkill", skillId: "test-deadlocked-skill" }],
     });
@@ -500,7 +491,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-inner-style",
       name: "Inner Style",
       description: "A test Skill gated on a Trait AND on being invited.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
       requirements: [{ type: "hasTrait", traitId: "test-innate-talent" }],
@@ -558,7 +548,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill nobody is ever invited to.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
     });
@@ -573,7 +562,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill open only to those invited.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
     });
@@ -599,7 +587,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill open only to those invited.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
     });
@@ -637,7 +624,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill offered to everyone and impossible anyway.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
       requirements: [{ type: "hasSkill", skillId: "test-closed-style" }],
@@ -666,7 +652,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill nobody offers and nobody could qualify for.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
       requirements: [{ type: "hasSkill", skillId: "test-closed-style" }],
@@ -683,7 +668,6 @@ describe("an unlock permits acquisition without satisfying it", () => {
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill open only to those invited.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
       requiresUnlock: true,
     });
@@ -708,7 +692,6 @@ describe("Mastery advancement is checked rank by rank", () => {
       id: "test-climbing",
       name: "Climbing",
       description: "A test Skill whose ranks ask for more of the same.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 3,
         ranks: [
@@ -745,7 +728,6 @@ describe("Mastery advancement is checked rank by rank", () => {
       id: "test-left-hand",
       name: "Left Hand",
       description: "A test Skill whose rank II needs the other's rank II.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 3,
         ranks: [
@@ -763,7 +745,6 @@ describe("Mastery advancement is checked rank by rank", () => {
       id: "test-right-hand",
       name: "Right Hand",
       description: "A test Skill whose rank II needs the other's rank II.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 3,
         ranks: [
@@ -804,7 +785,6 @@ describe("Mastery advancement is checked rank by rank", () => {
       id: "test-sealed",
       name: "Sealed",
       description: "A test Skill whose rank II is impossible.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 5,
         ranks: [

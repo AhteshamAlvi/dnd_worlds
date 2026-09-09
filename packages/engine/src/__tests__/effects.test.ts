@@ -241,7 +241,6 @@ describe("grant effects", () => {
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
     });
 
@@ -278,7 +277,6 @@ describe("grant effects", () => {
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
     });
 

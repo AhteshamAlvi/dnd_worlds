@@ -61,7 +61,6 @@ function registerLifecycleContent(): void {
     id: LENT,
     name: "Lent Skill",
     description: "A test Skill something else supplies.",
-    timings: ["action"],
     mastery: { maximumMastery: 3 },
   });
 
@@ -69,7 +68,6 @@ function registerLifecycleContent(): void {
     id: CLAN_STYLE,
     name: "Clan Style",
     description: "A test Skill a Clan permits rather than teaches.",
-    timings: ["action"],
     mastery: { maximumMastery: 3 },
   });
 
@@ -90,7 +88,6 @@ function registerLifecycleContent(): void {
     id: GATED,
     name: "Gated Skill",
     description: "A test Skill gated on one Trait.",
-    timings: ["action"],
     mastery: { maximumMastery: 3 },
     requirements: [{ type: "hasTrait", traitId: GATE }],
   });
@@ -99,7 +96,6 @@ function registerLifecycleContent(): void {
     id: INNER,
     name: "Inner Style",
     description: "A test Skill gated on a Trait AND on being invited.",
-    timings: ["action"],
     mastery: { maximumMastery: 3 },
     requiresUnlock: true,
     requirements: [{ type: "hasTrait", traitId: GATE }],
@@ -571,7 +567,7 @@ describe("losing a prerequisite does not unlearn what it gated", () => {
   /*
    * The rule this whole distinction exists for. Losing Fire Control does not
    * erase Flame Lance; it may make Flame Lance unusable, which is an execution
-   * question Ticket 3.3 asks of the application rather than of the sheet.
+   * question the application asks, rather than one the sheet answers.
    */
   it("keeps the capability, at its trained Mastery", () => {
     registerLifecycleContent();
@@ -666,7 +662,6 @@ describe("an offer is reported without being mistaken for a possession", () => {
       id: "test-door-rune",
       name: "Door Rune",
       description: "A test Skill with no Mastery at all.",
-      timings: ["action"],
     });
 
     const resolved = resolveCapabilities({

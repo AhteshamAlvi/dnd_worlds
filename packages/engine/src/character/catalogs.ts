@@ -320,6 +320,16 @@ function rulesOf(
       readonly untreated?: readonly Effect[];
       readonly treated?: readonly Effect[];
     };
+    /*
+     * A Skill's EXECUTION requirements, which name catalog ids exactly as
+     * freely as its acquisition ones do — Fire Blast's application asks for the
+     * Firebending Trait by id. They are checked here for the reason every other
+     * bundle is: a typo in an id that is only read at execution time would
+     * otherwise surface as a Skill that quietly never works.
+     */
+    readonly application?: {
+      readonly requirements?: readonly { readonly requirement: Requirement }[];
+    };
   };
 
   bundles.push({
@@ -327,6 +337,17 @@ function rulesOf(
     effects: effectful.effects ?? [],
     requirements: effectful.requirements ?? [],
   });
+
+  const applicationRequirements = (effectful.application?.requirements ?? [])
+    .map((entry) => entry.requirement);
+
+  if (applicationRequirements.length > 0) {
+    bundles.push({
+      where: "application",
+      effects: [],
+      requirements: applicationRequirements,
+    });
+  }
 
   for (const rank of effectful.mastery?.ranks ?? []) {
     bundles.push({

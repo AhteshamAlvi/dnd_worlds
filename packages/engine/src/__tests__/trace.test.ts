@@ -205,7 +205,6 @@ describe("attribute provenance", () => {
       id: "twin-boost",
       name: "Twin Boost",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 3,
         ranks: [

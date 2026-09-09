@@ -1,0 +1,1647 @@
+/*
+ * How a Skill may be USED, as opposed to how it was learned.
+ *
+ * skills.ts answers "does this character have it". This file answers "may they
+ * do it right now, and what does doing it look like" — and the two questions
+ * have deliberately different lifetimes:
+ *
+ *   SkillDefinition.requirements     asked once, when the Skill is taken up
+ *   SkillApplicationDefinition       asked every single time it is attempted
+ *
+ * Losing Fire Control does not erase Fire Blast, because learning happened and
+ * cannot un-happen (see lifecycle.ts). It does make Fire Blast unusable, for as
+ * long as the Trait is gone and not one moment longer. Those are different
+ * facts about the same Skill, so they are different fields.
+ *
+ *
+ * ── COMPOSED, NEVER RE-DECLARED ─────────────────────────────────────────
+ *
+ * Everything mechanical here already exists somewhere neutral:
+ *
+ *   actions/timing.ts       ActionTiming
+ *   actions/cost.ts         StructuredActionCost
+ *   actions/profile.ts      ActionProfile, ThreatDeclaration
+ *   actions/approach.ts     ResolutionApproach
+ *   actions/proposal.ts     ActionOutputFact, ActionConsequenceSuggestion
+ *   targeting/             TargetSpecification, TargetKind
+ *   spatial/               DistanceInterval, SpatialTravel
+ *   checks/                CheckScope, FixedCheckTiePolicy, OpposedCheckSide
+ *   foundation/body/…       PhysicalExertionLoad
+ *   foundation/aura/runtime AuraCostRequest
+ *
+ * A Skill-shaped copy of any of them would be a second definition of a closed
+ * vocabulary, and TypeScript would accept assignments in both directions
+ * forever — the exact failure the sensory vocabulary had to be rescued from.
+ * So the action half of an application is literally the neutral ActionProfile
+ * with the two fields a catalog cannot know removed, and the Aura half is tied
+ * to the real AuraCostRequest by a Pick. architecture.test.ts enforces that no
+ * capability file redeclares any of them.
+ *
+ * The identity and the source are the two the catalog cannot supply, because
+ * they are the same for every Skill and would be copy-pasted wrongly exactly
+ * once: skillActionProfile() below builds `skill:<id>` and the source ref.
+ *
+ *
+ * ── WHAT THIS FILE WILL NOT DO ──────────────────────────────────────────
+ *
+ * It rolls nothing, commits nothing, and mutates nothing. An outcome profile
+ * says how an outcome will be CONSTRUCTED; it holds no function that could
+ * reach into a Body, a pool or a Condition. A catalog entry carrying a
+ * mutation is a catalog entry nobody can serialize, validate, or hand to a
+ * host — and the moment one exists, content is no longer data.
+ */
+
+import type { EngineError } from "../../infrastructure/diagnostics";
+
+import type {
+  ActionFocusKind,
+  ActionProfile,
+  ActionTiming,
+  ActionConsequenceSuggestion,
+  ActionOutputFact,
+  ResolutionApproach,
+  ThreatDeclaration,
+} from "../../actions";
+import {
+  ACTION_TIMINGS,
+  findActionProfileIssues,
+  isActionFocusKind,
+  isActionTiming,
+  isThreatDeclaration,
+} from "../../actions";
+
+import type { TargetKind } from "../../targeting";
+import { isTargetKind } from "../../targeting";
+
+import type { SpatialTravel } from "../../spatial";
+import { findTravelIssues } from "../../spatial";
+
+import type {
+  CheckScope,
+  FixedCheckTiePolicy,
+  OpposedCheckSide,
+} from "../../checks";
+import { isValidCheckScope } from "../../checks";
+
+import type { PhysicalExertionLoad } from "../foundation/body/endurance";
+import type { AuraCostRequest } from "../foundation/aura/runtime";
+
+import type { Requirement } from "../rules/requirements";
+
+import {
+  isMasteryRank,
+  type MasteryRank,
+  type MasteryTrack,
+  type MasteryValue,
+} from "./mastery";
+
+
+/* -------------------------------------------------------------------------- */
+/* The action half                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The neutral action vocabulary, minus what only the adapter can supply.
+ *
+ * `id` and `source` are generated from the Skill's own id, and `check` is
+ * omitted because a Skill says considerably more about its check than a
+ * profile can carry — whether it is fixed, opposed, automatic or adjudicated —
+ * and the profile's single scope is projected back out of that.
+ *
+ * Declared with Omit rather than by listing the fields, so a field added to
+ * ActionProfile is a field every Skill may author on the day it lands.
+ */
+export interface SkillActionSpecification
+  extends Omit<ActionProfile, "id" | "source" | "check"> {}
+
+
+/* -------------------------------------------------------------------------- */
+/* Mechanical role                                                            */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * What the Skill is FOR, mechanically.
+ *
+ * Not a damage type and not a category for a UI to sort by. Combat eventually
+ * has to answer questions like "does using this open a defensive Reaction" and
+ * "is this the sort of thing a stance improves", and the alternative to a
+ * declared role is inferring one from the presence of a threat declaration or
+ * a target — which is wrong for every buff that declares a target and every
+ * ground-punch that declares none.
+ */
+export const SKILL_MECHANICAL_ROLES = [
+  /* Brings harm to bear on something. */
+  "offense",
+
+  /* Refuses or reduces harm that is arriving. */
+  "defense",
+
+  /* Changes where the actor is. */
+  "movement",
+
+  /* Changes what somebody else is able to do. */
+  "control",
+
+  /* Improves someone else's position. */
+  "support",
+
+  /* Acts on the world rather than on a combatant. */
+  "utility",
+
+  /* Learns something. */
+  "perception",
+] as const;
+
+export type SkillMechanicalRole = typeof SKILL_MECHANICAL_ROLES[number];
+
+
+export function isSkillMechanicalRole(
+  value: unknown,
+): value is SkillMechanicalRole {
+  return typeof value === "string" &&
+    (SKILL_MECHANICAL_ROLES as readonly string[]).includes(value);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Execution requirements                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One thing that must be true EVERY TIME the Skill is used.
+ *
+ * The id is what makes this different from an acquisition requirement rather
+ * than a copy of one. An application requirement becomes an explainable
+ * finding a GM reads, overrides by name, and may later adjudicate, and a
+ * finding id derived from the requirement's shape would change the moment the
+ * requirement was rephrased.
+ *
+ * Structurally identical to the adapter's NamedRequirement, and deliberately
+ * so: an ApplicationRequirement list is handed straight to
+ * prepareCharacterActionInputs without a conversion step. It is declared here
+ * rather than imported because nothing under character/ may import the
+ * adapter — see architecture.test.ts — and the assignment works because the
+ * shapes agree.
+ */
+export interface ApplicationRequirement {
+  readonly id: string;
+  readonly requirement: Requirement;
+
+  /** Human-readable, for whoever is told the Skill will not work. */
+  readonly summary?: string;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Costs                                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What using the Skill costs the body and the Aura pool.
+ *
+ * NOT the Action economy — that is `action.structuredActionCost`, is charged
+ * only in structured time, and is a different resource owned by a different
+ * domain. These two are real outside Combat: picking a lock in an empty
+ * corridor still tires the character and still burns whatever Aura the Skill
+ * demands.
+ */
+export interface SkillApplicationCostProfile {
+  /**
+   * Required even when zero, so physical effort is a decision.
+   *
+   * Aura may never infer whether an act was strenuous for the body performing
+   * it (foundation/body/endurance/types.ts says so), so an omitted load would
+   * have to be defaulted by whoever read it — and every reader would default
+   * it differently. Writing `0` says "this costs nothing physically" out loud.
+   */
+  readonly exertionLoad: PhysicalExertionLoad;
+
+  /**
+   * Deliberate Aura, in the fields the real cost request carries.
+   *
+   * Tied to AuraCostRequest by a Pick so that a field renamed in the Aura
+   * domain breaks this file rather than silently ceasing to be sent. There is
+   * no second Aura formula here and there must never be one: the authoritative
+   * charge is whatever the expenditure rules make of these inputs.
+   */
+  readonly aura?: SkillAuraCost;
+}
+
+
+export type SkillAuraCost = Pick<
+  AuraCostRequest,
+  "baseAuraCost" | "requiredOutput"
+>;
+
+
+/**
+ * The Aura-shaped half of a cost profile, ready to spread into a request.
+ *
+ * The eventual execution adapter still owns the request id, the operation, the
+ * timestamp and the two owners; this supplies only what the Skill knows. The
+ * return type is a Pick of the request for the same reason the field is.
+ */
+export function skillAuraCostFields(
+  cost: SkillApplicationCostProfile,
+): Pick<AuraCostRequest, "exertionLoad" | "baseAuraCost" | "requiredOutput"> {
+  return {
+    exertionLoad: cost.exertionLoad,
+    ...(cost.aura?.baseAuraCost === undefined
+      ? {}
+      : { baseAuraCost: cost.aura.baseAuraCost }),
+    ...(cost.aura?.requiredOutput === undefined
+      ? {}
+      : { requiredOutput: cost.aura.requiredOutput }),
+  };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Checks                                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * How the attempt is DECIDED, in the existing check vocabulary.
+ *
+ * What is deliberately absent: difficulty, the opposing character, their
+ * contributions, the dice, and every situational fact. A Skill definition that
+ * stored a DC would be storing one table's answer to a question that depends
+ * on the lock, the guard and the weather — and would be consulted forever
+ * after by content that had no idea a number had been frozen into it.
+ *
+ * So the definition names the KIND of decision and the scope it is decided in;
+ * everything else arrives at request time.
+ */
+export type SkillApplicationCheckProfile =
+  | {
+      /* It simply works. Ten does not roll to be Ten. */
+      readonly kind: "automatic";
+    }
+  | {
+      /* Against a difficulty supplied when it is attempted. */
+      readonly kind: "fixed";
+      readonly scope: CheckScope;
+      readonly tiePolicy?: FixedCheckTiePolicy;
+    }
+  | {
+      /* Against somebody. Both scopes are named; neither character is. */
+      readonly kind: "opposed";
+      readonly initiatorScope: CheckScope;
+      readonly opponentScope: CheckScope;
+      readonly tiesFavor: OpposedCheckSide;
+    }
+  | {
+      /*
+       * A person decides. A scope may still be named, because "the engine
+       * cannot settle this" and "nothing about the character is relevant" are
+       * different claims and only the first one is being made.
+       */
+      readonly kind: "adjudicated";
+      readonly scope?: CheckScope;
+    };
+
+
+/**
+ * The scope an ActionProfile would carry for this check, if any.
+ *
+ * One place, because the mapping is not obvious in two of the four cases: an
+ * opposed check projects the INITIATOR's scope — the profile belongs to the
+ * character using the Skill — and an automatic one projects nothing at all.
+ */
+export function skillCheckScope(
+  check: SkillApplicationCheckProfile,
+): CheckScope | undefined {
+  switch (check.kind) {
+    case "automatic":
+      return undefined;
+
+    case "fixed":
+      return check.scope;
+
+    case "opposed":
+      return check.initiatorScope;
+
+    case "adjudicated":
+      return check.scope;
+  }
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Outcomes                                                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One thing the Skill will report having produced.
+ *
+ * Becomes an ActionOutputFact. `decidedBy` is not authored: it is always the
+ * Skill, and a hand-written one would eventually name the wrong Skill after a
+ * copy-paste. Deliberately not called damage — see ActionOutputFact's own
+ * header for why the engine refuses to name a magnitude before somebody owns
+ * the conversion.
+ */
+export interface SkillOutcomeOutput {
+  readonly id: string;
+  readonly amount?: number;
+  readonly summary?: string;
+}
+
+
+/**
+ * Something the Skill suggests would follow. Becomes an
+ * ActionConsequenceSuggestion.
+ *
+ * Words, and nothing executable. The subject is absent because a catalog
+ * cannot know who was standing there; settlement fills it in.
+ */
+export interface SkillOutcomeConsequence {
+  readonly id: string;
+  readonly summary: string;
+}
+
+
+/** One branch of an outcome: what it is called, and what it produces. */
+export interface SkillOutcomeEntry {
+  readonly id: string;
+  readonly summary: string;
+  readonly outputs?: readonly SkillOutcomeOutput[];
+  readonly consequences?: readonly SkillOutcomeConsequence[];
+}
+
+
+/**
+ * How the outcome will be built once the decision is in.
+ *
+ * The branches mirror the check kinds, and validation insists they agree: a
+ * Skill that authors a success branch and an automatic check has described an
+ * outcome nothing will ever select, which is a bug that reads perfectly well
+ * in the file.
+ */
+export type SkillOutcomeProfile =
+  | { readonly kind: "automatic"; readonly outcome: SkillOutcomeEntry }
+  | {
+      readonly kind: "fixed";
+      readonly success: SkillOutcomeEntry;
+      readonly failure: SkillOutcomeEntry;
+    }
+  | {
+      readonly kind: "opposed";
+      readonly winner: SkillOutcomeEntry;
+      readonly loser: SkillOutcomeEntry;
+    }
+  | {
+      /* The engine gathers everything it can and stops short of deciding. */
+      readonly kind: "guided-narrative";
+      readonly guidance: readonly SkillOutcomeEntry[];
+    }
+  | {
+      /* The GM supplies the substance. */
+      readonly kind: "free-adjudication";
+      readonly prompt?: string;
+    };
+
+
+/**
+ * How an outcome profile settles, in the neutral approach vocabulary.
+ *
+ * Composed rather than stored: an application that carried both an outcome
+ * shape and an approach could disagree with itself, and nothing would notice
+ * until a GM was asked to adjudicate something the rules had already decided.
+ */
+export function skillResolutionApproach(
+  outcome: SkillOutcomeProfile,
+): ResolutionApproach {
+  switch (outcome.kind) {
+    case "automatic":
+    case "fixed":
+    case "opposed":
+      return "mechanical";
+
+    case "guided-narrative":
+      return "guided-narrative";
+
+    case "free-adjudication":
+      return "free-adjudication";
+  }
+}
+
+
+/** Every branch an outcome profile can select, for validation and display. */
+export function skillOutcomeEntries(
+  outcome: SkillOutcomeProfile,
+): readonly SkillOutcomeEntry[] {
+  switch (outcome.kind) {
+    case "automatic":
+      return [outcome.outcome];
+
+    case "fixed":
+      return [outcome.success, outcome.failure];
+
+    case "opposed":
+      return [outcome.winner, outcome.loser];
+
+    case "guided-narrative":
+      return outcome.guidance;
+
+    case "free-adjudication":
+      return [];
+  }
+}
+
+
+/**
+ * One authored output, as the neutral fact the proposal carries.
+ *
+ * Here rather than in the eventual execution adapter so that `decidedBy` has
+ * exactly one spelling. Pure: it reads the entry and returns a value.
+ */
+export function skillOutputFact(
+  skillId: string,
+  output: SkillOutcomeOutput,
+): ActionOutputFact {
+  return {
+    id: output.id,
+    decidedBy: `skill:${skillId}`,
+    ...(output.amount === undefined ? {} : { amount: output.amount }),
+    ...(output.summary === undefined ? {} : { summary: output.summary }),
+  };
+}
+
+
+export function skillConsequenceSuggestion(
+  skillId: string,
+  consequence: SkillOutcomeConsequence,
+): ActionConsequenceSuggestion {
+  return {
+    id: consequence.id,
+    decidedBy: `skill:${skillId}`,
+    summary: consequence.summary,
+  };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Mastery changes                                                            */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Which numbers a Mastery rank is allowed to move.
+ *
+ * A closed list, and an unrestricted deep partial was the alternative. A deep
+ * partial lets rank III replace the target specification, the outcome tree and
+ * the check scope in one object, so "what does III actually change" becomes a
+ * structural diff nobody can read — and a typo in a nested key is a silent
+ * no-op rather than an error.
+ */
+export const SKILL_APPLICATION_NUMERIC_FIELDS = [
+  "structuredActionCost",
+  "executionDuration",
+  "rangeMinimumMetres",
+  "rangeMaximumMetres",
+  "maximumTargets",
+  "exertionLoad",
+  "baseAuraCost",
+  "requiredOutput",
+] as const;
+
+export type SkillApplicationNumericField =
+  typeof SKILL_APPLICATION_NUMERIC_FIELDS[number];
+
+
+export function isSkillApplicationNumericField(
+  value: unknown,
+): value is SkillApplicationNumericField {
+  return typeof value === "string" &&
+    (SKILL_APPLICATION_NUMERIC_FIELDS as readonly string[]).includes(value);
+}
+
+
+/** Something a rank may open up or close off. */
+export type SkillApplicationPermission =
+  | { readonly kind: "timing"; readonly timing: ActionTiming }
+  | { readonly kind: "focus"; readonly focus: ActionFocusKind }
+  | { readonly kind: "target"; readonly target: TargetKind };
+
+
+/**
+ * One change a Mastery rank makes to the application.
+ *
+ * `cap` is a clamp rather than an assignment, and it earns its place beside
+ * `replace`: "III lowers this to at most one Action" and "III sets this to one
+ * Action" differ the moment a Technique or a Condition has already lowered it,
+ * and a Skill author writing the second when they meant the first hands a
+ * discount back.
+ */
+export type SkillApplicationModifier =
+  | {
+      readonly op: "add";
+      readonly field: SkillApplicationNumericField;
+      readonly amount: number;
+    }
+  | {
+      readonly op: "multiply";
+      readonly field: SkillApplicationNumericField;
+      readonly factor: number;
+    }
+  | {
+      readonly op: "cap";
+      readonly field: SkillApplicationNumericField;
+      readonly maximum: number;
+    }
+  | {
+      readonly op: "replace";
+      readonly field: SkillApplicationNumericField;
+      readonly value: number;
+    }
+  | {
+      readonly op: "replace";
+      readonly field: "threatens";
+      readonly value: ThreatDeclaration;
+    }
+  | {
+      readonly op: "replace";
+      readonly field: "travel";
+      readonly value: SpatialTravel;
+    }
+  | {
+      readonly op: "replace";
+      readonly field: "role";
+      readonly value: SkillMechanicalRole;
+    }
+  | {
+      readonly op: "permit";
+      readonly permission: SkillApplicationPermission;
+    }
+  | {
+      readonly op: "prohibit";
+      readonly permission: SkillApplicationPermission;
+    };
+
+
+/**
+ * What holding this Skill at a given rank changes about using it.
+ *
+ * CUMULATIVE, in ascending order, exactly like rank effects: a Skill at IV
+ * carries whatever II and IV changed. That is the same rule collectSkillEffects
+ * already uses, and having the two disagree would mean a rank's effects and
+ * its application changes applied at different ranks.
+ */
+export interface SkillApplicationMasteryChange {
+  readonly minimumMastery: MasteryRank;
+  readonly changes: readonly SkillApplicationModifier[];
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* The application                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything about using a Skill, authored once.
+ *
+ * Note what is NOT optional: the cost profile, the check profile and the
+ * outcome profile. An application that omitted them would be defaulted by
+ * whoever read it — free, automatic, and with no outcome — which is the single
+ * most permissive answer to three questions nobody asked.
+ */
+export interface SkillApplicationDefinition {
+  readonly action: SkillActionSpecification;
+  readonly role: SkillMechanicalRole;
+
+  /** Checked whenever this Skill is attempted. Never the acquisition list. */
+  readonly requirements?: readonly ApplicationRequirement[];
+
+  readonly cost: SkillApplicationCostProfile;
+  readonly check: SkillApplicationCheckProfile;
+  readonly outcome: SkillOutcomeProfile;
+
+  /** Cumulative changes unlocked at particular Skill Mastery ranks. */
+  readonly masteryChanges?: readonly SkillApplicationMasteryChange[];
+}
+
+
+/**
+ * The application as it stands for one character, at their rank.
+ *
+ * Separate from the definition because it is a DERIVED value: it is what the
+ * authored contract becomes once the ranks they hold have been applied, and
+ * writing it back over the definition would make the catalog character-
+ * specific. `appliedMasteryChanges` records which thresholds fired, so a UI
+ * can say "your III is what makes this a Reaction".
+ */
+export interface EffectiveSkillApplication {
+  readonly action: SkillActionSpecification;
+  readonly role: SkillMechanicalRole;
+  readonly cost: SkillApplicationCostProfile;
+  readonly check: SkillApplicationCheckProfile;
+  readonly outcome: SkillOutcomeProfile;
+  readonly appliedMasteryChanges: readonly MasteryRank[];
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Applying Mastery changes                                                   */
+/* -------------------------------------------------------------------------- */
+
+function readNumericField(
+  application: EffectiveSkillApplication,
+  field: SkillApplicationNumericField,
+): number | undefined {
+  switch (field) {
+    case "structuredActionCost":
+      return application.action.structuredActionCost.actions;
+
+    case "executionDuration":
+      return application.action.executionDuration;
+
+    case "rangeMinimumMetres":
+      return application.action.range?.minimumMetres;
+
+    case "rangeMaximumMetres":
+      return application.action.range?.maximumMetres ?? undefined;
+
+    case "maximumTargets":
+      return application.action.targets.cardinality.maximum ?? undefined;
+
+    case "exertionLoad":
+      return application.cost.exertionLoad;
+
+    case "baseAuraCost":
+      return application.cost.aura?.baseAuraCost;
+
+    case "requiredOutput":
+      return application.cost.aura?.requiredOutput;
+  }
+}
+
+
+/*
+ * Writes are total on purpose: a field the base application does not declare
+ * is left alone rather than invented. A rank that lengthened a Range the Skill
+ * never had would be authoring a Range in a modifier list, which is exactly
+ * where nobody looks for one — so findSkillApplicationIssues rejects that at
+ * catalog time and this stays a no-op if it ever slips through.
+ */
+function writeNumericField(
+  application: EffectiveSkillApplication,
+  field: SkillApplicationNumericField,
+  value: number,
+): EffectiveSkillApplication {
+  const action = application.action;
+
+  switch (field) {
+    case "structuredActionCost":
+      return {
+        ...application,
+        action: { ...action, structuredActionCost: { actions: value } },
+      };
+
+    case "executionDuration":
+      return { ...application, action: { ...action, executionDuration: value } };
+
+    case "rangeMinimumMetres":
+      if (action.range === undefined) return application;
+
+      return {
+        ...application,
+        action: { ...action, range: { ...action.range, minimumMetres: value } },
+      };
+
+    case "rangeMaximumMetres":
+      if (action.range === undefined || action.range.maximumMetres === null) {
+        return application;
+      }
+
+      return {
+        ...application,
+        action: { ...action, range: { ...action.range, maximumMetres: value } },
+      };
+
+    case "maximumTargets":
+      if (action.targets.cardinality.maximum === null) return application;
+
+      return {
+        ...application,
+        action: {
+          ...action,
+          targets: {
+            ...action.targets,
+            cardinality: { ...action.targets.cardinality, maximum: value },
+          },
+        },
+      };
+
+    case "exertionLoad":
+      return {
+        ...application,
+        cost: { ...application.cost, exertionLoad: value },
+      };
+
+    case "baseAuraCost":
+      if (application.cost.aura === undefined) return application;
+
+      return {
+        ...application,
+        cost: {
+          ...application.cost,
+          aura: { ...application.cost.aura, baseAuraCost: value },
+        },
+      };
+
+    case "requiredOutput":
+      if (application.cost.aura === undefined) return application;
+
+      return {
+        ...application,
+        cost: {
+          ...application.cost,
+          aura: { ...application.cost.aura, requiredOutput: value },
+        },
+      };
+  }
+}
+
+
+function withPermission(
+  application: EffectiveSkillApplication,
+  permission: SkillApplicationPermission,
+  permitted: boolean,
+): EffectiveSkillApplication {
+  const action = application.action;
+
+  switch (permission.kind) {
+    case "timing": {
+      const timings = action.allowedTimings.filter(
+        (timing) => timing !== permission.timing,
+      );
+
+      return {
+        ...application,
+        action: {
+          ...action,
+          allowedTimings: permitted
+            ? [...timings, permission.timing]
+            : timings,
+        },
+      };
+    }
+
+    case "focus": {
+      /*
+       * An absent list means "any focus", and there is no way to subtract one
+       * kind from "any" without enumerating the rest — which would silently
+       * freeze the list at whatever ACTION_FOCUS_KINDS held on the day the
+       * modifier was authored. Catalog validation refuses this case; here it
+       * is simply left alone.
+       */
+      if (action.permittedFocusKinds === undefined) return application;
+
+      const kinds = action.permittedFocusKinds.filter(
+        (kind) => kind !== permission.focus,
+      );
+
+      return {
+        ...application,
+        action: {
+          ...action,
+          permittedFocusKinds: permitted
+            ? [...kinds, permission.focus]
+            : kinds,
+        },
+      };
+    }
+
+    case "target": {
+      if (action.targets.permittedKinds === undefined) return application;
+
+      const kinds = action.targets.permittedKinds.filter(
+        (kind) => kind !== permission.target,
+      );
+
+      return {
+        ...application,
+        action: {
+          ...action,
+          targets: {
+            ...action.targets,
+            permittedKinds: permitted
+              ? [...kinds, permission.target]
+              : kinds,
+          },
+        },
+      };
+    }
+  }
+}
+
+
+function applyModifier(
+  application: EffectiveSkillApplication,
+  modifier: SkillApplicationModifier,
+): EffectiveSkillApplication {
+  if (modifier.op === "permit" || modifier.op === "prohibit") {
+    return withPermission(
+      application,
+      modifier.permission,
+      modifier.op === "permit",
+    );
+  }
+
+  if (modifier.op === "replace") {
+    switch (modifier.field) {
+      case "threatens":
+        return {
+          ...application,
+          action: { ...application.action, threatens: modifier.value },
+        };
+
+      case "travel":
+        return {
+          ...application,
+          action: { ...application.action, travel: modifier.value },
+        };
+
+      case "role":
+        return { ...application, role: modifier.value };
+
+      default:
+        return writeNumericField(application, modifier.field, modifier.value);
+    }
+  }
+
+  const current = readNumericField(application, modifier.field);
+
+  if (current === undefined) return application;
+
+  switch (modifier.op) {
+    case "add":
+      return writeNumericField(
+        application,
+        modifier.field,
+        current + modifier.amount,
+      );
+
+    case "multiply":
+      return writeNumericField(
+        application,
+        modifier.field,
+        current * modifier.factor,
+      );
+
+    case "cap":
+      return writeNumericField(
+        application,
+        modifier.field,
+        Math.min(current, modifier.maximum),
+      );
+  }
+}
+
+
+/** The declared changes, in the order they must be applied. */
+function orderedMasteryChanges(
+  application: SkillApplicationDefinition,
+): readonly SkillApplicationMasteryChange[] {
+  return [...(application.masteryChanges ?? [])].sort(
+    (left, right) => left.minimumMastery - right.minimumMastery,
+  );
+}
+
+
+/**
+ * The application a character at this Mastery actually gets.
+ *
+ * `mastery` is the three-answer reading capabilities/resolution.ts produces: a
+ * rank, or null for a Skill that has no ranks. Null applies nothing, which is
+ * not a fallback — a trackless Skill may not declare Mastery changes at all,
+ * and catalog validation says so.
+ *
+ * Pure. It reads the definition and returns a new value; the definition it was
+ * handed is untouched, including its nested objects.
+ */
+export function resolveEffectiveSkillApplication(
+  application: SkillApplicationDefinition,
+  mastery: MasteryValue | null,
+): EffectiveSkillApplication {
+  const base: EffectiveSkillApplication = {
+    action: application.action,
+    role: application.role,
+    cost: application.cost,
+    check: application.check,
+    outcome: application.outcome,
+    appliedMasteryChanges: [],
+  };
+
+  if (mastery === null || mastery === undefined) return base;
+
+  const applied: MasteryRank[] = [];
+
+  let effective = base;
+
+  for (const change of orderedMasteryChanges(application)) {
+    if (change.minimumMastery > mastery) continue;
+
+    for (const modifier of change.changes) {
+      effective = applyModifier(effective, modifier);
+    }
+
+    applied.push(change.minimumMastery);
+  }
+
+  return { ...effective, appliedMasteryChanges: applied };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Projection into a neutral action profile                                   */
+/* -------------------------------------------------------------------------- */
+
+/** The profile id every Skill's action carries. One spelling, one place. */
+export function skillActionProfileId(skillId: string): string {
+  return `skill:${skillId}`;
+}
+
+
+/**
+ * The effective application as the neutral ActionProfile everything else reads.
+ *
+ * This is the whole point of the file: after this call, nothing downstream —
+ * preparation, adjudication, Combat scheduling — knows or cares that a Skill
+ * was involved. A Skill used in a duel and a rock thrown at a door arrive at
+ * the same code.
+ *
+ * Takes an EFFECTIVE application, which is the guard: the only way to obtain
+ * one for a character is through application-resolution.ts, and its
+ * buildSkillActionProfile() refuses to call this for anything that is not
+ * available. Catalog validation calls it directly, against no character at
+ * all, to check what each authored rank would produce.
+ */
+export function skillActionProfile(
+  skillId: string,
+  application: EffectiveSkillApplication,
+): ActionProfile {
+  const scope = skillCheckScope(application.check);
+
+  return {
+    ...application.action,
+    id: skillActionProfileId(skillId),
+    source: { type: "skill", id: skillId },
+    ...(scope === undefined ? {} : { check: { scope } }),
+  };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Validation                                                                 */
+/* -------------------------------------------------------------------------- */
+
+function issue(
+  code: string,
+  message: string,
+  required: string | readonly string[],
+  actual: string,
+): EngineError {
+  return {
+    code,
+    message,
+    audience: "developer",
+    required: typeof required === "string" ? required : [...required],
+    actual,
+  };
+}
+
+
+function findOutcomeEntryIssues(
+  where: string,
+  entry: SkillOutcomeEntry,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  if (typeof entry.id !== "string" || entry.id.trim().length === 0) {
+    errors.push(issue(
+      "capabilities.application.outcome.id.missing",
+      `The ${where} outcome must be identified.`,
+      "non-empty outcome id",
+      String(entry.id),
+    ));
+  }
+
+  if (typeof entry.summary !== "string" || entry.summary.trim().length === 0) {
+    errors.push(issue(
+      "capabilities.application.outcome.summary.missing",
+      `The ${where} outcome must say what it means.`,
+      "non-empty summary",
+      String(entry.summary),
+    ));
+  }
+
+  for (const output of entry.outputs ?? []) {
+    if (
+      output.amount !== undefined &&
+      !Number.isFinite(output.amount)
+    ) {
+      errors.push(issue(
+        "capabilities.application.outcome.output.amount.invalid",
+        `Output "${output.id}" of the ${where} outcome carries a magnitude that is not a number.`,
+        "finite number, or omitted",
+        String(output.amount),
+      ));
+    }
+  }
+
+  return errors;
+}
+
+
+function findCheckProfileIssues(
+  check: SkillApplicationCheckProfile,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  switch (check.kind) {
+    case "automatic":
+      break;
+
+    case "fixed":
+      if (!isValidCheckScope(check.scope)) {
+        errors.push(issue(
+          "capabilities.application.check.scope.invalid",
+          "A fixed check must name a known check scope.",
+          "known CheckScope",
+          JSON.stringify(check.scope),
+        ));
+      }
+
+      if (
+        check.tiePolicy !== undefined &&
+        check.tiePolicy !== "succeeds" &&
+        check.tiePolicy !== "fails"
+      ) {
+        errors.push(issue(
+          "capabilities.application.check.tie-policy.invalid",
+          "A fixed check's tie policy must say whether a tie succeeds or fails.",
+          ["succeeds", "fails"],
+          String(check.tiePolicy),
+        ));
+      }
+
+      break;
+
+    case "opposed":
+      if (!isValidCheckScope(check.initiatorScope)) {
+        errors.push(issue(
+          "capabilities.application.check.scope.invalid",
+          "An opposed check must name a known scope for the initiator.",
+          "known CheckScope",
+          JSON.stringify(check.initiatorScope),
+        ));
+      }
+
+      if (!isValidCheckScope(check.opponentScope)) {
+        errors.push(issue(
+          "capabilities.application.check.scope.invalid",
+          "An opposed check must name a known scope for the opponent.",
+          "known CheckScope",
+          JSON.stringify(check.opponentScope),
+        ));
+      }
+
+      if (check.tiesFavor !== "initiator" && check.tiesFavor !== "opponent") {
+        errors.push(issue(
+          "capabilities.application.check.ties-favor.invalid",
+          "An opposed check must say which side a tie favours.",
+          ["initiator", "opponent"],
+          String(check.tiesFavor),
+        ));
+      }
+
+      break;
+
+    case "adjudicated":
+      if (check.scope !== undefined && !isValidCheckScope(check.scope)) {
+        errors.push(issue(
+          "capabilities.application.check.scope.invalid",
+          "An adjudicated check that names a scope must name a known one.",
+          "known CheckScope, or omit it",
+          JSON.stringify(check.scope),
+        ));
+      }
+
+      break;
+
+    default:
+      errors.push(issue(
+        "capabilities.application.check.kind.invalid",
+        "A Skill's check must be automatic, fixed, opposed or adjudicated.",
+        ["automatic", "fixed", "opposed", "adjudicated"],
+        String((check as { kind?: unknown }).kind),
+      ));
+  }
+
+  return errors;
+}
+
+
+/*
+ * Which outcome shape each check kind can actually select.
+ *
+ * The pairing is the point. A success/failure outcome behind an automatic
+ * check describes two branches nothing will ever choose between, and it reads
+ * perfectly well in the file — which is why it has to be caught here rather
+ * than noticed later by whoever wonders why the failure text never appears.
+ */
+const OUTCOMES_FOR_CHECK: Readonly<
+  Record<SkillApplicationCheckProfile["kind"], readonly SkillOutcomeProfile["kind"][]>
+> = {
+  automatic: ["automatic"],
+  fixed: ["fixed"],
+  opposed: ["opposed"],
+  adjudicated: ["guided-narrative", "free-adjudication"],
+};
+
+
+function findOutcomeProfileIssues(
+  check: SkillApplicationCheckProfile,
+  outcome: SkillOutcomeProfile,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  switch (outcome.kind) {
+    case "automatic":
+      errors.push(...findOutcomeEntryIssues("automatic", outcome.outcome));
+      break;
+
+    case "fixed":
+      errors.push(...findOutcomeEntryIssues("success", outcome.success));
+      errors.push(...findOutcomeEntryIssues("failure", outcome.failure));
+      break;
+
+    case "opposed":
+      errors.push(...findOutcomeEntryIssues("winner", outcome.winner));
+      errors.push(...findOutcomeEntryIssues("loser", outcome.loser));
+      break;
+
+    case "guided-narrative":
+      if (outcome.guidance.length === 0) {
+        errors.push(issue(
+          "capabilities.application.outcome.guidance.empty",
+          "A guided narrative outcome must offer the GM something; use free adjudication when there is nothing to offer.",
+          "one or more guidance entries",
+          "empty list",
+        ));
+      }
+
+      outcome.guidance.forEach((entry, index) => {
+        errors.push(...findOutcomeEntryIssues(`guidance ${index + 1}`, entry));
+      });
+
+      break;
+
+    case "free-adjudication":
+      break;
+
+    default:
+      errors.push(issue(
+        "capabilities.application.outcome.kind.invalid",
+        "A Skill's outcome must be automatic, fixed, opposed, guided-narrative or free-adjudication.",
+        [
+          "automatic",
+          "fixed",
+          "opposed",
+          "guided-narrative",
+          "free-adjudication",
+        ],
+        String((outcome as { kind?: unknown }).kind),
+      ));
+
+      return errors;
+  }
+
+  const permitted = OUTCOMES_FOR_CHECK[check.kind];
+
+  if (permitted !== undefined && !permitted.includes(outcome.kind)) {
+    errors.push(issue(
+      "capabilities.application.outcome.check-mismatch",
+      `A "${check.kind}" check cannot select a "${outcome.kind}" outcome.`,
+      permitted,
+      outcome.kind,
+    ));
+  }
+
+  return errors;
+}
+
+
+function findCostProfileIssues(
+  cost: SkillApplicationCostProfile,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  if (!Number.isFinite(cost.exertionLoad) || cost.exertionLoad < 0) {
+    errors.push(issue(
+      "capabilities.application.cost.exertion.invalid",
+      "A Skill's physical exertion load must be a finite, non-negative number — write 0 when it costs nothing.",
+      "finite load >= 0",
+      String(cost.exertionLoad),
+    ));
+  }
+
+  const aura = cost.aura;
+
+  if (aura === undefined) return errors;
+
+  if (
+    aura.baseAuraCost !== undefined &&
+    (!Number.isFinite(aura.baseAuraCost) || aura.baseAuraCost < 0)
+  ) {
+    errors.push(issue(
+      "capabilities.application.cost.aura.base.invalid",
+      "A Skill's deliberate Aura cost must be a finite, non-negative number.",
+      "finite Aura >= 0",
+      String(aura.baseAuraCost),
+    ));
+  }
+
+  if (
+    aura.requiredOutput !== undefined &&
+    (!Number.isFinite(aura.requiredOutput) || aura.requiredOutput < 0)
+  ) {
+    errors.push(issue(
+      "capabilities.application.cost.aura.output.invalid",
+      "A Skill's required Aura Output must be a finite, non-negative number.",
+      "finite Output >= 0",
+      String(aura.requiredOutput),
+    ));
+  }
+
+  if (aura.baseAuraCost === undefined && aura.requiredOutput === undefined) {
+    errors.push(issue(
+      "capabilities.application.cost.aura.empty",
+      "An Aura cost that demands neither Aura nor Output says nothing; omit it.",
+      "a base cost, a required Output, or omit the field",
+      "empty Aura cost",
+    ));
+  }
+
+  return errors;
+}
+
+
+function findRequirementIssues(
+  requirements: readonly ApplicationRequirement[],
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+  const seen = new Set<string>();
+
+  for (const requirement of requirements) {
+    if (
+      typeof requirement.id !== "string" ||
+      requirement.id.trim().length === 0
+    ) {
+      errors.push(issue(
+        "capabilities.application.requirement.id.missing",
+        "An application requirement must be identified, because it becomes a finding a GM overrides by name.",
+        "non-empty requirement id",
+        String(requirement.id),
+      ));
+
+      continue;
+    }
+
+    if (seen.has(requirement.id)) {
+      /*
+       * Two findings under one id means an override aimed at one of them hits
+       * whichever the reader happened to index last. The ids are the handle;
+       * duplicated handles are worse than none.
+       */
+      errors.push(issue(
+        "capabilities.application.requirement.id.duplicate",
+        `Application requirement "${requirement.id}" is declared more than once.`,
+        "each application requirement id at most once",
+        requirement.id,
+      ));
+    }
+
+    seen.add(requirement.id);
+
+    if (
+      typeof requirement.requirement !== "object" ||
+      requirement.requirement === null
+    ) {
+      errors.push(issue(
+        "capabilities.application.requirement.missing",
+        `Application requirement "${requirement.id}" states no requirement.`,
+        "a Requirement",
+        String(requirement.requirement),
+      ));
+    }
+  }
+
+  return errors;
+}
+
+
+function findPermissionIssues(
+  action: SkillActionSpecification,
+  modifier: Extract<
+    SkillApplicationModifier,
+    { op: "permit" | "prohibit" }
+  >,
+): readonly EngineError[] {
+  const permission = modifier.permission;
+
+  switch (permission.kind) {
+    case "timing":
+      if (!isActionTiming(permission.timing)) {
+        return [issue(
+          "capabilities.application.mastery.permission.invalid",
+          `"${String(permission.timing)}" is not a known Action timing.`,
+          [...ACTION_TIMINGS],
+          String(permission.timing),
+        )];
+      }
+
+      return [];
+
+    case "focus":
+      if (!isActionFocusKind(permission.focus)) {
+        return [issue(
+          "capabilities.application.mastery.permission.invalid",
+          `"${String(permission.focus)}" is not a known action focus kind.`,
+          "known ActionFocusKind",
+          String(permission.focus),
+        )];
+      }
+
+      if (action.permittedFocusKinds === undefined) {
+        /*
+         * The base permits every focus, so both operations are lies: permitting
+         * one adds nothing, and prohibiting one cannot subtract from "any"
+         * without enumerating the rest — which would freeze the list at
+         * whatever it held the day this was written.
+         */
+        return [issue(
+          "capabilities.application.mastery.permission.unrestricted",
+          "A Mastery change cannot permit or prohibit a focus kind while the base application permits any focus; declare the permitted list first.",
+          "an explicit permittedFocusKinds list on the base application",
+          "unrestricted focus",
+        )];
+      }
+
+      return [];
+
+    case "target":
+      if (!isTargetKind(permission.target)) {
+        return [issue(
+          "capabilities.application.mastery.permission.invalid",
+          `"${String(permission.target)}" is not a known target kind.`,
+          "known TargetKind",
+          String(permission.target),
+        )];
+      }
+
+      if (action.targets.permittedKinds === undefined) {
+        return [issue(
+          "capabilities.application.mastery.permission.unrestricted",
+          "A Mastery change cannot permit or prohibit a target kind while the base application permits any kind; declare the permitted list first.",
+          "an explicit permittedKinds list on the base application",
+          "unrestricted targets",
+        )];
+      }
+
+      return [];
+
+    default:
+      return [issue(
+        "capabilities.application.mastery.permission.kind.invalid",
+        "A permission must name a timing, a focus kind or a target kind.",
+        ["timing", "focus", "target"],
+        String((permission as { kind?: unknown }).kind),
+      )];
+  }
+}
+
+
+function findModifierIssues(
+  base: SkillApplicationDefinition,
+  modifier: SkillApplicationModifier,
+): readonly EngineError[] {
+  if (modifier.op === "permit" || modifier.op === "prohibit") {
+    return findPermissionIssues(base.action, modifier);
+  }
+
+  if (modifier.op === "replace" && modifier.field === "threatens") {
+    return isThreatDeclaration(modifier.value)
+      ? []
+      : [issue(
+          "capabilities.application.mastery.replace.invalid",
+          `"${String(modifier.value)}" is not a known threat declaration.`,
+          "known ThreatDeclaration",
+          String(modifier.value),
+        )];
+  }
+
+  if (modifier.op === "replace" && modifier.field === "travel") {
+    return findTravelIssues(modifier.value);
+  }
+
+  if (modifier.op === "replace" && modifier.field === "role") {
+    return isSkillMechanicalRole(modifier.value)
+      ? []
+      : [issue(
+          "capabilities.application.mastery.replace.invalid",
+          `"${String(modifier.value)}" is not a known Skill mechanical role.`,
+          [...SKILL_MECHANICAL_ROLES],
+          String(modifier.value),
+        )];
+  }
+
+  const errors: EngineError[] = [];
+
+  if (!isSkillApplicationNumericField(modifier.field)) {
+    return [issue(
+      "capabilities.application.mastery.field.invalid",
+      `"${String(modifier.field)}" is not a field a Mastery change may move.`,
+      [...SKILL_APPLICATION_NUMERIC_FIELDS],
+      String(modifier.field),
+    )];
+  }
+
+  const amount = modifier.op === "add"
+    ? modifier.amount
+    : modifier.op === "multiply"
+      ? modifier.factor
+      : modifier.op === "cap"
+        ? modifier.maximum
+        : modifier.value;
+
+  if (!Number.isFinite(amount)) {
+    errors.push(issue(
+      "capabilities.application.mastery.amount.invalid",
+      `A "${modifier.op}" of "${modifier.field}" must be a finite number.`,
+      "finite number",
+      String(amount),
+    ));
+  }
+
+  /*
+   * A modifier on a field the base does not declare is a silent no-op, and a
+   * silent no-op in a Mastery track is the worst kind: the rank LOOKS like it
+   * does something, and a player has spent Growth Points on it.
+   */
+  const readable = readNumericField(
+    {
+      action: base.action,
+      role: base.role,
+      cost: base.cost,
+      check: base.check,
+      outcome: base.outcome,
+      appliedMasteryChanges: [],
+    },
+    modifier.field,
+  );
+
+  if (readable === undefined) {
+    errors.push(issue(
+      "capabilities.application.mastery.field.absent",
+      `A Mastery change moves "${modifier.field}", which the base application does not declare — the change would do nothing.`,
+      `a base application declaring ${modifier.field}`,
+      "absent",
+    ));
+  }
+
+  return errors;
+}
+
+
+function findMasteryChangeIssues(
+  application: SkillApplicationDefinition,
+  track: MasteryTrack | undefined,
+): readonly EngineError[] {
+  const changes = application.masteryChanges ?? [];
+
+  if (changes.length === 0) return [];
+
+  if (track === undefined) {
+    /*
+     * A Skill with no Mastery is held or it is not; there is no rank for a
+     * change to wait for, so every one of these would be dead data that reads
+     * like a progression.
+     */
+    return [issue(
+      "capabilities.application.mastery.unsupported",
+      "A Skill with no Mastery track cannot declare Mastery changes to its application.",
+      "a Mastery track, or no Mastery changes",
+      `${changes.length} change(s)`,
+    )];
+  }
+
+  const errors: EngineError[] = [];
+  const seen = new Set<number>();
+
+  for (const change of changes) {
+    const minimum = change.minimumMastery;
+
+    if (!isMasteryRank(minimum) || minimum > track.maximumMastery) {
+      errors.push(issue(
+        "capabilities.application.mastery.threshold.out-of-range",
+        `A Mastery change waits for rank ${String(minimum)}, which this Skill's track never reaches.`,
+        `Mastery rank 1..${track.maximumMastery}`,
+        String(minimum),
+      ));
+    } else if (seen.has(minimum)) {
+      /*
+       * Two entries at one rank apply in whatever order the array happens to
+       * hold them, so "add 2 then cap at 3" and "cap at 3 then add 2" are the
+       * same authored data with two different answers.
+       */
+      errors.push(issue(
+        "capabilities.application.mastery.threshold.duplicate",
+        `Mastery rank ${minimum} declares application changes more than once.`,
+        "each Mastery threshold at most once",
+        String(minimum),
+      ));
+    }
+
+    seen.add(minimum);
+
+    if (change.changes.length === 0) {
+      errors.push(issue(
+        "capabilities.application.mastery.changes.empty",
+        `Mastery rank ${String(minimum)} declares no change to the application.`,
+        "one or more modifiers",
+        "empty list",
+      ));
+    }
+
+    for (const modifier of change.changes) {
+      errors.push(...findModifierIssues(application, modifier));
+    }
+  }
+
+  return errors;
+}
+
+
+/**
+ * Everything wrong with an authored application, including what its own
+ * Mastery ranks would make of it.
+ *
+ * The action half is validated by PROJECTING it and handing the result to
+ * findActionProfileIssues — the neutral validator every other consumer of an
+ * ActionProfile already runs. A Skill-specific reimplementation would be a
+ * second opinion on timings, costs, targets, Range and travel, and the two
+ * would eventually disagree about something a Combat had already scheduled.
+ *
+ * Each declared rank is then projected in turn, so a change that drives the
+ * Action cost negative or the Range inside-out fails at catalog time rather
+ * than on the character who finally reaches that rank.
+ */
+export function findSkillApplicationIssues(
+  skillId: string,
+  application: SkillApplicationDefinition,
+  track: MasteryTrack | undefined,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  if (!isSkillMechanicalRole(application.role)) {
+    errors.push(issue(
+      "capabilities.application.role.invalid",
+      `"${String(application.role)}" is not a known Skill mechanical role.`,
+      [...SKILL_MECHANICAL_ROLES],
+      String(application.role),
+    ));
+  }
+
+  errors.push(...findRequirementIssues(application.requirements ?? []));
+  errors.push(...findCostProfileIssues(application.cost));
+  errors.push(...findCheckProfileIssues(application.check));
+  errors.push(...findOutcomeProfileIssues(application.check, application.outcome));
+  errors.push(...findMasteryChangeIssues(application, track));
+
+  const base = resolveEffectiveSkillApplication(application, null);
+
+  errors.push(...findActionProfileIssues(skillActionProfile(skillId, base)));
+
+  for (const change of orderedMasteryChanges(application)) {
+    if (!isMasteryRank(change.minimumMastery)) continue;
+
+    const effective = resolveEffectiveSkillApplication(
+      application,
+      change.minimumMastery,
+    );
+
+    for (const error of findActionProfileIssues(
+      skillActionProfile(skillId, effective),
+    )) {
+      errors.push({
+        ...error,
+        message: `At Mastery ${change.minimumMastery}: ${error.message}`,
+      });
+    }
+
+    errors.push(...findCostProfileIssues(effective.cost));
+  }
+
+  return errors;
+}

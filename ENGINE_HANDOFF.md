@@ -646,7 +646,7 @@ Numeric 1–10 internally, Roman I–X for display. `NO_MASTERY = 0`, `STANDARD_
 
 ### Skills — 5 authored
 
-| Skill | timings | max | requirements |
+| Skill | timing | max | acquisition requirements |
 |---|---|---|---|
 | punch | action | X | hasTechnique martial-arts |
 | parry | reaction | X | techniqueMastery martial-arts ≥ II |
@@ -654,9 +654,35 @@ Numeric 1–10 internally, Roman I–X for display. `NO_MASTERY = 0`, `STANDARD_
 | pick-lock | action | V | hasTechnique lockpicking |
 | fire-blast | action | X | all[ hasTrait firebending, hasTechnique firebending-forms ] |
 
-`SkillTiming` = `"action" | "reaction"`, relevant only under structured timing. `attempts.ts` defines `DefinedSkillAttempt` / `ImprovisedSkillAttempt` (types only — improvised attempts have no resolution yet).
+Timing is read off `application.action.allowedTimings`; the flat `SkillTiming` / `timings` field is **gone**, not deprecated — see the application section below. `attempts.ts` defines `DefinedSkillAttempt` / `ImprovisedSkillAttempt` (types only — improvised attempts have no resolution yet).
 
 `capabilities/resolution.ts` folds authored capabilities with granted access, keeping both visible: `ResolvedCapability` records `isAuthored`, `isGranted`, `grantedBy` sources, `supportsMastery`, an optional `authoredMastery`, a `mastery` of a rank **or `null`**, plus `availability`, `unlockedBy` and `subsumedBy`. `getResolvedSkillMastery` / `getResolvedTechniqueMastery` answer a rank / `null` (held, no Mastery) / `undefined` (not held — including a capability that is only unlocked). It takes the authored `CharacterSkill` / `CharacterTechnique` entries rather than an id→rank record, since a record cannot describe a capability that is held and has no rank. **Possession is never `mastery > 0`** — enforced by `architecture.test.ts` — and it is no longer bare presence either, since the record also holds capabilities that are only unlocked; use `hasResolvedSkill` / `isHeldCapability`.
+
+### Skill applications (`capabilities/applications.ts`, `capabilities/application-resolution.ts`)
+
+**Possession is settled once; usability is asked every time.** `SkillDefinition.requirements` are acquisition requirements and are never rechecked to decide whether a Skill works. `SkillDefinition.application` carries its own `requirements`, resolved on every attempt, so losing Fire Control makes Fire Blast *temporarily inaccessible* while leaving it on the sheet at its trained rank — and restoring the Trait restores access with nothing written in either direction.
+
+`SkillApplicationDefinition`:
+
+| field | what it says |
+|---|---|
+| `action` | `Omit<ActionProfile, "id" \| "source" \| "check">` — timings, structured Action cost, targets, permitted focus, Range, execution duration, travel, threat declaration |
+| `role` | `SkillMechanicalRole`: offense / defense / movement / control / support / utility / perception |
+| `requirements?` | `ApplicationRequirement { id, requirement, summary? }` — identified, because each becomes a finding a GM overrides by name |
+| `cost` | `exertionLoad` (required, even at 0) plus an optional `aura { baseAuraCost?, requiredOutput? }`, tied to `AuraCostRequest` by a `Pick` |
+| `check` | `automatic` \| `fixed` (scope, tiePolicy?) \| `opposed` (both scopes, tiesFavor) \| `adjudicated` (scope?) |
+| `outcome` | `automatic` \| `fixed` \| `opposed` \| `guided-narrative` \| `free-adjudication`, each branch producing `ActionOutputFact` / `ActionConsequenceSuggestion` data — never a mutation function |
+| `masteryChanges?` | cumulative `{ minimumMastery, changes }`, applied in ascending order |
+
+Difficulty, the opposing character, dice and situational facts are **not** stored: they arrive at request time. `skillResolutionApproach()` derives the neutral `ResolutionApproach` from the outcome rather than storing a second copy of it.
+
+**Mastery changes** are typed operations over a closed field list (`structuredActionCost`, `executionDuration`, `rangeMinimumMetres`, `rangeMaximumMetres`, `maximumTargets`, `exertionLoad`, `baseAuraCost`, `requiredOutput`) plus `replace` of `threatens` / `travel` / `role` and `permit` / `prohibit` of a timing, focus kind or target kind — deliberately not a deep partial. Catalog validation rejects a trackless Skill declaring changes, out-of-range or duplicate thresholds, a change to a field the base does not declare, and any rank whose projection would be an invalid profile.
+
+**Live resolution.** `resolveSkillApplication({ skillId, capabilities, context })` → `EngineResult<ResolvedSkillApplication>` with a disposition of `available` / `skill-not-held` (an unlock is permission, not possession) / `requirements-unsatisfied` / `requirements-unresolved` (an unrecorded sheet is not a refusal), the three-answer `mastery`, every requirement's own resolution, and the `EffectiveSkillApplication` when available. An unknown Skill and a Skill declaring **no** application both fail structurally — the engine never invents a default application. `buildSkillActionProfile()` projects an available one into a neutral `ActionProfile` (`id: skill:<id>`, `source: {type:"skill", id}`) and refuses anything else.
+
+Techniques stay passive and get no application field and no private preparation path.
+
+**Layering.** These two files are the second declared seam allowed to import `actions/`, `targeting/`, `spatial/` and `checks/` from under `character/` (the first is `character/actions/`). `architecture.test.ts` excepts them **by name** and asserts the other half: no capability file declares its own copy of any neutral vocabulary, and `skill:${id}` is built in exactly one place.
 
 ### Capability lifecycle (`capabilities/lifecycle.ts`, `capabilities/dependencies.ts`)
 
@@ -674,7 +700,7 @@ An omitted mode is a loan, so every grant authored before modes still means what
 
 **Two gates.** A definition may declare `requiresUnlock?: boolean` — prerequisites are not the whole gate, and something must also be offering it. `CapabilityAcquisitionEvaluation` reports `disposition` (prerequisites), `unlocked` and `requiresUnlock` separately plus `acquisition`, the decision they combine to; act on `acquisition`, read the parts to say *which* gate is shut. An unlock supplies permission and never prerequisites, in resolution and in dependency analysis alike.
 
-**Availability.** `available` (theirs), `subsumed` (superseded, still on the record and still satisfying requirements naming it), `inaccessible` (on the record without access — what an unlock produces). Application-level inaccessibility is Ticket 3.3's.
+**Availability.** `available` (theirs), `subsumed` (superseded, still on the record and still satisfying requirements naming it), `inaccessible` (on the record without access — what an unlock produces). Application-level inaccessibility is a separate axis and lives on the application — a Skill can be `available` here and unusable right now.
 
 **Acquisition requirements are a moment, not a lease.** A definition's `requirements` are checked when the capability is taken up. Losing one afterwards does not delete the capability; character validation reports it as a **warning** (`character.skill.requirements_unsatisfied`), never an error. `evaluateCapabilityAcquisition` (requirements passed in) and `evaluateAcquisition` (catalog-aware) are pure and answer `satisfied` / `unsatisfied` / `unresolved`.
 

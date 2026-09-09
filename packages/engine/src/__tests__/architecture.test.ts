@@ -565,9 +565,33 @@ describe("Stage II Phase 2A layering", () => {
    */
   const ADAPTER = join(SRC, "character", "actions");
 
+  /*
+   * The second seam: a Skill's executable application contract.
+   *
+   * A Skill has to be able to say when it may be used, what it costs the
+   * Action economy, what it may be pointed at, how far it reaches and how it is
+   * decided — and every one of those already has exactly one neutral
+   * definition. The only two ways to write that contract are to compose those
+   * vocabularies or to declare Skill-shaped copies of them, and copies of a
+   * closed vocabulary are the failure the sensory scopes had to be rescued
+   * from: two structurally identical declarations that TypeScript accepts in
+   * both directions forever.
+   *
+   * So these two files may import upward, exactly as the adapter may, and the
+   * rule below permits them BY NAME rather than by pattern — a third capability
+   * file reaching for actions/ fails here and has to argue for itself. The
+   * anti-duplication suite further down is the other half: composing is
+   * allowed, redeclaring is not.
+   */
+  const APPLICATION_SEAM = [
+    join(SRC, "character", "capabilities", "applications.ts"),
+    join(SRC, "character", "capabilities", "application-resolution.ts"),
+  ];
+
   it("never lets Character reach up into spatial/, targeting/ or actions/", () => {
     const characterFiles = sourceFilesUnder(join(SRC, "character"))
-      .filter((path) => !path.startsWith(ADAPTER + "/"));
+      .filter((path) => !path.startsWith(ADAPTER + "/"))
+      .filter((path) => !APPLICATION_SEAM.includes(path));
 
     expect(characterFiles.length).toBeGreaterThan(50);
 
@@ -580,6 +604,22 @@ describe("Stage II Phase 2A layering", () => {
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it("finds the application seam it is excepting, so the exception is real", () => {
+    /*
+     * Guards against the exception outliving the files it was written for. If
+     * applications.ts stops reaching for the neutral vocabulary, the exception
+     * is dead and should be deleted rather than left standing for the next
+     * file that finds it convenient.
+     */
+    const reaching = APPLICATION_SEAM.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, "actions"),
+      ),
+    );
+
+    expect(reaching).toEqual(APPLICATION_SEAM);
   });
 
   it("keeps the adapter the only Character file that may import actions/", () => {
@@ -731,12 +771,47 @@ describe("GM adjudication is not scattered", () => {
       .toBeGreaterThan(100);
   });
 
-  it("names no GM override anywhere below actions/", () => {
+  /*
+   * The machinery a GM ruling is actually made of.
+   *
+   * Named individually rather than by grepping "adjudicat", because the word
+   * does two different jobs. `adjudicateAction` and the override records are
+   * the DECISION — who may overrule what, and what a player is shown — and a
+   * second implementation of any of them is a second policy.
+   *
+   * "This is decided by a person" is not that. It is a property of the action,
+   * it lives in the neutral ResolutionApproach vocabulary, and approach.ts's
+   * own header says content selects it per action: a Skill whose outcome the
+   * GM supplies has to be able to say so in its own definition. Banning the
+   * substring banned the declaration along with the decision, which would have
+   * left content unable to describe the one case a rules engine most needs
+   * described.
+   */
+  const ADJUDICATION_MACHINERY =
+    /\bgmOverride|\badjudicateAction\b|\bAdjudicationDecision\b|\bAdjudicationInput\b|\bAdjudicationOverrideRecord\b|\bAdjudicatedAction\b|\bAdjudicatedRoll\b|\bFindingOverride\b|\bOutcomeOverride\b|\bCostOverride\b|\bDiceOverride\b|\brevealsAtLeast\b|\bGmActionView\b/;
+
+  it("names no GM override or adjudication machinery below actions/", () => {
     const offenders = DOMAINS
       .flatMap((directory) => sourceFilesUnder(directory))
-      .filter((path) => /gmOverride|adjudicat/i.test(codeOf(path)));
+      .filter((path) => ADJUDICATION_MACHINERY.test(codeOf(path)));
 
     expect(offenders).toEqual([]);
+  });
+
+  it("lets only the Skill application contract even NAME adjudication", () => {
+    /*
+     * The narrower rule, kept explicit so the loosening above cannot widen by
+     * accident. A Skill declares that its outcome is adjudicated; nothing else
+     * below actions/ has any business using the word, and a new file that does
+     * fails here rather than quietly joining the exception.
+     */
+    const namers = DOMAINS
+      .flatMap((directory) => sourceFilesUnder(directory))
+      .filter((path) => /adjudicat/i.test(codeOf(path)));
+
+    expect(namers).toEqual([
+      join(SRC, "character", "capabilities", "applications.ts"),
+    ]);
   });
 
   it("keeps the public/GM split inside the adjudication layer", () => {
@@ -1103,5 +1178,122 @@ describe("capability kinds and grant modes are declared once", () => {
 
     expect(declarers).toHaveLength(1);
     expect(declarers[0]!.endsWith(EFFECTS)).toBe(true);
+  });
+});
+
+
+/*
+ * A Skill application COMPOSES the neutral vocabularies; it never copies them.
+ *
+ * The exception that lets character/capabilities/applications.ts import
+ * upward is only safe while that is true. The failure it exists to prevent is
+ * specific and has already happened once, to the sensory scopes: two
+ * structurally identical declarations of a closed vocabulary, which TypeScript
+ * accepts assignments between in both directions, so adding a member to one
+ * and not the other compiles perfectly and disagrees at runtime.
+ *
+ * A Skill-shaped ActionTiming or TargetSpecification would be exactly that,
+ * and it would be worse than the sensory case: the two copies would sit either
+ * side of the seam that turns a Skill into a scheduled action, so the
+ * disagreement would surface as a Combat scheduling something the Skill did
+ * not permit.
+ */
+describe("capability code composes the neutral vocabularies", () => {
+  const capabilityFiles = sourceFilesUnder(
+    join(SRC, "character", "capabilities"),
+  );
+
+  /*
+   * Every closed vocabulary the application contract reaches for, and the
+   * domain that owns it. Adding a field to any of these is a change in one
+   * file; adding a second declaration is what this suite refuses.
+   */
+  const NEUTRAL_VOCABULARY = [
+    "ActionTiming",
+    "ActionProfile",
+    "ActionFocus",
+    "ActionFocusKind",
+    "StructuredActionCost",
+    "ThreatDeclaration",
+    "ResolutionApproach",
+    "ActionOutputFact",
+    "ActionConsequenceSuggestion",
+    "TargetSpecification",
+    "TargetCardinality",
+    "TargetKind",
+    "TargetRef",
+    "DistanceInterval",
+    "Distance",
+    "SpatialTravel",
+    "CheckScope",
+    "FixedCheckTiePolicy",
+    "OpposedCheckSide",
+    "CheckRequest",
+    "AuraCostRequest",
+    "PhysicalExertionLoad",
+  ];
+
+  it("finds the sources it is checking", () => {
+    expect(capabilityFiles.length).toBeGreaterThan(5);
+  });
+
+  it("declares no capability-local copy of a neutral vocabulary", () => {
+    const offenders: string[] = [];
+
+    for (const path of capabilityFiles) {
+      const source = readFileSync(path, "utf8");
+
+      for (const name of NEUTRAL_VOCABULARY) {
+        /*
+         * A DECLARATION, not a mention. Importing the type, extending it,
+         * naming it in a field and writing about it in a comment are all the
+         * composition this rule wants; `interface ActionTiming` and
+         * `type ActionTiming =` are the two forms that create a second one.
+         */
+        const declares = new RegExp(
+          `\\b(?:interface|enum)\\s+${name}\\b|\\btype\\s+${name}\\s*[=<]|\\bconst\\s+${name}S?\\s*=\\s*\\[`,
+        );
+
+        if (declares.test(source)) offenders.push(`${path}: ${name}`);
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reaches the neutral vocabularies from the seam and nowhere else", () => {
+    /*
+     * The composition half, asserted positively so the rule above cannot pass
+     * because the imports quietly went away and were reimplemented locally.
+     */
+    const seam = join(SRC, "character", "capabilities", "applications.ts");
+
+    const source = readFileSync(seam, "utf8");
+
+    for (const domain of ["../../actions", "../../targeting", "../../spatial", "../../checks"]) {
+      expect(source).toContain(`from "${domain}"`);
+    }
+  });
+
+  it("builds the profile identity in exactly one place", () => {
+    /*
+     * `skill:<id>` is the profile id AND the source id, and a second spelling
+     * of it would produce two profile ids for one Skill — which a scheduler
+     * matching an intent against a profile would reject as a mismatch nobody
+     * could see in either file.
+     */
+    const everySource = [
+      ...sourceFilesUnder(join(SRC, "character")),
+      ...sourceFilesUnder(join(SRC, "actions")),
+      ...sourceFilesUnder(join(SRC, "gameplay")),
+    ];
+
+    const builders = everySource.filter((path) =>
+      /`skill:\$\{/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(builders).toEqual([
+      join(SRC, "character", "capabilities", "applications.ts"),
+    ]);
   });
 });

@@ -203,7 +203,6 @@ describe("derived attribute requirements", () => {
       id: "riposte",
       name: "Riposte",
       description: "A test Skill gated on Combat Ability.",
-      timings: ["reaction"],
       mastery: { maximumMastery: 10 },
       requirements: [
         {
@@ -474,7 +473,6 @@ describe("requirements against a real character", () => {
       id: "dragon-breath",
       name: "Dragon Breath",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: { maximumMastery: 5 },
       requirements: [{ type: "hasTechnique", techniqueId: "dragon-forms" }],
     });

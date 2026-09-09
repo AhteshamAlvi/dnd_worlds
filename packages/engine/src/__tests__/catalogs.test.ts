@@ -117,7 +117,6 @@ describe("registerDefinition", () => {
         name: "House Rule",
         description: "Registered in every domain.",
         // Skills and Techniques are the domains with required extra fields.
-        timings: ["action"],
         mastery: { maximumMastery: 10 },
       });
 
@@ -186,7 +185,6 @@ describe("findCatalogReferenceIssues", () => {
       id: "riposte",
       name: "Riposte",
       description: "A test Skill.",
-      timings: ["reaction"],
       mastery: { maximumMastery: 10 },
       requirements: [
         { type: "techniqueMastery", techniqueId: "swordsmanshp", minimumMastery: 4 },
@@ -203,7 +201,6 @@ describe("findCatalogReferenceIssues", () => {
       id: "twin-strike",
       name: "Twin Strike",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: { maximumMastery: 10 },
       requirements: [
         {
@@ -306,7 +303,6 @@ describe("findCatalogReferenceIssues", () => {
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: { maximumMastery: 3 },
     });
 

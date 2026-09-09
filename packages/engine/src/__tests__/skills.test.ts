@@ -238,7 +238,6 @@ describe("skill mastery: depth", () => {
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "Adhere to surfaces.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 3,
         ranks: [
@@ -307,7 +306,6 @@ describe("skill requirements", () => {
           id: "improvised-shove",
           name: "Improvised Shove",
           description: "A Skill with no prerequisite path.",
-          timings: ["action"],
           mastery: { maximumMastery: 3 },
         },
         context(),
@@ -541,7 +539,6 @@ describe("a capability listed twice", () => {
       id: "stacker",
       name: "Stacker",
       description: "A test Skill.",
-      timings: ["action"],
       mastery: {
         maximumMastery: 5,
         ranks: [
@@ -583,6 +580,9 @@ describe("authored catalog", () => {
   });
 
   it("defines Parry as a Reaction Skill", () => {
-    expect(getSkillDefinition("parry")?.timings).toContain("reaction");
+    // Timing lives on the application now, and only there.
+    expect(
+      getSkillDefinition("parry")?.application?.action.allowedTimings,
+    ).toEqual(["reaction"]);
   });
 });

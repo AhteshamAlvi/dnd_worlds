@@ -540,7 +540,6 @@ describe("an incomplete sheet warns rather than failing validation", () => {
       id: GATED,
       name: "Gated Skill",
       description: "A test Skill gated on one Trait and nothing else.",
-      timings: ["action"],
       mastery: { maximumMastery: 10 },
       requirements: [HAS_TRAIT],
     });
@@ -676,7 +675,6 @@ describe("capability validation does not call incomplete data a failure", () => 
       id: GATED,
       name: "Gated Skill",
       description: "A test Skill gated on one Trait and nothing else.",
-      timings: ["action"],
       mastery: { maximumMastery: 10 },
       requirements: [HAS_TRAIT],
     });

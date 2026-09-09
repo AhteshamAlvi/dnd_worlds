@@ -21,9 +21,16 @@
  * requirements are ACQUISITION requirements — what had to be true when the
  * character took the thing up — so an entry whose prerequisites no longer hold
  * is a note about history, not an invalid sheet. character/validation.ts
- * reports both dispositions as warnings for that reason. Whether a retained
- * Skill can currently be USED is a separate question asked of the application,
- * and belongs to Ticket 3.3.
+ * reports both dispositions as warnings for that reason.
+ *
+ * Whether a retained Skill can currently be USED is a separate question, asked
+ * of the application's own requirements and asked afresh every time. It is
+ * NEVER answered from the acquisition list: doing so would make losing a
+ * prerequisite retroactively invalidate a legal sheet, which is precisely what
+ * the lifecycle split removed. The pair of helpers at the bottom of this file
+ * asks the execution question; capabilities/application-resolution.ts is where
+ * the full answer — including what using the Skill would then look like —
+ * lives.
  *
  * These return issues rather than EngineResults because they are domain
  * helpers, not public entry points. validateCharacter turns them into
@@ -38,6 +45,10 @@ import {
   type RequirementContext,
   type RequirementDisposition,
 } from "../rules/resolution";
+import {
+  applicationRequirementDisposition,
+  resolveApplicationRequirements,
+} from "./application-resolution";
 import {
   isMasteryRank,
   type MasteryRank,
@@ -361,6 +372,42 @@ export function resolveTechniqueRequirements(
   context: RequirementContext,
 ): RequirementDisposition {
   return resolveAllRequirements(definition.requirements ?? [], context);
+}
+
+
+/**
+ * Whether this character could use the Skill RIGHT NOW, requirements-wise.
+ *
+ * A different question from satisfiesSkillRequirements() above, asked of a
+ * different list, and the two must never be swapped: the acquisition list is
+ * history and this one is the present. A Skill that declares no application
+ * requirements is usable by anyone who has it, which is the common case — most
+ * Skills need nothing beyond the training that earned them.
+ *
+ * Says nothing about whether the character HAS the Skill. Possession is
+ * resolution.ts's, and combining the two here would give a caller one boolean
+ * that cannot tell "you never learned it" from "your fire is out".
+ */
+export function resolveSkillApplicationRequirements(
+  definition: SkillDefinition,
+  context: RequirementContext,
+): RequirementDisposition {
+  return applicationRequirementDisposition(
+    resolveApplicationRequirements(
+      definition.application?.requirements ?? [],
+      context,
+    ),
+  );
+}
+
+
+/** The same question as a boolean, collapsing unresolved to false. */
+export function satisfiesSkillApplicationRequirements(
+  definition: SkillDefinition,
+  context: RequirementContext,
+): boolean {
+  return resolveSkillApplicationRequirements(definition, context) ===
+    "satisfied";
 }
 
 // One call for the whole layer, in dependency order: a Skill's requirements

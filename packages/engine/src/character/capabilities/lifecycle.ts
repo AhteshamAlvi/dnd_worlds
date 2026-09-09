@@ -24,8 +24,8 @@
  * true when the character takes it up. They are not a lease. Losing Fire
  * Control later does not erase Flame Lance, because the character learned
  * Flame Lance and learning happened. Whether they can still USE it is a
- * different question, asked of the application at execution time, and that
- * belongs to Ticket 3.3.
+ * different question, asked of the application at execution time — see
+ * capabilities/applications.ts.
  *
  * Mastery-rank requirements are ADVANCEMENT requirements — what a further rank
  * asks — and live on the rank, not here.
@@ -108,7 +108,8 @@ import type {
  *   taken up: the character MAY acquire it and does not have it.
  *
  * Application-specific inaccessibility — a Skill retained but unusable right
- * now — is Ticket 3.3's, and is a different question from this one.
+ * now — is a different question from this one, asked of the application and
+ * answered by capabilities/application-resolution.ts.
  */
 export const CAPABILITY_AVAILABILITIES = [
   "available",

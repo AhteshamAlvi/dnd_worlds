@@ -960,7 +960,6 @@ export type {
   CharacterSkill,
   SkillDefinition,
   SkillId,
-  SkillTiming,
 } from "./character/capabilities/skills";
 
 export {
@@ -975,6 +974,62 @@ export {
   collectSkillEffects,
   findSkillCatalogIssues,
 } from "./character/capabilities/skills";
+
+/*
+ * How a Skill may be USED, as opposed to how it was learned.
+ *
+ * Composed from the neutral action, targeting, spatial, check and Aura
+ * vocabularies exported above — nothing here is a Skill-shaped copy of one.
+ */
+export type {
+  ApplicationRequirement,
+  EffectiveSkillApplication,
+  SkillActionSpecification,
+  SkillApplicationCheckProfile,
+  SkillApplicationCostProfile,
+  SkillApplicationDefinition,
+  SkillApplicationMasteryChange,
+  SkillApplicationModifier,
+  SkillApplicationNumericField,
+  SkillApplicationPermission,
+  SkillAuraCost,
+  SkillMechanicalRole,
+  SkillOutcomeConsequence,
+  SkillOutcomeEntry,
+  SkillOutcomeOutput,
+  SkillOutcomeProfile,
+} from "./character/capabilities/applications";
+
+export {
+  SKILL_APPLICATION_NUMERIC_FIELDS,
+  SKILL_MECHANICAL_ROLES,
+  findSkillApplicationIssues,
+  isSkillApplicationNumericField,
+  isSkillMechanicalRole,
+  resolveEffectiveSkillApplication,
+  skillActionProfile,
+  skillActionProfileId,
+  skillAuraCostFields,
+  skillCheckScope,
+  skillConsequenceSuggestion,
+  skillOutcomeEntries,
+  skillOutputFact,
+  skillResolutionApproach,
+} from "./character/capabilities/applications";
+
+export type {
+  ApplicationRequirementResolution,
+  ResolveSkillApplicationInput,
+  ResolvedSkillApplication,
+  SkillApplicationDisposition,
+} from "./character/capabilities/application-resolution";
+
+export {
+  applicationRequirementDisposition,
+  buildSkillActionProfile,
+  resolveApplicationRequirements,
+  resolveSkillApplication,
+} from "./character/capabilities/application-resolution";
 
 // Authored Mastery versus access something else is currently supplying.
 export type {
@@ -1067,6 +1122,9 @@ export {
   findTechniqueValidationIssues,
   satisfiesSkillRequirements,
   satisfiesTechniqueRequirements,
+  // Acquisition above, execution below. The two are never interchangeable.
+  resolveSkillApplicationRequirements,
+  satisfiesSkillApplicationRequirements,
 } from "./character/capabilities/validation";
 
 /* ── Character: resolution ──────────────────────────────────────────────── */

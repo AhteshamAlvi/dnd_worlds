@@ -41,7 +41,6 @@ function registerSwordsmanship(): void {
     id: THRUST,
     name: "Direct Thrust",
     description: "A test Skill granted by the basic discipline.",
-    timings: ["action"],
     mastery: { maximumMastery: 3 },
   });
 
@@ -49,7 +48,6 @@ function registerSwordsmanship(): void {
     id: RIPOSTE,
     name: "Riposte",
     description: "A test Skill granted by the intermediate discipline.",
-    timings: ["reaction"],
     mastery: { maximumMastery: 3 },
   });
 

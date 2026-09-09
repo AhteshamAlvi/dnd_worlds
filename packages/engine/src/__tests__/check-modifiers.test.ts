@@ -76,7 +76,6 @@ function registerContort(): void {
     id: "contort",
     name: "Contort",
     description: "A test Skill granting a situational AGI bonus.",
-    timings: ["action"],
     mastery: { maximumMastery: 10 },
     effects: [{ type: "modifyCheck", check: AGI_CHECK, amount: 3 }],
   });

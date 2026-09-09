@@ -64,14 +64,16 @@ export function NewDefinitionDialog({
   const canCreate = name.trim() !== "" && description.trim() !== "";
 
   function submit() {
+    // A new Skill is created without an application, so it is possessed and
+    // not yet usable. This form used to supply `timings: ["action"]`, which
+    // was the whole of what a Skill could say about being used; the contract
+    // that replaced it — Action cost, targets, Range, costs, check and outcome
+    // — is a set of rules decisions no dialog should guess at, so it is
+    // authored in the catalog file rather than defaulted here.
     const definition: CustomDefinition = {
       id,
       name: name.trim(),
       description: description.trim(),
-      // Skills are the one domain with a required extra field. Action is the
-      // ordinary case; a Reaction Skill is a rules decision this form has no
-      // business guessing at, and can be edited in the catalog file.
-      ...(domain === "skill" ? { timings: ["action"] } : {}),
     };
 
     const result = onCreate(definition);
