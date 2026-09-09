@@ -24,6 +24,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { payloadOf } from "./fixtures/result";
 
 import {
@@ -73,6 +75,7 @@ function registerFlexible(): void {
 
 function registerContort(): void {
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: "contort",
     name: "Contort",
     description: "A test Skill granting a situational AGI bonus.",

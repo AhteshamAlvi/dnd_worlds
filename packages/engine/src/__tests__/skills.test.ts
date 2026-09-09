@@ -11,6 +11,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
@@ -235,6 +237,7 @@ describe("skill mastery: depth", () => {
 
   it("accumulates a registered Skill's own rank effects", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "Adhere to surfaces.",
@@ -306,6 +309,7 @@ describe("skill requirements", () => {
           id: "improvised-shove",
           name: "Improvised Shove",
           description: "A Skill with no prerequisite path.",
+          application: minimalSkillApplication(),
           mastery: { maximumMastery: 3 },
         },
         context(),
@@ -536,6 +540,7 @@ describe("technique mastery grants skills through resolution", () => {
 describe("a capability listed twice", () => {
   it("resolves effects at the same Mastery it reports", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "stacker",
       name: "Stacker",
       description: "A test Skill.",

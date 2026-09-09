@@ -307,6 +307,21 @@ export type SkillApplicationCheckProfile =
  * One place, because the mapping is not obvious in two of the four cases: an
  * opposed check projects the INITIATOR's scope — the profile belongs to the
  * character using the Skill — and an automatic one projects nothing at all.
+ *
+ *
+ * ── A CONSTRAINT ON WHOEVER BUILDS EXECUTION ────────────────────────────
+ *
+ * This projection is LOSSY, necessarily and permanently. ActionProfile carries
+ * one scope, and an application carries more than that: the opponent's scope,
+ * which side a tie favours, a fixed check's tie policy, the physical and Aura
+ * costs, and the outcome branches. None of that fits in a profile and none of
+ * it should — a profile describes what a capability permits, not how a contest
+ * is scored.
+ *
+ * So the projected ActionProfile is NOT the whole executable contract, and an
+ * execution ticket that treats it as one will silently resolve every opposed
+ * Skill as an unopposed one and charge nothing for any of them. Preparation
+ * must be handed the EffectiveSkillApplication alongside the profile.
  */
 export function skillCheckScope(
   check: SkillApplicationCheckProfile,
@@ -450,6 +465,58 @@ export function skillOutcomeEntries(
 
 
 /**
+ * One outcome branch rebuilt, leaving every other branch identical.
+ *
+ * Exists because a Mastery change that improves potency has to reach an
+ * outcome's magnitude, and the outcome profile is a union: a caller doing that
+ * inline would switch over five shapes and the next branch added would be
+ * missed by whichever call site was written first.
+ */
+function mapOutcomeEntries(
+  outcome: SkillOutcomeProfile,
+  change: (entry: SkillOutcomeEntry) => SkillOutcomeEntry,
+): SkillOutcomeProfile {
+  switch (outcome.kind) {
+    case "automatic":
+      return { ...outcome, outcome: change(outcome.outcome) };
+
+    case "fixed":
+      return {
+        ...outcome,
+        success: change(outcome.success),
+        failure: change(outcome.failure),
+      };
+
+    case "opposed":
+      return {
+        ...outcome,
+        winner: change(outcome.winner),
+        loser: change(outcome.loser),
+      };
+
+    case "guided-narrative":
+      return { ...outcome, guidance: outcome.guidance.map(change) };
+
+    case "free-adjudication":
+      return outcome;
+  }
+}
+
+
+/** The magnitude one named output of one named branch currently carries. */
+export function skillOutcomeOutputAmount(
+  outcome: SkillOutcomeProfile,
+  outcomeId: string,
+  outputId: string,
+): number | undefined {
+  const entry = skillOutcomeEntries(outcome)
+    .find((one) => one.id === outcomeId);
+
+  return entry?.outputs?.find((one) => one.id === outputId)?.amount;
+}
+
+
+/**
  * One authored output, as the neutral fact the proposal carries.
  *
  * Here rather than in the eventual execution adapter so that `decidedBy` has
@@ -568,6 +635,49 @@ export type SkillApplicationModifier =
       readonly field: "role";
       readonly value: SkillMechanicalRole;
     }
+  /*
+   * The one change that reaches what the Skill DOES rather than what it costs.
+   *
+   * Mastery is depth (see skills.ts), so a track that can only make a Skill
+   * cheaper, longer-ranged or quicker is a track that cannot express the thing
+   * ranks are actually for: the same act, done harder. This addresses an
+   * outcome branch and one of its outputs by id, so it stays typed and
+   * inspectable — "III improves the impact output of the winner branch" — where
+   * a deep partial over the outcome tree would be a structural diff.
+   *
+   * The base must already declare the magnitude. A rank that introduced an
+   * `amount` the base never had would be authoring the outcome from inside a
+   * modifier list, which is the same silent surprise the field.absent rule
+   * refuses for every other field.
+   */
+  | {
+      readonly op: "add";
+      readonly field: "outcomeOutput";
+      readonly outcomeId: string;
+      readonly outputId: string;
+      readonly amount: number;
+    }
+  | {
+      readonly op: "multiply";
+      readonly field: "outcomeOutput";
+      readonly outcomeId: string;
+      readonly outputId: string;
+      readonly factor: number;
+    }
+  | {
+      readonly op: "cap";
+      readonly field: "outcomeOutput";
+      readonly outcomeId: string;
+      readonly outputId: string;
+      readonly maximum: number;
+    }
+  | {
+      readonly op: "replace";
+      readonly field: "outcomeOutput";
+      readonly outcomeId: string;
+      readonly outputId: string;
+      readonly value: number;
+    }
   | {
       readonly op: "permit";
       readonly permission: SkillApplicationPermission;
@@ -617,6 +727,41 @@ export interface SkillApplicationDefinition {
 
   /** Cumulative changes unlocked at particular Skill Mastery ranks. */
   readonly masteryChanges?: readonly SkillApplicationMasteryChange[];
+}
+
+
+/**
+ * A complete application that decides nothing, for an unfinished Skill.
+ *
+ * AUTHORING SCAFFOLDING, and the distinction from a default matters. The
+ * engine never supplies this on its own: nothing in resolution, validation or
+ * the authored catalog calls it, and architecture.test.ts holds that line. It
+ * exists so an authoring tool can hand a person a real, visible, editable
+ * contract at the moment they create a Skill — the data then genuinely says
+ * what it says — and so tests can name the one field they are about.
+ *
+ * It resolves by FREE ADJUDICATION on purpose. An unfinished Skill should
+ * reach a person, not quietly resolve mechanically against numbers nobody
+ * chose; a minimal contract that rolled a check would be exactly the invented
+ * default this file refuses to apply.
+ */
+export function minimalSkillApplication(
+  overrides: Partial<SkillApplicationDefinition> = {},
+): SkillApplicationDefinition {
+  return {
+    action: {
+      allowedTimings: ["action"],
+      structuredActionCost: { actions: 1 },
+      targets: { cardinality: { minimum: 0, maximum: 0 } },
+      permittedFocusKinds: ["none"],
+      executionDuration: 0,
+    },
+    role: "utility",
+    cost: { exertionLoad: 0 },
+    check: { kind: "adjudicated" },
+    outcome: { kind: "free-adjudication" },
+    ...overrides,
+  };
 }
 
 
@@ -835,6 +980,59 @@ function withPermission(
 }
 
 
+/** Arithmetic shared by every operation, so `cap` cannot mean two things. */
+function applyOperation(
+  current: number,
+  modifier: SkillApplicationModifier,
+): number {
+  switch (modifier.op) {
+    case "add":
+      return current + modifier.amount;
+
+    case "multiply":
+      return current * modifier.factor;
+
+    case "cap":
+      return Math.min(current, modifier.maximum);
+
+    case "replace":
+      return typeof modifier.value === "number" ? modifier.value : current;
+
+    default:
+      return current;
+  }
+}
+
+
+function applyOutcomeOutput(
+  application: EffectiveSkillApplication,
+  modifier: Extract<SkillApplicationModifier, { field: "outcomeOutput" }>,
+): EffectiveSkillApplication {
+  return {
+    ...application,
+    outcome: mapOutcomeEntries(application.outcome, (entry) => {
+      if (entry.id !== modifier.outcomeId) return entry;
+
+      return {
+        ...entry,
+        outputs: (entry.outputs ?? []).map((output) => {
+          if (output.id !== modifier.outputId) return output;
+
+          /*
+           * A no-op when the base declares no magnitude. Catalog validation
+           * refuses that case outright; this keeps the arithmetic from
+           * inventing a number out of undefined if one ever slips through.
+           */
+          if (output.amount === undefined) return output;
+
+          return { ...output, amount: applyOperation(output.amount, modifier) };
+        }),
+      };
+    }),
+  };
+}
+
+
 function applyModifier(
   application: EffectiveSkillApplication,
   modifier: SkillApplicationModifier,
@@ -845,6 +1043,10 @@ function applyModifier(
       modifier.permission,
       modifier.op === "permit",
     );
+  }
+
+  if (modifier.field === "outcomeOutput") {
+    return applyOutcomeOutput(application, modifier);
   }
 
   if (modifier.op === "replace") {
@@ -873,28 +1075,11 @@ function applyModifier(
 
   if (current === undefined) return application;
 
-  switch (modifier.op) {
-    case "add":
-      return writeNumericField(
-        application,
-        modifier.field,
-        current + modifier.amount,
-      );
-
-    case "multiply":
-      return writeNumericField(
-        application,
-        modifier.field,
-        current * modifier.factor,
-      );
-
-    case "cap":
-      return writeNumericField(
-        application,
-        modifier.field,
-        Math.min(current, modifier.maximum),
-      );
-  }
+  return writeNumericField(
+    application,
+    modifier.field,
+    applyOperation(current, modifier),
+  );
 }
 
 
@@ -1011,9 +1196,23 @@ function issue(
 }
 
 
+/*
+ * Every id inside an outcome is a HANDLE, which is why blanks and repeats are
+ * errors rather than untidiness.
+ *
+ * An output id is what a Mastery change addresses to improve potency, and what
+ * a proposal carries so a GM can see which magnitude came from where. A
+ * consequence id is what settlement will eventually match a ruling against.
+ * Two of either under one name makes every one of those operations hit
+ * whichever the reader happened to index last — and uniqueness is asked across
+ * the whole application, not per branch, because a rank naming an output does
+ * not name the branch's shape.
+ */
 function findOutcomeEntryIssues(
   where: string,
   entry: SkillOutcomeEntry,
+  seenOutputIds: Set<string>,
+  seenConsequenceIds: Set<string>,
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
 
@@ -1036,15 +1235,72 @@ function findOutcomeEntryIssues(
   }
 
   for (const output of entry.outputs ?? []) {
+    if (typeof output.id !== "string" || output.id.trim().length === 0) {
+      errors.push(issue(
+        "capabilities.application.outcome.output.id.missing",
+        `An output of the ${where} outcome is unidentified; its id is what a Mastery change and a proposal address it by.`,
+        "non-empty output id",
+        String(output.id),
+      ));
+    } else if (seenOutputIds.has(output.id)) {
+      errors.push(issue(
+        "capabilities.application.outcome.output.id.duplicate",
+        `Output "${output.id}" is declared more than once in this application.`,
+        "each output id at most once per application",
+        output.id,
+      ));
+    } else {
+      seenOutputIds.add(output.id);
+    }
+
     if (
       output.amount !== undefined &&
       !Number.isFinite(output.amount)
     ) {
       errors.push(issue(
         "capabilities.application.outcome.output.amount.invalid",
-        `Output "${output.id}" of the ${where} outcome carries a magnitude that is not a number.`,
+        `Output "${String(output.id)}" of the ${where} outcome carries a magnitude that is not a number.`,
         "finite number, or omitted",
         String(output.amount),
+      ));
+    }
+  }
+
+  for (const consequence of entry.consequences ?? []) {
+    if (
+      typeof consequence.id !== "string" ||
+      consequence.id.trim().length === 0
+    ) {
+      errors.push(issue(
+        "capabilities.application.outcome.consequence.id.missing",
+        `A consequence of the ${where} outcome is unidentified.`,
+        "non-empty consequence id",
+        String(consequence.id),
+      ));
+    } else if (seenConsequenceIds.has(consequence.id)) {
+      errors.push(issue(
+        "capabilities.application.outcome.consequence.id.duplicate",
+        `Consequence "${consequence.id}" is declared more than once in this application.`,
+        "each consequence id at most once per application",
+        consequence.id,
+      ));
+    } else {
+      seenConsequenceIds.add(consequence.id);
+    }
+
+    if (
+      typeof consequence.summary !== "string" ||
+      consequence.summary.trim().length === 0
+    ) {
+      /*
+       * A consequence IS its summary — it is a suggestion in words, handed to
+       * a GM. One without any is a suggestion that suggests nothing.
+       */
+      errors.push(issue(
+        "capabilities.application.outcome.consequence.summary.missing",
+        `Consequence "${String(consequence.id)}" of the ${where} outcome says nothing about what would follow.`,
+        "non-empty summary",
+        String(consequence.summary),
       ));
     }
   }
@@ -1166,19 +1422,45 @@ function findOutcomeProfileIssues(
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
 
+  /* Shared across branches: uniqueness is an application-wide property. */
+  const outputIds = new Set<string>();
+  const consequenceIds = new Set<string>();
+  const entryIds = new Set<string>();
+
+  const entryIssues = (where: string, entry: SkillOutcomeEntry) => {
+    const found = [
+      ...findOutcomeEntryIssues(where, entry, outputIds, consequenceIds),
+    ];
+
+    if (typeof entry.id === "string" && entry.id.trim().length > 0) {
+      if (entryIds.has(entry.id)) {
+        found.push(issue(
+          "capabilities.application.outcome.id.duplicate",
+          `Outcome branch "${entry.id}" is declared more than once in this application.`,
+          "each outcome id at most once per application",
+          entry.id,
+        ));
+      }
+
+      entryIds.add(entry.id);
+    }
+
+    return found;
+  };
+
   switch (outcome.kind) {
     case "automatic":
-      errors.push(...findOutcomeEntryIssues("automatic", outcome.outcome));
+      errors.push(...entryIssues("automatic", outcome.outcome));
       break;
 
     case "fixed":
-      errors.push(...findOutcomeEntryIssues("success", outcome.success));
-      errors.push(...findOutcomeEntryIssues("failure", outcome.failure));
+      errors.push(...entryIssues("success", outcome.success));
+      errors.push(...entryIssues("failure", outcome.failure));
       break;
 
     case "opposed":
-      errors.push(...findOutcomeEntryIssues("winner", outcome.winner));
-      errors.push(...findOutcomeEntryIssues("loser", outcome.loser));
+      errors.push(...entryIssues("winner", outcome.winner));
+      errors.push(...entryIssues("loser", outcome.loser));
       break;
 
     case "guided-narrative":
@@ -1192,7 +1474,7 @@ function findOutcomeProfileIssues(
       }
 
       outcome.guidance.forEach((entry, index) => {
-        errors.push(...findOutcomeEntryIssues(`guidance ${index + 1}`, entry));
+        errors.push(...entryIssues(`guidance ${index + 1}`, entry));
       });
 
       break;
@@ -1428,6 +1710,71 @@ function findModifierIssues(
 ): readonly EngineError[] {
   if (modifier.op === "permit" || modifier.op === "prohibit") {
     return findPermissionIssues(base.action, modifier);
+  }
+
+  if (modifier.field === "outcomeOutput") {
+    const errors: EngineError[] = [];
+
+    const operand = modifier.op === "add"
+      ? modifier.amount
+      : modifier.op === "multiply"
+        ? modifier.factor
+        : modifier.op === "cap"
+          ? modifier.maximum
+          : modifier.value;
+
+    if (!Number.isFinite(operand)) {
+      errors.push(issue(
+        "capabilities.application.mastery.amount.invalid",
+        `A "${modifier.op}" of an outcome output must be a finite number.`,
+        "finite number",
+        String(operand),
+      ));
+    }
+
+    const entry = skillOutcomeEntries(base.outcome)
+      .find((one) => one.id === modifier.outcomeId);
+
+    if (entry === undefined) {
+      errors.push(issue(
+        "capabilities.application.mastery.outcome.unknown",
+        `A Mastery change improves outcome "${modifier.outcomeId}", which this application does not declare.`,
+        "an outcome branch id declared by this application",
+        modifier.outcomeId,
+      ));
+
+      return errors;
+    }
+
+    const output = (entry.outputs ?? [])
+      .find((one) => one.id === modifier.outputId);
+
+    if (output === undefined) {
+      errors.push(issue(
+        "capabilities.application.mastery.output.unknown",
+        `A Mastery change improves output "${modifier.outputId}" of outcome "${modifier.outcomeId}", which declares no such output.`,
+        "an output id declared by that outcome branch",
+        modifier.outputId,
+      ));
+
+      return errors;
+    }
+
+    if (output.amount === undefined) {
+      /*
+       * The base has to state the magnitude the rank moves. A rank introducing
+       * one would be authoring the outcome from inside a modifier list, where
+       * nobody reading the outcome would ever see it.
+       */
+      errors.push(issue(
+        "capabilities.application.mastery.output.amountless",
+        `Output "${modifier.outputId}" carries no magnitude for a Mastery change to move.`,
+        "an authored amount on the base output",
+        "absent",
+      ));
+    }
+
+    return errors;
   }
 
   if (modifier.op === "replace" && modifier.field === "threatens") {

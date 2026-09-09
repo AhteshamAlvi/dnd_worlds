@@ -233,6 +233,13 @@ export function resolveSkillApplication(
   const application = input.definition ?? definition?.application;
 
   if (application === undefined) {
+    /*
+     * Required by SkillDefinition, so the compiler prevents this for authored
+     * content. It survives for content a HOST registered as unchecked JSON,
+     * and the answer is still a refusal rather than an invented contract: a
+     * Skill nobody said how to use is an unfinished definition, which is a
+     * content problem and not a fact about the character.
+     */
     const error: EngineError = {
       code: "capabilities.application.absent",
       message: `Skill "${skillId}" declares no application, so there is no way to use it.`,

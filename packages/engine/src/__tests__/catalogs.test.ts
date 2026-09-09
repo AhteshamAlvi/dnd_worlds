@@ -10,6 +10,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import {
   CATALOG_DOMAINS,
   clearCustomDefinitions,
@@ -182,6 +184,7 @@ describe("findCatalogReferenceIssues", () => {
 
   it("reports a requirement pointing at a Technique that does not exist", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "riposte",
       name: "Riposte",
       description: "A test Skill.",
@@ -198,6 +201,7 @@ describe("findCatalogReferenceIssues", () => {
 
   it("looks inside compound requirements", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "twin-strike",
       name: "Twin Strike",
       description: "A test Skill.",
@@ -300,6 +304,7 @@ describe("findCatalogReferenceIssues", () => {
   // another custom definition is as valid as one to an authored definition.
   it("accepts a reference between two registered definitions", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "A test Skill.",

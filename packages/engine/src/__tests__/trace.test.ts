@@ -10,6 +10,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { createTraceNode } from "../infrastructure/trace";
 
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
@@ -202,6 +204,7 @@ describe("attribute provenance", () => {
    */
   it("keeps both contributions when one source applies two to an attribute", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "twin-boost",
       name: "Twin Boost",
       description: "A test Skill.",

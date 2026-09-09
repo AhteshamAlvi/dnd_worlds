@@ -10,6 +10,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import {
   prepareCharacterActionInputs,
   type NamedRequirement,
@@ -274,6 +276,7 @@ describe("modifiers come through the canonical invocation path", () => {
      * invoked modifier can leak in unselected.
      */
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "contort",
       name: "Contort",
       description: "A test Skill granting a situational AGI bonus.",

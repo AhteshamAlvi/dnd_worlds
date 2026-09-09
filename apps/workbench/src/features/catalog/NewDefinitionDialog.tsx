@@ -20,6 +20,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CATALOG_DOMAIN_LABELS,
   createDefinitionId,
+  minimalSkillApplication,
   type CatalogDomain,
 } from "@nenworld/engine";
 
@@ -64,16 +65,20 @@ export function NewDefinitionDialog({
   const canCreate = name.trim() !== "" && description.trim() !== "";
 
   function submit() {
-    // A new Skill is created without an application, so it is possessed and
-    // not yet usable. This form used to supply `timings: ["action"]`, which
-    // was the whole of what a Skill could say about being used; the contract
-    // that replaced it — Action cost, targets, Range, costs, check and outcome
-    // — is a set of rules decisions no dialog should guess at, so it is
-    // authored in the catalog file rather than defaulted here.
+    // Skills are the one domain with a required extra field: an application,
+    // which says when the Skill may be used, what it costs, how it is decided
+    // and what it produces. This form does not ask for any of that, so it
+    // writes the engine's minimal contract — a real, complete, editable one
+    // that resolves by GM adjudication rather than by numbers nobody chose —
+    // and the person refines it in the catalog file. Storing an incomplete
+    // definition instead would put an invalid entry in the catalog.
     const definition: CustomDefinition = {
       id,
       name: name.trim(),
       description: description.trim(),
+      ...(domain === "skill"
+        ? { application: minimalSkillApplication() }
+        : {}),
     };
 
     const result = onCreate(definition);

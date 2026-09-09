@@ -798,20 +798,26 @@ describe("GM adjudication is not scattered", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("lets only the Skill application contract even NAME adjudication", () => {
+  it("lets only the Skill application contract and its catalog NAME adjudication", () => {
     /*
      * The narrower rule, kept explicit so the loosening above cannot widen by
-     * accident. A Skill declares that its outcome is adjudicated; nothing else
-     * below actions/ has any business using the word, and a new file that does
-     * fails here rather than quietly joining the exception.
+     * accident. Two files may say the word and no others: applications.ts,
+     * which declares the vocabulary, and skills.ts, which is the authored
+     * catalog USING it — a Skill whose resolution Combat has not designed yet
+     * says so by resolving through a person, which is the honest contract and
+     * the reason the vocabulary exists.
+     *
+     * A new file that names it fails here rather than quietly joining the
+     * exception.
      */
     const namers = DOMAINS
       .flatMap((directory) => sourceFilesUnder(directory))
       .filter((path) => /adjudicat/i.test(codeOf(path)));
 
-    expect(namers).toEqual([
+    expect(namers.sort()).toEqual([
       join(SRC, "character", "capabilities", "applications.ts"),
-    ]);
+      join(SRC, "character", "capabilities", "skills.ts"),
+    ].sort());
   });
 
   it("keeps the public/GM split inside the adjudication layer", () => {
@@ -1273,6 +1279,33 @@ describe("capability code composes the neutral vocabularies", () => {
     for (const domain of ["../../actions", "../../targeting", "../../spatial", "../../checks"]) {
       expect(source).toContain(`from "${domain}"`);
     }
+  });
+
+  it("keeps the minimal application scaffolding out of the engine's own answers", () => {
+    /*
+     * minimalSkillApplication() exists so an AUTHORING TOOL can hand a person a
+     * real, editable contract when they create a Skill. It is not a fallback,
+     * and the difference is the whole reason `application` became required: an
+     * engine that supplied a contract when content declared none would be
+     * deciding an Action cost, a target rule and an outcome nobody chose.
+     *
+     * So nothing that resolves, validates or authors content may call it. The
+     * authored catalog writes every contract out in full; resolution refuses a
+     * Skill that has none.
+     */
+    const withoutComments = (path: string) =>
+      readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+
+    const callers = sourceFilesUnder(join(SRC, "character"))
+      .filter((path) =>
+        !path.endsWith(join("capabilities", "applications.ts")),
+      )
+      /* Naming it in a comment explains the boundary; calling it crosses it. */
+      .filter((path) => /\bminimalSkillApplication\b/.test(withoutComments(path)));
+
+    expect(callers).toEqual([]);
   });
 
   it("builds the profile identity in exactly one place", () => {

@@ -14,6 +14,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import {
   clearCustomDefinitions,
   findCatalogReferenceIssues,
@@ -69,6 +71,7 @@ describe("Skills and Techniques may depend on each other", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-direct-thrust",
       name: "Direct Thrust",
       description: "A test Skill gated on the discipline.",
@@ -103,6 +106,7 @@ describe("Skills and Techniques may depend on each other", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-direct-thrust",
       name: "Direct Thrust",
       description: "A test Skill gated on the discipline.",
@@ -223,6 +227,7 @@ describe("what a Trait may and may not require", () => {
 describe("impossible acquisition cycles are rejected", () => {
   it("refuses a Skill and a Technique that require each other", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-deadlocked-skill",
       name: "Deadlocked Skill",
       description: "A test Skill requiring the Technique that requires it.",
@@ -283,6 +288,7 @@ describe("impossible acquisition cycles are rejected", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-branching-skill",
       name: "Branching Skill",
       description: "A test Skill with two ways in.",
@@ -329,6 +335,7 @@ describe("impossible acquisition cycles are rejected", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-branching-skill",
       name: "Branching Skill",
       description: "A test Skill whose every way in is blocked.",
@@ -365,6 +372,7 @@ describe("impossible acquisition cycles are rejected", () => {
    */
   it("accepts an unmeetable capability that something reachable grants", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-gift-only",
       name: "Gift Only",
       description: "A test Skill nobody can qualify for.",
@@ -384,6 +392,7 @@ describe("impossible acquisition cycles are rejected", () => {
 
   it("does not accept it when the granting content is itself unreachable", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-gift-only",
       name: "Gift Only",
       description: "A test Skill nobody can qualify for.",
@@ -416,6 +425,7 @@ describe("impossible acquisition cycles are rejected", () => {
    */
   it("leaves unknown references to the reference check", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-typo",
       name: "Typo",
       description: "A test Skill naming a Technique that does not exist.",
@@ -443,6 +453,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
    */
   it("does not rescue a self-deadlocked Skill", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-deadlocked-skill",
       name: "Deadlocked Skill",
       description: "A test Skill that requires itself.",
@@ -488,6 +499,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-inner-style",
       name: "Inner Style",
       description: "A test Skill gated on a Trait AND on being invited.",
@@ -545,6 +557,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
    */
   it("refuses a capability that requires an unlock nothing supplies", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill nobody is ever invited to.",
@@ -559,6 +572,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
 
   it("accepts it once something obtainable offers it", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill open only to those invited.",
@@ -584,6 +598,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
 
   it("is not satisfied by an offer from content nobody can obtain", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill open only to those invited.",
@@ -621,6 +636,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
    */
   it("names the prerequisite gate when the offer is fine", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill offered to everyone and impossible anyway.",
@@ -649,6 +665,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
 
   it("names both gates when both are shut", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill nobody offers and nobody could qualify for.",
@@ -665,6 +682,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
   /* An access grant still skips both gates, which is what a gift is. */
   it("lets an outright grant bypass the unlock requirement", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-closed-style",
       name: "Closed Style",
       description: "A test Skill open only to those invited.",
@@ -689,6 +707,7 @@ describe("an unlock permits acquisition without satisfying it", () => {
 describe("Mastery advancement is checked rank by rank", () => {
   it("accepts ranks whose requirements can be met in order", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-climbing",
       name: "Climbing",
       description: "A test Skill whose ranks ask for more of the same.",
@@ -725,6 +744,7 @@ describe("Mastery advancement is checked rank by rank", () => {
    */
   it("refuses two ranks that wait on each other", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-left-hand",
       name: "Left Hand",
       description: "A test Skill whose rank II needs the other's rank II.",
@@ -742,6 +762,7 @@ describe("Mastery advancement is checked rank by rank", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-right-hand",
       name: "Right Hand",
       description: "A test Skill whose rank II needs the other's rank II.",
@@ -782,6 +803,7 @@ describe("Mastery advancement is checked rank by rank", () => {
 
   it("reports one blocked rank rather than every rank above it", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-sealed",
       name: "Sealed",
       description: "A test Skill whose rank II is impossible.",

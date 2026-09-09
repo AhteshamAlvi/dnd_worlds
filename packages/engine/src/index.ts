@@ -1006,6 +1006,7 @@ export {
   findSkillApplicationIssues,
   isSkillApplicationNumericField,
   isSkillMechanicalRole,
+  minimalSkillApplication,
   resolveEffectiveSkillApplication,
   skillActionProfile,
   skillActionProfileId,
@@ -1013,6 +1014,7 @@ export {
   skillCheckScope,
   skillConsequenceSuggestion,
   skillOutcomeEntries,
+  skillOutcomeOutputAmount,
   skillOutputFact,
   skillResolutionApproach,
 } from "./character/capabilities/applications";

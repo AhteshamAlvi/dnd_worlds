@@ -20,6 +20,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { payloadOf } from "./fixtures/result";
 import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
@@ -104,6 +106,7 @@ const AGI_CHECK = { kind: "attribute", attribute: "agi" } as const;
 
 function registerContort(): void {
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: "contort",
     name: "Contort",
     description: "A test Skill granting a situational AGI bonus.",

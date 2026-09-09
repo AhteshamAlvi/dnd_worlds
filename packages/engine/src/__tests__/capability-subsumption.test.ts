@@ -16,6 +16,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
@@ -38,6 +40,7 @@ const RIPOSTE = "test-riposte";
 
 function registerSwordsmanship(): void {
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: THRUST,
     name: "Direct Thrust",
     description: "A test Skill granted by the basic discipline.",
@@ -45,6 +48,7 @@ function registerSwordsmanship(): void {
   });
 
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: RIPOSTE,
     name: "Riposte",
     description: "A test Skill granted by the intermediate discipline.",

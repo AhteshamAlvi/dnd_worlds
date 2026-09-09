@@ -21,6 +21,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import {
   clearCustomDefinitions,
   findCatalogReferenceIssues,
@@ -92,6 +94,7 @@ const HEIRLOOM_LORE = "test-heirloom-lore";
 
 function registerCapabilities(): void {
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: PICKING,
     name: "Precision Picking",
     description: "A test Skill with a three-rank track.",
@@ -131,6 +134,7 @@ function registerCapabilities(): void {
   });
 
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: DOOR_RUNE,
     name: "Door Rune",
     description: "A test Skill with no Mastery at all.",
@@ -562,6 +566,7 @@ describe("validation of Mastery a capability does not have", () => {
 
   it("reports a track whose maximum is not a rank", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-overreaching",
       name: "Overreaching",
       description: "A test Skill with an impossible maximum.",
@@ -575,6 +580,7 @@ describe("validation of Mastery a capability does not have", () => {
 
   it("reports a rank defined past the track's own maximum", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-overreaching",
       name: "Overreaching",
       description: "A test Skill with a rank beyond its track.",
@@ -610,6 +616,7 @@ describe("Mastery requirements are checked against the target's own track", () =
     registerCapabilities();
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-rune-scholar",
       name: "Rune Scholar",
       description: "A test Skill asking for depth that does not exist.",
@@ -629,6 +636,7 @@ describe("Mastery requirements are checked against the target's own track", () =
     registerCapabilities();
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-master-picker",
       name: "Master Picker",
       description: "A test Skill asking for a rank the target cannot reach.",
@@ -671,6 +679,7 @@ describe("Mastery requirements are checked against the target's own track", () =
     registerCapabilities();
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-competent-picker",
       name: "Competent Picker",
       description: "A test Skill asking for a rank that exists.",

@@ -13,6 +13,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
@@ -200,6 +202,7 @@ describe("derived attribute requirements", () => {
 
   it("gates real content through the resolved character", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "riposte",
       name: "Riposte",
       description: "A test Skill gated on Combat Ability.",
@@ -470,6 +473,7 @@ describe("requirements against a real character", () => {
     });
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "dragon-breath",
       name: "Dragon Breath",
       description: "A test Skill.",

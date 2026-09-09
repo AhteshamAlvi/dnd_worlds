@@ -380,9 +380,16 @@ export function resolveTechniqueRequirements(
  *
  * A different question from satisfiesSkillRequirements() above, asked of a
  * different list, and the two must never be swapped: the acquisition list is
- * history and this one is the present. A Skill that declares no application
- * requirements is usable by anyone who has it, which is the common case — most
- * Skills need nothing beyond the training that earned them.
+ * history and this one is the present. An empty execution-requirement list is
+ * a real answer — most Skills need nothing beyond the training that earned
+ * them, so anyone holding one may use it.
+ *
+ * It reads `application.requirements` and never the application itself, which
+ * is why the application had to become required. While it was optional this
+ * function read an ABSENT application as an empty requirement list and
+ * reported `satisfied`, while resolveSkillApplication() refused the same Skill
+ * outright — one Skill, two engine answers, and the reassuring one was the
+ * wrong one.
  *
  * Says nothing about whether the character HAS the Skill. Possession is
  * resolution.ts's, and combining the two here would give a caller one boolean
@@ -394,7 +401,7 @@ export function resolveSkillApplicationRequirements(
 ): RequirementDisposition {
   return applicationRequirementDisposition(
     resolveApplicationRequirements(
-      definition.application?.requirements ?? [],
+      definition.application.requirements ?? [],
       context,
     ),
   );

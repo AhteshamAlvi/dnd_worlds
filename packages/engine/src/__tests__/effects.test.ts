@@ -13,6 +13,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import { resolveRuleEffects } from "../character/rules/resolution";
@@ -238,6 +240,7 @@ describe("effects reaching a character", () => {
 describe("grant effects", () => {
   it("grants a Skill from a Trait", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "A test Skill.",
@@ -274,6 +277,7 @@ describe("grant effects", () => {
     }
 
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "wall-sticking",
       name: "Wall Sticking",
       description: "A test Skill.",

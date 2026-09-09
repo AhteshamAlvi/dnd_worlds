@@ -14,6 +14,8 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
@@ -58,6 +60,7 @@ const OFFERED = "test-offered-technique";
 
 function registerLifecycleContent(): void {
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: LENT,
     name: "Lent Skill",
     description: "A test Skill something else supplies.",
@@ -65,6 +68,7 @@ function registerLifecycleContent(): void {
   });
 
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: CLAN_STYLE,
     name: "Clan Style",
     description: "A test Skill a Clan permits rather than teaches.",
@@ -85,6 +89,7 @@ function registerLifecycleContent(): void {
   });
 
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: GATED,
     name: "Gated Skill",
     description: "A test Skill gated on one Trait.",
@@ -93,6 +98,7 @@ function registerLifecycleContent(): void {
   });
 
   registerDefinition("skill", {
+    application: minimalSkillApplication(),
     id: INNER,
     name: "Inner Style",
     description: "A test Skill gated on a Trait AND on being invited.",
@@ -659,6 +665,7 @@ describe("an offer is reported without being mistaken for a possession", () => {
 
   it("still answers null for something held that has no Mastery", () => {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: "test-door-rune",
       name: "Door Rune",
       description: "A test Skill with no Mastery at all.",

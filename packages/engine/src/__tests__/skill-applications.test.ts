@@ -34,6 +34,8 @@ import {
   findSkillApplicationIssues,
   resolveEffectiveSkillApplication,
   skillAuraCostFields,
+  skillOutcomeEntries,
+  skillOutcomeOutputAmount,
   skillResolutionApproach,
   type SkillApplicationDefinition,
 } from "../character/capabilities/applications";
@@ -48,6 +50,7 @@ import {
   findSkillCatalogIssues,
   getSkillDefinition,
   SKILL_DEFINITIONS,
+  type SkillDefinition,
 } from "../character/capabilities/skills";
 
 import { TECHNIQUE_DEFINITIONS } from "../character/capabilities/techniques";
@@ -116,6 +119,88 @@ function tracklessIssuesFor(
   return findSkillApplicationIssues("test-skill", application, undefined)
     .map((error) => error.code);
 }
+
+/*
+ * The Mastery demonstration lives here, not in the authored catalog.
+ *
+ * A rank that halves a cost or doubles an impact is a balance decision, and an
+ * authored one is a shipped rule that other content is then balanced against.
+ * The MECHANISM has to be exercised; the game design does not have to be
+ * invented to exercise it. So Flame Lance is a test Skill with a deliberately
+ * arbitrary track: II makes it cheaper in Action economy, III reaches further
+ * and costs more Aura, and IV hits harder.
+ */
+const FLAME_LANCE = "test-flame-lance";
+
+const FLAME_LANCE_APPLICATION: SkillApplicationDefinition = {
+  action: {
+    allowedTimings: ["action"],
+    structuredActionCost: { actions: 2 },
+    targets: {
+      cardinality: { minimum: 1, maximum: 1 },
+      permittedKinds: ["entity"],
+    },
+    permittedFocusKinds: ["none", "direction"],
+    range: { kind: "direct", minimumMetres: 1, maximumMetres: 10 },
+    executionDuration: 1000,
+    threatens: "declared-targets",
+  },
+  role: "offense",
+  cost: {
+    exertionLoad: 2,
+    aura: { baseAuraCost: 10, requiredOutput: 5 },
+  },
+  check: { kind: "adjudicated" },
+  outcome: {
+    kind: "guided-narrative",
+    guidance: [
+      {
+        id: "lance-lands",
+        summary: "The lance reaches what it was aimed at.",
+        outputs: [
+          { id: "lance-impact", amount: 12, summary: "Impact magnitude." },
+        ],
+      },
+      { id: "lance-misses", summary: "The lance goes wide." },
+    ],
+  },
+  masteryChanges: [
+    {
+      minimumMastery: 2,
+      changes: [{ op: "cap", field: "structuredActionCost", maximum: 1 }],
+    },
+    {
+      minimumMastery: 3,
+      changes: [
+        { op: "add", field: "rangeMaximumMetres", amount: 5 },
+        { op: "add", field: "baseAuraCost", amount: 5 },
+      ],
+    },
+    {
+      minimumMastery: 4,
+      changes: [
+        {
+          op: "multiply",
+          field: "outcomeOutput",
+          outcomeId: "lance-lands",
+          outputId: "lance-impact",
+          factor: 2,
+        },
+      ],
+    },
+  ],
+};
+
+function registerFlameLance(): void {
+  registerDefinition("skill", {
+    id: FLAME_LANCE,
+    name: "Flame Lance",
+    description: "A test Skill whose ranks change how it is used.",
+    mastery: { maximumMastery: 5 },
+    application: FLAME_LANCE_APPLICATION,
+  });
+}
+
 
 /** A context that records everything and has nothing in it. */
 function emptyContext(
@@ -193,6 +278,33 @@ describe("every authored Skill carries a valid application", () => {
     for (const definition of Object.values(SKILL_DEFINITIONS)) {
       expect(definition).not.toHaveProperty("timings");
     }
+  });
+
+  it("authors no undecided combat mechanic as a rule", () => {
+    /*
+     * An authored number is a RULE the moment it ships: players see it, other
+     * content is balanced against it, and nobody afterwards can tell a
+     * considered value from a placeholder that survived. Combat has no check
+     * layer and no calibrated Aura pricing yet, so the combat Skills resolve
+     * through a person and Fire Blast prices no Aura, rather than the catalog
+     * quietly deciding either.
+     */
+    for (const id of ["punch", "parry", "fire-blast"] as const) {
+      expect(getSkillDefinition(id)?.application?.check.kind).toBe("adjudicated");
+    }
+
+    expect(getSkillDefinition("fire-blast")?.application?.cost.aura)
+      .toBeUndefined();
+
+    /* And no authored Skill ships a Mastery balance decision. */
+    for (const id of Object.keys(SKILL_DEFINITIONS)) {
+      expect(getSkillDefinition(id)?.application?.masteryChanges)
+        .toBeUndefined();
+    }
+
+    /* Pick Lock keeps a real check: a lock is not an undecided combat question. */
+    expect(getSkillDefinition("pick-lock")?.application?.check.kind)
+      .toBe("fixed");
   });
 
   it("gives Techniques no executable application at all", () => {
@@ -371,6 +483,81 @@ describe("application validation refuses incoherent contracts", () => {
       check: { kind: "adjudicated" },
       outcome: { kind: "guided-narrative", guidance: [] },
     }))).toContain("capabilities.application.outcome.guidance.empty");
+  });
+
+  it("rejects blank output and consequence identifiers", () => {
+    /*
+     * These are downstream handles: an output id is what a Mastery change
+     * addresses to improve potency and what a proposal carries; a consequence
+     * id is what a ruling is matched against. A blank one is unaddressable.
+     */
+    const codes = issuesFor(applicationOf({
+      outcome: {
+        kind: "automatic",
+        outcome: {
+          id: "done",
+          summary: "It happens.",
+          outputs: [{ id: "  ", amount: 1 }],
+          consequences: [{ id: "", summary: "Something follows." }],
+        },
+      },
+    }));
+
+    expect(codes).toContain("capabilities.application.outcome.output.id.missing");
+    expect(codes)
+      .toContain("capabilities.application.outcome.consequence.id.missing");
+  });
+
+  it("rejects a consequence that says nothing", () => {
+    /* A consequence IS its summary — it is a suggestion handed to a person. */
+    const codes = issuesFor(applicationOf({
+      outcome: {
+        kind: "automatic",
+        outcome: {
+          id: "done",
+          summary: "It happens.",
+          consequences: [{ id: "aftermath", summary: "   " }],
+        },
+      },
+    }));
+
+    expect(codes)
+      .toContain("capabilities.application.outcome.consequence.summary.missing");
+  });
+
+  it("rejects ids repeated anywhere in the application", () => {
+    /*
+     * Uniqueness is application-wide rather than per branch, because a Mastery
+     * change names an output without naming the branch's shape, and two
+     * outputs under one id would resolve to whichever was indexed last.
+     */
+    const codes = issuesFor(applicationOf({
+      check: {
+        kind: "fixed",
+        scope: { kind: "attribute", attribute: "dex" },
+      },
+      outcome: {
+        kind: "fixed",
+        success: {
+          id: "resolved",
+          summary: "Yes.",
+          outputs: [{ id: "impact", amount: 2 }],
+          consequences: [{ id: "aftermath", summary: "It lands." }],
+        },
+        failure: {
+          id: "resolved",
+          summary: "No.",
+          outputs: [{ id: "impact", amount: 0 }],
+          consequences: [{ id: "aftermath", summary: "It does not." }],
+        },
+      },
+    }));
+
+    expect(codes).toContain("capabilities.application.outcome.id.duplicate");
+    expect(codes)
+      .toContain("capabilities.application.outcome.output.id.duplicate");
+    expect(codes)
+      .toContain("capabilities.application.outcome.consequence.id.duplicate");
   });
 
   it("rejects an unknown mechanical role", () => {
@@ -557,11 +744,20 @@ describe("live application availability", () => {
         .toBe("capabilities.application.skill.unknown");
     }
 
+    /*
+     * `application` is required by the type, so this is what a HOST registering
+     * unchecked JSON produces — the compiler never saw it. The engine still
+     * refuses rather than inventing a contract, and catalog validation reports
+     * the definition as unfinished.
+     */
     registerDefinition("skill", {
       id: "test-contractless",
       name: "Contractless",
       description: "A Skill nobody said how to use.",
-    });
+    } as unknown as SkillDefinition);
+
+    expect(findSkillCatalogIssues().join("\n"))
+      .toContain("declares no application");
 
     const contractless = resolveSkillApplication({
       skillId: "test-contractless",
@@ -653,27 +849,118 @@ describe("Mastery changes what using a Skill looks like", () => {
   });
 
   it("applies changes cumulatively and stops at the held rank", () => {
-    const application = getSkillDefinition("pick-lock")?.application;
+    const first = resolveEffectiveSkillApplication(FLAME_LANCE_APPLICATION, 1);
+    const third = resolveEffectiveSkillApplication(FLAME_LANCE_APPLICATION, 3);
+    const fifth = resolveEffectiveSkillApplication(FLAME_LANCE_APPLICATION, 5);
 
-    expect(application).toBeDefined();
+    expect(first.action.structuredActionCost.actions).toBe(2);
+    expect(first.action.range?.maximumMetres).toBe(10);
+    expect(first.appliedMasteryChanges).toEqual([]);
 
-    if (application === undefined) return;
+    /* II caps the Action cost; III adds reach and Aura. Nothing from IV yet. */
+    expect(third.action.structuredActionCost.actions).toBe(1);
+    expect(third.action.range?.maximumMetres).toBe(15);
+    expect(third.cost.aura?.baseAuraCost).toBe(15);
+    expect(third.appliedMasteryChanges).toEqual([2, 3]);
 
-    const base = resolveEffectiveSkillApplication(application, 1);
-    const middle = resolveEffectiveSkillApplication(application, 3);
-    const top = resolveEffectiveSkillApplication(application, 5);
+    /* V holds everything II, III and IV gave, and there is no rank V change. */
+    expect(fifth.appliedMasteryChanges).toEqual([2, 3, 4]);
+    expect(fifth.action.range?.maximumMetres).toBe(15);
+  });
 
-    /* III halves the time; V additionally makes it cost no Action. */
-    expect(base.action.executionDuration).toBe(60000);
-    expect(base.action.structuredActionCost.actions).toBe(1);
+  it("lets a rank improve what the Skill DOES, not only what it costs", () => {
+    /*
+     * Mastery is depth. A track that can only make a Skill cheaper or
+     * longer-ranged cannot express the thing ranks are for — the same act,
+     * done harder — so a change can address an outcome branch's own output by
+     * id and move its magnitude.
+     */
+    const before = resolveEffectiveSkillApplication(FLAME_LANCE_APPLICATION, 3);
+    const after = resolveEffectiveSkillApplication(FLAME_LANCE_APPLICATION, 4);
 
-    expect(middle.action.executionDuration).toBe(30000);
-    expect(middle.action.structuredActionCost.actions).toBe(1);
-    expect(middle.appliedMasteryChanges).toEqual([3]);
+    expect(
+      skillOutcomeOutputAmount(before.outcome, "lance-lands", "lance-impact"),
+    ).toBe(12);
 
-    expect(top.action.executionDuration).toBe(30000);
-    expect(top.action.structuredActionCost.actions).toBe(0);
-    expect(top.appliedMasteryChanges).toEqual([3, 5]);
+    expect(
+      skillOutcomeOutputAmount(after.outcome, "lance-lands", "lance-impact"),
+    ).toBe(24);
+
+    /* The other branch is untouched, and so is the authored definition. */
+    expect(skillOutcomeEntries(after.outcome).map((entry) => entry.id))
+      .toEqual(["lance-lands", "lance-misses"]);
+
+    expect(
+      skillOutcomeOutputAmount(
+        FLAME_LANCE_APPLICATION.outcome,
+        "lance-lands",
+        "lance-impact",
+      ),
+    ).toBe(12);
+  });
+
+  it("refuses an outcome modifier that addresses nothing", () => {
+    expect(issuesFor(applicationOf({
+      outcome: {
+        kind: "automatic",
+        outcome: { id: "done", summary: "It happens." },
+      },
+      masteryChanges: [
+        {
+          minimumMastery: 2,
+          changes: [{
+            op: "add",
+            field: "outcomeOutput",
+            outcomeId: "not-a-branch",
+            outputId: "impact",
+            amount: 1,
+          }],
+        },
+      ],
+    }))).toContain("capabilities.application.mastery.outcome.unknown");
+
+    expect(issuesFor(applicationOf({
+      outcome: {
+        kind: "automatic",
+        outcome: { id: "done", summary: "It happens." },
+      },
+      masteryChanges: [
+        {
+          minimumMastery: 2,
+          changes: [{
+            op: "add",
+            field: "outcomeOutput",
+            outcomeId: "done",
+            outputId: "not-an-output",
+            amount: 1,
+          }],
+        },
+      ],
+    }))).toContain("capabilities.application.mastery.output.unknown");
+
+    /* And a rank may not introduce a magnitude the base never declared. */
+    expect(issuesFor(applicationOf({
+      outcome: {
+        kind: "automatic",
+        outcome: {
+          id: "done",
+          summary: "It happens.",
+          outputs: [{ id: "impact", summary: "No magnitude authored." }],
+        },
+      },
+      masteryChanges: [
+        {
+          minimumMastery: 2,
+          changes: [{
+            op: "add",
+            field: "outcomeOutput",
+            outcomeId: "done",
+            outputId: "impact",
+            amount: 1,
+          }],
+        },
+      ],
+    }))).toContain("capabilities.application.mastery.output.amountless");
   });
 
   it("applies thresholds in ascending order regardless of authored order", () => {
@@ -878,9 +1165,11 @@ describe("an available application projects into a neutral action profile", () =
       .toEqual({ actions: 1 });
     expect(profileThreatensDeclaredTargets(profile)).toBe(true);
 
-    /* The initiator's scope is what the profile carries for an opposed check. */
-    expect(profile.check)
-      .toEqual({ scope: { kind: "derivedAttribute", derivedAttribute: "accuracy" } });
+    /*
+     * Punch is adjudicated and names no scope, so the profile carries no
+     * check — the engine is not pretending to know how a strike is decided.
+     */
+    expect(profile.check).toBeUndefined();
   });
 
   it("refuses to build a profile for an unavailable application", () => {
@@ -908,21 +1197,33 @@ describe("an available application projects into a neutral action profile", () =
   });
 
   it("carries the Aura cost in the fields the real request takes", () => {
+    const effective = resolveEffectiveSkillApplication(
+      FLAME_LANCE_APPLICATION,
+      3,
+    );
+
+    expect(skillAuraCostFields(effective.cost)).toEqual({
+      exertionLoad: 2,
+      baseAuraCost: 15,
+      requiredOutput: 5,
+    });
+  });
+
+  it("carries exertion alone for a Skill whose Aura price is undecided", () => {
+    /*
+     * Fire Blast authors no Aura figures: a blast's price depends on the power
+     * the bender puts behind it, so it belongs to a request-time cost profile
+     * rather than to one number frozen in the catalog. The exertion is real
+     * and travels regardless.
+     */
     const application = getSkillDefinition("fire-blast")?.application;
 
     expect(application).toBeDefined();
 
     if (application === undefined) return;
 
-    const effective = resolveEffectiveSkillApplication(application, 3);
-
-    /* III buys reach with fuel: +5 m and +5 Aura, cumulative from the base. */
-    expect(effective.action.range?.maximumMetres).toBe(20);
-    expect(skillAuraCostFields(effective.cost)).toEqual({
-      exertionLoad: 2,
-      baseAuraCost: 15,
-      requiredOutput: 5,
-    });
+    expect(application.cost.aura).toBeUndefined();
+    expect(skillAuraCostFields(application.cost)).toEqual({ exertionLoad: 2 });
   });
 
   it("derives the resolution approach rather than storing a second one", () => {
@@ -948,15 +1249,16 @@ describe("resolution and projection mutate nothing", () => {
   it("leaves the authored definition byte-identical", () => {
     const before = JSON.stringify(getSkillDefinition("pick-lock"));
 
-    const resolved = resolveTestCharacter(createTestCharacter({
-      techniques: [{ techniqueId: "lockpicking" }],
-      skills: [{ skillId: "pick-lock", mastery: 5 }],
-    }));
+    registerFlameLance();
+
+    const lanceBefore = JSON.stringify(getSkillDefinition(FLAME_LANCE));
 
     const result = resolveSkillApplication({
-      skillId: "pick-lock",
-      capabilities: resolved.capabilities,
-      context: resolved.requirementContext,
+      skillId: FLAME_LANCE,
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: FLAME_LANCE, mastery: 4 }],
+      }),
+      context: emptyContext(),
     });
 
     expect(result.success).toBe(true);
@@ -967,10 +1269,11 @@ describe("resolution and projection mutate nothing", () => {
 
     expect(built.success).toBe(true);
 
-    /* Rank V capped the Action cost to zero on the DERIVED value only. */
+    /* Rank II capped the Action cost and IV doubled the impact — derived only. */
     expect(result.payload.application?.action.structuredActionCost)
-      .toEqual({ actions: 0 });
+      .toEqual({ actions: 1 });
 
+    expect(JSON.stringify(getSkillDefinition(FLAME_LANCE))).toBe(lanceBefore);
     expect(JSON.stringify(getSkillDefinition("pick-lock"))).toBe(before);
   });
 

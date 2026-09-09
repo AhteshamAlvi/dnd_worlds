@@ -13,6 +13,8 @@
 
 import { describe, expect, it } from "vitest";
 
+import { minimalSkillApplication } from "../character/capabilities/applications";
+
 import type { Attributes } from "../character/foundation/attributes/types";
 import type { Character } from "../character/types";
 import type { Requirement } from "../character/rules/requirements";
@@ -537,6 +539,7 @@ describe("an incomplete sheet warns rather than failing validation", () => {
 
   function registerGatedSkill(): void {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: GATED,
       name: "Gated Skill",
       description: "A test Skill gated on one Trait and nothing else.",
@@ -672,6 +675,7 @@ describe("capability validation does not call incomplete data a failure", () => 
 
   function registerGatedSkill(): void {
     registerDefinition("skill", {
+      application: minimalSkillApplication(),
       id: GATED,
       name: "Gated Skill",
       description: "A test Skill gated on one Trait and nothing else.",

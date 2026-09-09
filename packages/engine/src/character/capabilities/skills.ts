@@ -53,6 +53,7 @@ import { createRegistry } from "../../infrastructure/registry";
 import type { EffectfulDefinition } from "../rules/content";
 import type { Effect } from "../rules/effects";
 import { minutes, seconds } from "../../time/duration";
+import { physicalExertionLoad } from "../foundation/body/endurance";
 
 import {
   findSkillApplicationIssues,
@@ -88,17 +89,19 @@ export interface SkillDefinition extends EffectfulDefinition {
   /**
    * How this Skill may be used, and what using it costs and decides.
    *
-   * OPTIONAL, and the engine will not invent one. A default application would
-   * have to invent an Action cost, a target rule, a check and an outcome
-   * nobody authored, and would make every homebrew Skill silently executable
-   * on terms its author never wrote. A Skill without one is possessed and not
-   * usable, which application-resolution.ts reports as a content problem
-   * rather than as a fact about the character.
+   * REQUIRED. A Skill is a concrete thing a character does on purpose — that
+   * is the whole definition at the top of this file — so one with no
+   * application is an unfinished definition rather than a legitimate kind of
+   * capability, and treating it as the latter produced two answers to one
+   * question: resolution refused it while the requirement helper read its
+   * absent requirement list as an empty one and reported it satisfied.
    *
-   * Every authored Skill in this file declares one, and catalog validation
-   * proves each is coherent — including at every Mastery rank it declares.
+   * The engine still never INVENTS one. An authoring tool that needs somewhere
+   * to start calls minimalSkillApplication(), which writes a real, visible,
+   * free-adjudication contract into the content; nothing in resolution or
+   * validation supplies it.
    */
-  readonly application?: SkillApplicationDefinition;
+  readonly application: SkillApplicationDefinition;
 
   /**
    * How far this Skill can be deepened, and what each rank of it carries.
@@ -161,6 +164,32 @@ export interface CharacterSkill {
  * same values ONE_ACTION, EXACTLY_ONE_TARGET and the rest denote, and
  * findSkillCatalogIssues() checks every one of them through the neutral
  * validators, so a wrong literal here fails the suite rather than shipping.
+ *
+ *
+ * ── WHAT THESE CONTRACTS DELIBERATELY DO NOT DECIDE ─────────────────────
+ *
+ * Combat has no check layer, no force-to-Body conversion and no calibrated
+ * Aura pricing yet, and this catalog is not the place any of them gets
+ * decided by default. An authored number here is a RULE the moment it ships:
+ * it reaches players, other content is balanced against it, and nobody
+ * afterwards can tell a considered value from a placeholder that survived.
+ *
+ * So every combat Skill below resolves by GUIDED NARRATIVE — the engine
+ * gathers Range, timing, cost and threat and hands the decision to a person —
+ * rather than naming an attack scope and an opposed contest nobody has
+ * designed. Pick Lock keeps a real fixed DEX check because manipulating a
+ * mechanism against a difficulty is not an undecided combat question.
+ *
+ * Absent for the same reason: Mastery changes (the mechanism is exercised by
+ * test content, so a rank's meaning is authored when a rank's meaning is
+ * decided) and Fire Blast's Aura price, which should be built at request time
+ * from the power the character declares rather than frozen here as one number.
+ *
+ * What IS authored: geometry and effort. A profile that declines to state a
+ * Range is a punch usable from across the map, and an omitted exertion load
+ * would be defaulted by whoever read it — so reach is stated as physical fact
+ * and effort is selected from foundation/body/endurance's own named scale
+ * rather than invented as a bare number.
  */
 export const SKILL_DEFINITIONS = {
   punch: {
@@ -181,52 +210,41 @@ export const SKILL_DEFINITIONS = {
         },
         /* A punch thrown at the ground declares no target and is still aimed. */
         permittedFocusKinds: ["none", "position"],
+        /* Arm's reach. Geometry, not a combat rule. */
         range: { kind: "direct", minimumMetres: 0, maximumMetres: 1.5 },
-        executionDuration: seconds(0.5),
+        executionDuration: seconds(1),
         travel: { kind: "instantaneous" },
         threatens: "declared-targets",
       },
       role: "offense",
-      cost: { exertionLoad: 1 },
+      cost: { exertionLoad: physicalExertionLoad("ordinary-committed") },
       /*
-       * Provisional scopes. Combat has no check layer yet, so a strike is
-       * modelled as the striker's Accuracy against the target's Acrobatics —
-       * the two Derived Attributes that already mean "can I land it" and "can
-       * I get out of the way". When Combat lands, this changes here and
-       * nowhere else.
+       * Undecided, and said so. Whether a strike is an opposed contest of two
+       * Derived Attributes, a fixed check against a defence value, or
+       * something else is Combat's to settle; until it does, the engine
+       * assembles the facts and a person calls it.
        */
-      check: {
-        kind: "opposed",
-        initiatorScope: { kind: "derivedAttribute", derivedAttribute: "accuracy" },
-        opponentScope: { kind: "derivedAttribute", derivedAttribute: "acrobatics" },
-        tiesFavor: "opponent",
-      },
+      check: { kind: "adjudicated" },
       outcome: {
-        kind: "opposed",
-        winner: {
-          id: "punch-connects",
-          summary: "The strike lands on the declared target.",
-          consequences: [
-            {
-              id: "punch-impact",
-              summary: "The target takes the force of the blow.",
-            },
-          ],
-        },
-        loser: {
-          id: "punch-avoided",
-          summary: "The target avoids the strike.",
-        },
+        kind: "guided-narrative",
+        guidance: [
+          {
+            id: "punch-connects",
+            summary: "The strike lands on the declared target.",
+            consequences: [
+              {
+                id: "punch-impact",
+                summary:
+                  "The target takes the force of the blow. The force-to-Body conversion is Combat's and is not yet written.",
+              },
+            ],
+          },
+          {
+            id: "punch-avoided",
+            summary: "The target avoids or absorbs the strike.",
+          },
+        ],
       },
-      masteryChanges: [
-        {
-          /* Trained extension: a longer committed reach on the same blow. */
-          minimumMastery: 4,
-          changes: [
-            { op: "add", field: "rangeMaximumMetres", amount: 0.5 },
-          ],
-        },
-      ],
     },
   },
 
@@ -252,32 +270,27 @@ export const SKILL_DEFINITIONS = {
           permittedKinds: ["entity"],
         },
         permittedFocusKinds: ["none"],
+        /* Whatever is close enough to be hitting you. */
         range: { kind: "direct", minimumMetres: 0, maximumMetres: 2 },
-        executionDuration: seconds(0.25),
+        executionDuration: seconds(1),
         travel: { kind: "instantaneous" },
         /* Deflecting an attacker endangers nobody. */
       },
       role: "defense",
-      cost: { exertionLoad: 1 },
-      check: {
-        kind: "opposed",
-        initiatorScope: {
-          kind: "derivedAttribute",
-          derivedAttribute: "combatAbility",
-        },
-        opponentScope: { kind: "derivedAttribute", derivedAttribute: "accuracy" },
-        tiesFavor: "opponent",
-      },
+      cost: { exertionLoad: physicalExertionLoad("ordinary-committed") },
+      check: { kind: "adjudicated" },
       outcome: {
-        kind: "opposed",
-        winner: {
-          id: "parry-deflects",
-          summary: "The incoming attack is turned aside.",
-        },
-        loser: {
-          id: "parry-fails",
-          summary: "The attack comes through the guard.",
-        },
+        kind: "guided-narrative",
+        guidance: [
+          {
+            id: "parry-deflects",
+            summary: "The incoming attack is turned aside.",
+          },
+          {
+            id: "parry-fails",
+            summary: "The attack comes through the guard.",
+          },
+        ],
       },
     },
   },
@@ -304,8 +317,12 @@ export const SKILL_DEFINITIONS = {
         executionDuration: seconds(1),
       },
       role: "defense",
-      cost: { exertionLoad: 0.25 },
-      /* Settling into a guard is a thing a trained fighter simply does. */
+      cost: { exertionLoad: physicalExertionLoad("light") },
+      /*
+       * The one combat Skill that genuinely decides nothing: settling into a
+       * guard is a thing a trained fighter simply does. What the stance is
+       * WORTH is a Combat question, and this contract does not answer it.
+       */
       check: { kind: "automatic" },
       outcome: {
         kind: "automatic",
@@ -344,7 +361,12 @@ export const SKILL_DEFINITIONS = {
         executionDuration: minutes(1),
       },
       role: "utility",
-      cost: { exertionLoad: 0.25 },
+      cost: { exertionLoad: physicalExertionLoad("light") },
+      /*
+       * A real check, and not an undecided one. Manipulating a mechanism
+       * against a difficulty the situation supplies is exactly what a fixed
+       * DEX check is; no combat mechanic is being pre-empted.
+       */
       check: {
         kind: "fixed",
         scope: { kind: "attribute", attribute: "dex" },
@@ -367,22 +389,6 @@ export const SKILL_DEFINITIONS = {
           summary: "The mechanism does not give.",
         },
       },
-      masteryChanges: [
-        {
-          /* Familiar hands: the same lock in half the time. */
-          minimumMastery: 3,
-          changes: [
-            { op: "multiply", field: "executionDuration", factor: 0.5 },
-          ],
-        },
-        {
-          /* At the top of the track it is quick enough to cost no Action. */
-          minimumMastery: 5,
-          changes: [
-            { op: "cap", field: "structuredActionCost", maximum: 0 },
-          ],
-        },
-      ],
     },
   },
 
@@ -435,46 +441,33 @@ export const SKILL_DEFINITIONS = {
         },
       ],
       /*
-       * The Aura price as authored. Not a damage figure — what the blast does
-       * on arrival needs a force-to-Body conversion nobody has written, and
-       * inventing one here would freeze it into the catalog.
+       * NO AURA FIGURES, deliberately.
+       *
+       * A blast's Aura price is a function of the power the bender chooses to
+       * put behind it, so the honest shape is a cost built at request time from
+       * a declared magnitude — not one number frozen into the catalog and then
+       * balanced against by everything authored afterwards. The field is
+       * optional precisely so an undecided price can be absent instead of
+       * guessed; SkillApplicationCostProfile records the gap.
+       *
+       * The physical effort is authored, because it is not the undecided part
+       * and an omitted load would be defaulted by its reader.
        */
-      cost: {
-        exertionLoad: 2,
-        aura: { baseAuraCost: 10, requiredOutput: 5 },
-      },
-      check: {
-        kind: "fixed",
-        scope: { kind: "derivedAttribute", derivedAttribute: "accuracy" },
-        tiePolicy: "succeeds",
-      },
+      cost: { exertionLoad: physicalExertionLoad("forceful") },
+      check: { kind: "adjudicated" },
       outcome: {
-        kind: "fixed",
-        success: {
-          id: "blast-lands",
-          summary: "The blast reaches what it was aimed at.",
-          outputs: [
-            {
-              id: "blast-aura-output",
-              summary: "The Aura Output the blast was projected at.",
-            },
-          ],
-        },
-        failure: {
-          id: "blast-goes-wide",
-          summary: "The blast goes wide; the Aura is spent either way.",
-        },
+        kind: "guided-narrative",
+        guidance: [
+          {
+            id: "blast-lands",
+            summary: "The blast reaches what it was aimed at.",
+          },
+          {
+            id: "blast-goes-wide",
+            summary: "The blast goes wide; the Aura is spent either way.",
+          },
+        ],
       },
-      masteryChanges: [
-        {
-          /* Reach bought with fuel: further, and more expensive. */
-          minimumMastery: 3,
-          changes: [
-            { op: "add", field: "rangeMaximumMetres", amount: 5 },
-            { op: "add", field: "baseAuraCost", amount: 5 },
-          ],
-        },
-      ],
     },
   },
 } as const satisfies Record<string, SkillDefinition>;
@@ -590,7 +583,17 @@ export function findSkillCatalogIssues(): readonly string[] {
       issues.push(...findMasteryTrackIssues("Skill", skill.id, skill.mastery));
     }
 
-    if (skill.application !== undefined) {
+    if (skill.application === undefined) {
+      /*
+       * Required by the type, and checked anyway: a host registers content the
+       * compiler never saw. A Skill with no application is an unfinished
+       * definition, so it is reported here rather than being carried as a
+       * capability nobody can use.
+       */
+      issues.push(
+        `Skill "${skill.id}" declares no application, so there is no way to use it.`,
+      );
+    } else {
       /*
        * The application is checked against the Skill's OWN track, because the
        * two constrain each other: a trackless Skill may declare no Mastery
