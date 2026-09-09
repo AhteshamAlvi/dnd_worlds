@@ -217,43 +217,130 @@ export interface SkillApplicationCostProfile {
   readonly exertionLoad: PhysicalExertionLoad;
 
   /**
-   * Deliberate Aura, in the fields the real cost request carries.
+   * Deliberate Aura. REQUIRED, and a discriminated union rather than an
+   * optional bag of numbers.
    *
-   * Tied to AuraCostRequest by a Pick so that a field renamed in the Aura
-   * domain breaks this file rather than silently ceasing to be sent. There is
-   * no second Aura formula here and there must never be one: the authoritative
-   * charge is whatever the expenditure rules make of these inputs.
+   * An omitted Aura cost used to mean two incompatible things, and Aura
+   * expenditure reads an omitted figure as ZERO — so "this Skill burns no
+   * deliberate Aura" and "this Skill's price cannot be known until the
+   * character says how hard they are pushing" were the same data, and the
+   * second silently became the first at the moment of charging. A Fire Blast
+   * that costs nothing is not a placeholder; it is a wrong rule that resolves
+   * cleanly.
+   *
+   * So the two are separate variants and neither is the absence of the other.
    */
-  readonly aura?: SkillAuraCost;
+  readonly aura: SkillAuraCostProfile;
 }
-
-
-export type SkillAuraCost = Pick<
-  AuraCostRequest,
-  "baseAuraCost" | "requiredOutput"
->;
 
 
 /**
- * The Aura-shaped half of a cost profile, ready to spread into a request.
+ * How a Skill's deliberate Aura price is arrived at.
+ *
+ * The fixed variant is tied to AuraCostRequest by a Pick, so a field renamed
+ * in the Aura domain breaks this file rather than silently ceasing to be sent.
+ * There is no second Aura formula here and there must never be one: the
+ * authoritative charge is whatever the expenditure rules make of these inputs.
+ */
+export type SkillAuraCostProfile =
+  | {
+      /* Burns no deliberate Aura. A stated fact, not a missing field. */
+      readonly kind: "none";
+    }
+  | {
+      /* One authored price, the same every time it is used. */
+      readonly kind: "fixed";
+      readonly baseAuraCost?: number;
+      readonly requiredOutput?: number;
+    }
+  | {
+      /*
+       * The price follows something the character declares at the moment of
+       * use — how much power they put behind it — so it cannot be authored.
+       *
+       * Ticket 3.3 does not calculate this, and deliberately does not pretend
+       * to: what it does is make the requirement VISIBLE, so preparation is
+       * told it needs more context rather than charging zero and moving on.
+       * The profileId names the eventual construction rule; nothing resolves
+       * it yet.
+       */
+      readonly kind: "request-derived";
+      readonly profileId: string;
+    };
+
+
+/**
+ * What a Skill knows about its own cost, in the shape a request takes.
+ *
+ * A UNION, so that a caller cannot spread a request-derived cost into an
+ * AuraCostRequest and have the missing figures read as zero. That was exactly
+ * the failure: the two situations produced the same object, and the type
+ * system had nothing to say about it. Now preparation has to branch, and the
+ * branch it cannot yet complete is the one that says so.
+ *
+ * Physical exertion travels in both variants. It is charged for the act
+ * itself, whatever the deliberate Aura turns out to be.
+ */
+export type SkillAuraCostProjection =
+  | {
+      readonly kind: "settled";
+      readonly fields: Pick<
+        AuraCostRequest,
+        "exertionLoad" | "baseAuraCost" | "requiredOutput"
+      >;
+    }
+  | {
+      /* Not chargeable yet. Preparation must supply the declared power. */
+      readonly kind: "request-derived";
+      readonly profileId: string;
+      readonly fields: Pick<AuraCostRequest, "exertionLoad">;
+    };
+
+
+/**
+ * The Aura-shaped half of a cost profile, as far as the Skill can settle it.
  *
  * The eventual execution adapter still owns the request id, the operation, the
- * timestamp and the two owners; this supplies only what the Skill knows. The
- * return type is a Pick of the request for the same reason the field is.
+ * timestamp and the two owners; this supplies only what the Skill knows.
  */
-export function skillAuraCostFields(
+export function projectSkillAuraCost(
   cost: SkillApplicationCostProfile,
-): Pick<AuraCostRequest, "exertionLoad" | "baseAuraCost" | "requiredOutput"> {
+): SkillAuraCostProjection {
+  if (cost.aura.kind === "request-derived") {
+    return {
+      kind: "request-derived",
+      profileId: cost.aura.profileId,
+      fields: { exertionLoad: cost.exertionLoad },
+    };
+  }
+
+  const aura = cost.aura.kind === "fixed" ? cost.aura : undefined;
+
   return {
-    exertionLoad: cost.exertionLoad,
-    ...(cost.aura?.baseAuraCost === undefined
-      ? {}
-      : { baseAuraCost: cost.aura.baseAuraCost }),
-    ...(cost.aura?.requiredOutput === undefined
-      ? {}
-      : { requiredOutput: cost.aura.requiredOutput }),
+    kind: "settled",
+    fields: {
+      exertionLoad: cost.exertionLoad,
+      ...(aura?.baseAuraCost === undefined
+        ? {}
+        : { baseAuraCost: aura.baseAuraCost }),
+      ...(aura?.requiredOutput === undefined
+        ? {}
+        : { requiredOutput: aura.requiredOutput }),
+    },
   };
 }
+
+
+/** Whether this Skill cannot be priced without more from the request. */
+export function skillAuraCostNeedsRequestContext(
+  cost: SkillApplicationCostProfile,
+): boolean {
+  return cost.aura.kind === "request-derived";
+}
+
+
+/** The one Aura cost that says "nothing", spelled once. */
+export const NO_SKILL_AURA_COST: SkillAuraCostProfile = { kind: "none" };
 
 
 /* -------------------------------------------------------------------------- */
@@ -757,7 +844,7 @@ export function minimalSkillApplication(
       executionDuration: 0,
     },
     role: "utility",
-    cost: { exertionLoad: 0 },
+    cost: { exertionLoad: 0, aura: { kind: "none" } },
     check: { kind: "adjudicated" },
     outcome: { kind: "free-adjudication" },
     ...overrides,
@@ -811,11 +898,21 @@ function readNumericField(
     case "exertionLoad":
       return application.cost.exertionLoad;
 
+    /*
+     * Readable only when the price is FIXED. There is no number to add five to
+     * on a Skill that burns none, and none to add it to on one whose price the
+     * request has not supplied yet — so a rank trying to move either is caught
+     * by the field.absent rule rather than silently doing nothing.
+     */
     case "baseAuraCost":
-      return application.cost.aura?.baseAuraCost;
+      return application.cost.aura.kind === "fixed"
+        ? application.cost.aura.baseAuraCost
+        : undefined;
 
     case "requiredOutput":
-      return application.cost.aura?.requiredOutput;
+      return application.cost.aura.kind === "fixed"
+        ? application.cost.aura.requiredOutput
+        : undefined;
   }
 }
 
@@ -882,27 +979,27 @@ function writeNumericField(
         cost: { ...application.cost, exertionLoad: value },
       };
 
-    case "baseAuraCost":
-      if (application.cost.aura === undefined) return application;
+    case "baseAuraCost": {
+      const aura = application.cost.aura;
+
+      if (aura.kind !== "fixed") return application;
 
       return {
         ...application,
-        cost: {
-          ...application.cost,
-          aura: { ...application.cost.aura, baseAuraCost: value },
-        },
+        cost: { ...application.cost, aura: { ...aura, baseAuraCost: value } },
       };
+    }
 
-    case "requiredOutput":
-      if (application.cost.aura === undefined) return application;
+    case "requiredOutput": {
+      const aura = application.cost.aura;
+
+      if (aura.kind !== "fixed") return application;
 
       return {
         ...application,
-        cost: {
-          ...application.cost,
-          aura: { ...application.cost.aura, requiredOutput: value },
-        },
+        cost: { ...application.cost, aura: { ...aura, requiredOutput: value } },
       };
+    }
   }
 }
 
@@ -1530,39 +1627,82 @@ function findCostProfileIssues(
 
   const aura = cost.aura;
 
-  if (aura === undefined) return errors;
-
-  if (
-    aura.baseAuraCost !== undefined &&
-    (!Number.isFinite(aura.baseAuraCost) || aura.baseAuraCost < 0)
-  ) {
+  if (aura === undefined || typeof aura !== "object") {
     errors.push(issue(
-      "capabilities.application.cost.aura.base.invalid",
-      "A Skill's deliberate Aura cost must be a finite, non-negative number.",
-      "finite Aura >= 0",
-      String(aura.baseAuraCost),
+      "capabilities.application.cost.aura.missing",
+      "A Skill must state how its deliberate Aura is priced — write { kind: \"none\" } when it burns none, because an omitted price is charged as zero.",
+      ["none", "fixed", "request-derived"],
+      String(aura),
     ));
+
+    return errors;
   }
 
-  if (
-    aura.requiredOutput !== undefined &&
-    (!Number.isFinite(aura.requiredOutput) || aura.requiredOutput < 0)
-  ) {
-    errors.push(issue(
-      "capabilities.application.cost.aura.output.invalid",
-      "A Skill's required Aura Output must be a finite, non-negative number.",
-      "finite Output >= 0",
-      String(aura.requiredOutput),
-    ));
-  }
+  switch (aura.kind) {
+    case "none":
+      break;
 
-  if (aura.baseAuraCost === undefined && aura.requiredOutput === undefined) {
-    errors.push(issue(
-      "capabilities.application.cost.aura.empty",
-      "An Aura cost that demands neither Aura nor Output says nothing; omit it.",
-      "a base cost, a required Output, or omit the field",
-      "empty Aura cost",
-    ));
+    case "fixed":
+      if (
+        aura.baseAuraCost !== undefined &&
+        (!Number.isFinite(aura.baseAuraCost) || aura.baseAuraCost < 0)
+      ) {
+        errors.push(issue(
+          "capabilities.application.cost.aura.base.invalid",
+          "A Skill's deliberate Aura cost must be a finite, non-negative number.",
+          "finite Aura >= 0",
+          String(aura.baseAuraCost),
+        ));
+      }
+
+      if (
+        aura.requiredOutput !== undefined &&
+        (!Number.isFinite(aura.requiredOutput) || aura.requiredOutput < 0)
+      ) {
+        errors.push(issue(
+          "capabilities.application.cost.aura.output.invalid",
+          "A Skill's required Aura Output must be a finite, non-negative number.",
+          "finite Output >= 0",
+          String(aura.requiredOutput),
+        ));
+      }
+
+      if (
+        aura.baseAuraCost === undefined &&
+        aura.requiredOutput === undefined
+      ) {
+        errors.push(issue(
+          "capabilities.application.cost.aura.empty",
+          "A fixed Aura cost that demands neither Aura nor Output is a cost of nothing; say { kind: \"none\" } and mean it.",
+          "a base cost, a required Output, or kind \"none\"",
+          "empty fixed cost",
+        ));
+      }
+
+      break;
+
+    case "request-derived":
+      if (
+        typeof aura.profileId !== "string" ||
+        aura.profileId.trim().length === 0
+      ) {
+        errors.push(issue(
+          "capabilities.application.cost.aura.profile.missing",
+          "A request-derived Aura cost must name the construction profile that will price it.",
+          "non-empty profile id",
+          String(aura.profileId),
+        ));
+      }
+
+      break;
+
+    default:
+      errors.push(issue(
+        "capabilities.application.cost.aura.kind.invalid",
+        "A Skill's Aura cost must be none, fixed, or request-derived.",
+        ["none", "fixed", "request-derived"],
+        String((aura as { kind?: unknown }).kind),
+      ));
   }
 
   return errors;
@@ -1931,6 +2071,40 @@ function findMasteryChangeIssues(
 
 
 /**
+ * Every outcome magnitude, checked for being a number a host can read.
+ *
+ * Separate from the full outcome validation because it is the part a MASTERY
+ * RANK can change, and it is the only part: `outcomeOutput` is the sole
+ * operation that touches an outcome. Re-running the whole outcome validator at
+ * every threshold would report each duplicate id once per rank; this reports
+ * the thing that can actually go wrong between ranks.
+ *
+ * If an operation is ever added that changes anything else about an outcome,
+ * this is the function that has to grow with it.
+ */
+function findOutcomeMagnitudeIssues(
+  outcome: SkillOutcomeProfile,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  for (const entry of skillOutcomeEntries(outcome)) {
+    for (const output of entry.outputs ?? []) {
+      if (output.amount !== undefined && !Number.isFinite(output.amount)) {
+        errors.push(issue(
+          "capabilities.application.outcome.output.amount.invalid",
+          `Output "${String(output.id)}" of outcome "${String(entry.id)}" resolves to a magnitude that is not a number.`,
+          "finite number",
+          String(output.amount),
+        ));
+      }
+    }
+  }
+
+  return errors;
+}
+
+
+/**
  * Everything wrong with an authored application, including what its own
  * Mastery ranks would make of it.
  *
@@ -1978,16 +2152,24 @@ export function findSkillApplicationIssues(
       change.minimumMastery,
     );
 
-    for (const error of findActionProfileIssues(
-      skillActionProfile(skillId, effective),
-    )) {
+    /*
+     * Every part a rank can move is revalidated, not just the ones it happened
+     * to move in this catalog. Operands and base values are each finite and
+     * the PRODUCT need not be — Number.MAX_VALUE * 2 is Infinity, and two
+     * perfectly reasonable-looking authored numbers can reach it across a few
+     * cumulative ranks. A magnitude that escaped here would travel into a
+     * proposal and out to a host as `null`, since Infinity is not JSON.
+     */
+    for (const error of [
+      ...findActionProfileIssues(skillActionProfile(skillId, effective)),
+      ...findCostProfileIssues(effective.cost),
+      ...findOutcomeMagnitudeIssues(effective.outcome),
+    ]) {
       errors.push({
         ...error,
         message: `At Mastery ${change.minimumMastery}: ${error.message}`,
       });
     }
-
-    errors.push(...findCostProfileIssues(effective.cost));
   }
 
   return errors;

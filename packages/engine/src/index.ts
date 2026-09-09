@@ -992,7 +992,8 @@ export type {
   SkillApplicationModifier,
   SkillApplicationNumericField,
   SkillApplicationPermission,
-  SkillAuraCost,
+  SkillAuraCostProfile,
+  SkillAuraCostProjection,
   SkillMechanicalRole,
   SkillOutcomeConsequence,
   SkillOutcomeEntry,
@@ -1001,6 +1002,7 @@ export type {
 } from "./character/capabilities/applications";
 
 export {
+  NO_SKILL_AURA_COST,
   SKILL_APPLICATION_NUMERIC_FIELDS,
   SKILL_MECHANICAL_ROLES,
   findSkillApplicationIssues,
@@ -1010,7 +1012,8 @@ export {
   resolveEffectiveSkillApplication,
   skillActionProfile,
   skillActionProfileId,
-  skillAuraCostFields,
+  projectSkillAuraCost,
+  skillAuraCostNeedsRequestContext,
   skillCheckScope,
   skillConsequenceSuggestion,
   skillOutcomeEntries,

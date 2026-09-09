@@ -185,11 +185,32 @@ export interface CharacterSkill {
  * decided) and Fire Blast's Aura price, which should be built at request time
  * from the power the character declares rather than frozen here as one number.
  *
- * What IS authored: geometry and effort. A profile that declines to state a
- * Range is a punch usable from across the map, and an omitted exertion load
- * would be defaulted by whoever read it — so reach is stated as physical fact
- * and effort is selected from foundation/body/endurance's own named scale
- * rather than invented as a bare number.
+ * What IS authored, and why each is a different kind of claim:
+ *
+ *   EFFORT is selected from foundation/body/endurance's own named exertion
+ *   scale rather than invented — "ordinary-committed" is an existing anchor,
+ *   not a number chosen here — and an omitted load would be defaulted by
+ *   whoever read it.
+ *
+ *   AURA is stated even when it cannot be priced. `{ kind: "request-derived" }`
+ *   says the price follows the power the character declares; leaving it out
+ *   would have been charged as ZERO by Aura expenditure, which is a rule
+ *   wearing the costume of a gap.
+ *
+ *   GEOMETRY has to be stated, because a profile with no Range is a punch
+ *   usable from across the map, and Range decides ELIGIBILITY rather than
+ *   success — it is not the sort of question adjudication answers. But the
+ *   exact figures below are AUTHORED RULES and are not claimed as physical
+ *   facts: 1.5 m of reach, a one-second strike, a 15 m blast at 30 m/s.
+ *   Nobody has approved them as game design.
+ *
+ *   The eventual shape is a contextual base rather than a literal — reach
+ *   derived from the body doing the reaching, a Reaction's range derived from
+ *   the action it answers, a projected range derived from declared power —
+ *   which is what makes a Giant's punch reach further than a child's without
+ *   either being authored twice. DistanceInterval has no such base today, so
+ *   these stand as provisional literals, flagged here and in BACKLOG rather
+ *   than presented as settled.
  */
 export const SKILL_DEFINITIONS = {
   punch: {
@@ -210,14 +231,21 @@ export const SKILL_DEFINITIONS = {
         },
         /* A punch thrown at the ground declares no target and is still aimed. */
         permittedFocusKinds: ["none", "position"],
-        /* Arm's reach. Geometry, not a combat rule. */
+        /*
+         * A provisional literal standing in for a body-derived reach. Range is
+         * eligibility, so it has to be stated; 1.5 m is not thereby approved.
+         */
         range: { kind: "direct", minimumMetres: 0, maximumMetres: 1.5 },
         executionDuration: seconds(1),
         travel: { kind: "instantaneous" },
         threatens: "declared-targets",
       },
       role: "offense",
-      cost: { exertionLoad: physicalExertionLoad("ordinary-committed") },
+      cost: {
+        exertionLoad: physicalExertionLoad("ordinary-committed"),
+        /* Burns no deliberate Aura. Stated, because an omitted price is zero. */
+        aura: { kind: "none" },
+      },
       /*
        * Undecided, and said so. Whether a strike is an opposed contest of two
        * Derived Attributes, a fixed check against a defence value, or
@@ -270,14 +298,22 @@ export const SKILL_DEFINITIONS = {
           permittedKinds: ["entity"],
         },
         permittedFocusKinds: ["none"],
-        /* Whatever is close enough to be hitting you. */
+        /*
+         * Provisional. A Reaction's range should eventually derive from the
+         * action it answers — you can parry what can reach you — rather than
+         * from a literal authored here.
+         */
         range: { kind: "direct", minimumMetres: 0, maximumMetres: 2 },
         executionDuration: seconds(1),
         travel: { kind: "instantaneous" },
         /* Deflecting an attacker endangers nobody. */
       },
       role: "defense",
-      cost: { exertionLoad: physicalExertionLoad("ordinary-committed") },
+      cost: {
+        exertionLoad: physicalExertionLoad("ordinary-committed"),
+        /* Burns no deliberate Aura. Stated, because an omitted price is zero. */
+        aura: { kind: "none" },
+      },
       check: { kind: "adjudicated" },
       outcome: {
         kind: "guided-narrative",
@@ -317,7 +353,11 @@ export const SKILL_DEFINITIONS = {
         executionDuration: seconds(1),
       },
       role: "defense",
-      cost: { exertionLoad: physicalExertionLoad("light") },
+      cost: {
+        exertionLoad: physicalExertionLoad("light"),
+        /* Burns no deliberate Aura. Stated, because an omitted price is zero. */
+        aura: { kind: "none" },
+      },
       /*
        * The one combat Skill that genuinely decides nothing: settling into a
        * guard is a thing a trained fighter simply does. What the stance is
@@ -361,7 +401,11 @@ export const SKILL_DEFINITIONS = {
         executionDuration: minutes(1),
       },
       role: "utility",
-      cost: { exertionLoad: physicalExertionLoad("light") },
+      cost: {
+        exertionLoad: physicalExertionLoad("light"),
+        /* Burns no deliberate Aura. Stated, because an omitted price is zero. */
+        aura: { kind: "none" },
+      },
       /*
        * A real check, and not an undecided one. Manipulating a mechanism
        * against a difficulty the situation supplies is exactly what a fixed
@@ -426,9 +470,16 @@ export const SKILL_DEFINITIONS = {
           permittedKinds: ["entity", "object", "position"],
         },
         permittedFocusKinds: ["none", "position", "direction"],
+        /*
+         * PROVISIONAL, and the most speculative pair in the catalog. A
+         * projected blast's reach and speed should follow the power the bender
+         * declares — the same request context that prices its Aura — so 15 m
+         * at 30 m/s is a placeholder for a contextual base, not a rule anyone
+         * has approved. What is NOT provisional is that fire crosses the gap
+         * rather than arriving in the instant it is thrown.
+         */
         range: { kind: "direct", minimumMetres: 1, maximumMetres: 15 },
         executionDuration: seconds(1),
-        /* Fire crosses the gap; it does not arrive in the instant it is thrown. */
         travel: { kind: "speed", metresPerSecond: 30 },
         threatens: "declared-targets",
       },
@@ -440,20 +491,29 @@ export const SKILL_DEFINITIONS = {
           summary: "Fire Blast requires the ability to control fire.",
         },
       ],
-      /*
-       * NO AURA FIGURES, deliberately.
-       *
-       * A blast's Aura price is a function of the power the bender chooses to
-       * put behind it, so the honest shape is a cost built at request time from
-       * a declared magnitude — not one number frozen into the catalog and then
-       * balanced against by everything authored afterwards. The field is
-       * optional precisely so an undecided price can be absent instead of
-       * guessed; SkillApplicationCostProfile records the gap.
-       *
-       * The physical effort is authored, because it is not the undecided part
-       * and an omitted load would be defaulted by its reader.
-       */
-      cost: { exertionLoad: physicalExertionLoad("forceful") },
+      cost: {
+        /*
+         * The physical effort is authored: it is not the undecided part, and
+         * an omitted load would be defaulted by whoever read it.
+         */
+        exertionLoad: physicalExertionLoad("forceful"),
+
+        /*
+         * The Aura price is REQUEST-DERIVED, which is a claim rather than a
+         * gap. A blast costs what the bender decides to put behind it, so
+         * there is no number to author — and saying nothing would have been
+         * worse than guessing one, because Aura expenditure reads an omitted
+         * figure as zero and a free Fire Blast resolves perfectly cleanly.
+         *
+         * Nothing prices this yet. What the declaration buys today is that
+         * preparation is TOLD it needs the declared power, instead of
+         * charging nothing and moving on.
+         */
+        aura: {
+          kind: "request-derived",
+          profileId: "aura.declared-power",
+        },
+      },
       check: { kind: "adjudicated" },
       outcome: {
         kind: "guided-narrative",

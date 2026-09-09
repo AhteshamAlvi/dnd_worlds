@@ -33,7 +33,8 @@ import {
 import {
   findSkillApplicationIssues,
   resolveEffectiveSkillApplication,
-  skillAuraCostFields,
+  projectSkillAuraCost,
+  skillAuraCostNeedsRequestContext,
   skillOutcomeEntries,
   skillOutcomeOutputAmount,
   skillResolutionApproach,
@@ -84,7 +85,7 @@ const MINIMAL_APPLICATION: SkillApplicationDefinition = {
     executionDuration: 1000,
   },
   role: "utility",
-  cost: { exertionLoad: 0 },
+  cost: { exertionLoad: 0, aura: { kind: "none" } },
   check: { kind: "automatic" },
   outcome: {
     kind: "automatic",
@@ -148,7 +149,7 @@ const FLAME_LANCE_APPLICATION: SkillApplicationDefinition = {
   role: "offense",
   cost: {
     exertionLoad: 2,
-    aura: { baseAuraCost: 10, requiredOutput: 5 },
+    aura: { kind: "fixed", baseAuraCost: 10, requiredOutput: 5 },
   },
   check: { kind: "adjudicated" },
   outcome: {
@@ -293,8 +294,13 @@ describe("every authored Skill carries a valid application", () => {
       expect(getSkillDefinition(id)?.application?.check.kind).toBe("adjudicated");
     }
 
-    expect(getSkillDefinition("fire-blast")?.application?.cost.aura)
-      .toBeUndefined();
+    /*
+     * And the undecided Aura price is DECLARED undecided rather than left
+     * absent — an omitted price is charged as zero, which is a rule, not a
+     * gap.
+     */
+    expect(getSkillDefinition("fire-blast")?.application?.cost.aura.kind)
+      .toBe("request-derived");
 
     /* And no authored Skill ships a Mastery balance decision. */
     for (const id of Object.keys(SKILL_DEFINITIONS)) {
@@ -405,19 +411,71 @@ describe("application validation refuses incoherent contracts", () => {
   });
 
   it("rejects a negative exertion load", () => {
-    const codes = issuesFor(applicationOf({ cost: { exertionLoad: -1 } }));
+    const codes = issuesFor(applicationOf({
+      cost: { exertionLoad: -1, aura: { kind: "none" } },
+    }));
 
     expect(codes).toContain("capabilities.application.cost.exertion.invalid");
   });
 
   it("rejects a negative Aura cost and an Aura cost that asks for nothing", () => {
     expect(issuesFor(applicationOf({
-      cost: { exertionLoad: 0, aura: { baseAuraCost: -5 } },
+      cost: { exertionLoad: 0, aura: { kind: "fixed", baseAuraCost: -5 } },
     }))).toContain("capabilities.application.cost.aura.base.invalid");
 
     expect(issuesFor(applicationOf({
-      cost: { exertionLoad: 0, aura: {} },
+      cost: { exertionLoad: 0, aura: { kind: "fixed" } },
     }))).toContain("capabilities.application.cost.aura.empty");
+  });
+
+  it("rejects a request-derived Aura cost that names no profile", () => {
+    const codes = issuesFor(applicationOf({
+      cost: {
+        exertionLoad: 0,
+        aura: { kind: "request-derived", profileId: "  " },
+      },
+    }));
+
+    expect(codes)
+      .toContain("capabilities.application.cost.aura.profile.missing");
+  });
+
+  it("rejects an Aura cost that states no kind at all", () => {
+    /*
+     * What host-registered JSON written against the old optional shape looks
+     * like. It is refused rather than read as "no Aura", because Aura
+     * expenditure would charge that as zero.
+     */
+    const codes = issuesFor(applicationOf({
+      cost: {
+        exertionLoad: 0,
+        aura: { baseAuraCost: 5 } as never,
+      },
+    }));
+
+    expect(codes).toContain("capabilities.application.cost.aura.kind.invalid");
+  });
+
+  it("refuses a Mastery change to an Aura price that is not fixed", () => {
+    /*
+     * There is no number to add five to on a request-derived price. Silently
+     * doing nothing would be the worst outcome: the rank reads as an upgrade
+     * and a player has paid Growth Points for it.
+     */
+    const codes = issuesFor(applicationOf({
+      cost: {
+        exertionLoad: 0,
+        aura: { kind: "request-derived", profileId: "aura.declared-power" },
+      },
+      masteryChanges: [
+        {
+          minimumMastery: 2,
+          changes: [{ op: "add", field: "baseAuraCost", amount: 5 }],
+        },
+      ],
+    }));
+
+    expect(codes).toContain("capabilities.application.mastery.field.absent");
   });
 
   it("rejects a check that names no known scope", () => {
@@ -860,7 +918,9 @@ describe("Mastery changes what using a Skill looks like", () => {
     /* II caps the Action cost; III adds reach and Aura. Nothing from IV yet. */
     expect(third.action.structuredActionCost.actions).toBe(1);
     expect(third.action.range?.maximumMetres).toBe(15);
-    expect(third.cost.aura?.baseAuraCost).toBe(15);
+    expect(
+      third.cost.aura.kind === "fixed" ? third.cost.aura.baseAuraCost : null,
+    ).toBe(15);
     expect(third.appliedMasteryChanges).toEqual([2, 3]);
 
     /* V holds everything II, III and IV gave, and there is no rank V change. */
@@ -969,7 +1029,7 @@ describe("Mastery changes what using a Skill looks like", () => {
      * the order cannot be the order the array happened to be written in.
      */
     const application = applicationOf({
-      cost: { exertionLoad: 1 },
+      cost: { exertionLoad: 1, aura: { kind: "none" } },
       masteryChanges: [
         { minimumMastery: 4, changes: [{ op: "cap", field: "exertionLoad", maximum: 2 }] },
         { minimumMastery: 2, changes: [{ op: "add", field: "exertionLoad", amount: 4 }] },
@@ -1051,6 +1111,57 @@ describe("Mastery changes what using a Skill looks like", () => {
 
     expect(codes)
       .toContain("capabilities.application.mastery.permission.unrestricted");
+  });
+
+  it("catches a rank whose arithmetic overflows to a non-number", () => {
+    /*
+     * Both operands are finite and the product is not: Number.MAX_VALUE * 2 is
+     * Infinity. Checking the authored numbers one at a time cannot see this —
+     * only projecting the rank and looking at what came out can. Infinity is
+     * not JSON either, so a magnitude that escaped would reach a host as null.
+     */
+    const codes = issuesFor(applicationOf({
+      outcome: {
+        kind: "automatic",
+        outcome: {
+          id: "done",
+          summary: "It happens.",
+          outputs: [{ id: "impact", amount: Number.MAX_VALUE }],
+        },
+      },
+      masteryChanges: [
+        {
+          minimumMastery: 2,
+          changes: [{
+            op: "multiply",
+            field: "outcomeOutput",
+            outcomeId: "done",
+            outputId: "impact",
+            factor: 2,
+          }],
+        },
+      ],
+    }));
+
+    expect(codes)
+      .toContain("capabilities.application.outcome.output.amount.invalid");
+  });
+
+  it("catches the same overflow in a cost a rank multiplies", () => {
+    const codes = issuesFor(applicationOf({
+      cost: {
+        exertionLoad: Number.MAX_VALUE,
+        aura: { kind: "none" },
+      },
+      masteryChanges: [
+        {
+          minimumMastery: 2,
+          changes: [{ op: "multiply", field: "exertionLoad", factor: 2 }],
+        },
+      ],
+    }));
+
+    expect(codes).toContain("capabilities.application.cost.exertion.invalid");
   });
 
   it("catches a rank that drives the application invalid", () => {
@@ -1196,25 +1307,28 @@ describe("an available application projects into a neutral action profile", () =
     expect(built.errors[0].code).toBe("capabilities.application.unavailable");
   });
 
-  it("carries the Aura cost in the fields the real request takes", () => {
+  it("carries a fixed Aura cost in the fields the real request takes", () => {
     const effective = resolveEffectiveSkillApplication(
       FLAME_LANCE_APPLICATION,
       3,
     );
 
-    expect(skillAuraCostFields(effective.cost)).toEqual({
-      exertionLoad: 2,
-      baseAuraCost: 15,
-      requiredOutput: 5,
+    expect(projectSkillAuraCost(effective.cost)).toEqual({
+      kind: "settled",
+      fields: { exertionLoad: 2, baseAuraCost: 15, requiredOutput: 5 },
     });
+
+    expect(skillAuraCostNeedsRequestContext(effective.cost)).toBe(false);
   });
 
-  it("carries exertion alone for a Skill whose Aura price is undecided", () => {
+  it("refuses to settle a price that depends on declared power", () => {
     /*
-     * Fire Blast authors no Aura figures: a blast's price depends on the power
-     * the bender puts behind it, so it belongs to a request-time cost profile
-     * rather than to one number frozen in the catalog. The exertion is real
-     * and travels regardless.
+     * The distinction the union exists for. Fire Blast's price follows the
+     * power the bender puts behind it, and an omitted figure is charged as
+     * ZERO by Aura expenditure — so "burns no Aura" and "cannot be priced yet"
+     * had to stop being the same data. A caller now cannot spread this into a
+     * request without noticing: it is a different variant, and the fields it
+     * carries do not include an Aura figure at all.
      */
     const application = getSkillDefinition("fire-blast")?.application;
 
@@ -1222,8 +1336,39 @@ describe("an available application projects into a neutral action profile", () =
 
     if (application === undefined) return;
 
-    expect(application.cost.aura).toBeUndefined();
-    expect(skillAuraCostFields(application.cost)).toEqual({ exertionLoad: 2 });
+    expect(application.cost.aura).toEqual({
+      kind: "request-derived",
+      profileId: "aura.declared-power",
+    });
+
+    expect(skillAuraCostNeedsRequestContext(application.cost)).toBe(true);
+
+    const projection = projectSkillAuraCost(application.cost);
+
+    expect(projection.kind).toBe("request-derived");
+
+    if (projection.kind !== "request-derived") return;
+
+    /* Exertion is charged for the act either way; the Aura price is not here. */
+    expect(projection.fields).toEqual({ exertionLoad: 2 });
+    expect(projection.fields).not.toHaveProperty("baseAuraCost");
+    expect(projection.profileId).toBe("aura.declared-power");
+  });
+
+  it("says plainly when a Skill burns no deliberate Aura", () => {
+    const application = getSkillDefinition("punch")?.application;
+
+    expect(application).toBeDefined();
+
+    if (application === undefined) return;
+
+    expect(application.cost.aura).toEqual({ kind: "none" });
+    expect(skillAuraCostNeedsRequestContext(application.cost)).toBe(false);
+
+    expect(projectSkillAuraCost(application.cost)).toEqual({
+      kind: "settled",
+      fields: { exertionLoad: 1 },
+    });
   });
 
   it("derives the resolution approach rather than storing a second one", () => {
