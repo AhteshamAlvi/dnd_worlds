@@ -32,12 +32,15 @@ import {
 
 import {
   findSkillApplicationIssues,
+  requiredApplicationContext,
   resolveEffectiveSkillApplication,
   projectSkillAuraCost,
   skillAuraCostNeedsRequestContext,
   skillOutcomeEntries,
   skillOutcomeOutputAmount,
   skillResolutionApproach,
+  type EffectiveSkillApplication,
+  type SkillApplicationContextValues,
   type SkillApplicationDefinition,
 } from "../character/capabilities/applications";
 
@@ -57,6 +60,8 @@ import {
 import { TECHNIQUE_DEFINITIONS } from "../character/capabilities/techniques";
 
 import { resolveCapabilities } from "../character/capabilities/resolution";
+
+import type { DistanceInterval } from "../spatial";
 
 import type { MasteryTrack } from "../character/capabilities/mastery";
 
@@ -82,7 +87,7 @@ const MINIMAL_APPLICATION: SkillApplicationDefinition = {
     allowedTimings: ["action"],
     structuredActionCost: { actions: 1 },
     targets: { cardinality: { minimum: 0, maximum: 0 } },
-    executionDuration: 1000,
+    executionDuration: { kind: "fixed", value: 1000 },
   },
   role: "utility",
   cost: { exertionLoad: 0, aura: { kind: "none" } },
@@ -142,8 +147,11 @@ const FLAME_LANCE_APPLICATION: SkillApplicationDefinition = {
       permittedKinds: ["entity"],
     },
     permittedFocusKinds: ["none", "direction"],
-    range: { kind: "direct", minimumMetres: 1, maximumMetres: 10 },
-    executionDuration: 1000,
+    range: {
+      kind: "fixed",
+      value: { kind: "direct", minimumMetres: 1, maximumMetres: 10 },
+    },
+    executionDuration: { kind: "fixed", value: 1000 },
     threatens: "declared-targets",
   },
   role: "offense",
@@ -201,6 +209,40 @@ function registerFlameLance(): void {
     application: FLAME_LANCE_APPLICATION,
   });
 }
+
+
+/** The Range a resolved application ended up with, when it is a constant. */
+function fixedRangeOf(
+  application: EffectiveSkillApplication,
+): DistanceInterval | undefined {
+  const range = application.action.range;
+
+  return range?.kind === "fixed" ? range.value : undefined;
+}
+
+
+/*
+ * What a caller would work out at the moment of use.
+ *
+ * Written here rather than authored in the catalog, which is the point: the
+ * reach below is one particular body's, and the lockpicking figures are one
+ * particular lock's.
+ */
+const PUNCH_CONTEXT: SkillApplicationContextValues = {
+  range: {
+    profileId: "body.reach",
+    value: { kind: "direct", minimumMetres: 0, maximumMetres: 1.4 },
+  },
+  executionDuration: { profileId: "combat.action-duration", value: 2000 },
+};
+
+const PICK_LOCK_CONTEXT: SkillApplicationContextValues = {
+  range: {
+    profileId: "task.lockpicking-range",
+    value: { kind: "direct", minimumMetres: 0, maximumMetres: 1 },
+  },
+  executionDuration: { profileId: "task.lockpicking-duration", value: 60000 },
+};
 
 
 /** A context that records everything and has nothing in it. */
@@ -313,6 +355,45 @@ describe("every authored Skill carries a valid application", () => {
       .toBe("fixed");
   });
 
+  it("authors no Range, duration or travel literal it has no business choosing", () => {
+    /*
+     * Requirement 7. Every one of these depends on WHO is acting or WHAT they
+     * declared, so the catalog names the profile that must supply it and
+     * refuses to invent a number. The one fixed value left is that a fist
+     * arrives instantly, which is a fact about fists rather than a figure.
+     */
+    const contextual: Record<string, readonly string[]> = {
+      punch: ["body.reach", "combat.action-duration"],
+      parry: ["reaction.trigger-range", "combat.reaction-duration"],
+      "defensive-stance": ["combat.action-duration"],
+      "pick-lock": ["task.lockpicking-range", "task.lockpicking-duration"],
+      "fire-blast": [
+        "aura.declared-power.range",
+        "combat.action-duration",
+        "aura.declared-power.travel",
+      ],
+    };
+
+    for (const [skillId, profiles] of Object.entries(contextual)) {
+      const action = getSkillDefinition(skillId)?.application?.action;
+
+      expect(action).toBeDefined();
+
+      if (action === undefined) continue;
+
+      expect(requiredApplicationContext(action).map((one) => one.profileId))
+        .toEqual(profiles);
+
+      /* No authored Range or duration figure survives anywhere. */
+      expect(action.range?.kind).not.toBe("fixed");
+      expect(action.executionDuration.kind).toBe("context-derived");
+    }
+
+    /* Instantaneous travel is the sole authored constant, and it is not a number. */
+    expect(getSkillDefinition("punch")?.application?.action.travel)
+      .toEqual({ kind: "fixed", value: { kind: "instantaneous" } });
+  });
+
   it("gives Techniques no executable application at all", () => {
     /*
      * Techniques are passive: they widen what a character may learn and
@@ -392,7 +473,10 @@ describe("application validation refuses incoherent contracts", () => {
     const codes = issuesFor(applicationOf({
       action: {
         ...MINIMAL_APPLICATION.action,
-        range: { kind: "direct", minimumMetres: 10, maximumMetres: 2 },
+        range: {
+          kind: "fixed",
+          value: { kind: "direct", minimumMetres: 10, maximumMetres: 2 },
+        },
       },
     }));
 
@@ -403,7 +487,7 @@ describe("application validation refuses incoherent contracts", () => {
     const codes = issuesFor(applicationOf({
       action: {
         ...MINIMAL_APPLICATION.action,
-        travel: { kind: "speed", metresPerSecond: 0 },
+        travel: { kind: "fixed", value: { kind: "speed", metresPerSecond: 0 } },
       },
     }));
 
@@ -426,6 +510,38 @@ describe("application validation refuses incoherent contracts", () => {
     expect(issuesFor(applicationOf({
       cost: { exertionLoad: 0, aura: { kind: "fixed" } },
     }))).toContain("capabilities.application.cost.aura.empty");
+  });
+
+  it("rejects a context-derived value that names no profile", () => {
+    /*
+     * The failure worth catching hardest: a blank profileId reads as a
+     * deliberate deferral and is a field nothing can ever supply, because
+     * there is no name for a caller to answer.
+     */
+    const codes = issuesFor(applicationOf({
+      action: {
+        ...MINIMAL_APPLICATION.action,
+        range: { kind: "context-derived", profileId: "   " },
+        executionDuration: { kind: "context-derived", profileId: "" },
+      },
+    }));
+
+    expect(
+      codes.filter(
+        (code) => code === "capabilities.application.value.profile.missing",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("rejects a fixed value that fails its own domain validator", () => {
+    const codes = issuesFor(applicationOf({
+      action: {
+        ...MINIMAL_APPLICATION.action,
+        travel: { kind: "fixed", value: { kind: "speed", metresPerSecond: -1 } },
+      },
+    }));
+
+    expect(codes).toContain("spatial.travel.speed.invalid");
   });
 
   it("rejects a request-derived Aura cost that names no profile", () => {
@@ -912,12 +1028,12 @@ describe("Mastery changes what using a Skill looks like", () => {
     const fifth = resolveEffectiveSkillApplication(FLAME_LANCE_APPLICATION, 5);
 
     expect(first.action.structuredActionCost.actions).toBe(2);
-    expect(first.action.range?.maximumMetres).toBe(10);
+    expect(fixedRangeOf(first)?.maximumMetres).toBe(10);
     expect(first.appliedMasteryChanges).toEqual([]);
 
     /* II caps the Action cost; III adds reach and Aura. Nothing from IV yet. */
     expect(third.action.structuredActionCost.actions).toBe(1);
-    expect(third.action.range?.maximumMetres).toBe(15);
+    expect(fixedRangeOf(third)?.maximumMetres).toBe(15);
     expect(
       third.cost.aura.kind === "fixed" ? third.cost.aura.baseAuraCost : null,
     ).toBe(15);
@@ -925,7 +1041,7 @@ describe("Mastery changes what using a Skill looks like", () => {
 
     /* V holds everything II, III and IV gave, and there is no rank V change. */
     expect(fifth.appliedMasteryChanges).toEqual([2, 3, 4]);
-    expect(fifth.action.range?.maximumMetres).toBe(15);
+    expect(fixedRangeOf(fifth)?.maximumMetres).toBe(15);
   });
 
   it("lets a rank improve what the Skill DOES, not only what it costs", () => {
@@ -1207,6 +1323,14 @@ describe("Mastery changes what using a Skill looks like", () => {
 /* ── 13-14. Projection into neutral action profiles ─────────────────────── */
 
 describe("an available application projects into a neutral action profile", () => {
+  const heldPunch = () => resolveSkillApplication({
+    skillId: "punch",
+    capabilities: resolveCapabilities({
+      authoredSkills: [{ skillId: "punch", mastery: 1 }],
+    }),
+    context: emptyContext(),
+  });
+
   const heldPickLock = () => resolveSkillApplication({
     skillId: "pick-lock",
     capabilities: resolveCapabilities({
@@ -1222,7 +1346,7 @@ describe("an available application projects into a neutral action profile", () =
 
     if (!resolved.success) return;
 
-    const built = buildSkillActionProfile(resolved.payload);
+    const built = buildSkillActionProfile(resolved.payload, PICK_LOCK_CONTEXT);
 
     expect(built.success).toBe(true);
 
@@ -1232,6 +1356,11 @@ describe("an available application projects into a neutral action profile", () =
 
     expect(findActionProfileIssues(profile)).toEqual([]);
     expect(profile.id).toBe("skill:pick-lock");
+
+    /* Ordinary resolved geometry and timing; nothing contextual survives. */
+    expect(profile.range)
+      .toEqual({ kind: "direct", minimumMetres: 0, maximumMetres: 1 });
+    expect(profile.executionDuration).toBe(60000);
     expect(profile.source).toEqual({ type: "skill", id: "pick-lock" });
     expect(profile.check).toEqual({ scope: { kind: "attribute", attribute: "dex" } });
 
@@ -1262,7 +1391,7 @@ describe("an available application projects into a neutral action profile", () =
 
     if (!resolved.success) return;
 
-    const built = buildSkillActionProfile(resolved.payload);
+    const built = buildSkillActionProfile(resolved.payload, PUNCH_CONTEXT);
 
     expect(built.success).toBe(true);
 
@@ -1272,6 +1401,8 @@ describe("an available application projects into a neutral action profile", () =
 
     expect(findActionProfileIssues(profile)).toEqual([]);
     expect(profile.allowedTimings).toEqual(["action"]);
+    expect(profile.range)
+      .toEqual({ kind: "direct", minimumMetres: 0, maximumMetres: 1.4 });
     expect(structuredActionCostFor(profile, { kind: "structured", timing: "action" }))
       .toEqual({ actions: 1 });
     expect(profileThreatensDeclaredTargets(profile)).toBe(true);
@@ -1281,6 +1412,206 @@ describe("an available application projects into a neutral action profile", () =
      * check — the engine is not pretending to know how a strike is decided.
      */
     expect(profile.check).toBeUndefined();
+  });
+
+  it("refuses to build a profile while a contextual value is missing", () => {
+    /*
+     * The whole point of the contextual declaration. Punch's reach belongs to
+     * the body throwing it, so until something works one out there IS no
+     * Range — and the alternative to refusing is a profile carrying a number
+     * nobody computed, which is the literal this addendum removed reappearing
+     * one layer down.
+     */
+    const resolved = heldPunch();
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    const built = buildSkillActionProfile(resolved.payload);
+
+    expect(built.success).toBe(false);
+
+    if (built.success) return;
+
+    expect(built.errors.map((error) => error.code)).toContain(
+      "capabilities.application.value.missing",
+    );
+
+    /* Every missing field at once, not one build at a time. */
+    expect(built.errors.length).toBeGreaterThan(1);
+  });
+
+  it("rejects a value supplied for the wrong context profile", () => {
+    const resolved = heldPunch();
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    const built = buildSkillActionProfile(resolved.payload, {
+      ...PUNCH_CONTEXT,
+      range: {
+        /* A perfectly good Range, worked out for the wrong question. */
+        profileId: "aura.declared-power.range",
+        value: { kind: "direct", minimumMetres: 0, maximumMetres: 1.4 },
+      },
+    });
+
+    expect(built.success).toBe(false);
+
+    if (built.success) return;
+
+    expect(built.errors[0].code)
+      .toBe("capabilities.application.value.profile-mismatch");
+  });
+
+  it("rejects a supplied value through the neutral domain validators", () => {
+    const resolved = heldPunch();
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    /* An inverted Range, judged by spatial/ rather than by a Skill-side copy. */
+    const badRange = buildSkillActionProfile(resolved.payload, {
+      ...PUNCH_CONTEXT,
+      range: {
+        profileId: "body.reach",
+        value: { kind: "direct", minimumMetres: 9, maximumMetres: 1 },
+      },
+    });
+
+    expect(badRange.success).toBe(false);
+
+    if (!badRange.success) {
+      expect(badRange.errors[0].code).toBe("spatial.interval.inverted");
+    }
+
+    const badDuration = buildSkillActionProfile(resolved.payload, {
+      ...PUNCH_CONTEXT,
+      executionDuration: {
+        profileId: "combat.action-duration",
+        value: Number.POSITIVE_INFINITY,
+      },
+    });
+
+    expect(badDuration.success).toBe(false);
+
+    if (!badDuration.success) {
+      expect(badDuration.errors[0].code)
+        .toBe("capabilities.application.value.duration.invalid");
+    }
+
+    const blast = resolveSkillApplication({
+      skillId: "fire-blast",
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: "fire-blast", mastery: 1 }],
+      }),
+      context: emptyContext({ traitIds: ["firebending"] }),
+    });
+
+    expect(blast.success).toBe(true);
+
+    if (!blast.success) return;
+
+    const badTravel = buildSkillActionProfile(blast.payload, {
+      range: {
+        profileId: "aura.declared-power.range",
+        value: { kind: "direct", minimumMetres: 1, maximumMetres: 12 },
+      },
+      executionDuration: { profileId: "combat.action-duration", value: 2000 },
+      travel: {
+        profileId: "aura.declared-power.travel",
+        value: { kind: "speed", metresPerSecond: 0 },
+      },
+    });
+
+    expect(badTravel.success).toBe(false);
+
+    if (!badTravel.success) {
+      expect(badTravel.errors[0].code).toBe("spatial.travel.speed.invalid");
+    }
+  });
+
+  it("builds a valid neutral profile once every context is supplied", () => {
+    const blast = resolveSkillApplication({
+      skillId: "fire-blast",
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: "fire-blast", mastery: 1 }],
+      }),
+      context: emptyContext({ traitIds: ["firebending"] }),
+    });
+
+    expect(blast.success).toBe(true);
+
+    if (!blast.success) return;
+
+    const built = buildSkillActionProfile(blast.payload, {
+      range: {
+        profileId: "aura.declared-power.range",
+        value: { kind: "direct", minimumMetres: 1, maximumMetres: 12 },
+      },
+      executionDuration: { profileId: "combat.action-duration", value: 2000 },
+      travel: {
+        profileId: "aura.declared-power.travel",
+        value: { kind: "speed", metresPerSecond: 25 },
+      },
+    });
+
+    expect(built.success).toBe(true);
+
+    if (!built.success) return;
+
+    expect(findActionProfileIssues(built.payload)).toEqual([]);
+
+    /*
+     * Ordinary resolved values, and nothing else. A contextual specification
+     * reaching a profile would be the Skill layer leaking into actions/.
+     */
+    expect(built.payload.range)
+      .toEqual({ kind: "direct", minimumMetres: 1, maximumMetres: 12 });
+    expect(built.payload.travel).toEqual({ kind: "speed", metresPerSecond: 25 });
+    expect(built.payload.executionDuration).toBe(2000);
+    expect(built.payload.range).not.toHaveProperty("profileId");
+  });
+
+  it("refuses a value supplied for a field the Skill authors as fixed", () => {
+    /*
+     * Refused rather than ignored: silently discarding a value a caller
+     * computed is the same class of bug as an omitted Aura cost charged as
+     * zero — they believe they changed something and nothing says otherwise.
+     */
+    registerFlameLance();
+
+    const resolved = resolveSkillApplication({
+      skillId: FLAME_LANCE,
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: FLAME_LANCE, mastery: 1 }],
+      }),
+      context: emptyContext(),
+    });
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    /* Flame Lance authors its Range as a constant, so it takes no context. */
+    expect(buildSkillActionProfile(resolved.payload).success).toBe(true);
+
+    const built = buildSkillActionProfile(resolved.payload, {
+      range: {
+        profileId: "body.reach",
+        value: { kind: "direct", minimumMetres: 0, maximumMetres: 3 },
+      },
+    });
+
+    expect(built.success).toBe(false);
+
+    if (built.success) return;
+
+    expect(built.errors[0].code)
+      .toBe("capabilities.application.value.not-contextual");
   });
 
   it("refuses to build a profile for an unavailable application", () => {

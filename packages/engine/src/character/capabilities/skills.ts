@@ -52,7 +52,6 @@ import { createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
 import type { Effect } from "../rules/effects";
-import { minutes, seconds } from "../../time/duration";
 import { physicalExertionLoad } from "../foundation/body/endurance";
 
 import {
@@ -197,20 +196,20 @@ export interface CharacterSkill {
  *   would have been charged as ZERO by Aura expenditure, which is a rule
  *   wearing the costume of a gap.
  *
- *   GEOMETRY has to be stated, because a profile with no Range is a punch
- *   usable from across the map, and Range decides ELIGIBILITY rather than
- *   success — it is not the sort of question adjudication answers. But the
- *   exact figures below are AUTHORED RULES and are not claimed as physical
- *   facts: 1.5 m of reach, a one-second strike, a 15 m blast at 30 m/s.
- *   Nobody has approved them as game design.
+ *   GEOMETRY is DECLARED but not decided. Range decides eligibility rather
+ *   than success, so it cannot be adjudicated away — a profile with no Range
+ *   is a punch usable from across the map. But the figures are not this
+ *   catalog's to choose: reach belongs to the body doing the reaching, a
+ *   Reaction's range to the action it answers, a blast's range and flight to
+ *   the power the bender declared. Each is `{ kind: "context-derived" }` with
+ *   the profile that must supply it, and NOTHING supplies them yet — a Skill
+ *   declared this way cannot be projected into an action profile until the
+ *   moment of use hands over a real value, which is the honest state of
+ *   affairs rather than a literal standing in for one.
  *
- *   The eventual shape is a contextual base rather than a literal — reach
- *   derived from the body doing the reaching, a Reaction's range derived from
- *   the action it answers, a projected range derived from declared power —
- *   which is what makes a Giant's punch reach further than a child's without
- *   either being authored twice. DistanceInterval has no such base today, so
- *   these stand as provisional literals, flagged here and in BACKLOG rather
- *   than presented as settled.
+ *   None of that reaches spatial/. A DistanceInterval is still resolved
+ *   metres and knows nothing about bodies, Reactions or Aura; the unresolved
+ *   half lives here and is gone before a profile exists.
  */
 export const SKILL_DEFINITIONS = {
   punch: {
@@ -232,12 +231,17 @@ export const SKILL_DEFINITIONS = {
         /* A punch thrown at the ground declares no target and is still aimed. */
         permittedFocusKinds: ["none", "position"],
         /*
-         * A provisional literal standing in for a body-derived reach. Range is
-         * eligibility, so it has to be stated; 1.5 m is not thereby approved.
+         * Reach is a fact about the body throwing the punch, so there is no
+         * number to author: a Giant's reach and a child's are not the same
+         * 1.5 metres, and writing one would make them so.
          */
-        range: { kind: "direct", minimumMetres: 0, maximumMetres: 1.5 },
-        executionDuration: seconds(1),
-        travel: { kind: "instantaneous" },
+        range: { kind: "context-derived", profileId: "body.reach" },
+        executionDuration: {
+          kind: "context-derived",
+          profileId: "combat.action-duration",
+        },
+        /* Not contextual: a fist arrives when it arrives. */
+        travel: { kind: "fixed", value: { kind: "instantaneous" } },
         threatens: "declared-targets",
       },
       role: "offense",
@@ -299,13 +303,19 @@ export const SKILL_DEFINITIONS = {
         },
         permittedFocusKinds: ["none"],
         /*
-         * Provisional. A Reaction's range should eventually derive from the
-         * action it answers — you can parry what can reach you — rather than
-         * from a literal authored here.
+         * A Reaction's range is the range of what it answers: you can parry
+         * what can reach you. Authoring 2 metres would let a Skill deflect a
+         * blow it could not have been in the way of, and refuse one it was.
          */
-        range: { kind: "direct", minimumMetres: 0, maximumMetres: 2 },
-        executionDuration: seconds(1),
-        travel: { kind: "instantaneous" },
+        range: {
+          kind: "context-derived",
+          profileId: "reaction.trigger-range",
+        },
+        executionDuration: {
+          kind: "context-derived",
+          profileId: "combat.reaction-duration",
+        },
+        travel: { kind: "fixed", value: { kind: "instantaneous" } },
         /* Deflecting an attacker endangers nobody. */
       },
       role: "defense",
@@ -350,7 +360,11 @@ export const SKILL_DEFINITIONS = {
          */
         targets: { cardinality: { minimum: 0, maximum: 0 } },
         permittedFocusKinds: ["none"],
-        executionDuration: seconds(1),
+        /* No Range at all: a stance is pointed at nothing. */
+        executionDuration: {
+          kind: "context-derived",
+          profileId: "combat.action-duration",
+        },
       },
       role: "defense",
       cost: {
@@ -397,8 +411,18 @@ export const SKILL_DEFINITIONS = {
           permittedKinds: ["object"],
         },
         permittedFocusKinds: ["none"],
-        range: { kind: "direct", minimumMetres: 0, maximumMetres: 1 },
-        executionDuration: minutes(1),
+        /*
+         * How close you must be to a lock, and how long it takes, both depend
+         * on the lock and on the tools — the task supplies them.
+         */
+        range: {
+          kind: "context-derived",
+          profileId: "task.lockpicking-range",
+        },
+        executionDuration: {
+          kind: "context-derived",
+          profileId: "task.lockpicking-duration",
+        },
       },
       role: "utility",
       cost: {
@@ -471,16 +495,24 @@ export const SKILL_DEFINITIONS = {
         },
         permittedFocusKinds: ["none", "position", "direction"],
         /*
-         * PROVISIONAL, and the most speculative pair in the catalog. A
-         * projected blast's reach and speed should follow the power the bender
-         * declares — the same request context that prices its Aura — so 15 m
-         * at 30 m/s is a placeholder for a contextual base, not a rule anyone
-         * has approved. What is NOT provisional is that fire crosses the gap
-         * rather than arriving in the instant it is thrown.
+         * Reach and flight both follow the power the bender puts behind the
+         * blast — the same declaration that prices its Aura — so both come
+         * from that context rather than from a pair of numbers frozen here.
+         * That fire CROSSES the gap rather than arriving instantly is a fact
+         * about fire; how fast is not.
          */
-        range: { kind: "direct", minimumMetres: 1, maximumMetres: 15 },
-        executionDuration: seconds(1),
-        travel: { kind: "speed", metresPerSecond: 30 },
+        range: {
+          kind: "context-derived",
+          profileId: "aura.declared-power.range",
+        },
+        executionDuration: {
+          kind: "context-derived",
+          profileId: "combat.action-duration",
+        },
+        travel: {
+          kind: "context-derived",
+          profileId: "aura.declared-power.travel",
+        },
         threatens: "declared-targets",
       },
       role: "offense",

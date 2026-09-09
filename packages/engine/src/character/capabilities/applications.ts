@@ -73,8 +73,10 @@ import {
 import type { TargetKind } from "../../targeting";
 import { isTargetKind } from "../../targeting";
 
-import type { SpatialTravel } from "../../spatial";
-import { findTravelIssues } from "../../spatial";
+import type { DistanceInterval, SpatialTravel } from "../../spatial";
+import { findDistanceIntervalIssues, findTravelIssues } from "../../spatial";
+
+import type { GameDuration } from "../../time/types";
 
 import type {
   CheckScope,
@@ -101,18 +103,106 @@ import {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The neutral action vocabulary, minus what only the adapter can supply.
+ * An authored constant, or a value only the moment of use can supply.
+ *
+ * The distinction this exists to stop being invisible: "every punch reaches
+ * 1.5 metres" and "a punch reaches as far as the arm throwing it" are
+ * different claims, and a bare `1.5` is the first one whatever the author
+ * meant. A literal in a catalog is a RULE — players see it, later content is
+ * balanced against it, and afterwards nobody can tell a considered value from
+ * a placeholder that survived.
+ *
+ * `profileId` names the rule or request context that must supply the value. It
+ * implies NO default: nothing here resolves it, and a profile cannot be built
+ * until something does.
+ */
+export type SkillApplicationValue<T> =
+  | {
+      readonly kind: "fixed";
+      readonly value: T;
+    }
+  | {
+      readonly kind: "context-derived";
+      readonly profileId: string;
+    };
+
+
+/** An authored constant. The common case, spelled once. */
+export function fixedApplicationValue<T>(
+  value: T,
+): SkillApplicationValue<T> {
+  return { kind: "fixed", value };
+}
+
+
+/** A value the moment of use has to supply. */
+export function contextDerivedApplicationValue<T>(
+  profileId: string,
+): SkillApplicationValue<T> {
+  return { kind: "context-derived", profileId };
+}
+
+
+export function isContextDerived<T>(
+  value: SkillApplicationValue<T> | undefined,
+): value is { readonly kind: "context-derived"; readonly profileId: string } {
+  return value?.kind === "context-derived";
+}
+
+
+/**
+ * The neutral action vocabulary, minus what only the adapter can supply and
+ * minus the three fields a Skill may not be able to state as constants.
  *
  * `id` and `source` are generated from the Skill's own id, and `check` is
  * omitted because a Skill says considerably more about its check than a
  * profile can carry — whether it is fixed, opposed, automatic or adjudicated —
  * and the profile's single scope is projected back out of that.
  *
- * Declared with Omit rather than by listing the fields, so a field added to
- * ActionProfile is a field every Skill may author on the day it lands.
+ * Range, execution duration and travel are re-declared as SkillApplicationValue
+ * because they are the fields that genuinely depend on WHO is acting and WHAT
+ * they declared. That is a Skill-layer concern and it stays here: nothing about
+ * an unresolved value reaches spatial/ or actions/, which continue to model
+ * resolved metric geometry and nothing else. The projection below turns this
+ * back into ordinary numbers before a profile exists.
+ *
+ * Everything else still arrives by Omit, so a field added to ActionProfile is a
+ * field every Skill may author on the day it lands.
  */
 export interface SkillActionSpecification
-  extends Omit<ActionProfile, "id" | "source" | "check"> {}
+  extends Omit<
+    ActionProfile,
+    "id" | "source" | "check" | "range" | "executionDuration" | "travel"
+  > {
+  /**
+   * How far away the subject may be.
+   *
+   * Optional for the same reason ActionProfile's is: a stance reaches nowhere
+   * because it is pointed at nothing. Absent means "no distance requirement",
+   * which is a third answer and not a context-derived one.
+   */
+  readonly range?: SkillApplicationValue<DistanceInterval>;
+
+  /** How long performing it takes. Required, as on the profile. */
+  readonly executionDuration: SkillApplicationValue<GameDuration>;
+
+  /** How long what it sends takes to arrive, if anything is sent. */
+  readonly travel?: SkillApplicationValue<SpatialTravel>;
+}
+
+
+/**
+ * The three fields once something has supplied them, in neutral form.
+ *
+ * This is what actually reaches an ActionProfile: ordinary metres, ordinary
+ * milliseconds, ordinary travel. There is no unresolved value in it, which is
+ * the invariant that keeps the contextual vocabulary on this side of the seam.
+ */
+export interface ResolvedSkillActionValues {
+  readonly range?: DistanceInterval;
+  readonly executionDuration: GameDuration;
+  readonly travel?: SpatialTravel;
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -841,7 +931,7 @@ export function minimalSkillApplication(
       structuredActionCost: { actions: 1 },
       targets: { cardinality: { minimum: 0, maximum: 0 } },
       permittedFocusKinds: ["none"],
-      executionDuration: 0,
+      executionDuration: { kind: "fixed", value: 0 },
     },
     role: "utility",
     cost: { exertionLoad: 0, aura: { kind: "none" } },
@@ -883,14 +973,27 @@ function readNumericField(
     case "structuredActionCost":
       return application.action.structuredActionCost.actions;
 
+    /*
+     * Readable only while the value is FIXED. There is no number to add five
+     * metres to on a Range the moment of use has yet to supply, and a rank
+     * that appeared to extend one would be changing nothing — so it is caught
+     * by the field.absent rule instead, exactly as for a request-derived Aura
+     * price.
+     */
     case "executionDuration":
-      return application.action.executionDuration;
+      return application.action.executionDuration.kind === "fixed"
+        ? application.action.executionDuration.value
+        : undefined;
 
     case "rangeMinimumMetres":
-      return application.action.range?.minimumMetres;
+      return application.action.range?.kind === "fixed"
+        ? application.action.range.value.minimumMetres
+        : undefined;
 
     case "rangeMaximumMetres":
-      return application.action.range?.maximumMetres ?? undefined;
+      return application.action.range?.kind === "fixed"
+        ? application.action.range.value.maximumMetres ?? undefined
+        : undefined;
 
     case "maximumTargets":
       return application.action.targets.cardinality.maximum ?? undefined;
@@ -939,25 +1042,45 @@ function writeNumericField(
       };
 
     case "executionDuration":
-      return { ...application, action: { ...action, executionDuration: value } };
-
-    case "rangeMinimumMetres":
-      if (action.range === undefined) return application;
+      if (action.executionDuration.kind !== "fixed") return application;
 
       return {
         ...application,
-        action: { ...action, range: { ...action.range, minimumMetres: value } },
+        action: {
+          ...action,
+          executionDuration: { kind: "fixed", value },
+        },
       };
 
-    case "rangeMaximumMetres":
-      if (action.range === undefined || action.range.maximumMetres === null) {
-        return application;
-      }
+    case "rangeMinimumMetres": {
+      if (action.range?.kind !== "fixed") return application;
+
+      const range = action.range.value;
 
       return {
         ...application,
-        action: { ...action, range: { ...action.range, maximumMetres: value } },
+        action: {
+          ...action,
+          range: { kind: "fixed", value: { ...range, minimumMetres: value } },
+        },
       };
+    }
+
+    case "rangeMaximumMetres": {
+      if (action.range?.kind !== "fixed") return application;
+
+      const range = action.range.value;
+
+      if (range.maximumMetres === null) return application;
+
+      return {
+        ...application,
+        action: {
+          ...action,
+          range: { kind: "fixed", value: { ...range, maximumMetres: value } },
+        },
+      };
+    }
 
     case "maximumTargets":
       if (action.targets.cardinality.maximum === null) return application;
@@ -1155,9 +1278,17 @@ function applyModifier(
         };
 
       case "travel":
+        /*
+         * A rank replacing travel replaces it with a CONSTANT, which is the
+         * only thing a modifier can carry. It may not turn a fixed travel into
+         * a context-derived one; that is an authoring decision, not a rank.
+         */
         return {
           ...application,
-          action: { ...application.action, travel: modifier.value },
+          action: {
+            ...application.action,
+            travel: { kind: "fixed", value: modifier.value },
+          },
         };
 
       case "role":
@@ -1261,15 +1392,243 @@ export function skillActionProfileId(skillId: string): string {
 export function skillActionProfile(
   skillId: string,
   application: EffectiveSkillApplication,
+  values: ResolvedSkillActionValues,
 ): ActionProfile {
   const scope = skillCheckScope(application.check);
 
+  /*
+   * The three contextual fields are dropped from the spread and re-added from
+   * `values`, so an unresolved SkillApplicationValue cannot reach the profile
+   * even by accident. This is the seam: everything above it may be
+   * context-derived, everything below it is resolved metres and milliseconds.
+   */
+  const {
+    range: _range,
+    executionDuration: _executionDuration,
+    travel: _travel,
+    ...neutral
+  } = application.action;
+
   return {
-    ...application.action,
+    ...neutral,
     id: skillActionProfileId(skillId),
     source: { type: "skill", id: skillId },
+    executionDuration: values.executionDuration,
+    ...(values.range === undefined ? {} : { range: values.range }),
+    ...(values.travel === undefined ? {} : { travel: values.travel }),
     ...(scope === undefined ? {} : { check: { scope } }),
   };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Supplying the contextual values                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the moment of use supplies for the fields a Skill could not state.
+ *
+ * Each entry carries the profileId it answers as well as the value, so a caller
+ * cannot hand back a body-derived reach for a Skill that asked for a
+ * declared-power range. Matching the id is the only way this stays a contract
+ * rather than a slot anything fits into.
+ */
+export interface SkillApplicationContextValues {
+  readonly range?: {
+    readonly profileId: string;
+    readonly value: DistanceInterval;
+  };
+
+  readonly executionDuration?: {
+    readonly profileId: string;
+    readonly value: GameDuration;
+  };
+
+  readonly travel?: {
+    readonly profileId: string;
+    readonly value: SpatialTravel;
+  };
+}
+
+
+function findDurationIssues(
+  duration: GameDuration,
+): readonly EngineError[] {
+  /*
+   * The same rule findActionProfileIssues applies, asked earlier so a supplied
+   * duration is refused before it can reach a profile. The literal lives in
+   * actions/profile.ts too; keeping the CHECK here rather than a second
+   * threshold means both read "finite, non-negative", and the profile
+   * validator is still the one that has the last word.
+   */
+  if (!Number.isFinite(duration) || duration < 0) {
+    return [issue(
+      "capabilities.application.value.duration.invalid",
+      "A supplied execution duration must be a finite, non-negative game duration.",
+      "finite milliseconds >= 0",
+      String(duration),
+    )];
+  }
+
+  return [];
+}
+
+
+/**
+ * Resolve one contextual field against what the caller supplied.
+ *
+ * Four answers, and the last three are all refusals with different remedies:
+ * a fixed value needs nothing; a context-derived one with nothing supplied is
+ * a caller who has not done the work; a mismatched profileId is a caller who
+ * did different work; and a supplied value that fails its own domain validator
+ * is work done wrongly.
+ */
+function resolveContextualValue<T>(
+  field: string,
+  specification: SkillApplicationValue<T> | undefined,
+  supplied: { readonly profileId: string; readonly value: T } | undefined,
+  findValueIssues: (value: T) => readonly EngineError[],
+): { readonly value?: T; readonly errors: readonly EngineError[] } {
+  if (specification === undefined) {
+    if (supplied !== undefined) {
+      return {
+        errors: [issue(
+          "capabilities.application.value.unexpected",
+          `A value was supplied for ${field}, which this Skill does not declare.`,
+          `no ${field} value`,
+          supplied.profileId,
+        )],
+      };
+    }
+
+    return { errors: [] };
+  }
+
+  if (specification.kind === "fixed") {
+    if (supplied !== undefined) {
+      /*
+       * Refused rather than ignored. Silently discarding a value a caller went
+       * to the trouble of computing is the same class of bug as an omitted
+       * Aura cost being charged as zero: the caller believes they changed
+       * something and nothing tells them otherwise.
+       */
+      return {
+        errors: [issue(
+          "capabilities.application.value.not-contextual",
+          `${field} is authored as a fixed value and takes no context.`,
+          `no supplied ${field}`,
+          supplied.profileId,
+        )],
+      };
+    }
+
+    return { value: specification.value, errors: [] };
+  }
+
+  if (supplied === undefined) {
+    return {
+      errors: [issue(
+        "capabilities.application.value.missing",
+        `${field} is derived from context "${specification.profileId}", which nothing supplied.`,
+        `a supplied ${field} for profile "${specification.profileId}"`,
+        "absent",
+      )],
+    };
+  }
+
+  if (supplied.profileId !== specification.profileId) {
+    return {
+      errors: [issue(
+        "capabilities.application.value.profile-mismatch",
+        `${field} was supplied for context "${supplied.profileId}", but this Skill derives it from "${specification.profileId}".`,
+        specification.profileId,
+        supplied.profileId,
+      )],
+    };
+  }
+
+  const errors = findValueIssues(supplied.value);
+
+  return errors.length > 0
+    ? { errors }
+    : { value: supplied.value, errors: [] };
+}
+
+
+/**
+ * Every contextual field, resolved into ordinary neutral values.
+ *
+ * Returns the errors rather than throwing, and returns them ALL rather than
+ * the first: a caller that has supplied nothing wants to be told about all
+ * three fields at once, not led through them one build at a time.
+ */
+export function resolveSkillActionValues(
+  action: SkillActionSpecification,
+  supplied: SkillApplicationContextValues = {},
+): {
+  readonly values?: ResolvedSkillActionValues;
+  readonly errors: readonly EngineError[];
+} {
+  const range = resolveContextualValue(
+    "Range",
+    action.range,
+    supplied.range,
+    findDistanceIntervalIssues,
+  );
+
+  const duration = resolveContextualValue(
+    "execution duration",
+    action.executionDuration,
+    supplied.executionDuration,
+    findDurationIssues,
+  );
+
+  const travel = resolveContextualValue(
+    "travel",
+    action.travel,
+    supplied.travel,
+    findTravelIssues,
+  );
+
+  const errors = [...range.errors, ...duration.errors, ...travel.errors];
+
+  if (errors.length > 0 || duration.value === undefined) {
+    return { errors };
+  }
+
+  return {
+    values: {
+      executionDuration: duration.value,
+      ...(range.value === undefined ? {} : { range: range.value }),
+      ...(travel.value === undefined ? {} : { travel: travel.value }),
+    },
+    errors: [],
+  };
+}
+
+
+/** Which contextual profiles a Skill needs supplied before it can be used. */
+export function requiredApplicationContext(
+  action: SkillActionSpecification,
+): readonly { readonly field: string; readonly profileId: string }[] {
+  const required: { field: string; profileId: string }[] = [];
+
+  if (isContextDerived(action.range)) {
+    required.push({ field: "range", profileId: action.range.profileId });
+  }
+
+  if (isContextDerived(action.executionDuration)) {
+    required.push({
+      field: "executionDuration",
+      profileId: action.executionDuration.profileId,
+    });
+  }
+
+  if (isContextDerived(action.travel)) {
+    required.push({ field: "travel", profileId: action.travel.profileId });
+  }
+
+  return required;
 }
 
 
@@ -2071,6 +2430,91 @@ function findMasteryChangeIssues(
 
 
 /**
+ * Each contextual field: a fixed value that survives its own domain validator,
+ * or a context-derived one that actually names a profile.
+ *
+ * A blank profileId is the failure worth catching hardest. It reads as a
+ * deliberate deferral and is a field nothing will ever be able to supply,
+ * because there is no name for a caller to answer.
+ */
+function findActionValueIssues(
+  action: SkillActionSpecification,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  const check = <T,>(
+    field: string,
+    value: SkillApplicationValue<T> | undefined,
+    findValueIssues: (value: T) => readonly EngineError[],
+  ): void => {
+    if (value === undefined) return;
+
+    if (value.kind === "fixed") {
+      errors.push(...findValueIssues(value.value));
+
+      return;
+    }
+
+    if (value.kind === "context-derived") {
+      if (
+        typeof value.profileId !== "string" ||
+        value.profileId.trim().length === 0
+      ) {
+        errors.push(issue(
+          "capabilities.application.value.profile.missing",
+          `A context-derived ${field} must name the profile that will supply it.`,
+          "non-empty profile id",
+          String(value.profileId),
+        ));
+      }
+
+      return;
+    }
+
+    errors.push(issue(
+      "capabilities.application.value.kind.invalid",
+      `A Skill's ${field} must be a fixed value or context-derived.`,
+      ["fixed", "context-derived"],
+      String((value as { kind?: unknown }).kind),
+    ));
+  };
+
+  check("Range", action.range, findDistanceIntervalIssues);
+  check("execution duration", action.executionDuration, findDurationIssues);
+  check("travel", action.travel, findTravelIssues);
+
+  return errors;
+}
+
+
+/**
+ * Neutral values good enough to validate everything ELSE about a profile.
+ *
+ * A validation scaffold, and it can hide nothing: each contextual field is
+ * validated on its own terms by findActionValueIssues above, and what stands
+ * in for an unsupplied one here is the profile's own trivially-valid case — a
+ * zero duration, an absent Range, absent travel. So this exists purely so that
+ * timings, Action cost, targets, focus and threat can be checked through the
+ * neutral validator every other ActionProfile consumer runs, rather than
+ * through a second copy of it written for Skills.
+ *
+ * It is never used to build a profile anyone acts on. buildSkillActionProfile()
+ * takes genuinely supplied values and refuses without them.
+ */
+function validationValues(
+  action: SkillActionSpecification,
+): ResolvedSkillActionValues {
+  return {
+    executionDuration: action.executionDuration.kind === "fixed"
+      ? action.executionDuration.value
+      : 0,
+    ...(action.range?.kind === "fixed" ? { range: action.range.value } : {}),
+    ...(action.travel?.kind === "fixed" ? { travel: action.travel.value } : {}),
+  };
+}
+
+
+/**
  * Every outcome magnitude, checked for being a number a host can read.
  *
  * Separate from the full outcome validation because it is the part a MASTERY
@@ -2140,9 +2584,15 @@ export function findSkillApplicationIssues(
   errors.push(...findOutcomeProfileIssues(application.check, application.outcome));
   errors.push(...findMasteryChangeIssues(application, track));
 
+  errors.push(...findActionValueIssues(application.action));
+
   const base = resolveEffectiveSkillApplication(application, null);
 
-  errors.push(...findActionProfileIssues(skillActionProfile(skillId, base)));
+  errors.push(
+    ...findActionProfileIssues(
+      skillActionProfile(skillId, base, validationValues(base.action)),
+    ),
+  );
 
   for (const change of orderedMasteryChanges(application)) {
     if (!isMasteryRank(change.minimumMastery)) continue;
@@ -2161,7 +2611,9 @@ export function findSkillApplicationIssues(
      * proposal and out to a host as `null`, since Infinity is not JSON.
      */
     for (const error of [
-      ...findActionProfileIssues(skillActionProfile(skillId, effective)),
+      ...findActionProfileIssues(
+        skillActionProfile(skillId, effective, validationValues(effective.action)),
+      ),
       ...findCostProfileIssues(effective.cost),
       ...findOutcomeMagnitudeIssues(effective.outcome),
     ]) {

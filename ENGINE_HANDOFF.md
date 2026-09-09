@@ -668,7 +668,7 @@ Timing is read off `application.action.allowedTimings`; the flat `SkillTiming` /
 
 | field | what it says |
 |---|---|
-| `action` | `Omit<ActionProfile, "id" \| "source" \| "check">` — timings, structured Action cost, targets, permitted focus, Range, execution duration, travel, threat declaration |
+| `action` | `Omit<ActionProfile, "id" \| "source" \| "check" \| "range" \| "executionDuration" \| "travel">` — timings, structured Action cost, targets, permitted focus, threat declaration — plus those three as `SkillApplicationValue<T>` (see below) |
 | `role` | `SkillMechanicalRole`: offense / defense / movement / control / support / utility / perception |
 | `requirements?` | `ApplicationRequirement { id, requirement, summary? }` — identified, because each becomes a finding a GM overrides by name |
 | `cost` | `exertionLoad` (required, even at 0) plus a **required** `aura: SkillAuraCostProfile` — `{kind:"none"}` / `{kind:"fixed", baseAuraCost?, requiredOutput?}` / `{kind:"request-derived", profileId}` |
@@ -682,11 +682,29 @@ Difficulty, the opposing character, dice and situational facts are **not** store
 
 **Outcome identifiers are handles, so they are validated as such.** Branch, output and consequence ids must be non-empty and unique *across the whole application*; a consequence must carry a summary. An output id is what a Mastery change addresses and what a proposal carries; a repeat resolves to whichever was indexed last.
 
+**Range, execution duration and travel are `SkillApplicationValue<T>`:** `{kind:"fixed", value}` or `{kind:"context-derived", profileId}`. They are the fields that genuinely depend on *who* is acting and *what* they declared, and a literal in a catalog is a rule — "every punch reaches 1.5 m" and "a punch reaches as far as the arm throwing it" are different claims, and a bare `1.5` is the first one whatever the author meant. A `profileId` implies **no default**; nothing resolves it yet.
+
+`buildSkillActionProfile(resolved, context?)` takes `SkillApplicationContextValues` — each entry carrying the `profileId` it answers *and* the value — and fails structurally when a context-derived field is unsupplied, answers a different profile, is supplied for a field authored as fixed (refused, not ignored), or fails its neutral-domain validator. All missing fields are reported at once. **The finished `ActionProfile` holds only resolved metres and milliseconds**; no contextual specification reaches `actions/` or `spatial/`, and `architecture.test.ts` asserts `DistanceInterval` still has exactly `kind` / `minimumMetres` / `maximumMetres` and that `spatial/` names no Skill, Body, Aura or Reaction concept.
+
+A Mastery change can move a Range or duration only while it is **fixed** — the `field.absent` rule catches a rank that appears to extend a context-derived one, exactly as for a request-derived Aura price.
+
 **An omitted Aura price is charged as zero, so it is never omitted.** `aura` is required and discriminated: `none` says the Skill burns none, `request-derived` says the price follows something the character declares and *cannot* be authored. `projectSkillAuraCost()` returns a union — the `request-derived` branch carries exertion and **no Aura figure at all**, so preparation must branch rather than spread a half-empty request that Aura expenditure reads as free. Nothing prices `aura.declared-power` yet; the execution ticket owes that rule.
 
 **Mastery magnitudes are revalidated per rank.** Finite operands can produce a non-finite result (`Number.MAX_VALUE * 2 === Infinity`, which is also not JSON), so `findSkillApplicationIssues()` projects each declared threshold and revalidates the action profile, the cost profile **and** the effective outcome magnitudes.
 
-**The authored catalog decides no undecided mechanic.** Combat has no check layer, no force-to-Body conversion and no calibrated Aura pricing, and an authored number is a rule the moment it ships. So `punch` / `parry` / `fire-blast` declare `check: {kind:"adjudicated"}` with guided-narrative outcomes, `fire-blast` prices **no Aura** (a blast's cost follows the power the bender declares and belongs to a request-time cost profile), and **no authored Skill declares Mastery changes** — the mechanism is exercised by test content instead. What *is* authored: effort (selected from `foundation/body/endurance`'s named exertion scale, never a bare invented number), `pick-lock`'s real fixed DEX check, and geometry — Range decides *eligibility*, which adjudication does not answer, so it must be stated. But **the geometric figures are provisional rules, not physical facts**: `punch` 1.5 m, `parry` 2 m, `fire-blast` 15 m at 30 m/s and the execution durations are unapproved literals standing in for contextual bases (body-derived reach, a Reaction's range from the action it answers, a projected range from declared power). Tracked in `BACKLOG.md` §4.
+**The authored catalog decides no undecided mechanic.** Combat has no check layer, no force-to-Body conversion and no calibrated Aura pricing, and an authored number is a rule the moment it ships. So `punch` / `parry` / `fire-blast` declare `check: {kind:"adjudicated"}` with guided-narrative outcomes, `fire-blast` prices **no Aura** (a blast's cost follows the power the bender declares and belongs to a request-time cost profile), and **no authored Skill declares Mastery changes** — the mechanism is exercised by test content instead. Geometry is *declared but not decided*: Range decides eligibility, which adjudication does not answer, so it must be stated — but the figures are not the catalog's to choose. Every authored Range and duration is context-derived:
+
+| Skill | Range | Duration | Travel |
+|---|---|---|---|
+| `punch` | `body.reach` | `combat.action-duration` | fixed instantaneous |
+| `parry` | `reaction.trigger-range` | `combat.reaction-duration` | fixed instantaneous |
+| `defensive-stance` | *(none — pointed at nothing)* | `combat.action-duration` | — |
+| `pick-lock` | `task.lockpicking-range` | `task.lockpicking-duration` | — |
+| `fire-blast` | `aura.declared-power.range` | `combat.action-duration` | `aura.declared-power.travel` |
+
+**No construction rule exists for any of these profiles** — body-reach calculation, lock-complexity timing, Reaction inheritance and declared-power projection all belong to execution work, tracked in `BACKLOG.md` §4. Until then these Skills resolve and validate but cannot be projected into an action profile.
+
+What *is* authored: effort (selected from `foundation/body/endurance`'s named exertion scale, never a bare invented number), `pick-lock`'s real fixed DEX check, and that a fist arrives instantly — a fact about fists rather than a figure.
 
 **Live resolution.** `resolveSkillApplication({ skillId, capabilities, context })` → `EngineResult<ResolvedSkillApplication>` with a disposition of `available` / `skill-not-held` (an unlock is permission, not possession) / `requirements-unsatisfied` / `requirements-unresolved` (an unrecorded sheet is not a refusal), the three-answer `mastery`, every requirement's own resolution, and the `EffectiveSkillApplication` when available. An unknown Skill and a Skill declaring **no** application both fail structurally — the engine never invents a default application. `buildSkillActionProfile()` projects an available one into a neutral `ActionProfile` (`id: skill:<id>`, `source: {type:"skill", id}`) and refuses anything else.
 

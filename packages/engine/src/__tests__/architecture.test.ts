@@ -1308,6 +1308,80 @@ describe("capability code composes the neutral vocabularies", () => {
     expect(callers).toEqual([]);
   });
 
+  it("keeps spatial/ a resolved, context-neutral domain", () => {
+    /*
+     * The addendum's other half. A Skill's Range genuinely depends on the body
+     * throwing the punch, the action being parried, or the power declared —
+     * and the cheap way to express that is a DistanceInterval that can hold
+     * "ask somebody". That would make the spatial domain a place where a
+     * distance is sometimes not a distance, and every consumer of one would
+     * have to handle a case that has no metres in it.
+     *
+     * So the unresolved half lives entirely in the Skill layer and is gone
+     * before an ActionProfile exists. spatial/ still models resolved metric
+     * geometry and nothing else.
+     */
+    const stripComments = (path: string) =>
+      readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+
+    const spatialFiles = sourceFilesUnder(join(SRC, "spatial"));
+
+    expect(spatialFiles.length).toBeGreaterThan(3);
+
+    const offenders = spatialFiles.filter((path) =>
+      /\bSkill|\bAura\b|\bReaction\b|\bBody\b|\bprofileId\b|context-derived/
+        .test(stripComments(path)),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("leaves DistanceInterval exactly three resolved fields", () => {
+    /*
+     * Named explicitly, because "do not add context to DistanceInterval" is
+     * the rule most easily broken by one convenient optional field.
+     */
+    const source = readFileSync(join(SRC, "spatial", "distance.ts"), "utf8");
+
+    const declaration = /export interface DistanceInterval \{([\s\S]*?)\n\}/
+      .exec(source);
+
+    expect(declaration).not.toBeNull();
+
+    const fields = [
+      ...(declaration?.[1] ?? "").matchAll(/readonly\s+(\w+)\s*[?:]/g),
+    ].map((match) => match[1]);
+
+    expect(fields).toEqual(["kind", "minimumMetres", "maximumMetres"]);
+  });
+
+  it("keeps the contextual value vocabulary out of the neutral domains", () => {
+    const stripComments = (path: string) =>
+      readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+
+    /*
+     * actions/ has its own `profileId` — an ActionProfileId, a different
+     * concept that predates this — so the check names the Skill-layer types
+     * rather than the word.
+     */
+    const neutral = [
+      ...sourceFilesUnder(join(SRC, "actions")),
+      ...sourceFilesUnder(join(SRC, "targeting")),
+      ...sourceFilesUnder(join(SRC, "spatial")),
+    ];
+
+    const offenders = neutral.filter((path) =>
+      /SkillApplicationValue|SkillApplicationContextValues|context-derived/
+        .test(stripComments(path)),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
   it("builds the profile identity in exactly one place", () => {
     /*
      * `skill:<id>` is the profile id AND the source id, and a second spelling

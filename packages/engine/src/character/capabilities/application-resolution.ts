@@ -54,9 +54,11 @@ import type { MasteryRank } from "./mastery";
 
 import {
   resolveEffectiveSkillApplication,
+  resolveSkillActionValues,
   skillActionProfile,
   type ApplicationRequirement,
   type EffectiveSkillApplication,
+  type SkillApplicationContextValues,
   type SkillApplicationDefinition,
 } from "./applications";
 
@@ -328,13 +330,27 @@ export function resolveSkillApplication(
 /**
  * The available application, as the ActionProfile everything downstream reads.
  *
- * REFUSES anything that is not available. The alternative — building a profile
- * and letting preparation notice — puts a usable Skill-shaped object into a
- * caller's hands at the exact moment the answer was "they cannot do this", and
- * the second caller to receive one will schedule it.
+ * REFUSES on two counts, and they are different refusals.
+ *
+ * Availability first: building a profile and letting preparation notice puts a
+ * usable Skill-shaped object into a caller's hands at the exact moment the
+ * answer was "they cannot do this", and the second caller to receive one will
+ * schedule it.
+ *
+ * Then the contextual values. A Skill whose reach comes from the body throwing
+ * the punch has no Range until somebody works one out, and the alternative to
+ * refusing is a profile carrying a number nobody computed — which is the whole
+ * failure this addendum removes, reappearing one layer down. So every
+ * context-derived field must be supplied, must answer the profile the Skill
+ * actually named, and must survive its own neutral validator before it is
+ * allowed anywhere near an ActionProfile.
+ *
+ * What comes out the other side is ordinary resolved geometry and timing.
+ * Nothing contextual crosses into actions/ or spatial/.
  */
 export function buildSkillActionProfile(
   resolved: ResolvedSkillApplication,
+  context: SkillApplicationContextValues = {},
 ): EngineResult<ActionProfile> {
   const trace: EngineTrace = {
     root: createTraceNode({
@@ -357,7 +373,39 @@ export function buildSkillActionProfile(
     }]);
   }
 
-  const profile = skillActionProfile(resolved.skillId, resolved.application);
+  const application = resolved.application;
+
+  const values = resolveSkillActionValues(application.action, context);
+
+  const firstError = values.errors[0];
+
+  if (firstError !== undefined || values.values === undefined) {
+    const errors = firstError === undefined
+      ? [{
+          code: "capabilities.application.value.unresolved",
+          message: `Skill "${resolved.skillId}" has contextual values that nothing supplied.`,
+          audience: "developer" as const,
+          required: "every context-derived value",
+          actual: "absent",
+        }]
+      : [firstError, ...values.errors.slice(1)];
+
+    return engineFailure(
+      {
+        root: createTraceNode({
+          ...trace.root,
+          output: "context-required",
+        }),
+      },
+      [errors[0]!, ...errors.slice(1)],
+    );
+  }
+
+  const profile = skillActionProfile(
+    resolved.skillId,
+    application,
+    values.values,
+  );
 
   return engineSuccess(profile, {
     root: createTraceNode({
