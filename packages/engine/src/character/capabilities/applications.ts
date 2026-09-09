@@ -1515,6 +1515,70 @@ function resolveContextualValue<T>(
   supplied: { readonly profileId: string; readonly value: T } | undefined,
   findValueIssues: (value: T) => readonly EngineError[],
 ): { readonly value?: T; readonly errors: readonly EngineError[] } {
+  /*
+   * The supplied half is a HOST BOUNDARY too, and a wider one than the
+   * catalog: a context value is computed per attempt by whatever is driving
+   * the engine. So it is guarded before it is read, not after — and the
+   * domain validators below take a concrete type, so handing them a null
+   * would throw inside somebody else's file.
+   */
+  if (supplied !== undefined) {
+    if (supplied === null || typeof supplied !== "object") {
+      return {
+        errors: [issue(
+          "capabilities.application.value.supplied.malformed",
+          `The supplied ${field} is not a value this can read.`,
+          "an object carrying profileId and value",
+          supplied === null ? "null" : typeof supplied,
+        )],
+      };
+    }
+
+    if (
+      typeof supplied.profileId !== "string" ||
+      supplied.profileId.trim().length === 0
+    ) {
+      return {
+        errors: [issue(
+          "capabilities.application.value.supplied.profile.missing",
+          `The supplied ${field} names no context profile, so nothing can check it answers the right question.`,
+          "non-empty profile id",
+          String(supplied.profileId),
+        )],
+      };
+    }
+
+    if (supplied.value === undefined || supplied.value === null) {
+      return {
+        errors: [issue(
+          "capabilities.application.value.supplied.missing-value",
+          `The supplied ${field} carries no value.`,
+          `a ${field} value`,
+          String(supplied.value),
+        )],
+      };
+    }
+  }
+
+  /*
+   * A specification that is not one of the shapes at all. Reached only from
+   * unchecked host content; resolveSkillActionValues() validates structure
+   * first, and this is the guard that keeps the read below honest anyway.
+   */
+  if (
+    specification !== undefined &&
+    (specification === null || typeof specification !== "object")
+  ) {
+    return {
+      errors: [issue(
+        "capabilities.application.value.kind.invalid",
+        `A Skill's ${field} must be a fixed value or context-derived.`,
+        ["fixed", "context-derived"],
+        specification === null ? "null" : typeof specification,
+      )],
+    };
+  }
+
   if (specification === undefined) {
     if (supplied !== undefined) {
       return {
@@ -1596,17 +1660,32 @@ export function resolveSkillActionValues(
   readonly errors: readonly EngineError[];
 } {
   /*
-   * `none` is handed to the resolver as "this Skill declares no Range", which
-   * is exactly what it means and exactly what the resolver already refuses to
-   * accept a supplied value for. The neutral profile then carries no `range`
-   * at all — a resolved profile has a distance requirement or has none, and
-   * there is no author left to have forgotten one.
+   * STRUCTURE FIRST, and the whole reason this call is here: catalog
+   * validation is not on the projection path. A host registers a Skill whose
+   * Range is missing or malformed, the catalog check reports it, nothing
+   * stops the host projecting it anyway — and what it gets is a profile with
+   * no distance restriction. Reporting a problem and then proceeding as if it
+   * were absent is how the permissive answer survives being caught.
+   *
+   * So the same structural pass runs here and returns immediately. A caller
+   * that ignored the catalog cannot reach the resolution below.
+   */
+  const structural = findActionValueIssues(action);
+
+  if (structural.length > 0) return { errors: structural };
+
+  /*
+   * ONLY an explicit `{ kind: "none" }` becomes an absent Range. An omitted
+   * one is never translated into it: that is the permissive reading this
+   * ticket removed from the authored shape, and letting it back in here would
+   * mean host content that fails catalog validation still projects — as a
+   * Skill with no distance restriction, usable from anywhere. The structural
+   * pass above has already refused that case; this expresses the same rule so
+   * the two cannot drift apart.
    */
   const range = resolveContextualValue(
     "Range",
-    action.range?.kind === "none" || action.range === undefined
-      ? undefined
-      : action.range,
+    action.range?.kind === "none" ? undefined : action.range,
     supplied.range,
     findDistanceIntervalIssues,
   );

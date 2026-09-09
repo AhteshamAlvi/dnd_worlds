@@ -32,8 +32,10 @@ import {
 
 import {
   findSkillApplicationIssues,
+  minimalSkillApplication,
   requiredApplicationContext,
   resolveEffectiveSkillApplication,
+  resolveSkillActionValues,
   projectSkillAuraCost,
   skillAuraCostNeedsRequestContext,
   skillOutcomeEntries,
@@ -1700,6 +1702,114 @@ describe("an available application projects into a neutral action profile", () =
 
     expect(built.errors[0].code)
       .toBe("capabilities.application.value.unexpected");
+  });
+
+  it("refuses to project host content whose Range is missing entirely", () => {
+    /*
+     * The decisive one. Catalog validation is NOT on the projection path, so a
+     * host that registers this, reads the catalog complaint and projects
+     * anyway used to get a profile with no distance restriction — usable from
+     * anywhere. Reporting a problem and then proceeding as though the field
+     * were absent is how the permissive answer survives being caught.
+     */
+    const { range: _range, ...action } = minimalSkillApplication().action;
+
+    registerDefinition("skill", {
+      id: "test-rangeless",
+      name: "Rangeless",
+      description: "Host content that never said how far it reaches.",
+      application: {
+        ...minimalSkillApplication(),
+        action,
+      },
+    } as unknown as SkillDefinition);
+
+    /* The catalog says so... */
+    expect(findSkillCatalogIssues().join("\n")).toContain("must state its Range");
+
+    const resolved = resolveSkillApplication({
+      skillId: "test-rangeless",
+      capabilities: resolveCapabilities({
+        authoredSkills: [{ skillId: "test-rangeless" }],
+      }),
+      context: emptyContext(),
+    });
+
+    expect(resolved.success).toBe(true);
+
+    if (!resolved.success) return;
+
+    expect(resolved.payload.disposition).toBe("available");
+
+    /* ...and so, independently, does the projection path. */
+    expect(() => buildSkillActionProfile(resolved.payload)).not.toThrow();
+
+    const built = buildSkillActionProfile(resolved.payload);
+
+    expect(built.success).toBe(false);
+
+    if (built.success) return;
+
+    expect(built.errors[0].code)
+      .toBe("capabilities.application.value.range.missing");
+  });
+
+  it("reports rather than throws on any hostile value at the projection boundary", () => {
+    /*
+     * The catalog sweep, repeated where it matters more: a context value is
+     * computed per attempt by whatever drives the engine, so this boundary is
+     * wider than the catalog's. Both halves are swept — a malformed
+     * SPECIFICATION arriving from host content, and a malformed SUPPLIED value
+     * arriving from the caller.
+     */
+    const hostile = [
+      undefined, null, {}, [], 0, 1, "fixed", true,
+      { kind: "fixed" },
+      { kind: "fixed", value: null },
+      { kind: "context-derived" },
+      { kind: "context-derived", profileId: "" },
+      { kind: "elsewhere" },
+    ];
+
+    for (const value of hostile) {
+      for (const field of ["range", "executionDuration", "travel"] as const) {
+        const application = {
+          ...minimalSkillApplication(),
+          action: {
+            ...minimalSkillApplication().action,
+            [field]: value,
+          },
+        } as SkillApplicationDefinition;
+
+        expect(() => resolveSkillActionValues(application.action)).not.toThrow();
+
+        const result = resolveSkillActionValues(application.action);
+
+        /* Travel alone may legitimately be absent. */
+        if (field === "travel" && value === undefined) continue;
+
+        expect(result.values).toBeUndefined();
+        expect(result.errors.length).toBeGreaterThan(0);
+      }
+    }
+
+    /* And the supplied half, against a perfectly good specification. */
+    const punch = getSkillDefinition("punch")?.application?.action;
+
+    expect(punch).toBeDefined();
+
+    if (punch === undefined) return;
+
+    for (const supplied of hostile) {
+      const context = { range: supplied } as SkillApplicationContextValues;
+
+      expect(() => resolveSkillActionValues(punch, context)).not.toThrow();
+
+      const result = resolveSkillActionValues(punch, context);
+
+      expect(result.values).toBeUndefined();
+      expect(result.errors.length).toBeGreaterThan(0);
+    }
   });
 
   it("refuses a value supplied for a field the Skill authors as fixed", () => {
