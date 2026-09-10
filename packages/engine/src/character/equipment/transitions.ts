@@ -96,7 +96,7 @@ import { resolveInventoryItemRef, type InventoryItemRef } from "./references";
 import { isConcreteInventoryObject, isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
 import {
   describeItemDefinitionIssue,
-  findItemDefinitionIssues,
+  findItemEquipmentDefinitionIssues,
 } from "./validation";
 import type { CharacterItem, ItemDefinition } from "./types";
 
@@ -412,7 +412,7 @@ export function resolveEquipmentTransition(
    * wrong, and guessing past a malformed rule would be the engine deciding
    * something the author did not write.
    */
-  const definitionIssues = findItemDefinitionIssues(definition);
+  const definitionIssues = findItemEquipmentDefinitionIssues(definition);
 
   const firstDefinitionIssue = definitionIssues[0];
 

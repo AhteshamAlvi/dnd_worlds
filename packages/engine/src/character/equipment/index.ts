@@ -58,7 +58,7 @@ import type { RuleEffectSource } from "../rules/resolution";
 import {
   describeItemDefinitionIssue,
   findInventoryEntryIssues,
-  findItemDefinitionIssues,
+  findItemEquipmentDefinitionIssues,
   isCharacterItemShape,
   isInventoryEntryId,
   isInventoryQuantity,
@@ -311,7 +311,7 @@ export function findItemCatalogIssues(): readonly string[] {
   const issues: string[] = [...ITEM_REGISTRY.findCatalogIssues()];
 
   for (const definition of ITEM_REGISTRY.all()) {
-    for (const issue of findItemDefinitionIssues(definition)) {
+    for (const issue of findItemEquipmentDefinitionIssues(definition)) {
       issues.push(
         `Item "${definition.id}" ${describeItemDefinitionIssue(issue)}.`,
       );
@@ -350,7 +350,7 @@ export {
   describeItemDefinitionIssue,
   equipmentTransitionKind,
   findInventoryEntry,
-  findItemDefinitionIssues,
+  findItemEquipmentDefinitionIssues,
   findInventoryEntryOutcome,
   getActiveItemEffects,
   isCharacterItemShape,

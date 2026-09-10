@@ -33,7 +33,7 @@ import {
 import {
   equipmentTransitionKind,
   findItemCatalogIssues,
-  findItemDefinitionIssues,
+  findItemEquipmentDefinitionIssues,
   resolveEquipmentTransition,
   type CharacterItem,
   type ItemDefinition,
@@ -1070,6 +1070,46 @@ describe("the catalog and the transition agree about a definition", () => {
         ],
       },
     ],
+
+    /*
+     * The structurally hostile half. Every one of these either threw on the
+     * first field read or passed SILENTLY, and the second is the more
+     * dangerous: `equippedEffects: {}` has no length, so the validating loop
+     * ran zero times and pronounced the content clean.
+     */
+    [
+      "passive Effects that are not a list",
+      { inventoryMode: "individual", equippedEffects: {} },
+    ],
+    [
+      "a null entry among the passive Effects",
+      { inventoryMode: "individual", equippedEffects: [null] },
+    ],
+    [
+      "an Effect discriminant nothing recognises",
+      { inventoryMode: "individual", equippedEffects: [{ type: "modifyMorale" }] },
+    ],
+    [
+      "a modifyCheck Effect with no check",
+      {
+        inventoryMode: "individual",
+        equippedEffects: [{ type: "modifyCheck", amount: 1 }],
+      },
+    ],
+    [
+      "an equip requirement whose rule is null",
+      {
+        inventoryMode: "individual",
+        equipRequirements: [{ id: "broken", requirement: null }],
+      },
+    ],
+    [
+      "an equip requirement compound with no children",
+      {
+        inventoryMode: "individual",
+        equipRequirements: [{ id: "broken", requirement: { type: "all" } }],
+      },
+    ],
   ];
 
   function register(fields: Record<string, unknown>): void {
@@ -1181,7 +1221,7 @@ describe("the catalog and the transition agree about a definition", () => {
 
     registerDefinition("item", definition);
 
-    expect(findItemDefinitionIssues(definition)).toEqual([]);
+    expect(findItemEquipmentDefinitionIssues(definition)).toEqual([]);
     expect(findItemCatalogIssues()).toEqual([]);
 
     const { result } = transition(
@@ -1198,6 +1238,168 @@ describe("the catalog and the transition agree about a definition", () => {
      */
     expect(findCatalogReferenceIssues()).toEqual([
       expect.stringContaining("malformed rule"),
+    ]);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Hostile definitions                                                        */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The validator claimed host-provided definitions may be anything, and could
+ * not survive `equippedEffects: [null]` — which reached the universal Effect
+ * validator and threw on the first read of `.type`. The claim and the code
+ * disagreed, and only the claim was written down.
+ *
+ * A sweep rather than a case per bug, for the reason spatial validation
+ * settled on one: a case per bug tests the mistakes already found, while a
+ * sweep catches the next field that grows a read.
+ */
+describe("no definition boundary throws", () => {
+  const FIELDS = [
+    "inventoryMode",
+    "possessedEffects",
+    "equippedEffects",
+    "equipRequirements",
+  ] as const;
+
+  /*
+   * The transition is driven against a character resolved with an EMPTY
+   * inventory, with the hostile entry swapped onto `character` afterwards.
+   *
+   * That is not a dodge, it is the boundary under test. resolveCharacter() is
+   * a different entry point with its own contract, and it genuinely does throw
+   * on an unrecognised Effect discriminant — rules/resolution.ts ends its
+   * switch with a deliberate `never` exhaustiveness guard, which exists to
+   * catch a developer adding an Effect variant nobody handles and which host
+   * data can currently reach. That is a real gap and a separate one; turning
+   * the guard into a silent skip would delete the protection it was added for,
+   * and deciding what resolution should do with unrecognised content is a
+   * design question rather than a hardening pass.
+   */
+  function resolvedWith(items: readonly CharacterItem[]) {
+    const character = createTestCharacter({ items });
+
+    return {
+      character,
+      resolved: {
+        ...resolveTestCharacter(createTestCharacter()),
+        character,
+      },
+    };
+  }
+
+  it.each(
+    FIELDS.flatMap((field) =>
+      HOSTILE_VALUES.map((value, index) =>
+        [field, index, value] as const
+      ),
+    ),
+  )("survives %s holding hostile value %i", (field, _index, value) => {
+    const definition = {
+      id: "warded-band",
+      name: "Warded Band",
+      description: "A test Item.",
+      inventoryMode: "individual",
+      [field]: value,
+    };
+
+    expect(() => findItemEquipmentDefinitionIssues(definition)).not.toThrow();
+
+    registerDefinition("item", definition as unknown as ItemDefinition);
+
+    expect(() => findItemCatalogIssues()).not.toThrow();
+
+    const { character, resolved } = resolvedWith([
+      entry({ itemId: "warded-band" }),
+    ]);
+
+    const run = () =>
+      resolveEquipmentTransition({
+        resolved,
+        item: { characterId: character.id, entryId: "e1" },
+        destination: "worn",
+      });
+
+    expect(run).not.toThrow();
+
+    /*
+     * And the two still agree. A boundary that stops throwing by quietly
+     * accepting everything is the same bug with better manners.
+     */
+    const catalogClean = findItemCatalogIssues().length === 0;
+
+    expect(run().success).toBe(catalogClean);
+  });
+
+  it.each(HOSTILE_VALUES.map((value, index) => [index, value] as const))(
+    "survives a definition that is itself hostile value %i",
+    (_index, value) => {
+      expect(() => findItemEquipmentDefinitionIssues(value)).not.toThrow();
+      expect(findItemEquipmentDefinitionIssues(value)).not.toEqual([]);
+    },
+  );
+
+  it("reports a nested Effect fault without losing where it was", () => {
+    /*
+     * Not merely "did not throw". A sweep that asserts only survival passes on
+     * a validator that returns a wrong answer, which is the lesson the spatial
+     * hardening had to learn twice.
+     */
+    expect(
+      findItemEquipmentDefinitionIssues({
+        id: "x",
+        inventoryMode: "individual",
+        equippedEffects: [
+          { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+          { type: "modifyCheck", amount: 1 },
+        ],
+      }),
+    ).toEqual([
+      {
+        type: "malformed-rule",
+        where: "equippedEffects",
+        issue: "invalid-check-scope",
+        path: "equippedEffects[1].check",
+      },
+    ]);
+  });
+
+  it("tells a list that is not a list from an Effect that is malformed", () => {
+    /*
+     * Different faults with different fixes: one is a field holding the wrong
+     * kind of value, the other is a broken Effect inside a perfectly good list.
+     */
+    const notAList = findItemEquipmentDefinitionIssues({
+      id: "x",
+      inventoryMode: "individual",
+      equippedEffects: {},
+    });
+
+    const badEntry = findItemEquipmentDefinitionIssues({
+      id: "x",
+      inventoryMode: "individual",
+      equippedEffects: [null],
+    });
+
+    expect(notAList).toEqual([
+      {
+        type: "malformed-rule",
+        where: "equippedEffects",
+        issue: "not-a-list",
+        path: "equippedEffects",
+      },
+    ]);
+
+    expect(badEntry).toEqual([
+      {
+        type: "malformed-rule",
+        where: "equippedEffects",
+        issue: "malformed-rule-node",
+        path: "equippedEffects[0]",
+      },
     ]);
   });
 });

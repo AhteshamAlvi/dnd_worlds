@@ -76,6 +76,8 @@ export type RuleValidationIssue =
   | MissingRequirementReferenceIssue
   | EmptyCompoundRequirementIssue
   | RequirementDepthExceededIssue
+  | MalformedRuleNodeIssue
+  | UnknownRuleTypeIssue
   | InvalidNamedRequirementIdIssue
   | DuplicateNamedRequirementIdIssue
   | InvalidNamedRequirementSummaryIssue
@@ -324,6 +326,34 @@ export interface RequirementDepthExceededIssue {
 
 
 /*
+ * The two things a rule can be that are not a rule at all.
+ *
+ * Both used to be invisible in opposite directions. A null or non-object node
+ * THREW on the first read of `.type`, and a node carrying a discriminant
+ * nothing recognises fell off the end of the switch and was reported as
+ * perfectly valid — so a typo in an Effect type produced content that
+ * validated cleanly and then did nothing forever, which is the worst of the
+ * two outcomes.
+ *
+ * `kind` distinguishes the two vocabularies rather than duplicating the
+ * variants, since the mistake and the fix read identically for both.
+ */
+export interface MalformedRuleNodeIssue {
+  readonly type: "malformed-rule-node";
+  readonly path: string;
+  readonly kind: "effect" | "requirement";
+}
+
+
+export interface UnknownRuleTypeIssue {
+  readonly type: "unknown-rule-type";
+  readonly path: string;
+  readonly kind: "effect" | "requirement";
+  readonly value: unknown;
+}
+
+
+/*
  * What a named requirement bundle can get wrong.
  *
  * The id is the addressable half of a NamedRequirement, so these are not
@@ -367,15 +397,25 @@ export interface MalformedNamedRequirementIssue {
 /* Shared helpers                                                             */
 /* -------------------------------------------------------------------------- */
 
+/*
+ * Every field predicate takes `unknown`.
+ *
+ * isNonEmptyId used to take `string` and call `.trim()` on it, which is a
+ * promise the caller could not keep: these fields come out of authored JSON
+ * and a host's registered catalog, where `traitId` is as likely to be absent
+ * as to be a string. The type said the check was safe and the runtime threw on
+ * `{ type: "hasTrait" }` — a requirement missing exactly the field the
+ * validator exists to complain about.
+ */
 function isNonEmptyId(
-  value: string,
+  value: unknown,
 ): boolean {
-  return value.trim().length > 0;
+  return typeof value === "string" && value.trim().length > 0;
 }
 
 
 function isFiniteNumber(
-  value: number,
+  value: unknown,
 ): boolean {
   return Number.isFinite(value);
 }
@@ -420,19 +460,51 @@ function isKnownActionCapacityKind(
 }
 
 
+/*
+ * Whether a value is shaped like a rule node at all: an object carrying a
+ * non-empty string discriminant.
+ *
+ * Checked before ANY field is read, in both vocabularies. A guard placed after
+ * the first dereference is the specific mistake spatial validation was
+ * hardened against, and it looks fixed in review because the guard is visibly
+ * there.
+ */
+function isRuleNode(value: unknown): value is { readonly type: string } {
+  return typeof value === "object" &&
+    value !== null &&
+    typeof (value as { readonly type?: unknown }).type === "string" &&
+    (value as { readonly type: string }).type.length > 0;
+}
+
+
 /* -------------------------------------------------------------------------- */
 /* Effect validation                                                          */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Validate one Effect definition.
+ *
+ * Takes `unknown`, because an Effect arrives from authored JSON and from a
+ * host's registered catalog and may be anything at all — including null, which
+ * used to throw here on the first read of `.type`.
  */
 export function findEffectValidationIssues(
-  effect: Effect,
+  candidate: unknown,
   path = "effect",
 ): readonly RuleValidationIssue[] {
+  if (!isRuleNode(candidate)) {
+    return [{ type: "malformed-rule-node", path, kind: "effect" }];
+  }
+
   const issues: RuleValidationIssue[] = [];
 
+  /*
+   * Narrowed only AFTER the structural guard. Every case below reads fields
+   * off the union, and the guard is what makes those reads true rather than
+   * merely well-typed — a `default` branch catches the discriminants the union
+   * does not contain.
+   */
+  const effect = candidate as Effect;
 
   switch (effect.type) {
     case "modifyBaseAttribute":
@@ -471,13 +543,20 @@ export function findEffectValidationIssues(
        * so inside the failure branch the value is `never` — and a malformed
        * scope still has to be able to say which variant it was claiming to be.
        */
-      const checkKind: CheckScopeSelector["kind"] = effect.check.kind;
+      const scope: unknown = effect.check;
 
-      if (!isValidCheckScopeSelector(effect.check)) {
+      if (!isValidCheckScopeSelector(scope)) {
         issues.push({
           type: "invalid-check-scope",
           path: `${path}.check`,
-          kind: checkKind,
+          /*
+           * Read THROUGH an optional access rather than off the value. An
+           * absent `check` is the commonest way this Effect is malformed and
+           * used to throw here, one line before the guard that would have
+           * caught it.
+           */
+          kind: (scope as CheckScopeSelector | undefined)
+            ?.kind as CheckScopeSelector["kind"],
         });
       }
 
@@ -640,6 +719,16 @@ export function findEffectValidationIssues(
     case "modifyResolvedBodyAnatomy": {
       const operation = effect.operation;
 
+      if (typeof operation !== "object" || operation === null) {
+        issues.push({
+          type: "malformed-rule-node",
+          path: `${path}.operation`,
+          kind: "effect",
+        });
+
+        break;
+      }
+
       if (
         effect.type === "modifyBaseBodyAnatomy" &&
         (operation as { readonly mode: string }).mode === "suppress"
@@ -699,10 +788,33 @@ export function findEffectValidationIssues(
 
         case "suppress":
           break;
+
+        default:
+          issues.push({
+            type: "unknown-rule-type",
+            path: `${path}.operation.mode`,
+            kind: "effect",
+            value: (operation as { readonly mode?: unknown }).mode,
+          });
       }
 
       break;
     }
+
+    default:
+      /*
+       * A discriminant the union does not contain. Unreachable by the types
+       * and perfectly reachable from JSON, and reporting it is the point: this
+       * used to fall off the end of the switch, so a typo in an Effect type
+       * validated cleanly and then did nothing for the rest of the content's
+       * life.
+       */
+      issues.push({
+        type: "unknown-rule-type",
+        path: `${path}.type`,
+        kind: "effect",
+        value: (effect as { readonly type: string }).type,
+      });
   }
 
 
@@ -714,25 +826,33 @@ export function findEffectValidationIssues(
  * Validate an array of Effects.
  */
 export function findEffectsValidationIssues(
-  effects: readonly Effect[],
+  effects: readonly Effect[] | undefined,
   path = "effects",
 ): readonly RuleValidationIssue[] {
-  const issues: RuleValidationIssue[] = [];
+  if (effects === undefined) return [];
 
-
-  for (let index = 0; index < effects.length; index += 1) {
-    const effect = effects[index];
-
-    if (effect === undefined) continue;
-
-    issues.push(
-      ...findEffectValidationIssues(
-        effect,
-        `${path}[${index}]`,
-      ),
-    );
+  /*
+   * A non-array used to pass SILENTLY, which is the more dangerous half of
+   * this bug: `effects: {}` has no `length`, so the loop ran zero times and
+   * the content was pronounced clean. Absence is legal; a value that is not a
+   * list of Effects is not.
+   */
+  if (!Array.isArray(effects)) {
+    return [{ type: "malformed-rule-node", path, kind: "effect" }];
   }
 
+  const issues: RuleValidationIssue[] = [];
+
+  for (const [index, effect] of (effects as readonly unknown[]).entries()) {
+    /*
+     * A hole is reported rather than skipped. `[undefined]` and `[null]` are
+     * both an author having lost an Effect, and skipping the first was how a
+     * two-Effect list could validate as a one-Effect list.
+     */
+    issues.push(
+      ...findEffectValidationIssues(effect, `${path}[${index}]`),
+    );
+  }
 
   return issues;
 }
@@ -743,13 +863,10 @@ export function findEffectsValidationIssues(
 /* -------------------------------------------------------------------------- */
 
 function findRequirementIssuesInternal(
-  requirement: Requirement,
+  candidate: unknown,
   path: string,
   depth: number,
 ): readonly RuleValidationIssue[] {
-  const issues: RuleValidationIssue[] = [];
-
-
   if (depth > MAX_REQUIREMENT_DEPTH) {
     return [
       {
@@ -760,6 +877,20 @@ function findRequirementIssuesInternal(
     ];
   }
 
+  /*
+   * The same guard the Effect validator gets, for the same reason and with one
+   * extra consequence: a compound requirement recurses, so an unguarded child
+   * turns one malformed node deep in a tree into a throw from a public
+   * boundary several layers up — including the equip transition, which reaches
+   * here through an Item's named equip requirements.
+   */
+  if (!isRuleNode(candidate)) {
+    return [{ type: "malformed-rule-node", path, kind: "requirement" }];
+  }
+
+  const issues: RuleValidationIssue[] = [];
+
+  const requirement = candidate as Requirement;
 
   switch (requirement.type) {
     case "attributeMinimum":
@@ -953,6 +1084,16 @@ function findRequirementIssuesInternal(
 
     case "all":
     case "any": {
+      if (!Array.isArray(requirement.requirements)) {
+        issues.push({
+          type: "malformed-rule-node",
+          path: `${path}.requirements`,
+          kind: "requirement",
+        });
+
+        break;
+      }
+
       if (requirement.requirements.length === 0) {
         issues.push({
           type: "empty-compound-requirement",
@@ -964,15 +1105,9 @@ function findRequirementIssuesInternal(
       }
 
 
-      for (
-        let index = 0;
-        index < requirement.requirements.length;
-        index += 1
+      for (const [index, child] of
+        (requirement.requirements as readonly unknown[]).entries()
       ) {
-        const child = requirement.requirements[index];
-
-        if (child === undefined) continue;
-
         issues.push(
           ...findRequirementIssuesInternal(
             child,
@@ -987,6 +1122,11 @@ function findRequirementIssuesInternal(
 
 
     case "not": {
+      /*
+       * An absent inner requirement needs no guard here: the recursion's own
+       * structural check reports it, and duplicating that test would be two
+       * places deciding what a requirement node is.
+       */
       issues.push(
         ...findRequirementIssuesInternal(
           requirement.requirement,
@@ -997,6 +1137,14 @@ function findRequirementIssuesInternal(
 
       break;
     }
+
+    default:
+      issues.push({
+        type: "unknown-rule-type",
+        path: `${path}.type`,
+        kind: "requirement",
+        value: (requirement as { readonly type: string }).type,
+      });
   }
 
 
@@ -1008,7 +1156,7 @@ function findRequirementIssuesInternal(
  * Validate one Requirement tree.
  */
 export function findRequirementValidationIssues(
-  requirement: Requirement,
+  requirement: Requirement | unknown,
   path = "requirement",
 ): readonly RuleValidationIssue[] {
   return findRequirementIssuesInternal(
@@ -1035,29 +1183,24 @@ export function findRequirementValidationIssues(
  * prerequisites.
  */
 export function findRequirementsValidationIssues(
-  requirements: readonly Requirement[],
+  requirements: readonly Requirement[] | undefined,
   path = "requirements",
 ): readonly RuleValidationIssue[] {
-  const issues: RuleValidationIssue[] = [];
+  if (requirements === undefined) return [];
 
-
-  for (
-    let index = 0;
-    index < requirements.length;
-    index += 1
-  ) {
-    const requirement = requirements[index];
-
-    if (requirement === undefined) continue;
-
-    issues.push(
-      ...findRequirementValidationIssues(
-        requirement,
-        `${path}[${index}]`,
-      ),
-    );
+  if (!Array.isArray(requirements)) {
+    return [{ type: "malformed-rule-node", path, kind: "requirement" }];
   }
 
+  const issues: RuleValidationIssue[] = [];
+
+  for (const [index, requirement] of
+    (requirements as readonly unknown[]).entries()
+  ) {
+    issues.push(
+      ...findRequirementValidationIssues(requirement, `${path}[${index}]`),
+    );
+  }
 
   return issues;
 }
@@ -1173,8 +1316,8 @@ export function findNamedRequirementsValidationIssues(
  * It does not check whether referenced ids exist in their respective catalogs.
  */
 export function findRuleValidationIssues(
-  effects: readonly Effect[] = [],
-  requirements: readonly Requirement[] = [],
+  effects: readonly Effect[] | undefined = [],
+  requirements: readonly Requirement[] | undefined = [],
 ): readonly RuleValidationIssue[] {
   return [
     ...findEffectsValidationIssues(effects),
