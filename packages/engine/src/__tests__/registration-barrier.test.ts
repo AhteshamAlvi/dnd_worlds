@@ -60,6 +60,7 @@ import { findSpecialPointCatalogIssues } from "../character/foundation/body/crit
 
 import type { CatalogDomain } from "../character/catalogs";
 import type { RegistrationResult } from "../infrastructure/registry";
+import { validateBodyPartSelector } from "../character/foundation/body/selectors";
 
 
 /* Each domain's own catalog check, so "clean" means clean to its owner. */
@@ -447,6 +448,18 @@ describe("each domain's local structure is refused at registration", () => {
       "a BodyPart applicability selector that selects nothing",
       { applicability: { bodyParts: {} } },
     ],
+
+    /* The two reported nested shapes, named rather than left to the sweep. */
+    [
+      "injury",
+      "an applicability id filter that is not a list",
+      { applicability: { bodyParts: { ids: 42 } } },
+    ],
+    [
+      "special-point",
+      "a placement state filter that is not a list",
+      { placement: { kind: "per-part", selector: { states: {} } } },
+    ],
   ];
 
   it.each(CASES)("refuses a %s with %s", (domain, _label, overrides) => {
@@ -596,6 +609,132 @@ describe("no domain-owned compound field can throw", () => {
         registerDefinition(domain, validDefinitionFor(domain) as never).ok,
       ).toBe(true);
     }
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* The shared selector boundary                                               */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * One validator, two registration paths, and a nesting level deeper than the
+ * guards that were added first.
+ *
+ * An Injury's `applicability.bodyParts` and an Anatomical Point's
+ * `placement.selector` both end up in validateBodyPartSelector(), which took a
+ * typed BodyPartSelector on nothing more than the caller's cast and then
+ * measured and iterated every filter inside it without checking. Guarding the
+ * OUTER field — "is this an object" — was necessary and not sufficient:
+ * `{ ids: 42 }` is an object, and threw on `.length` one level down.
+ *
+ * Fixed at the selector rather than at either caller, because two guards would
+ * be two copies of the same rule and the copies are what drift. Swept through
+ * BOTH callers, because a fix at a shared boundary is only worth anything if
+ * every path to it is covered.
+ */
+describe("a nested selector filter can neither throw nor slip through", () => {
+  const FILTERS = ["ids", "types", "tags", "states", "tagMode"] as const;
+
+  function withInjurySelector(selector: unknown): Record<string, unknown> {
+    return {
+      ...validDefinitionFor("injury"),
+      applicability: { bodyParts: selector },
+    };
+  }
+
+  function withPointSelector(selector: unknown): Record<string, unknown> {
+    const base = validDefinitionFor("special-point");
+
+    return {
+      ...base,
+      placement: {
+        ...(base["placement"] as Record<string, unknown>),
+        selector,
+      },
+    };
+  }
+
+  const PATHS = [
+    ["injury", withInjurySelector],
+    ["special-point", withPointSelector],
+  ] as const;
+
+  it.each(
+    PATHS.flatMap(([domain, build]) =>
+      FILTERS.flatMap((filter) =>
+        HOSTILE_VALUES.map((value, index) =>
+          [domain, filter, index, value, build] as const
+        ),
+      ),
+    ),
+  )(
+    "refuses a %s whose selector %s holds hostile value %i",
+    (domain, filter, _index, value, build) => {
+      const selector: Record<string, unknown> = { [filter]: value };
+
+      if (value === undefined) delete selector[filter];
+
+      let result: RegistrationResult | undefined;
+
+      expect(() => {
+        result = registerDefinition(domain, build(selector) as never);
+      }).not.toThrow();
+
+      /*
+       * Refusal, not merely survival. Every one of these selectors is either
+       * malformed or empty — an absent filter leaves a selector that selects
+       * nothing at all — so none of them describes anatomy an Injury could
+       * apply to or a point could sit on.
+       */
+      expect(result?.ok).toBe(false);
+      expect(getDefinition(domain, "house-rule")).toBeUndefined();
+    },
+  );
+
+  it.each(PATHS)("refuses a %s whose selector is not an object", (domain, build) => {
+    for (const value of HOSTILE_VALUES) {
+      expect(() => registerDefinition(domain, build(value) as never)).not.toThrow();
+      expect(registerDefinition(domain, build(value) as never).ok).toBe(false);
+    }
+  });
+
+  it.each(PATHS)("still accepts a %s with a real selector", (domain, build) => {
+    /*
+     * The control. Both an explicit `all` and a filtered selector are valid,
+     * and a boundary that refused them would satisfy every case above.
+     */
+    expect(registerDefinition(domain, build({ all: true }) as never).ok).toBe(true);
+
+    expect(
+      registerDefinition(domain, build({ types: ["torso"] }) as never).ok,
+    ).toBe(true);
+  });
+
+  it("tells a malformed filter apart from an empty one", () => {
+    /*
+     * Different faults with different fixes. `ids: []` is a filter that exists
+     * and holds nothing — add an id. `ids: 42` is a caller who did not write a
+     * filter — replace the field. Reporting both as "empty" would send an
+     * author to do the first when they need the second.
+     */
+    const empty = validateBodyPartSelector({ ids: [] });
+    const malformed = validateBodyPartSelector({ ids: 42 });
+
+    expect(empty.issues.map((issue) => issue.code)).toEqual(["empty-id-filter"]);
+    expect(malformed.issues.map((issue) => issue.code)).toEqual(["malformed-filter"]);
+  });
+
+  it("reports a state that is not a state, rather than iterating it", () => {
+    expect(validateBodyPartSelector({ states: {} }).valid).toBe(false);
+    expect(validateBodyPartSelector({ states: [null, null] }).issues)
+      .toHaveLength(2);
+
+    /* And a real duplicate is still a duplicate. */
+    expect(
+      validateBodyPartSelector({ states: ["active", "active"] })
+        .issues.map((issue) => issue.code),
+    ).toEqual(["duplicate-state"]);
   });
 });
 

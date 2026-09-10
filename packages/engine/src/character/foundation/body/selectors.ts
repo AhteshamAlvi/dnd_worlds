@@ -138,7 +138,18 @@ export type BodyPartSelectorValidationIssueCode =
   | "duplicate-tag"
   | "empty-state-filter"
   | "duplicate-state"
-  | "tag-mode-without-tags";
+  | "tag-mode-without-tags"
+
+  /*
+   * The selector is not an object at all, or one of its filters is not a list.
+   *
+   * Distinct from "empty-<kind>-filter", which says a list exists and holds
+   * nothing. `ids: 42` is not an empty filter — it is a caller who did not
+   * write a filter — and reporting the two the same way would send an author
+   * to add an id when the field needs replacing.
+   */
+  | "malformed-selector"
+  | "malformed-filter";
 
 
 /*
@@ -191,7 +202,7 @@ function isValidIdentifier(
  * Validates one identifier-array filter.
  */
 function validateIdentifierFilter(
-  values: readonly string[],
+  candidate: unknown,
   kind:
     | "id"
     | "type"
@@ -199,6 +210,23 @@ function validateIdentifierFilter(
 ): readonly BodyPartSelectorValidationIssue[] {
   const issues:
     BodyPartSelectorValidationIssue[] = [];
+
+  /*
+   * Guarded before `.length` is read, which is where `ids: 42` used to throw.
+   * A filter that is not a list is a different fault from an empty one and
+   * says so, because the fixes are different.
+   */
+  if (!Array.isArray(candidate)) {
+    return [
+      {
+        code: "malformed-filter",
+        message:
+          `BodyPart selector ${kind} filter must be a list of identifiers.`,
+      },
+    ];
+  }
+
+  const values: readonly unknown[] = candidate;
 
   if (values.length === 0) {
     issues.push({
@@ -217,10 +245,10 @@ function validateIdentifierFilter(
   }
 
   const seen =
-    new Set<string>();
+    new Set<unknown>();
 
   for (const value of values) {
-    if (!isValidIdentifier(value)) {
+    if (typeof value !== "string" || !isValidIdentifier(value)) {
       issues.push({
         code:
           kind === "id"
@@ -277,28 +305,53 @@ function validateIdentifierFilter(
  * → may only be provided when tags are also provided.
  */
 export function validateBodyPartSelector(
-  selector: BodyPartSelector,
+  candidate: unknown,
 ): BodyPartSelectorValidationResult {
   const issues:
     BodyPartSelectorValidationIssue[] = [];
 
-  if (selector.all === true) {
+  /*
+   * `unknown`, because this is a SHARED boundary and both of its callers reach
+   * it from registration.
+   *
+   * An Injury's `applicability.bodyParts` and an Anatomical Point's
+   * `placement.selector` are both host-authored, and both used to arrive here
+   * typed as BodyPartSelector on nothing more than a caller's cast. Every
+   * filter below was then iterated or measured without being checked, so
+   * `{ ids: 42 }` threw on `.length` and `{ states: {} }` threw on iteration —
+   * from inside the function whose whole job is to say a selector is wrong.
+   *
+   * Guarding at each call site instead would be two copies of this, and the
+   * copies would be what drift.
+   */
+  if (typeof candidate !== "object" || candidate === null) {
+    return createValidationResult([
+      {
+        code: "malformed-selector",
+        message: "BodyPart selector must be an object.",
+      },
+    ]);
+  }
+
+  const selector = candidate as Record<string, unknown>;
+
+  if (selector["all"] === true) {
     return createValidationResult(
       issues,
     );
   }
 
   const hasIds =
-    selector.ids !== undefined;
+    selector["ids"] !== undefined;
 
   const hasTypes =
-    selector.types !== undefined;
+    selector["types"] !== undefined;
 
   const hasTags =
-    selector.tags !== undefined;
+    selector["tags"] !== undefined;
 
   const hasStates =
-    selector.states !== undefined;
+    selector["states"] !== undefined;
 
   if (
     !hasIds &&
@@ -313,62 +366,90 @@ export function validateBodyPartSelector(
     });
   }
 
-  if (selector.ids !== undefined) {
+  if (hasIds) {
     issues.push(
       ...validateIdentifierFilter(
-        selector.ids,
+        selector["ids"],
         "id",
       ),
     );
   }
 
-  if (selector.types !== undefined) {
+  if (hasTypes) {
     issues.push(
       ...validateIdentifierFilter(
-        selector.types,
+        selector["types"],
         "type",
       ),
     );
   }
 
-  if (selector.tags !== undefined) {
+  if (hasTags) {
     issues.push(
       ...validateIdentifierFilter(
-        selector.tags,
+        selector["tags"],
         "tag",
       ),
     );
   }
 
-  if (selector.states !== undefined) {
-    if (selector.states.length === 0) {
+  if (hasStates) {
+    const states = selector["states"];
+
+    if (!Array.isArray(states)) {
+      issues.push({
+        code: "malformed-filter",
+        message:
+          "BodyPart selector state filter must be a list of states.",
+      });
+    } else if (states.length === 0) {
       issues.push({
         code: "empty-state-filter",
         message:
           "BodyPart selector state filter must not be empty.",
       });
-    }
+    } else {
+      const seenStates = new Set<unknown>();
 
-    const seenStates = new Set<string>();
+      for (const state of states) {
+        /*
+         * A state that is not a name is malformed rather than duplicated, and
+         * is reported before the duplicate check so two nulls produce one
+         * complaint per entry rather than a complaint about repetition.
+         */
+        if (typeof state !== "string" || state.trim().length === 0) {
+          issues.push({
+            code: "malformed-filter",
+            message:
+              "BodyPart selector state filter contains a value that is not a state.",
+          });
 
-    for (const state of selector.states) {
-      if (seenStates.has(state)) {
-        issues.push({
-          code: "duplicate-state",
-          message:
-            `BodyPart selector contains duplicate state "${state}".`,
-        });
+          continue;
+        }
 
-        continue;
+        if (seenStates.has(state)) {
+          issues.push({
+            code: "duplicate-state",
+            message:
+              `BodyPart selector contains duplicate state "${state}".`,
+          });
+
+          continue;
+        }
+
+        seenStates.add(state);
       }
-
-      seenStates.add(state);
     }
   }
 
+  /*
+   * Asked last, and only about the two fields' PRESENCE, so it says nothing
+   * that depends on either being well formed. A tagMode beside a malformed tag
+   * filter is a second complaint about a field already being replaced.
+   */
   if (
-    selector.tagMode !== undefined &&
-    selector.tags === undefined
+    selector["tagMode"] !== undefined &&
+    !hasTags
   ) {
     issues.push({
       code: "tag-mode-without-tags",
