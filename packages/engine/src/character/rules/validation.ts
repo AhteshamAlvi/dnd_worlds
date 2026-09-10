@@ -42,7 +42,7 @@ import { isValidActionCapacityAmount } from "../foundation/actions/validation";
 import { isSenseId } from "../foundation/senses/scopes";
 import { isValidSenseSelector } from "../foundation/senses/validation";
 import { isCapabilityGrantMode, type Effect } from "./effects";
-import type { Requirement } from "./requirements";
+import type { NamedRequirement, Requirement } from "./requirements";
 
 
 /* -------------------------------------------------------------------------- */
@@ -76,6 +76,10 @@ export type RuleValidationIssue =
   | MissingRequirementReferenceIssue
   | EmptyCompoundRequirementIssue
   | RequirementDepthExceededIssue
+  | InvalidNamedRequirementIdIssue
+  | DuplicateNamedRequirementIdIssue
+  | InvalidNamedRequirementSummaryIssue
+  | MalformedNamedRequirementIssue
   | InvalidBodyMultiplierIssue
   | SuppressOnBaseAnatomyIssue
   | MissingAnatomyReferenceIssue
@@ -316,6 +320,46 @@ export interface RequirementDepthExceededIssue {
   readonly type: "requirement-depth-exceeded";
   readonly path: string;
   readonly maximumDepth: number;
+}
+
+
+/*
+ * What a named requirement bundle can get wrong.
+ *
+ * The id is the addressable half of a NamedRequirement, so these are not
+ * cosmetic: a blank or repeated id makes a finding a caller cannot act on and
+ * a GM override that lands on the wrong requirement — or on two of them.
+ *
+ * The offending values are typed `unknown` rather than `string`, for the same
+ * reason inventory validation does it: declaring `id: string` on an issue that
+ * exists BECAUSE the id was 42 is the validator restating the assumption it
+ * just disproved.
+ */
+export interface InvalidNamedRequirementIdIssue {
+  readonly type: "invalid-named-requirement-id";
+  readonly path: string;
+  readonly id: unknown;
+}
+
+
+export interface DuplicateNamedRequirementIdIssue {
+  readonly type: "duplicate-named-requirement-id";
+  readonly path: string;
+  readonly id: string;
+}
+
+
+export interface InvalidNamedRequirementSummaryIssue {
+  readonly type: "invalid-named-requirement-summary";
+  readonly path: string;
+  readonly summary: unknown;
+}
+
+
+/** The entry is not a named requirement at all — no object, or no rule in it. */
+export interface MalformedNamedRequirementIssue {
+  readonly type: "malformed-named-requirement";
+  readonly path: string;
 }
 
 
@@ -1014,6 +1058,103 @@ export function findRequirementsValidationIssues(
     );
   }
 
+
+  return issues;
+}
+
+
+/**
+ * Validate a bundle of NAMED requirements.
+ *
+ * Two things beyond the requirement trees themselves, and both are about the
+ * id, because the id is what makes a named requirement different from a bare
+ * one. It must be a real string — a blank id produces a finding nothing can
+ * address — and it must be unique within its bundle, because a GM override or
+ * a UI selection that names a repeated id has selected two requirements and
+ * cannot say which.
+ *
+ * Uniqueness is scoped to the BUNDLE rather than globally: "has-the-trait" is
+ * a perfectly good id on two different Items, and forcing a global namespace
+ * on content authors would buy nothing — nothing ever holds two bundles' ids
+ * in one list.
+ *
+ * A present `summary` must be a non-empty string. An empty one renders as a
+ * blank explanation, which is worse than no summary at all because the caller
+ * stops looking for the reason it was going to compose itself.
+ *
+ * Takes `unknown` entries, because these arrive from authored JSON and from a
+ * host's registered catalog. A malformed entry is reported and skipped rather
+ * than dereferenced.
+ */
+export function findNamedRequirementsValidationIssues(
+  requirements: readonly NamedRequirement[] | undefined,
+  path = "requirements",
+): readonly RuleValidationIssue[] {
+  if (requirements === undefined) return [];
+
+  if (!Array.isArray(requirements)) {
+    return [{ type: "malformed-named-requirement", path }];
+  }
+
+  const issues: RuleValidationIssue[] = [];
+  const seen = new Set<string>();
+
+  for (const [index, candidate] of (requirements as readonly unknown[]).entries()) {
+    const where = `${path}[${index}]`;
+
+    if (typeof candidate !== "object" || candidate === null) {
+      issues.push({ type: "malformed-named-requirement", path: where });
+      continue;
+    }
+
+    const entry = candidate as {
+      readonly id?: unknown;
+      readonly requirement?: unknown;
+      readonly summary?: unknown;
+    };
+
+    if (typeof entry.id !== "string" || !isNonEmptyId(entry.id)) {
+      issues.push({
+        type: "invalid-named-requirement-id",
+        path: `${where}.id`,
+        id: entry.id,
+      });
+    } else if (seen.has(entry.id)) {
+      issues.push({
+        type: "duplicate-named-requirement-id",
+        path: `${where}.id`,
+        id: entry.id,
+      });
+    } else {
+      seen.add(entry.id);
+    }
+
+    if (
+      entry.summary !== undefined &&
+      (typeof entry.summary !== "string" || !isNonEmptyId(entry.summary))
+    ) {
+      issues.push({
+        type: "invalid-named-requirement-summary",
+        path: `${where}.summary`,
+        summary: entry.summary,
+      });
+    }
+
+    if (typeof entry.requirement !== "object" || entry.requirement === null) {
+      issues.push({
+        type: "malformed-named-requirement",
+        path: `${where}.requirement`,
+      });
+      continue;
+    }
+
+    issues.push(
+      ...findRequirementValidationIssues(
+        entry.requirement as Requirement,
+        `${where}.requirement`,
+      ),
+    );
+  }
 
   return issues;
 }

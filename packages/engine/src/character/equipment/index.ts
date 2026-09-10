@@ -41,6 +41,18 @@ import {
 } from "../rules/content";
 import { createRegistry } from "../../infrastructure/registry";
 
+import type { EngineResult } from "../../infrastructure/result";
+
+import {
+  EQUIPMENT_TRANSITION_KINDS,
+  equipmentTransitionKind,
+  resolveEquipmentTransition as resolveTransition,
+  type EquipmentTransition,
+  type EquipmentTransitionInput,
+  type EquipmentTransitionKind,
+  type EquipmentTransitionResolution,
+} from "./transitions";
+
 import type { RuleEffectSource } from "../rules/resolution";
 
 import {
@@ -258,6 +270,20 @@ export function isValidCharacterItem(value: unknown): value is CharacterItem {
   return isValidInventoryEntry(value, getItemDefinition);
 }
 
+
+/**
+ * Whether a character may put an owned object into a given state.
+ *
+ * The rules live in equipment/transitions.ts and take the catalog as an
+ * argument; this is the binding that supplies the engine's own, for the same
+ * reason findItemValidationIssues() has one.
+ */
+export function resolveEquipmentTransition(
+  input: EquipmentTransitionInput,
+): EngineResult<EquipmentTransitionResolution> {
+  return resolveTransition(input, getItemDefinition);
+}
+
 /**
  * What can be wrong with the Item catalog itself, as opposed to a character.
  *
@@ -313,6 +339,10 @@ export const itemRegistry = ITEM_REGISTRY;
 
 export type {
   CharacterItem,
+  EquipmentTransition,
+  EquipmentTransitionInput,
+  EquipmentTransitionKind,
+  EquipmentTransitionResolution,
   ItemDefinition,
   ItemEquipmentState,
   ItemInventoryMode,
@@ -324,9 +354,11 @@ export type {
 };
 
 export {
+  EQUIPMENT_TRANSITION_KINDS,
   ITEM_EQUIPMENT_STATES,
   ITEM_INVENTORY_MODES,
   createInventoryItemRef,
+  equipmentTransitionKind,
   findInventoryEntry,
   findInventoryEntryOutcome,
   getActiveItemEffects,

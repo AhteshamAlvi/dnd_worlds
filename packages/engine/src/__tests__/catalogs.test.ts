@@ -275,7 +275,13 @@ describe("findCatalogReferenceIssues", () => {
       equippedEffects: [
         { type: "grantTechnique", techniqueId: "spirit-forms" },
       ],
-      equipRequirements: [{ type: "hasTrait", traitId: "spirit-touched" }],
+      equipRequirements: [
+        {
+          id: "spirit-touched",
+          requirement: { type: "hasTrait", traitId: "spirit-touched" },
+          summary: "The blade answers only to the spirit-touched.",
+        },
+      ],
     });
 
     expect(findCatalogReferenceIssues()).toEqual(

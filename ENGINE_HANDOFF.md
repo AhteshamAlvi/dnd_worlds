@@ -106,6 +106,8 @@ type Effect =
 
 `attributeMinimum` · `derivedAttributeMinimum` · `levelMinimum` · `hasSpecies` · `hasSubspecies` · `hasClan` · `hasTrait` · `hasSkill` · `skillMastery` · `hasTechnique` · `techniqueMastery` · `hasCondition` · `hasItem` · `all` · `any` · `not`
 
+**Named requirements.** `NamedRequirement { id, requirement, summary? }` in `rules/requirements.ts`, with `NamedRequirementResolution` and `resolveNamedRequirements()` / `namedRequirementDisposition()` beside the evaluator. Used wherever a requirement gates something a character *attempts* and must be reportable and overridable by name — a Skill's `ApplicationRequirement` and an Item's `equipRequirements` are both aliases over it. Acquisition requirements stay bare `Requirement[]`: they are asked once and never addressed again. Ids must be non-empty and unique within their bundle, checked at catalog validation; they are never derived from an array index or the requirement's contents, because both change when content is reordered or rephrased and would break every stored override that named them.
+
 Attribute requirements carry a `layer: "stored" | "base" | "resolved"` — permanent acquisition normally checks `base`, so a temporary Condition can't revoke a capability the character trained for.
 
 **Requirements resolve to three answers, not two.** `resolveRequirement()` returns a `RequirementDisposition` of `satisfied` / `unsatisfied` / `unresolved`. The third exists because Character collections are optional so a half-built sheet still resolves.
@@ -813,7 +815,29 @@ One entry is therefore exactly one mechanical source wherever passive Effects ex
 
 **Provenance.** An Item's Effect sources carry `{ type: "item", id: itemId, instanceId: entryId }`. Both facts are required: the definition id is what `hasItem` asks about, the entry id is which of two identical gauntlets produced a given bonus. `ContributionSourceRef.instanceId` is optional and absent everywhere else, so every non-Item source keeps the identity and key it always had. Source keys come from `contributionSourceKey()` and nowhere else.
 
-**Not built:** equip/unequip actions, `equipRequirements` evaluation, Item use, quantity decrement, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū.
+#### Equip and unequip
+
+```ts
+resolveEquipmentTransition({ resolved, item: InventoryItemRef, destination })
+  → EngineResult<EquipmentTransitionResolution>
+```
+
+One pure function, because equip and unequip are the same question asked of different destinations. The **destination alone** decides which: `held` and `worn` are equips and evaluate `equipRequirements`; `carried` is an unequip and evaluates nothing. That covers `held → worn` and `worn → held`, which are re-equips and are gated — a rule derived from the *pair* of states gets exactly those two wrong.
+
+**The gate is a moment, not a condition.** Requirements are asked at the transition and never again. Losing a requirement afterwards leaves the Item held and its `equippedEffects` live; only the *next* equip attempt is refused. Re-checking during resolution would make `resolveCharacter()` a function that writes, and would drop a character's armour the round a Condition suppressed the Trait that let them wear it. An Item that must keep requiring something to *function* needs a use requirement or an active contribution rule.
+
+**Two kinds of "no".** A rule refusing the attempt is a successful answer, returned as a `disposition` inside the payload: `available` · `already-in-state` · `not-concrete-object` · `requirements-unsatisfied` · `requirements-unresolved`. A malformed question is an `EngineFailure` addressed to a developer:
+
+```
+equipment.transition.{destination_invalid,reference_invalid,character_mismatch,
+                      entry_unknown,entry_invalid,item_unknown,definition_invalid}
+```
+
+Every resolution carries a trace (`character.equipment.transition`) recording only facts already validated as safe to serialize.
+
+**The transition touches no Effects.** It returns a new Character with one entry's `state` changed — order preserved, every other entry the same object, `entryId`/`itemId`/`quantity` intact. `equippedEffects` appear and disappear because `resolveCharacter()` reads the new state, exactly as if a host had edited the sheet.
+
+**Not built:** ActionProfiles or costs for equipping, runtime/coordinator commitment, persistence, Item use, `useEffects`, quantity decrement, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū. Equipping a second sword is currently permitted — an honest gap, not a rule.
 
 ---
 

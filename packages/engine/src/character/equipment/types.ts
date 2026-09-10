@@ -33,7 +33,7 @@
 import type { Definition } from "../../infrastructure/registry";
 
 import type { Effect } from "../rules/effects";
-import type { Requirement } from "../rules/requirements";
+import type { NamedRequirement, Requirement } from "../rules/requirements";
 
 import { isEquippedItemState, type ItemEquipmentState } from "./state";
 import type { InventoryEntryId } from "./references";
@@ -157,8 +157,22 @@ export interface ItemDefinition extends Definition {
    * Requirements that must be satisfied before the Item can be equipped.
    *
    * An empty or omitted list means there are no equip prerequisites.
+   *
+   * NAMED, unlike the use requirements below, because an equip attempt is
+   * something a character does on purpose and is refused to their face. The
+   * player is told which requirement stopped them, a GM may override it by
+   * name, and both of those need an identity that survives the requirement
+   * being rephrased or the list being reordered. `useRequirements` stay bare
+   * until the shared Item application work gives them the same job.
+   *
+   * These are TRANSITION-TIME gates. They are asked when the Item is put on
+   * and never again: an Item already worn stays worn when the character loses
+   * the Trait that let them wear it, because a resolver that quietly undressed
+   * a character would be writing to stored state during a read. An Item that
+   * must keep requiring something to FUNCTION needs a use requirement or an
+   * active contribution rule, which are different mechanics.
    */
-  readonly equipRequirements?: readonly Requirement[];
+  readonly equipRequirements?: readonly NamedRequirement[];
 
 
   /**

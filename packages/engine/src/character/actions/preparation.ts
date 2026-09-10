@@ -53,7 +53,7 @@ import {
   collectCharacterCheckModifiers,
   type CheckInvocation,
 } from "../checks/invocation";
-import type { Requirement } from "../rules/requirements";
+import type { NamedRequirement, Requirement } from "../rules/requirements";
 import {
   resolveRequirement,
   type RequirementContext,
@@ -61,21 +61,17 @@ import {
 import type { ResolvedCharacter } from "../resolution";
 
 
-/**
- * One Requirement, with the id its finding will carry.
+/*
+ * NamedRequirement is imported from the universal requirement vocabulary and
+ * re-exported here, where callers of this adapter expect to find it.
  *
- * The id is supplied rather than derived from the Requirement, because a
- * finding id is what the GM overrides by name during adjudication and what a
- * host shows in a list. Deriving it from the requirement's shape would make it
- * change whenever the requirement was rephrased.
+ * It was declared locally until the contract turned out to have three
+ * structurally identical definitions across the engine — this one, a Skill's
+ * ApplicationRequirement, and the one Item equip requirements were about to
+ * need. The adapter may import downward from character/rules freely, so there
+ * was never a layering reason for the copy.
  */
-export interface NamedRequirement {
-  readonly id: string;
-  readonly requirement: Requirement;
-
-  /** Human-readable, for a GM reading a proposal. */
-  readonly summary?: string;
-}
+export type { NamedRequirement };
 
 
 export interface CharacterActionInputs {

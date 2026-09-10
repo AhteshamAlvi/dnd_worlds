@@ -108,6 +108,7 @@ import type {
 } from "../foundation/body/stature/types";
 import type {
   AttributeRequirementLayer,
+  NamedRequirement,
   Requirement,
 } from "./requirements";
 
@@ -1136,6 +1137,68 @@ export function resolveRequirement(
  *
  * An empty list is satisfied: no prerequisites means nothing to fail.
  */
+/* -------------------------------------------------------------------------- */
+/* Named requirement resolution                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One named requirement and what the character makes of it.
+ *
+ * Extends NamedRequirement rather than pairing an id with a disposition,
+ * because a consumer showing a player why something is refused needs the
+ * summary and the requirement itself in the same object it read the verdict
+ * from — and reassembling that from two lists by index is the array-position
+ * identity this whole shape exists to avoid.
+ */
+export interface NamedRequirementResolution extends NamedRequirement {
+  readonly disposition: RequirementDisposition;
+}
+
+
+/**
+ * Each named requirement, judged against the character. Pure.
+ *
+ * `summary` is omitted rather than set to undefined when the requirement
+ * carries none, so a resolution round-trips through JSON as the same object it
+ * started as.
+ */
+export function resolveNamedRequirements(
+  requirements: readonly NamedRequirement[],
+  context: RequirementContext,
+): readonly NamedRequirementResolution[] {
+  return requirements.map((entry) => ({
+    id: entry.id,
+    requirement: entry.requirement,
+    disposition: resolveRequirement(entry.requirement, context),
+    ...(entry.summary === undefined ? {} : { summary: entry.summary }),
+  }));
+}
+
+
+/**
+ * The overall verdict on a bundle of named requirements.
+ *
+ * `all` semantics, with the precedence every other aggregate in the engine
+ * uses: one definite refusal settles the question however much else is
+ * unrecorded, because the character cannot proceed either way — but
+ * not-knowing never outranks knowing, so an unresolved result only wins when
+ * nothing definite refused.
+ *
+ * An empty bundle is satisfied. Content that declares no requirements is
+ * content with no prerequisites, not content nobody can evaluate.
+ */
+export function namedRequirementDisposition(
+  resolutions: readonly NamedRequirementResolution[],
+): RequirementDisposition {
+  const dispositions = resolutions.map((one) => one.disposition);
+
+  if (dispositions.includes("unsatisfied")) return "unsatisfied";
+  if (dispositions.includes("unresolved")) return "unresolved";
+
+  return "satisfied";
+}
+
+
 export function resolveAllRequirements(
   requirements: readonly Requirement[],
   context: RequirementContext,

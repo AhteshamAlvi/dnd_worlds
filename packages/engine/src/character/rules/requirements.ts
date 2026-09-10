@@ -338,6 +338,46 @@ export type Requirement =
   | NotRequirement;
 
 
+/* -------------------------------------------------------------------------- */
+/* Named requirements                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One Requirement, with the identity whatever reports it will carry.
+ *
+ * The id is SUPPLIED rather than derived, and that is the whole reason this
+ * shape exists. A requirement that gates something a character attempts —
+ * using a Skill, equipping an Item — becomes a finding a player is shown, a
+ * GM overrides by name, and an adjudication layer may later rule on. An id
+ * derived from the requirement's contents or its position in an array would
+ * change the moment the requirement was rephrased or reordered, silently
+ * breaking every stored override that named it.
+ *
+ * That is different from an ACQUISITION requirement, which is asked once, when
+ * a character takes something up, and never needs to be addressed again.
+ * Acquisition lists stay bare `Requirement[]`.
+ *
+ * It lives here, in the universal requirement vocabulary, because three
+ * domains had independently arrived at the same three fields: the Character
+ * action adapter declared it, a Skill's application requirements declared it
+ * again as ApplicationRequirement with a comment explaining that the shapes
+ * agreed on purpose, and Item equip requirements were about to need it. Three
+ * structurally identical declarations of one contract are three things that
+ * drift, and TypeScript accepts assignment between them in every direction for
+ * exactly as long as they happen to match — which is the sensory-scope failure
+ * this codebase has already been bitten by once.
+ */
+export interface NamedRequirement {
+  /** Stable within its bundle. Never an array index, never a content hash. */
+  readonly id: string;
+
+  readonly requirement: Requirement;
+
+  /** Human-readable, for whoever is told the thing will not work. */
+  readonly summary?: string;
+}
+
+
 /**
  * The discriminant values understood by the Requirement system.
  *

@@ -513,6 +513,15 @@ export type {
   AllRequirements,
   AnyRequirement,
   NotRequirement,
+  /*
+   * One Requirement plus the identity whatever reports it carries.
+   *
+   * The contract a Skill's ApplicationRequirement, an Item's equip gate and
+   * the Character action adapter's findings all share — declared once here
+   * rather than three times, so a GM override that names a requirement means
+   * the same thing whichever of them produced it.
+   */
+  NamedRequirement,
 } from "./character/rules/requirements";
 
 export { REQUIREMENT_TYPES } from "./character/rules/requirements";
@@ -538,6 +547,7 @@ export type {
   RequirementContext,
   RequirementDisposition,
   RequirementItems,
+  NamedRequirementResolution,
 } from "./character/rules/resolution";
 
 export {
@@ -548,6 +558,8 @@ export {
   resolveRequirement,
   resolveAllRequirements,
   isRequirementDisposition,
+  resolveNamedRequirements,
+  namedRequirementDisposition,
   REQUIREMENT_DISPOSITIONS,
 } from "./character/rules/resolution";
 
@@ -628,6 +640,7 @@ export {
   MAX_REQUIREMENT_DEPTH,
   findEffectValidationIssues,
   findEffectsValidationIssues,
+  findNamedRequirementsValidationIssues,
   findRequirementValidationIssues,
   findRequirementsValidationIssues,
   findRuleValidationIssues,
@@ -1378,16 +1391,30 @@ export type {
  * throwing when the object it names is gone.
  */
 export type {
+  EquipmentTransition,
+  EquipmentTransitionInput,
+  EquipmentTransitionKind,
+  EquipmentTransitionResolution,
   InventoryEntryId,
   InventoryEntryResolution,
   InventoryItemRef,
   InventoryReferenceIssue,
   ItemEquipmentState,
   ItemId,
+  ItemInventoryMode,
   ItemValidationIssue,
 } from "./character/equipment/index";
 
+/*
+ * Equip and unequip, as one pure resolution.
+ *
+ * A permitted transition hands back a replacement Character; equippedEffects
+ * appear and disappear through ordinary resolveCharacter(), never because the
+ * transition edited them. Ordinary refusals are dispositions inside the
+ * success payload — a rule saying no is an answer, not a fault.
+ */
 export {
+  EQUIPMENT_TRANSITION_KINDS,
   ITEM_DEFINITIONS,
   ITEM_EQUIPMENT_STATES,
   collectItemEffectSources,
@@ -1405,6 +1432,7 @@ export {
   isItemEquipmentState,
   isKnownItemId,
   isValidCharacterItem,
+  resolveEquipmentTransition,
   resolveInventoryItemRef,
 } from "./character/equipment/index";
 

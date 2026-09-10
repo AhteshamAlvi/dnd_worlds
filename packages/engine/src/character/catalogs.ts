@@ -35,8 +35,11 @@ import {
   type RequirementReferenceDomain,
 } from "./rules/content";
 import type { Effect } from "./rules/effects";
-import type { Requirement } from "./rules/requirements";
-import { findRuleValidationIssues } from "./rules/validation";
+import type { NamedRequirement, Requirement } from "./rules/requirements";
+import {
+  findNamedRequirementsValidationIssues,
+  findRuleValidationIssues,
+} from "./rules/validation";
 
 import { clanRegistry, type ClanDefinition } from "./identity/clans";
 import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
@@ -260,6 +263,18 @@ interface RuleBundle {
   readonly where: string;
   readonly effects: readonly Effect[];
   readonly requirements: readonly Requirement[];
+
+  /*
+   * The same requirements in their named form, when the field carries one.
+   *
+   * Carried ALONGSIDE rather than instead of `requirements`, because the two
+   * are checked for different things: `requirements` is walked for catalog
+   * references, and this is checked for the id and summary metadata that a
+   * bare Requirement does not have. Collapsing them would mean either losing
+   * the reference walk or teaching it about a wrapper it has no business
+   * knowing.
+   */
+  readonly namedRequirements?: readonly NamedRequirement[];
 }
 
 function rulesOf(
@@ -276,10 +291,20 @@ function rulesOf(
       effects: item.possessedEffects ?? [],
       requirements: [],
     });
+    /*
+     * Equip requirements are NAMED, so the walk reaches through to the nested
+     * requirement rather than treating the wrapper as one. A bundle that
+     * handed the wrapper to the reference checker would find no ids to check
+     * inside it and report a clean catalog for an Item whose equip gate names
+     * a Trait that does not exist.
+     */
     bundles.push({
       where: "equipped",
       effects: item.equippedEffects ?? [],
-      requirements: item.equipRequirements ?? [],
+      requirements: (item.equipRequirements ?? []).map(
+        (named) => named.requirement,
+      ),
+      namedRequirements: item.equipRequirements ?? [],
     });
     bundles.push({
       where: "used",
@@ -328,7 +353,7 @@ function rulesOf(
      * otherwise surface as a Skill that quietly never works.
      */
     readonly application?: {
-      readonly requirements?: readonly { readonly requirement: Requirement }[];
+      readonly requirements?: readonly NamedRequirement[];
     };
   };
 
@@ -346,6 +371,7 @@ function rulesOf(
       where: "application",
       effects: [],
       requirements: applicationRequirements,
+      namedRequirements: effectful.application?.requirements ?? [],
     });
   }
 
@@ -469,6 +495,21 @@ export function findCatalogReferenceIssues(): readonly string[] {
         )) {
           issues.push(
             `${label} "${definition.id}"${where} has a malformed rule: ${issue.type} at ${issue.path}.`,
+          );
+        }
+
+        /*
+         * The metadata a bare Requirement does not have. A blank or repeated
+         * requirement id makes a finding nothing can address and an override
+         * that lands on two requirements at once — invisible until a GM tries
+         * to use it, which is the worst moment to discover it.
+         */
+        for (const issue of findNamedRequirementsValidationIssues(
+          bundle.namedRequirements,
+          bundle.where,
+        )) {
+          issues.push(
+            `${label} "${definition.id}"${where} has a malformed requirement: ${issue.type} at ${issue.path}.`,
           );
         }
 

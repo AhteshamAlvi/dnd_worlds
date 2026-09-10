@@ -43,12 +43,12 @@ import { createTraceNode, type EngineTrace } from "../../infrastructure/trace";
 import type { ActionProfile } from "../../actions";
 
 import {
-  resolveRequirement,
+  namedRequirementDisposition,
+  resolveNamedRequirements,
+  type NamedRequirementResolution,
   type RequirementContext,
   type RequirementDisposition,
 } from "../rules/resolution";
-
-import type { RequirementResolution } from "./lifecycle";
 
 import type { MasteryRank } from "./mastery";
 
@@ -81,29 +81,27 @@ import {
 /**
  * One execution requirement and what the character makes of it.
  *
- * Extends the lifecycle's RequirementResolution rather than declaring a second
- * shape — the requirement and its disposition mean exactly the same thing here
- * as they do for acquisition — and adds the id, which is what makes a finding
- * addressable by a GM and by a UI.
+ * An alias over the shared resolution, for the same reason
+ * ApplicationRequirement is one. It previously extended the lifecycle's
+ * RequirementResolution and added the id and summary — which produced exactly
+ * the shape rules/resolution.ts now declares once, and which nothing else
+ * could reuse without extending the same base a second time.
  */
-export interface ApplicationRequirementResolution
-  extends RequirementResolution {
-  readonly id: string;
-  readonly summary?: string;
-}
+export type ApplicationRequirementResolution = NamedRequirementResolution;
 
 
-/** Each execution requirement, judged against the character. Pure. */
+/**
+ * Each execution requirement, judged against the character. Pure.
+ *
+ * Delegates rather than reimplementing. The two bodies were identical, and an
+ * aggregate rule copied per domain is how one caller eventually decides that
+ * an unresolved requirement should outrank an unsatisfied one.
+ */
 export function resolveApplicationRequirements(
   requirements: readonly ApplicationRequirement[],
   context: RequirementContext,
 ): readonly ApplicationRequirementResolution[] {
-  return requirements.map((entry) => ({
-    id: entry.id,
-    requirement: entry.requirement,
-    disposition: resolveRequirement(entry.requirement, context),
-    ...(entry.summary === undefined ? {} : { summary: entry.summary }),
-  }));
+  return resolveNamedRequirements(requirements, context);
 }
 
 
@@ -118,12 +116,7 @@ export function resolveApplicationRequirements(
 export function applicationRequirementDisposition(
   resolutions: readonly ApplicationRequirementResolution[],
 ): RequirementDisposition {
-  const dispositions = resolutions.map((one) => one.disposition);
-
-  if (dispositions.includes("unsatisfied")) return "unsatisfied";
-  if (dispositions.includes("unresolved")) return "unresolved";
-
-  return "satisfied";
+  return namedRequirementDisposition(resolutions);
 }
 
 

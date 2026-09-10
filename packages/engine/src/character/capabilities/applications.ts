@@ -88,7 +88,7 @@ import { isValidCheckScope } from "../../checks";
 import type { PhysicalExertionLoad } from "../foundation/body/endurance";
 import type { AuraCostRequest } from "../foundation/aura/runtime";
 
-import type { Requirement } from "../rules/requirements";
+import type { NamedRequirement, Requirement } from "../rules/requirements";
 
 import {
   isMasteryRank,
@@ -291,20 +291,22 @@ export function isSkillMechanicalRole(
  * finding id derived from the requirement's shape would change the moment the
  * requirement was rephrased.
  *
- * Structurally identical to the adapter's NamedRequirement, and deliberately
- * so: an ApplicationRequirement list is handed straight to
- * prepareCharacterActionInputs without a conversion step. It is declared here
- * rather than imported because nothing under character/ may import the
- * adapter — see architecture.test.ts — and the assignment works because the
- * shapes agree.
+ * A READABILITY ALIAS over the shared contract, not a second declaration.
+ *
+ * This used to be its own interface, with a comment explaining that it agreed
+ * structurally with the adapter's NamedRequirement on purpose and was declared
+ * separately because nothing under character/ may import the adapter. That was
+ * true and still the wrong answer: two structurally identical declarations of
+ * one contract are two things that drift, and TypeScript accepts assignment
+ * between them in both directions for exactly as long as they happen to match.
+ * The contract lives in the universal requirement vocabulary now, which both
+ * layers may import, so the reason for the copy is gone.
+ *
+ * The name stays because "an ApplicationRequirement" reads better than "a
+ * NamedRequirement on an application" at every call site, and because it is
+ * public API.
  */
-export interface ApplicationRequirement {
-  readonly id: string;
-  readonly requirement: Requirement;
-
-  /** Human-readable, for whoever is told the Skill will not work. */
-  readonly summary?: string;
-}
+export type ApplicationRequirement = NamedRequirement;
 
 
 /* -------------------------------------------------------------------------- */

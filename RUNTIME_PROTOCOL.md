@@ -326,5 +326,11 @@ One rule about grouping is settled in advance because it could not wait: an Item
 its copies are `individual` objects or a `stackable` count, an individual entry may hold at most
 one, and a stackable definition may declare no passive Effects. That is what keeps one entry equal
 to one mechanical source, so a future decrement or stack split cannot change a character's modifiers
-by regrouping what they already own. The protocol being ready does not make any of them ready; deferred
+by regrouping what they already own.
+
+Equip and unequip now resolve, and still do not reach this protocol. `resolveEquipmentTransition()`
+is a pure calculation returning a REPLACEMENT Character; it charges no Action cost, issues no
+runtime request, and commits nothing through the coordinator. The caller receives a new value and
+decides what to do with it. That is deliberate rather than unfinished: an equip that cost an Action
+would need a scheduled action to charge it to, and no ActionProfile for equipping exists yet. The protocol being ready does not make any of them ready; deferred
 migrations and unbuilt mechanics are listed in [`BACKLOG.md`](BACKLOG.md).

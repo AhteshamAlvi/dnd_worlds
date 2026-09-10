@@ -271,6 +271,125 @@ describe("a contribution source is keyed in one place", () => {
 
 
 /*
+ * A named requirement has exactly one structural definition.
+ *
+ * Three domains arrived at the same three fields independently. The Character
+ * action adapter declared NamedRequirement; a Skill's application declared
+ * ApplicationRequirement and carried a comment saying it agreed with the
+ * adapter's shape ON PURPOSE and was copied because nothing under character/
+ * may import the adapter; and Item equip requirements were about to need a
+ * third. The comment was honest and the copy was still wrong — two structurally
+ * identical declarations of one contract are two things that drift, and
+ * TypeScript accepts assignment between them in both directions for exactly as
+ * long as they happen to match.
+ *
+ * They agree now because there is one declaration and two aliases, which is
+ * what this checks. Aliases are fine and are the point: `ApplicationRequirement`
+ * reads better than `NamedRequirement` at a Skill call site. A second
+ * `interface` body is not.
+ */
+describe("a named requirement is declared once", () => {
+  const REQUIREMENTS = join("character", "rules", "requirements.ts");
+  const RESOLUTION = join("character", "rules", "resolution.ts");
+
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.some((path) => path.endsWith(REQUIREMENTS))).toBe(true);
+    expect(everySource.some((path) => path.endsWith(RESOLUTION))).toBe(true);
+  });
+
+  it("declares NamedRequirement only in the requirement vocabulary", () => {
+    const declarers = everySource.filter((path) =>
+      /\binterface\s+NamedRequirement\b|\btype\s+NamedRequirement\s*=/.test(
+        readFileSync(path, "utf8"),
+      ),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(REQUIREMENTS)).toBe(true);
+  });
+
+  it("declares its resolution only beside the evaluator", () => {
+    const declarers = everySource.filter((path) =>
+      /\binterface\s+NamedRequirementResolution\b|\btype\s+NamedRequirementResolution\s*=/
+        .test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(declarers[0]!.endsWith(RESOLUTION)).toBe(true);
+  });
+
+  it("leaves the domain names as ALIASES rather than second bodies", () => {
+    /*
+     * `type X = NamedRequirement` is a readability alias and creates no second
+     * declaration. `interface X { id; requirement; summary? }` is the copy this
+     * rule exists to refuse, so the shape is what is checked — a domain type
+     * whose body declares those fields itself.
+     */
+    const offenders = everySource
+      /* The one that DECLARES it, which is what the rule is protecting. */
+      .filter((path) => !path.endsWith(REQUIREMENTS))
+      .filter((path) => {
+        const source = readFileSync(path, "utf8");
+
+        return /\binterface\s+\w*Requirement\b[^{]*\{[^}]*\breadonly\s+id\s*:[^}]*\breadonly\s+requirement\s*:/s
+          .test(source);
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("would actually catch a reintroduced copy", () => {
+    /*
+     * Guards the guard. A rule that passes because its pattern matches nothing
+     * is worse than no rule, because it reads as enforcement.
+     */
+    const COPY = /\binterface\s+\w*Requirement\b[^{]*\{[^}]*\breadonly\s+id\s*:[^}]*\breadonly\s+requirement\s*:/s;
+
+    expect(COPY.test(
+      "export interface ApplicationRequirement {\n" +
+      "  readonly id: string;\n" +
+      "  readonly requirement: Requirement;\n}",
+    )).toBe(true);
+
+    /* An alias creates no second declaration and must stay legal. */
+    expect(COPY.test("export type ApplicationRequirement = NamedRequirement;"))
+      .toBe(false);
+  });
+
+  it("keeps one implementation of the resolution and the aggregate", () => {
+    for (const name of ["resolveNamedRequirements", "namedRequirementDisposition"]) {
+      const declarers = everySource.filter((path) =>
+        new RegExp(`\\bfunction\\s+${name}\\b`).test(readFileSync(path, "utf8")),
+      );
+
+      expect(declarers).toHaveLength(1);
+      expect(declarers[0]!.endsWith(RESOLUTION)).toBe(true);
+    }
+  });
+
+  it("has the Skill layer delegate rather than reimplement the aggregate", () => {
+    /*
+     * Guards the delegation positively. applicationRequirementDisposition()
+     * used to hold its own copy of the precedence rule, and a copy is how one
+     * caller eventually decides an unresolved requirement should outrank an
+     * unsatisfied one.
+     */
+    const source = readFileSync(
+      join(SRC, "character", "capabilities", "application-resolution.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("return namedRequirementDisposition(resolutions);");
+    expect(source).toContain("return resolveNamedRequirements(requirements, context);");
+  });
+});
+
+
+/*
  * The inventory state vocabulary, and the boolean it replaced.
  *
  * `equipped: boolean` answered one question with one bit. Held and worn are
