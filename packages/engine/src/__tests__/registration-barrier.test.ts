@@ -86,6 +86,25 @@ afterEach(() => {
 });
 
 
+/*
+ * The values a host actually manages to put in a field, drawn from the same
+ * list every hostile sweep in this codebase uses so the coverage is comparable
+ * across boundaries rather than per-author.
+ */
+const HOSTILE_VALUES: readonly unknown[] = [
+  undefined,
+  null,
+  "",
+  "   ",
+  42,
+  true,
+  {},
+  [],
+  Number.NaN,
+  Number.POSITIVE_INFINITY,
+];
+
+
 const SOUND_TRAIT = {
   id: "steady-hand",
   name: "Steady Hand",
@@ -376,6 +395,26 @@ describe("each domain's local structure is refused at registration", () => {
       },
     ],
     ["special-point", "no categories", { categories: [] }],
+
+    /*
+     * The compound fields that used to THROW rather than refuse. Asserted as
+     * refusals here as well as swept for survival above, because "did not
+     * throw" is satisfied by a validator that shrugs and accepts — which is
+     * how a null Mastery track would have become a Skill with no ranks
+     * instead of a Skill nobody can register.
+     */
+    ["skill", "a null Mastery track", { mastery: null }],
+    ["skill", "a null application", { application: null }],
+    ["skill", "a Mastery track that is a number", { mastery: 42 }],
+    ["technique", "a null Mastery track", { mastery: null }],
+    ["technique", "a rank list that is not a list", { mastery: { maximumMastery: 3, ranks: {} } }],
+    ["condition", "stages that are not a list", { stages: {} }],
+    ["condition", "a null stage", { stages: [null] }],
+    ["injury", "a null applicability", { applicability: null }],
+    ["injury", "a null recovery", { recovery: null }],
+    ["injury", "no recovery at all", { recovery: undefined }],
+    ["special-point", "a placement with no selector", { placement: {} }],
+    ["body-part", "a repeated tag", { tags: ["limb", "limb"] }],
   ];
 
   it.each(CASES)("refuses a %s with %s", (domain, _label, overrides) => {
@@ -397,6 +436,245 @@ describe("each domain's local structure is refused at registration", () => {
 
     expect(result?.ok).toBe(false);
     expect(getDefinition(domain, "house-rule")).toBeUndefined();
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Hostile compound fields                                                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The domain validators delegate to older ones that were written for typed
+ * content, and for a while they cast hostile values across that boundary.
+ * `mastery: null`, `application: null`, a non-array `stages`, a missing
+ * `recovery` — each reached a validator that read a field off it and threw
+ * from inside the function whose job was to complain about that exact fault.
+ *
+ * A guard that only holds for the values someone thought of is not a guard, so
+ * this sweeps every compound field a domain owns rather than the cases that
+ * were reported. A domain that gains a field and forgets to guard it fails
+ * here.
+ */
+describe("no domain-owned compound field can throw", () => {
+  const COMPOUND_FIELDS: readonly (readonly [CatalogDomain, string])[] = [
+    ["skill", "mastery"],
+    ["skill", "application"],
+    ["technique", "mastery"],
+    ["condition", "stages"],
+    ["injury", "applicability"],
+    ["injury", "recovery"],
+    ["injury", "treatmentEffects"],
+    ["species", "parentSpeciesId"],
+    ["species", "body"],
+    ["trait", "parentTraitId"],
+    ["trait", "effects"],
+    ["item", "inventoryMode"],
+    ["item", "possessedEffects"],
+    ["item", "equippedEffects"],
+    ["item", "equipRequirements"],
+    ["item", "useEffects"],
+    ["item", "useRequirements"],
+    ["body-part", "tags"],
+    ["body-part", "reference"],
+    ["body-part", "sensitivity"],
+    ["reference-form", "parts"],
+    ["special-point", "placement"],
+    ["special-point", "categories"],
+    ["special-point", "jointDesignation"],
+  ];
+
+  it.each(
+    COMPOUND_FIELDS.flatMap(([domain, field]) =>
+      HOSTILE_VALUES.map((value, index) =>
+        [domain, field, index, value] as const
+      ),
+    ),
+  )("survives %s.%s holding hostile value %i", (domain, field, _index, value) => {
+    const definition: Record<string, unknown> = {
+      ...validDefinitionFor(domain),
+      [field]: value,
+    };
+
+    /* `undefined` means the field is absent entirely, not present and empty. */
+    if (value === undefined) delete definition[field];
+
+    let result: RegistrationResult | undefined;
+
+    expect(() => {
+      result = registerDefinition(domain, definition as never);
+    }).not.toThrow();
+
+    expect(result).toBeDefined();
+
+    /*
+     * And not throwing is not enough: a boundary that survives by accepting
+     * everything is the same bug with better manners. Whatever it decided,
+     * storage has to agree with it.
+     */
+    const stored = getDefinition(domain, "house-rule") !== undefined;
+
+    expect(stored).toBe(result?.ok === true);
+  });
+
+  it("refuses far more of those than it accepts", () => {
+    /*
+     * Guards the sweep above, which would pass vacuously if every hostile
+     * value happened to be legal. Most are not — an OPTIONAL field legitimately
+     * accepts `undefined`, and a couple of domains treat an empty list as
+     * "none declared", so the bar is a large majority rather than everything.
+     */
+    const outcomes = COMPOUND_FIELDS.flatMap(([domain, field]) =>
+      HOSTILE_VALUES.map((value) => {
+        const definition: Record<string, unknown> = {
+          ...validDefinitionFor(domain),
+          [field]: value,
+        };
+
+        if (value === undefined) delete definition[field];
+
+        return registerDefinition(domain, definition as never).ok;
+      }),
+    );
+
+    const refused = outcomes.filter((ok) => !ok).length;
+
+    expect(refused).toBeGreaterThan(outcomes.length * 0.6);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Body topology                                                              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * "Exactly one root" is not acyclicity, and the gap is not hypothetical.
+ *
+ * A form with a perfectly good root plus two slots parented to each other has
+ * one root and no dangling parent reference, and is still two disconnected
+ * components with a cycle in the second. A slot parented to itself passes both
+ * checks the same way. Every slot has to actually REACH the root.
+ */
+describe("a Reference Form is a tree, not merely rooted", () => {
+  function joint(parentSlotId: string): Record<string, unknown> {
+    return { parentSlotId, parentPosition: 0.5, childPosition: 0.5 };
+  }
+
+  function part(
+    slotId: string,
+    attachment: Record<string, unknown> | null,
+  ): Record<string, unknown> {
+    return {
+      slotId,
+      type: "torso",
+      continuityKey: `torso:${slotId}`,
+      attachment,
+    };
+  }
+
+  function formWith(parts: readonly Record<string, unknown>[]) {
+    return registerDefinition("reference-form", {
+      ...validDefinitionFor("reference-form"),
+      parts,
+    } as never);
+  }
+
+  it("refuses a valid root beside a disconnected cycle", () => {
+    const result = formWith([
+      part("root", null),
+      part("left", joint("right")),
+      part("right", joint("left")),
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("loops");
+
+    expect(getDefinition("reference-form", "house-rule")).toBeUndefined();
+  });
+
+  it("refuses a self-parenting non-root slot", () => {
+    const result = formWith([
+      part("root", null),
+      part("loop", joint("loop")),
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("loops");
+  });
+
+  it("refuses a longer cycle that still has a root", () => {
+    const result = formWith([
+      part("root", null),
+      part("a", joint("b")),
+      part("b", joint("c")),
+      part("c", joint("a")),
+    ]);
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts a real tree, including one authored out of order", () => {
+    /*
+     * The positive control, and the case that would break a naive fix: order
+     * within a form carries no meaning, so a child may be listed before the
+     * parent it hangs from.
+     */
+    expect(formWith([
+      part("hand", joint("arm")),
+      part("arm", joint("root")),
+      part("root", null),
+    ]).ok).toBe(true);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Body measurements                                                          */
+/* -------------------------------------------------------------------------- */
+
+describe("a BodyPart's own invariants", () => {
+  function bodyPartWith(overrides: Record<string, unknown>) {
+    return registerDefinition("body-part", {
+      ...validDefinitionFor("body-part"),
+      ...overrides,
+    } as never);
+  }
+
+  it("refuses a repeated tag", () => {
+    /*
+     * Tags are membership, and every consumer asks "does this part have X".
+     * A duplicate means the author meant two tags and wrote one twice, or
+     * believed repetition carried weight — neither is what the list does.
+     */
+    const result = bodyPartWith({ tags: ["limb", "limb"] });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("more than once");
+  });
+
+  it.each([0, 2, -2, 0.5, Number.NaN, "1", null])(
+    "refuses a heightAxisSign of %s",
+    (heightAxisSign) => {
+      const reference = {
+        ...(validDefinitionFor("body-part")["reference"] as Record<string, unknown>),
+        heightAxisSign,
+      };
+
+      const result = bodyPartWith({ reference });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toContain("heightAxisSign");
+    },
+  );
+
+  it.each([1, -1])("accepts a heightAxisSign of %s", (heightAxisSign) => {
+    const reference = {
+      ...(validDefinitionFor("body-part")["reference"] as Record<string, unknown>),
+      heightAxisSign,
+    };
+
+    expect(bodyPartWith({ reference }).ok).toBe(true);
   });
 });
 

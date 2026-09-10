@@ -173,10 +173,13 @@ export function findReferenceFormDefinitionStructuralIssues(
    * Checked after the walk, because a parent may legitimately appear later in
    * the list than its child — order within a form carries no meaning.
    */
-  for (const candidate of parts) {
-    const joint = recordOf(recordOf(candidate)?.["attachment"]);
+  const parentBySlot = new Map<string, string>();
 
-    if (joint === undefined) continue;
+  for (const candidate of parts) {
+    const part = recordOf(candidate);
+    const joint = recordOf(part?.["attachment"]);
+
+    if (part === undefined || joint === undefined) continue;
 
     const parentSlotId = joint["parentSlotId"];
 
@@ -184,13 +187,60 @@ export function findReferenceFormDefinitionStructuralIssues(
       issues.push(
         `attaches a part to "${String(parentSlotId)}", which the form does not contain.`,
       );
+
+      continue;
     }
+
+    const slotId = part["slotId"];
+
+    if (typeof slotId === "string") parentBySlot.set(slotId, parentSlotId);
   }
 
   if (roots === 0) {
     issues.push("has no root part, so every part hangs off another.");
   } else if (roots > 1) {
     issues.push(`has ${roots} root parts, so it describes more than one body.`);
+  }
+
+  /*
+   * REACHABILITY, which is a different question from "is there a root".
+   *
+   * Counting roots and checking every parent exists is not acyclicity, and the
+   * gap is not hypothetical: a form with a perfectly good root plus two slots
+   * parented to each other has exactly one root and no dangling parent, and is
+   * still two disconnected components with a cycle in the second. A slot
+   * parented to itself passes both checks in the same way.
+   *
+   * So every slot has to actually REACH the root by walking its parent chain.
+   * A chain that revisits a slot is a cycle; a chain longer than the form is
+   * the same thing seen from the other end. Both are reported once per slot
+   * that cannot get home, rather than once per edge, because the fix is to the
+   * slot's own attachment.
+   */
+  if (roots === 1) {
+    for (const slotId of slotIds) {
+      const visited = new Set<string>([slotId]);
+
+      let current = slotId;
+
+      for (;;) {
+        const parent = parentBySlot.get(current);
+
+        /* No parent: this is the root, and the walk got home. */
+        if (parent === undefined) break;
+
+        if (visited.has(parent)) {
+          issues.push(
+            `has a part chain from "${slotId}" that loops instead of reaching the root.`,
+          );
+
+          break;
+        }
+
+        visited.add(parent);
+        current = parent;
+      }
+    }
   }
 
   return issues;

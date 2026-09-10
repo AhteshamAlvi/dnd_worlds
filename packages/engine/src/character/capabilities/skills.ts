@@ -717,15 +717,73 @@ export function findSkillDefinitionStructuralIssues(
     );
   }
 
-  const application = skill["application"];
+  const application = recordOf(skill["application"]);
 
   if (application === undefined) {
     /*
      * Required by the type, and checked anyway: a host registers content the
      * compiler never saw. A Skill with no application is an unfinished
-     * definition rather than a kind of capability.
+     * definition rather than a kind of capability — and `application: null`
+     * used to throw here rather than saying so.
      */
     issues.push("declares no application, so there is no way to use it.");
+
+    return issues;
+  }
+
+  /*
+   * FIELD GUARDS, ahead of a validator that cannot take `unknown`.
+   *
+   * findSkillApplicationIssues() is the authority on what an application must
+   * contain, and it is large, deeply recursive and typed throughout. Widening
+   * every field it reaches to `unknown` would be a rewrite of the contract
+   * layer; guarding the fields it DEREFERENCES without checking is one block.
+   *
+   * The list is short, and deliberately not longer. Every other malformed
+   * field already produces a proper diagnostic from the validator itself — a
+   * missing Range says "must state its Range", which is a better sentence than
+   * anything a shape guard would write — so pre-empting those would trade a
+   * good message for a generic one to fix a fault that does not exist. What is
+   * guarded here is exactly what the hostile sweep in
+   * registration-barrier.test.ts found throwing, and that sweep is what keeps
+   * the list honest when a field is added.
+   */
+  const action = recordOf(application["action"]);
+
+  if (action === undefined) {
+    issues.push("has an application that declares no action.");
+
+    return issues;
+  }
+
+  const targets = recordOf(action["targets"]);
+
+  if (targets === undefined || recordOf(targets["cardinality"]) === undefined) {
+    issues.push("has an application whose targets declare no cardinality.");
+
+    return issues;
+  }
+
+  const focusKinds = action["permittedFocusKinds"];
+
+  if (focusKinds !== undefined && !Array.isArray(focusKinds)) {
+    issues.push("has application focus kinds that are not a list.");
+
+    return issues;
+  }
+
+  const declaredRequirements = application["requirements"];
+
+  if (declaredRequirements !== undefined && !Array.isArray(declaredRequirements)) {
+    issues.push("has application requirements that are not a list.");
+
+    return issues;
+  }
+
+  const declaredChanges = application["masteryChanges"];
+
+  if (declaredChanges !== undefined && !Array.isArray(declaredChanges)) {
+    issues.push("has application masteryChanges that are not a list.");
 
     return issues;
   }
@@ -737,7 +795,7 @@ export function findSkillDefinitionStructuralIssues(
    */
   for (const error of findSkillApplicationIssues(
     String(skill["id"]),
-    application as SkillApplicationDefinition,
+    application as unknown as SkillApplicationDefinition,
     track as MasteryTrack | undefined,
   )) {
     issues.push(`application: ${error.message}`);

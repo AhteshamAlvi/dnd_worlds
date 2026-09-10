@@ -293,6 +293,18 @@ export function findAnatomicalPointDefinitionStructuralIssues(
     return ["needs a placement."];
   }
 
+  /*
+   * The selector too, and one level deeper than looks necessary: the point
+   * validator hands `placement.selector` straight to validateBodyPartSelector,
+   * which reads a field off it. A placement that is an object with nothing in
+   * it satisfies the check above and throws on the line after.
+   */
+  const selector = (point.placement as { readonly selector?: unknown }).selector;
+
+  if (typeof selector !== "object" || selector === null) {
+    return ["needs a placement selector."];
+  }
+
   if (!Array.isArray(point.categories)) {
     return ["needs a list of categories."];
   }

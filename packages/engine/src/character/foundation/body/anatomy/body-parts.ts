@@ -319,8 +319,26 @@ export function findBodyPartDefinitionStructuralIssues(
 
   if (!Array.isArray(tags)) {
     issues.push("needs a list of tags.");
-  } else if (tags.some((tag) => typeof tag !== "string" || tag.trim() === "")) {
-    issues.push("has a tag that is not a name.");
+  } else {
+    if (tags.some((tag) => typeof tag !== "string" || tag.trim() === "")) {
+      issues.push("has a tag that is not a name.");
+    }
+
+    /*
+     * A repeated tag is not harmless. Tags are membership, and every consumer
+     * of them asks "does this part have X" — so a duplicate means the author
+     * meant two different tags and wrote one twice, or believed repetition
+     * carried weight. Neither is what the list does.
+     */
+    const seen = new Set<unknown>();
+
+    for (const tag of tags) {
+      if (seen.has(tag)) {
+        issues.push(`lists the tag "${String(tag)}" more than once.`);
+      }
+
+      seen.add(tag);
+    }
   }
 
   const reference = recordOf(part["reference"]);
@@ -351,6 +369,23 @@ export function findBodyPartDefinitionStructuralIssues(
 
     if (!isFiniteAtLeastZero(height) || (height as number) > 1) {
       issues.push("has a heightContribution outside 0..1.");
+    }
+
+    /*
+     * Exactly 1 or -1, never 0 and never a magnitude.
+     *
+     * The sign says which way the part's own longitudinal axis runs against
+     * the body's vertical, and it is deliberately NOT folded into
+     * heightContribution as a signed number — see HeightAxisSign. A 0 here
+     * would be a direction that points nowhere, and any other value would be
+     * a second, silent scaling of a contribution that already has one.
+     */
+    const axis = reference["heightAxisSign"];
+
+    if (axis !== 1 && axis !== -1) {
+      issues.push(
+        `has a heightAxisSign of ${String(axis)}, which must be 1 or -1.`,
+      );
     }
   }
 

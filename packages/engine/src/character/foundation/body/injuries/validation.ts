@@ -309,16 +309,38 @@ export function findInjuryValidationIssues(
  */
 function findInjuryApplicabilityIssues(
   injuryId: InjuryId,
-  applicability: InjuryApplicability,
+  candidate: unknown,
 ): readonly string[] {
+  /*
+   * `unknown`, because an Injury registered from JSON may declare no
+   * applicability at all — which is exactly the fault below, and which used to
+   * throw here on the first read rather than being reported.
+   */
+  if (typeof candidate !== "object" || candidate === null) {
+    return [`Injury "${injuryId}" must declare anatomical applicability.`];
+  }
+
+  const applicability = candidate as Record<string, unknown>;
+
   const issues: string[] = [];
 
 
   const hasBodyPartApplicability =
-    applicability.bodyParts !== undefined;
+    applicability["bodyParts"] !== undefined;
+
+  const declaredSpecialPointIds = applicability["specialPointDefinitionIds"];
+
+  if (
+    declaredSpecialPointIds !== undefined &&
+    !Array.isArray(declaredSpecialPointIds)
+  ) {
+    return [
+      `Injury "${injuryId}" has a Special Point applicability list that is not a list.`,
+    ];
+  }
 
   const specialPointDefinitionIds =
-    applicability.specialPointDefinitionIds;
+    declaredSpecialPointIds as readonly SpecialPointDefinitionId[] | undefined;
 
   const hasSpecialPointApplicability =
     specialPointDefinitionIds !== undefined &&
@@ -350,7 +372,10 @@ function findInjuryApplicabilityIssues(
       const specialPointDefinitionId
       of specialPointDefinitionIds
     ) {
-      if (specialPointDefinitionId.trim().length === 0) {
+      if (
+        typeof specialPointDefinitionId !== "string" ||
+        specialPointDefinitionId.trim().length === 0
+      ) {
         issues.push(
           `Injury "${injuryId}" contains an empty Special Point definition ID.`,
         );
@@ -385,15 +410,33 @@ function findInjuryApplicabilityIssues(
  */
 function findInjuryRecoveryIssues(
   injuryId: InjuryId,
-  recovery: InjuryRecovery,
+  candidate: unknown,
 ): readonly string[] {
-  if (!recovery.treatmentRequired) {
-    return [];
+  if (typeof candidate !== "object" || candidate === null) {
+    return [`Injury "${injuryId}" must declare a recovery contract.`];
   }
 
-  const { bpRecoveryCeilingFraction } = recovery;
+  const recovery = candidate as Record<string, unknown>;
+
+  if (recovery["treatmentRequired"] !== true) {
+    /*
+     * Anything other than an explicit `true` means no treatment gate, which is
+     * the same answer a missing field gives — and the same answer this always
+     * gave, since a falsy value took this branch. A non-boolean is still worth
+     * naming, because "treatmentRequired: 'yes'" reads as a gate and is not.
+     */
+    return typeof recovery["treatmentRequired"] === "boolean" ||
+      recovery["treatmentRequired"] === undefined
+      ? []
+      : [
+          `Injury "${injuryId}" has a treatmentRequired of ${String(recovery["treatmentRequired"])}, which is not a yes or a no.`,
+        ];
+  }
+
+  const bpRecoveryCeilingFraction = recovery["bpRecoveryCeilingFraction"];
 
   if (
+    typeof bpRecoveryCeilingFraction !== "number" ||
     !Number.isFinite(bpRecoveryCeilingFraction) ||
     bpRecoveryCeilingFraction < 0 ||
     bpRecoveryCeilingFraction > 1
@@ -430,19 +473,19 @@ export function findAnatomicalInjuryCatalogIssues(
   const issues: string[] = [];
 
 
-  for (const injury of injuryDefinitions) {
+  for (const candidate of injuryDefinitions) {
+    /* Registered content, so the definition itself may be anything. */
+    if (typeof candidate !== "object" || candidate === null) continue;
+
+    const injury = candidate as unknown as Record<string, unknown>;
+    const injuryId = String(injury["id"]);
+
     issues.push(
-      ...findInjuryApplicabilityIssues(
-        injury.id,
-        injury.applicability,
-      ),
+      ...findInjuryApplicabilityIssues(injuryId, injury["applicability"]),
     );
 
     issues.push(
-      ...findInjuryRecoveryIssues(
-        injury.id,
-        injury.recovery,
-      ),
+      ...findInjuryRecoveryIssues(injuryId, injury["recovery"]),
     );
   }
 

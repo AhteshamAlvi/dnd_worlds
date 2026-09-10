@@ -177,9 +177,10 @@ export function romanToMasteryRank(
  * Determine whether a number is a legal learned Mastery rank.
  */
 export function isMasteryRank(
-  value: number,
+  value: unknown,
 ): value is MasteryRank {
   return (
+    typeof value === "number" &&
     Number.isInteger(value) &&
     value >= 1 &&
     value <= STANDARD_MASTERY_MAX
@@ -448,56 +449,106 @@ export function getMasteryRankDefinition(
  * catalog-issue lists every domain already produces for development-time
  * checking.
  */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+function recordsOf(value: unknown): readonly Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.flatMap((entry) => {
+    const record = recordOf(entry);
+
+    return record === undefined ? [] : [record];
+  });
+}
+
+
+/**
+ * Everything wrong with one Mastery track.
+ *
+ * Takes `unknown`, because a registered definition's `mastery` may be null, a
+ * number, or absent entirely — this is called from the registration barrier
+ * over content a host wrote, not only over content the compiler saw. It used
+ * to take MasteryTrack and read `.maximumMastery` off it, which threw on
+ * exactly the values a validator exists to complain about.
+ */
 export function findMasteryTrackIssues(
   label: string,
   id: string,
-  track: MasteryTrack,
+  candidate: unknown,
 ): readonly string[] {
+  const track = recordOf(candidate);
+
+  if (track === undefined) {
+    return [`${label} "${id}" has a Mastery track that is not a track.`];
+  }
+
   const issues: string[] = [];
 
-  if (!isMasteryRank(track.maximumMastery)) {
+  const maximum = track["maximumMastery"];
+
+  if (!isMasteryRank(maximum)) {
     issues.push(
-      `${label} "${id}" declares a maximum Mastery of ${track.maximumMastery}, which is not a rank.`,
+      `${label} "${id}" declares a maximum Mastery of ${String(maximum)}, which is not a rank.`,
     );
+  }
+
+  const declaredRanks = track["ranks"];
+
+  if (declaredRanks !== undefined && !Array.isArray(declaredRanks)) {
+    issues.push(`${label} "${id}" has a rank list that is not a list.`);
   }
 
   const seen = new Set<number>();
 
-  for (const rank of track.ranks ?? []) {
-    if (!isMasteryRank(rank.rank)) {
+  for (const rank of recordsOf(declaredRanks)) {
+    const value = rank["rank"];
+
+    if (!isMasteryRank(value)) {
       issues.push(
-        `${label} "${id}" defines rank ${rank.rank}, which is not a Mastery rank.`,
+        `${label} "${id}" defines rank ${String(value)}, which is not a Mastery rank.`,
       );
       continue;
     }
 
-    if (rank.rank > track.maximumMastery) {
+    /*
+     * Compared only when the maximum is itself a rank. "Rank 5 beyond its
+     * maximum of undefined" is one fault reported as two, and the second
+     * sentence names a figure that is not a number.
+     */
+    if (isMasteryRank(maximum) && value > maximum) {
       issues.push(
-        `${label} "${id}" defines rank ${rank.rank} beyond its maximum of ${track.maximumMastery}.`,
+        `${label} "${id}" defines rank ${value} beyond its maximum of ${maximum}.`,
       );
     }
 
-    if (seen.has(rank.rank)) {
+    if (seen.has(value)) {
       issues.push(
-        `${label} "${id}" defines rank ${rank.rank} more than once.`,
+        `${label} "${id}" defines rank ${value} more than once.`,
       );
     }
 
-    seen.add(rank.rank);
+    seen.add(value);
+
+    const cost = rank["growthPointCost"];
 
     if (
-      rank.growthPointCost !== undefined &&
-      (!Number.isInteger(rank.growthPointCost) || rank.growthPointCost < 0)
+      cost !== undefined &&
+      (!Number.isInteger(cost) || (cost as number) < 0)
     ) {
       issues.push(
-        `${label} "${id}" rank ${rank.rank} has a Growth Point cost of ${rank.growthPointCost}, which must be a non-negative whole number.`,
+        `${label} "${id}" rank ${value} has a Growth Point cost of ${String(cost)}, which must be a non-negative whole number.`,
       );
     }
 
     // Rank rules are ordinary Effects and Requirements, so the shared rule
     // validator judges them rather than a second copy of it living here.
     for (const issue of [
-      ...findEffectsValidationIssues(rank.effects ?? []),
+      ...findEffectsValidationIssues(rank["effects"] ?? []),
       ...findRequirementsValidationIssues(rank.requirements ?? []),
     ]) {
       issues.push(

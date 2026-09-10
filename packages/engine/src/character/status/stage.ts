@@ -156,30 +156,56 @@ export function collectStageEffects(
  * rather than becoming a new structured issue type, because they describe a
  * malformed *definition*, not a character's reference to one.
  */
+/**
+ * Everything wrong with one stage track.
+ *
+ * Takes `unknown`, because the registration barrier calls this over content a
+ * host wrote: `stages` may be an object, a number, or a list with a null in
+ * it. Iterating it blind used to throw — "object is not iterable" — from the
+ * validator whose job is to say that it is not a list.
+ */
 export function findStageTrackIssues(
   label: string,
   id: string,
-  content: StagedContent,
+  candidate: unknown,
 ): readonly string[] {
-  const issues: string[] = [];
+  if (typeof candidate !== "object" || candidate === null) {
+    return [`${label} "${id}" is not a definition.`];
+  }
 
+  const declared = (candidate as Record<string, unknown>)["stages"];
+
+  if (declared === undefined) return [];
+
+  if (!Array.isArray(declared)) {
+    return [`${label} "${id}" has a stage list that is not a list.`];
+  }
+
+  const issues: string[] = [];
   const seen = new Set<number>();
 
-  for (const stage of content.stages ?? []) {
-    if (!Number.isInteger(stage.stage) || stage.stage < 1) {
+  for (const [index, entry] of declared.entries()) {
+    if (typeof entry !== "object" || entry === null) {
+      issues.push(`${label} "${id}" has a stage at position ${index} that is not a stage.`);
+      continue;
+    }
+
+    const number = (entry as Record<string, unknown>)["stage"];
+
+    if (!Number.isInteger(number) || (number as number) < 1) {
       issues.push(
-        `${label} "${id}" defines a stage numbered ${stage.stage}, which must be a positive integer.`,
+        `${label} "${id}" defines a stage numbered ${String(number)}, which must be a positive integer.`,
       );
       continue;
     }
 
-    if (seen.has(stage.stage)) {
+    if (seen.has(number as number)) {
       issues.push(
-        `${label} "${id}" defines stage ${stage.stage} more than once.`,
+        `${label} "${id}" defines stage ${String(number)} more than once.`,
       );
     }
 
-    seen.add(stage.stage);
+    seen.add(number as number);
   }
 
   return issues;
