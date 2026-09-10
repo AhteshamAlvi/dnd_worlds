@@ -27,7 +27,7 @@
  * one body wear any number of forms without losing itself.
  */
 
-import { createRegistry } from "../../../../infrastructure/registry";
+import { createRegistry, declaresNoRules } from "../../../../infrastructure/registry";
 import type { Definition } from "../../../../infrastructure/registry";
 import { createReferenceForm } from "./creation";
 import {
@@ -79,6 +79,7 @@ export const REFERENCE_FORM_DEFINITIONS = {
 const REFERENCE_FORM_REGISTRY = createRegistry<ReferenceFormDefinition>(
   "Reference Form",
   REFERENCE_FORM_DEFINITIONS,
+  declaresNoRules,
 );
 
 

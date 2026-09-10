@@ -10,6 +10,8 @@
  * it structurally is.
  */
 
+import { findContentStructuralIssues } from "../../rules/definitions";
+
 import {
   createRegistry,
 } from "../../../infrastructure/registry";
@@ -40,6 +42,7 @@ export const INJURY_DEFINITIONS = {} as const satisfies Record<
 const INJURY_REGISTRY = createRegistry<InjuryDefinition>(
   "Injury",
   INJURY_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 

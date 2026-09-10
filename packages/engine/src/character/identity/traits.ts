@@ -33,6 +33,7 @@ import {
   scanReferences,
 } from "../../infrastructure/registry";
 
+import { findContentStructuralIssues } from "../rules/definitions";
 import type { EffectfulDefinition } from "../rules/content";
 import type { TraitGrant } from "../rules/resolution";
 
@@ -197,6 +198,7 @@ export const TRAIT_DEFINITIONS = {
 const TRAIT_REGISTRY = createRegistry<TraitDefinition>(
   "Trait",
   TRAIT_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 export type KnownTraitId = keyof typeof TRAIT_DEFINITIONS;

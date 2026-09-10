@@ -27,6 +27,8 @@
  * for the Workbench to author.
  */
 
+import { findContentStructuralIssues } from "../rules/definitions";
+
 import {
   createRegistry,
   scanReferences,
@@ -132,6 +134,7 @@ export const CONDITION_DEFINITIONS = {
 const CONDITION_REGISTRY = createRegistry<ConditionDefinition>(
   "Condition",
   CONDITION_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 export type KnownConditionId = keyof typeof CONDITION_DEFINITIONS;

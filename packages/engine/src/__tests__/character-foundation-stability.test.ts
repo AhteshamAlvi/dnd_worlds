@@ -25,7 +25,12 @@ import { minimalSkillApplication } from "../character/capabilities/applications"
 import { payloadOf } from "./fixtures/result";
 import { listAnatomicalInjuryDefinitions } from "../character/status/injuries";
 
-import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
+import {
+  clearCustomDefinitions,
+  getDefinition,
+  registerDefinition,
+} from "../character/catalogs";
+import { findEffectsValidationIssues } from "../character/rules/validation";
 
 import {
   canInvokeCheckSource,
@@ -1217,73 +1222,70 @@ describe("Injury location diagnostics speak continuity", () => {
 /* ========================================================================== */
 
 describe("Action-capacity validation is reachable from character validation", () => {
-  it("rejects a fractional Action contribution as authored content", () => {
-    registerDefinition("trait", {
-      id: "half-an-action",
-      name: "Half An Action",
-      description: "A test Trait contributing half an Action.",
-      effects: [
-        { type: "modifyActionCapacity", capacity: "round", amount: 0.5 },
-      ],
+  /*
+   * These three used to register the malformed Trait and then assert that
+   * validateCharacter() complained about it. They cannot any more, and the
+   * reason is the point: the registration barrier refuses a definition whose
+   * Effects are structurally wrong, so a Trait contributing half an Action
+   * never reaches a catalog and therefore never reaches a character.
+   *
+   * The check downstream is still real and still worth having — the engine's
+   * own authored content is not registered and is held to the same rules by
+   * findCatalogIssues() — so what is asserted here is BOTH halves: the barrier
+   * refuses it, and the Action-capacity rule that would have caught it later
+   * still says the same thing about the same value.
+   */
+  const MALFORMED = [
+    [
+      "a fractional Action contribution",
+      { type: "modifyActionCapacity", capacity: "round", amount: 0.5 },
+    ],
+    [
+      "a non-finite Action contribution",
+      {
+        type: "modifyActionCapacity",
+        capacity: "turn",
+        amount: Number.POSITIVE_INFINITY,
+      },
+    ],
+    [
+      "an unknown capacity kind",
+      // Homebrew JSON can cross the boundary with a typo'd kind.
+      { type: "modifyActionCapacity", capacity: "phase", amount: 1 },
+    ],
+  ] as const;
+
+  it.each(MALFORMED)("refuses %s at registration", (_label, effect) => {
+    const result = registerDefinition("trait", {
+      id: "malformed-actions",
+      name: "Malformed Actions",
+      description: "A test Trait whose Action contribution is wrong.",
+      effects: [effect as never],
     });
 
-    const result = validateCharacter(
-      createTestCharacter({ traits: [{ traitId: "half-an-action" }] }),
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("malformed rule");
+
+    /* Nothing was stored, so nothing can reference it. */
+    expect(getDefinition("trait", "malformed-actions")).toBeUndefined();
+
+    const character = validateCharacter(
+      createTestCharacter({ traits: [{ traitId: "malformed-actions" }] }),
     );
 
-    expect(result.success).toBe(false);
+    expect(character.success).toBe(false);
     expect(
-      result.success ? [] : result.errors.map((error) => error.code),
-    ).toContain("character.actions.contribution_amount_invalid");
+      character.success ? [] : character.errors.map((error) => error.code),
+    ).toContain("character.trait.unknown");
   });
 
-  it("rejects a non-finite Action contribution", () => {
-    registerDefinition("trait", {
-      id: "infinite-actions",
-      name: "Infinite Actions",
-      description: "A test Trait contributing a non-finite amount.",
-      effects: [
-        {
-          type: "modifyActionCapacity",
-          capacity: "turn",
-          amount: Number.POSITIVE_INFINITY,
-        },
-      ],
-    });
-
-    const result = validateCharacter(
-      createTestCharacter({ traits: [{ traitId: "infinite-actions" }] }),
-    );
-
-    expect(result.success).toBe(false);
-    expect(
-      result.success ? [] : result.errors.map((error) => error.code),
-    ).toContain("character.actions.contribution_amount_invalid");
-  });
-
-  it("rejects an unknown capacity kind", () => {
-    registerDefinition("trait", {
-      id: "bad-kind",
-      name: "Bad Kind",
-      description: "A test Trait naming a capacity kind that does not exist.",
-      effects: [
-        {
-          type: "modifyActionCapacity",
-          // Homebrew JSON can cross the boundary with a typo'd kind.
-          capacity: "phase" as never,
-          amount: 1,
-        },
-      ],
-    });
-
-    const result = validateCharacter(
-      createTestCharacter({ traits: [{ traitId: "bad-kind" }] }),
-    );
-
-    expect(result.success).toBe(false);
-    expect(
-      result.success ? [] : result.errors.map((error) => error.code),
-    ).toContain("character.actions.contribution_kind_invalid");
+  it.each(MALFORMED)("still recognises %s as a rule fault", (_label, effect) => {
+    /*
+     * The downstream rule, asked directly. If the barrier were ever loosened,
+     * this is what would still have to hold — and if this stopped holding, the
+     * barrier would be refusing content for a reason nothing agrees with.
+     */
+    expect(findEffectsValidationIssues([effect])).not.toEqual([]);
   });
 
   it("rejects a resolved capacity that disagrees with the mechanic", () => {

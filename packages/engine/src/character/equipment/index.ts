@@ -59,6 +59,7 @@ import {
   describeItemDefinitionIssue,
   findInventoryEntryIssues,
   findItemEquipmentDefinitionIssues,
+  findItemStructuralIssues,
   isCharacterItemShape,
   isInventoryEntryId,
   isInventoryQuantity,
@@ -163,7 +164,11 @@ export const ITEM_DEFINITIONS = {
   },
 } as const satisfies Record<string, ItemDefinition>;
 
-const ITEM_REGISTRY = createRegistry<ItemDefinition>("Item", ITEM_DEFINITIONS);
+const ITEM_REGISTRY = createRegistry<ItemDefinition>(
+  "Item",
+  ITEM_DEFINITIONS,
+  findItemStructuralIssues,
+);
 
 export type KnownItemId = keyof typeof ITEM_DEFINITIONS;
 
@@ -351,6 +356,7 @@ export {
   equipmentTransitionKind,
   findInventoryEntry,
   findItemEquipmentDefinitionIssues,
+  findItemStructuralIssues,
   findInventoryEntryOutcome,
   getActiveItemEffects,
   isCharacterItemShape,

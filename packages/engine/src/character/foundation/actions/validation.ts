@@ -169,7 +169,7 @@ function isWholeNumber(value: number): boolean {
  * one. Number.isInteger already rejects NaN and Infinity, so this is the
  * finiteness check too.
  */
-export function isValidActionCapacityAmount(value: number): boolean {
+export function isValidActionCapacityAmount(value: unknown): boolean {
   return Number.isInteger(value);
 }
 

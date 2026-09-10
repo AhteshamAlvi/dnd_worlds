@@ -563,10 +563,16 @@ describe("validation", () => {
     ).toHaveLength(1);
   });
 
-  it("catches a malformed activation on registered catalog content", () => {
-    // The path that actually matters: authored content, checked at catalog
-    // time, rather than an Effect handed straight to the validator.
-    registerDefinition("trait", {
+  it("refuses a malformed activation before it can enter a catalog", () => {
+    /*
+     * The path that actually matters, and it moved. This used to register the
+     * Trait and assert that catalog validation complained; the registration
+     * barrier refuses it outright now, which is strictly better for the reason
+     * the activation typo is dangerous in the first place — a misspelled
+     * activation lands in the channel verbatim, matches nothing, and produces
+     * a modifier that looks exactly like content nobody wrote.
+     */
+    const result = registerDefinition("trait", {
       id: "typo-activation",
       name: "Typo Activation",
       description: "A test Trait whose activation is misspelled.",
@@ -580,13 +586,12 @@ describe("validation", () => {
       ],
     });
 
-    expect(
-      findCatalogReferenceIssues().some(
-        (issue) =>
-          issue.includes("typo-activation") &&
-          issue.includes("invalid-check-activation"),
-      ),
-    ).toBe(true);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("invalid-check-activation");
+
+    /* Nothing entered the catalog, so nothing is left to complain about. */
+    expect(findCatalogReferenceIssues()).toEqual([]);
   });
 
   it("accepts a character carrying one", () => {

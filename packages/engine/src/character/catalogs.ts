@@ -40,6 +40,7 @@ import {
   findNamedRequirementsValidationIssues,
   findRuleValidationIssues,
 } from "./rules/validation";
+import { collectRuleBundles } from "./rules/definitions";
 
 import { clanRegistry, type ClanDefinition } from "./identity/clans";
 import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
@@ -259,156 +260,19 @@ export function exportCustomDefinitions(): Readonly<
  * for its contents to be walked, and forgetting is visible as a domain with
  * no rules listed.
  */
-interface RuleBundle {
-  readonly where: string;
-  readonly effects: readonly Effect[];
-  readonly requirements: readonly Requirement[];
-
-  /*
-   * The same requirements in their named form, when the field carries one.
-   *
-   * Carried ALONGSIDE rather than instead of `requirements`, because the two
-   * are checked for different things: `requirements` is walked for catalog
-   * references, and this is checked for the id and summary metadata that a
-   * bare Requirement does not have. Collapsing them would mean either losing
-   * the reference walk or teaching it about a wrapper it has no business
-   * knowing.
-   */
-  readonly namedRequirements?: readonly NamedRequirement[];
-}
-
-function rulesOf(
-  domain: CatalogDomain,
-  definition: CatalogDefinitions[CatalogDomain],
-): readonly RuleBundle[] {
-  const bundles: RuleBundle[] = [];
-
-  if (domain === "item") {
-    const item = definition as ItemDefinition;
-
-    bundles.push({
-      where: "possessed",
-      effects: item.possessedEffects ?? [],
-      requirements: [],
-    });
-    /*
-     * Equip requirements are NAMED, so the walk reaches through to the nested
-     * requirement rather than treating the wrapper as one. A bundle that
-     * handed the wrapper to the reference checker would find no ids to check
-     * inside it and report a clean catalog for an Item whose equip gate names
-     * a Trait that does not exist.
-     */
-    bundles.push({
-      where: "equipped",
-      effects: item.equippedEffects ?? [],
-      requirements: (item.equipRequirements ?? []).map(
-        (named) => named.requirement,
-      ),
-      namedRequirements: item.equipRequirements ?? [],
-    });
-    bundles.push({
-      where: "used",
-      effects: item.useEffects ?? [],
-      requirements: item.useRequirements ?? [],
-    });
-
-    return bundles;
-  }
-
-  const effectful = definition as {
-    readonly effects?: readonly Effect[];
-    readonly requirements?: readonly Requirement[];
-    /*
-     * Skill and Technique ranks hang off an OPTIONAL Mastery track, because a
-     * capability may have no ranks at all. The walk has to reach through it —
-     * a rank whose grantSkill points at nothing is exactly what this function
-     * exists to catch, and it would escape silently if the field were still
-     * read off the definition directly.
-     */
-    readonly mastery?: {
-      readonly ranks?: readonly {
-        readonly rank: number;
-        readonly effects?: readonly Effect[];
-        readonly requirements?: readonly Requirement[];
-      }[];
-    };
-    // Conditions progress through stages rather than Skill/Technique ranks —
-    // see status/stage.ts — but the walk is identical.
-    readonly stages?: readonly {
-      readonly stage: number;
-      readonly effects?: readonly Effect[];
-      readonly requirements?: readonly Requirement[];
-    }[];
-    // Injuries key their extra Effects off treatment state instead — see
-    // status/injuries/types.ts's InjuryDefinition.treatmentEffects.
-    readonly treatmentEffects?: {
-      readonly untreated?: readonly Effect[];
-      readonly treated?: readonly Effect[];
-    };
-    /*
-     * A Skill's EXECUTION requirements, which name catalog ids exactly as
-     * freely as its acquisition ones do — Fire Blast's application asks for the
-     * Firebending Trait by id. They are checked here for the reason every other
-     * bundle is: a typo in an id that is only read at execution time would
-     * otherwise surface as a Skill that quietly never works.
-     */
-    readonly application?: {
-      readonly requirements?: readonly NamedRequirement[];
-    };
-  };
-
-  bundles.push({
-    where: "definition",
-    effects: effectful.effects ?? [],
-    requirements: effectful.requirements ?? [],
-  });
-
-  const applicationRequirements = (effectful.application?.requirements ?? [])
-    .map((entry) => entry.requirement);
-
-  if (applicationRequirements.length > 0) {
-    bundles.push({
-      where: "application",
-      effects: [],
-      requirements: applicationRequirements,
-      namedRequirements: effectful.application?.requirements ?? [],
-    });
-  }
-
-  for (const rank of effectful.mastery?.ranks ?? []) {
-    bundles.push({
-      where: `rank ${rank.rank}`,
-      effects: rank.effects ?? [],
-      requirements: rank.requirements ?? [],
-    });
-  }
-
-  for (const stage of effectful.stages ?? []) {
-    bundles.push({
-      where: `stage ${stage.stage}`,
-      effects: stage.effects ?? [],
-      requirements: stage.requirements ?? [],
-    });
-  }
-
-  if (effectful.treatmentEffects?.untreated !== undefined) {
-    bundles.push({
-      where: "untreated",
-      effects: effectful.treatmentEffects.untreated,
-      requirements: [],
-    });
-  }
-
-  if (effectful.treatmentEffects?.treated !== undefined) {
-    bundles.push({
-      where: "treated",
-      effects: effectful.treatmentEffects.treated,
-      requirements: [],
-    });
-  }
-
-  return bundles;
-}
+/*
+ * Everywhere a definition can name something in another catalog.
+ *
+ * The walk itself lives in rules/definitions.ts, one layer down, and this file
+ * consumes it. It used to live HERE, keyed by CatalogDomain, and moving it was
+ * forced by the registration barrier: a registry needs the same knowledge to
+ * refuse malformed content, and a registry importing this file would close a
+ * module-initialisation cycle, since this file imports every registry.
+ *
+ * The comment that stood here is still the rule, one file over: a domain that
+ * gains a new rule-carrying field has to add it to the walk for its contents
+ * to be checked, and forgetting is visible as a field nothing reaches.
+ */
 
 // Which catalog answers for a requirement's reference. Sub-species live in
 // the Species catalog, which is the whole point of modelling them as Species.
@@ -485,7 +349,7 @@ export function findCatalogReferenceIssues(): readonly string[] {
     const label = CATALOG_DOMAIN_LABELS[domain];
 
     for (const definition of REGISTRIES[domain].all()) {
-      for (const bundle of rulesOf(domain, definition)) {
+      for (const bundle of collectRuleBundles(definition)) {
         const where =
           bundle.where === "definition" ? "" : ` (${bundle.where})`;
 

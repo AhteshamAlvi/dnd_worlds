@@ -48,6 +48,8 @@
  * exception to "content is data"; nothing else should follow them.
  */
 
+import { findContentStructuralIssues } from "../rules/definitions";
+
 import { createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
@@ -568,6 +570,7 @@ export const SKILL_DEFINITIONS = {
 const SKILL_REGISTRY = createRegistry<SkillDefinition>(
   "Skill",
   SKILL_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 export type KnownSkillId = keyof typeof SKILL_DEFINITIONS;

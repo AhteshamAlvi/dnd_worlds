@@ -63,7 +63,7 @@
  * and Leg 14 against 16, while both columns summed to 100 and hid it.
  */
 
-import { createRegistry } from "../../../../infrastructure/registry";
+import { createRegistry, declaresNoRules } from "../../../../infrastructure/registry";
 import type { BodyPartDefinition, BodyPartTypeId } from "./types";
 
 export const BODY_PART_DEFINITIONS = {
@@ -264,6 +264,7 @@ export const BODY_PART_DEFINITIONS = {
 const BODY_PART_REGISTRY = createRegistry<BodyPartDefinition>(
   "Body Part",
   BODY_PART_DEFINITIONS,
+  declaresNoRules,
 );
 
 export type KnownBodyPartTypeId = keyof typeof BODY_PART_DEFINITIONS;

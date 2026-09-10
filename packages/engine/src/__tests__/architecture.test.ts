@@ -271,6 +271,257 @@ describe("a contribution source is keyed in one place", () => {
 
 
 /*
+ * Every registry guards its own door.
+ *
+ * The barrier is only worth anything if no catalog is outside it, and the
+ * failure mode is silent: a new domain that forgets a structural validator
+ * accepts malformed content, and the fault surfaces somewhere else entirely —
+ * for Effects, as a throw from resolveRuleEffects()'s `never` guard, addressed
+ * to whoever resolved a character rather than to whoever wrote the content.
+ *
+ * So the validator is a REQUIRED parameter of createRegistry, which makes a
+ * forgotten one a compile error. What the type system cannot say is that the
+ * function passed actually checks something, and `() => []` type-checks
+ * perfectly. That is what these rules are for.
+ */
+describe("no catalog is outside the registration barrier", () => {
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  /*
+   * The argument text of every createRegistry CALL in a file.
+   *
+   * Matched by scanning to the balanced closing paren rather than to the next
+   * `);`, because an import list and a type annotation both contain the word
+   * and a regex that stopped at the first `);` matched neither the call nor
+   * anything useful.
+   */
+  function registryCalls(source: string): readonly string[] {
+    const calls: string[] = [];
+
+    for (const match of source.matchAll(/createRegistry\s*(?:<[^>]*>)?\s*\(/g)) {
+      let depth = 0;
+      let index = (match.index ?? 0) + match[0].length - 1;
+      const start = index;
+
+      while (index < source.length) {
+        if (source[index] === "(") depth += 1;
+        else if (source[index] === ")") {
+          depth -= 1;
+
+          if (depth === 0) break;
+        }
+
+        index += 1;
+      }
+
+      calls.push(source.slice(start + 1, index));
+    }
+
+    return calls;
+  }
+
+  const registryFiles = everySource
+    /* registry.ts DECLARES createRegistry; it does not call one. */
+    .filter((path) => !path.endsWith(join("infrastructure", "registry.ts")))
+    /* And the decision log NAMES it, in prose stored as data. */
+    .filter((path) => path !== DECISION_LOG)
+    .filter((path) => registryCalls(readFileSync(path, "utf8")).length > 0);
+
+  it("finds the registries it is checking", () => {
+    /* Guards against the rules below passing because the walk found nothing. */
+    expect(registryFiles.length).toBeGreaterThan(9);
+  });
+
+  it("passes a NAMED validator to every createRegistry call", () => {
+    /*
+     * An inline `() => []` is the shape this refuses. A domain with no rules
+     * to check says so by passing `declaresNoRules`, which is searchable and
+     * is a claim someone made on purpose — an anonymous empty function is
+     * indistinguishable from an oversight.
+     */
+    const offenders = registryFiles.filter((path) =>
+      registryCalls(readFileSync(path, "utf8"))
+        .some((args) => /=>/.test(args)),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("names a validator this codebase actually declares", () => {
+    const PERMITTED = [
+      "findContentStructuralIssues",
+      "findItemStructuralIssues",
+      "declaresNoRules",
+    ];
+
+    for (const path of registryFiles) {
+      const source = readFileSync(path, "utf8");
+
+      const calls = registryCalls(source);
+
+      expect(calls.length).toBeGreaterThan(0);
+
+      for (const args of calls) {
+        const supplied = PERMITTED.filter((name) => args.includes(name));
+
+        expect(supplied).toHaveLength(1);
+      }
+    }
+  });
+
+  it("validates before it stores, so a refusal is atomic", () => {
+    /*
+     * Checked against the source text because the ORDER is the whole property
+     * and no type expresses it. Re-registering an existing custom id is an
+     * edit, so a write followed by a failing check would let a host correcting
+     * a typo lose the entry it was correcting and be left with neither.
+     */
+    const source = readFileSync(
+      join(SRC, "infrastructure", "registry.ts"),
+      "utf8",
+    );
+
+    const check = source.indexOf("findRegistrationIssues(definition)");
+    const write = source.indexOf("custom.set(definition.id, definition)");
+
+    expect(check).toBeGreaterThan(-1);
+    expect(write).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(write);
+  });
+
+  it("keeps existence checks OUT of the barrier", () => {
+    /*
+     * The half that must not move. Content refers forward — a Trait may grant
+     * a Technique registered a moment later — so a registry that checked
+     * whether a referenced id existed would make load order a rule nobody
+     * authored, and a host loading its catalog alphabetically would see
+     * failures another host would not.
+     *
+     * infrastructure/ imports nothing, so it cannot reach a catalog even by
+     * accident; what is checked here is that the DOMAIN validator handed to it
+     * does not either.
+     */
+    const source = readFileSync(
+      join(SRC, "character", "rules", "definitions.ts"),
+      "utf8",
+    );
+
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+    expect(/isKnownDefinitionId|getDefinition|REGISTRIES|catalogs/.test(code))
+      .toBe(false);
+  });
+
+  it("declares the rule-bearing field walk exactly once", () => {
+    /*
+     * It used to live in catalogs.ts, keyed by domain, with a comment saying
+     * it was listed once on purpose "so a domain that gains a new rule-carrying
+     * field cannot quietly escape reference checking". The barrier needed the
+     * same knowledge and could not import catalogs.ts without closing a cycle,
+     * so the walk moved down rather than being copied.
+     */
+    const declarers = everySource.filter((path) =>
+      /\bfunction\s+collectRuleBundles\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toHaveLength(1);
+    expect(
+      declarers[0]!.endsWith(join("character", "rules", "definitions.ts")),
+    ).toBe(true);
+
+    /* And the old copy is gone rather than left beside it. */
+    const catalogs = readFileSync(
+      join(SRC, "character", "catalogs.ts"),
+      "utf8",
+    );
+
+    expect(/\bfunction\s+rulesOf\b/.test(catalogs)).toBe(false);
+  });
+
+  it("keeps the `never` exhaustiveness guard in Effect resolution", () => {
+    /*
+     * The barrier exists so this guard is unreachable from host data, NOT so
+     * it can be softened. It was added because ten Body effect variants were
+     * once introduced and silently dropped, and turning it into a skip would
+     * trade a loud developer error for exactly that silence again.
+     */
+    const source = readFileSync(
+      join(SRC, "character", "rules", "resolution.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain("const unhandled: never = effect;");
+    expect(source).toContain("Unhandled Effect type");
+  });
+});
+
+
+/*
+ * The rule validators assume nothing about their input.
+ *
+ * They take `unknown` and narrow through type predicates. The tempting
+ * shortcut is one `as Effect` after a structural guard, and it is worse than
+ * it looks: the assertion tells the compiler the value IS a valid Effect,
+ * which is precisely the claim the function exists to test, so every field
+ * read afterwards is well-typed and unfounded — and the day a new field is
+ * read without a guard, nothing complains.
+ */
+describe("rule validation narrows rather than asserts", () => {
+  const VALIDATION = join(SRC, "character", "rules", "validation.ts");
+
+  it("asserts nothing INTO the rule vocabulary", () => {
+    /*
+     * Directional, on purpose.
+     *
+     * `x as Effect` is the dangerous one: it claims a value is valid content,
+     * which is the claim this file exists to test, and every field read after
+     * it is well-typed and unfounded. `xs as readonly unknown[]` is the
+     * opposite — it keeps a narrowed `any[]` from leaking `any` into the walk
+     * — and `LIST as readonly string[]` widens a const tuple so `.includes()`
+     * accepts an arbitrary string. Banning those alongside the real hazard
+     * would make the rule something to argue with rather than obey, which is
+     * how a guard gets loosened in a hurry instead of carefully.
+     */
+    const code = readFileSync(VALIDATION, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+    const VALIDATED_SHAPES =
+      /\bas\s+(?:readonly\s+)?(?:Effect|Requirement|NamedRequirement|CheckScopeSelector)\b/g;
+
+    expect([...code.matchAll(VALIDATED_SHAPES)].map((match) => match[0]))
+      .toEqual([]);
+  });
+
+  it("would catch the assertion it is written to refuse", () => {
+    /* Guards the guard: a pattern that matches nothing is not enforcement. */
+    const VALIDATED_SHAPES =
+      /\bas\s+(?:readonly\s+)?(?:Effect|Requirement|NamedRequirement|CheckScopeSelector)\b/;
+
+    expect(VALIDATED_SHAPES.test("const effect = candidate as Effect;")).toBe(true);
+    expect(VALIDATED_SHAPES.test("entry.requirement as Requirement,")).toBe(true);
+    expect(VALIDATED_SHAPES.test("(effects as readonly unknown[]).entries()"))
+      .toBe(false);
+    expect(VALIDATED_SHAPES.test("(SENSE_IDS as readonly string[]).includes(v)"))
+      .toBe(false);
+  });
+
+  it("names no validated shape it would only need for an assertion", () => {
+    const source = readFileSync(VALIDATION, "utf8");
+
+    for (const imported of ["type Effect", "type Requirement", "type NamedRequirement"]) {
+      expect(source.includes(`import { ${imported}`)).toBe(false);
+      expect(source.includes(`import ${imported}`)).toBe(false);
+    }
+  });
+});
+
+
+/*
  * A named requirement has exactly one structural definition.
  *
  * Three domains arrived at the same three fields independently. The Character

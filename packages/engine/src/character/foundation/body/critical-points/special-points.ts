@@ -56,7 +56,7 @@
  * Plexus and Gut.
  */
 
-import { createRegistry } from "../../../../infrastructure/registry";
+import { createRegistry, declaresNoRules } from "../../../../infrastructure/registry";
 import type { CriticalPointTypeId, SpecialPointDefinition } from "./types";
 
 export const SPECIAL_POINT_DEFINITIONS = {
@@ -270,6 +270,7 @@ export const SPECIAL_POINT_DEFINITIONS = {
 const SPECIAL_POINT_REGISTRY = createRegistry<SpecialPointDefinition>(
   "Special Point",
   SPECIAL_POINT_DEFINITIONS,
+  declaresNoRules,
 );
 
 export type KnownSpecialPointTypeId = keyof typeof SPECIAL_POINT_DEFINITIONS;

@@ -79,8 +79,28 @@ export function contributesNothing(
  * Catalog validation uses this to check that authored content only grants
  * things that exist, without each domain re-walking the Effect union itself.
  */
+/*
+ * The rule nodes inside a value that ought to be a list of them.
+ *
+ * Anything that is not a list, and anything in the list that is not an object
+ * carrying a string discriminant, is skipped. See collectGrantedIds for why
+ * skipping rather than reporting is the right behaviour for a collector.
+ */
+type RuleNode = Record<string, unknown> & { readonly type: string };
+
+function nodesOf(value: unknown): readonly RuleNode[] {
+  if (!Array.isArray(value)) return [];
+
+  return value.filter((entry): entry is RuleNode =>
+    typeof entry === "object" &&
+    entry !== null &&
+    typeof (entry as { readonly type?: unknown }).type === "string"
+  );
+}
+
+
 export function collectGrantedIds(
-  effects: readonly Effect[] = [],
+  effects: unknown = [],
 ): {
   readonly traitIds: readonly string[];
   readonly skillIds: readonly string[];
@@ -90,18 +110,34 @@ export function collectGrantedIds(
   const skillIds: string[] = [];
   const techniqueIds: string[] = [];
 
-  for (const effect of effects) {
+  /*
+   * A COLLECTOR, not a validator, and the distinction decides what it does
+   * with a malformed node: it skips one.
+   *
+   * These walks run beside rules/validation.ts over the same content, so a
+   * null Effect or an absent traitId is already being reported by the
+   * function whose job that is. Reporting it twice would put the same fault in
+   * front of an author under two different headings; refusing to walk at all
+   * would hide every GOOD reference that stood beside the bad one. Reading it
+   * blind — which is what these did while their parameters claimed to be
+   * typed arrays — threw.
+   */
+  for (const effect of nodesOf(effects)) {
+    const id = effect["traitId"] ?? effect["skillId"] ?? effect["techniqueId"];
+
+    if (typeof id !== "string") continue;
+
     switch (effect.type) {
       case "grantTrait":
-        traitIds.push(effect.traitId);
+        traitIds.push(id);
         break;
 
       case "grantSkill":
-        skillIds.push(effect.skillId);
+        skillIds.push(id);
         break;
 
       case "grantTechnique":
-        techniqueIds.push(effect.techniqueId);
+        techniqueIds.push(id);
         break;
 
       default:
@@ -145,69 +181,82 @@ export interface RequirementReference {
 }
 
 export function collectRequirementReferences(
-  requirements: readonly Requirement[] = [],
+  requirements: unknown = [],
 ): readonly RequirementReference[] {
   const references: RequirementReference[] = [];
 
-  const walk = (requirement: Requirement): void => {
-    switch (requirement.type) {
+  const walk = (node: RuleNode): void => {
+    /*
+     * Every id is read as `unknown` and skipped unless it is a usable string,
+     * for the reason collectGrantedIds gives: a malformed reference is already
+     * being reported by validation, and pushing `undefined` into a reference
+     * list would turn one authoring mistake into a complaint about a catalog
+     * entry called "undefined".
+     */
+    const push = (
+      domain: RequirementReferenceDomain,
+      id: unknown,
+      minimumMastery?: unknown,
+    ): void => {
+      if (typeof id !== "string" || id.trim().length === 0) return;
+
+      references.push({
+        domain,
+        id,
+        ...(typeof minimumMastery === "number" ? { minimumMastery } : {}),
+      });
+    };
+
+    switch (node.type) {
       // Sub-species are Species definitions with a parent, so both forms
       // resolve against the same catalog.
       case "hasSpecies":
-        references.push({ domain: "species", id: requirement.speciesId });
+        push("species", node["speciesId"]);
         break;
 
       case "hasSubspecies":
-        references.push({ domain: "species", id: requirement.subspeciesId });
+        push("species", node["subspeciesId"]);
         break;
 
       case "hasClan":
-        references.push({ domain: "clan", id: requirement.clanId });
+        push("clan", node["clanId"]);
         break;
 
       case "hasTrait":
-        references.push({ domain: "trait", id: requirement.traitId });
+        push("trait", node["traitId"]);
         break;
 
       case "hasSkill":
-        references.push({ domain: "skill", id: requirement.skillId });
+        push("skill", node["skillId"]);
         break;
 
       case "skillMastery":
-        references.push({
-          domain: "skill",
-          id: requirement.skillId,
-          minimumMastery: requirement.minimumMastery,
-        });
+        push("skill", node["skillId"], node["minimumMastery"]);
         break;
 
       case "hasTechnique":
-        references.push({ domain: "technique", id: requirement.techniqueId });
+        push("technique", node["techniqueId"]);
         break;
 
       case "techniqueMastery":
-        references.push({
-          domain: "technique",
-          id: requirement.techniqueId,
-          minimumMastery: requirement.minimumMastery,
-        });
+        push("technique", node["techniqueId"], node["minimumMastery"]);
         break;
 
       case "hasCondition":
-        references.push({ domain: "condition", id: requirement.conditionId });
+        push("condition", node["conditionId"]);
         break;
 
       case "hasItem":
-        references.push({ domain: "item", id: requirement.itemId });
+        push("item", node["itemId"]);
         break;
 
       case "all":
       case "any":
-        for (const child of requirement.requirements) walk(child);
+        for (const child of nodesOf(node["requirements"])) walk(child);
         break;
 
       case "not":
-        walk(requirement.requirement);
+        for (const child of nodesOf([node["requirement"]])) walk(child);
         break;
 
       default:
@@ -215,7 +264,7 @@ export function collectRequirementReferences(
     }
   };
 
-  for (const requirement of requirements) walk(requirement);
+  for (const requirement of nodesOf(requirements)) walk(requirement);
 
   return references;
 }

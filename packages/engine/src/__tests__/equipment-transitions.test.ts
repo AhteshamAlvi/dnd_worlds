@@ -27,13 +27,27 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   clearCustomDefinitions,
   findCatalogReferenceIssues,
+  getDefinition,
   registerDefinition,
 } from "../character/catalogs";
+
+/*
+ * The UNBOUND resolver, which takes its catalog as an argument.
+ *
+ * The registration barrier means a malformed definition can no longer reach
+ * the bound one, so testing the transition's own defensive checks needs a
+ * lookup this file supplies. That is the resolver's real signature — the
+ * export from equipment/index.ts is a binding over it — so this exercises the
+ * production path rather than a test-only door.
+ */
+import { resolveEquipmentTransition as resolveTransitionWith }
+  from "../character/equipment/transitions";
 
 import {
   equipmentTransitionKind,
   findItemCatalogIssues,
   findItemEquipmentDefinitionIssues,
+  findItemStructuralIssues,
   resolveEquipmentTransition,
   type CharacterItem,
   type ItemDefinition,
@@ -808,19 +822,53 @@ describe("malformed questions are failures, not refusals", () => {
       .toBe("equipment.transition.item_unknown");
   });
 
+  /*
+   * A malformed equip gate is refused at REGISTRATION now, so these drive the
+   * unbound resolver with an explicit catalog. The transition's own check is
+   * still worth having and still tested: the engine's authored catalog is
+   * never registered, and a host may hand the unbound resolver a lookup of its
+   * own.
+   */
+  function equipUnregistered(requirements: readonly unknown[]) {
+    const definition = {
+      id: "warded-band",
+      name: "Warded Band",
+      description: "A test Item.",
+      inventoryMode: "individual",
+      equipRequirements: requirements,
+    } as unknown as ItemDefinition;
+
+    const character = createTestCharacter({
+      items: [entry({ itemId: "warded-band" })],
+    });
+
+    return {
+      definition,
+      result: resolveTransitionWith(
+        {
+          resolved: {
+            ...resolveTestCharacter(createTestCharacter()),
+            character,
+          },
+          item: { characterId: character.id, entryId: "e1" },
+          destination: "worn",
+        },
+        () => definition,
+      ),
+    };
+  }
+
   it("refuses a definition whose own equip gate is malformed", () => {
     /*
      * Guessing past a blank requirement id would be the engine deciding a rule
      * the author did not write, and the character has done nothing wrong — so
      * it is a developer diagnostic rather than a refusal aimed at a player.
      */
-    registerGated([{ id: "   ", requirement: { type: "hasTrait", traitId: "one-armed" } }]);
+    const { definition, result } = equipUnregistered([
+      { id: "   ", requirement: { type: "hasTrait", traitId: "one-armed" } },
+    ]);
 
-    const { result } = transition(
-      [entry({ itemId: "warded-band" })],
-      "e1",
-      "worn",
-    );
+    expect(registerDefinition("item", definition).ok).toBe(false);
 
     expect(result.success).toBe(false);
     expect(!result.success && result.errors[0].code)
@@ -828,13 +876,12 @@ describe("malformed questions are failures, not refusals", () => {
   });
 
   it("refuses a definition with two requirements sharing an id", () => {
-    registerGated([NEEDS_TRAIT, { ...NEEDS_MISSING_TRAIT, id: NEEDS_TRAIT.id }]);
+    const { definition, result } = equipUnregistered([
+      NEEDS_TRAIT,
+      { ...NEEDS_MISSING_TRAIT, id: NEEDS_TRAIT.id },
+    ]);
 
-    const { result } = transition(
-      [entry({ itemId: "warded-band" })],
-      "e1",
-      "worn",
-    );
+    expect(registerDefinition("item", definition).ok).toBe(false);
 
     expect(result.success).toBe(false);
     expect(!result.success && result.errors[0].code)
@@ -1112,29 +1159,58 @@ describe("the catalog and the transition agree about a definition", () => {
     ],
   ];
 
-  function register(fields: Record<string, unknown>): void {
-    registerDefinition("item", {
+  function definitionOf(fields: Record<string, unknown>): ItemDefinition {
+    return {
       id: "warded-band",
       name: "Warded Band",
       description: "A test Item.",
       ...fields,
-    } as unknown as ItemDefinition);
+    } as unknown as ItemDefinition;
+  }
+
+  /*
+   * The transition is driven with an EXPLICIT catalog lookup rather than the
+   * engine's own, and that is a consequence of the registration barrier rather
+   * than a way around it: a malformed definition can no longer be registered,
+   * so it can no longer be reached through the bound resolver.
+   *
+   * The defensive check inside the transition still matters and is still
+   * tested here, because the barrier is not the only way a definition arrives
+   * — the engine's own authored catalog is never registered, and a host may
+   * hand a lookup of its own to the unbound resolver.
+   */
+  function equipWith(definition: ItemDefinition | undefined) {
+    const character = createTestCharacter({
+      items: [entry({ itemId: "warded-band" })],
+    });
+
+    return resolveTransitionWith(
+      {
+        resolved: {
+          ...resolveTestCharacter(createTestCharacter()),
+          character,
+        },
+        item: { characterId: character.id, entryId: "e1" },
+        destination: "worn",
+      },
+      () => definition,
+    );
   }
 
   it.each(MALFORMED)("refuses an Item with %s", (_label, fields) => {
-    register(fields);
+    const definition = definitionOf(fields);
 
-    /* The catalog says it is broken... */
-    expect(findItemCatalogIssues()).toEqual([
-      expect.stringContaining("warded-band"),
-    ]);
+    /* 1. It never enters a catalog... */
+    const registration = registerDefinition("item", definition);
 
-    /* ...so the transition must refuse to equip it. */
-    const { result } = transition(
-      [entry({ itemId: "warded-band" })],
-      "e1",
-      "worn",
-    );
+    expect(registration.ok).toBe(false);
+    expect(getDefinition("item", "warded-band")).toBeUndefined();
+
+    /* 2. ...the per-definition validator says why... */
+    expect(findItemEquipmentDefinitionIssues(definition)).not.toEqual([]);
+
+    /* 3. ...and a transition handed it anyway still refuses it. */
+    const result = equipWith(definition);
 
     expect(result.success).toBe(false);
     expect(!result.success && result.errors[0].code)
@@ -1143,13 +1219,14 @@ describe("the catalog and the transition agree about a definition", () => {
 
   it("permits a sound definition through both", () => {
     /* The positive control: neither path is simply refusing everything. */
-    register({
+    const definition = definitionOf({
       inventoryMode: "individual",
       equippedEffects: [
         { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
       ],
     });
 
+    expect(registerDefinition("item", definition).ok).toBe(true);
     expect(findItemCatalogIssues()).toEqual([]);
 
     const { result } = transition(
@@ -1168,17 +1245,27 @@ describe("the catalog and the transition agree about a definition", () => {
      * report. Telling an author their stack is not a single object would send
      * them to fix the sheet when the fault is in the content.
      */
-    register({
+    const definition = definitionOf({
       inventoryMode: "stackable",
       equippedEffects: [
         { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
       ],
     });
 
-    const { result } = transition(
-      [entry({ itemId: "warded-band", quantity: 5 })],
-      "e1",
-      "held",
+    const character = createTestCharacter({
+      items: [entry({ itemId: "warded-band", quantity: 5 })],
+    });
+
+    const result = resolveTransitionWith(
+      {
+        resolved: {
+          ...resolveTestCharacter(createTestCharacter()),
+          character,
+        },
+        item: { characterId: character.id, entryId: "e1" },
+        destination: "held",
+      },
+      () => definition,
     );
 
     expect(result.success).toBe(false);
@@ -1187,21 +1274,24 @@ describe("the catalog and the transition agree about a definition", () => {
   });
 
   it("says which rule was broken, not merely that one was", () => {
-    register({
+    const result = equipWith(definitionOf({
       inventoryMode: "stackable",
       equippedEffects: [
         { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
       ],
-    });
-
-    const { result } = transition(
-      [entry({ itemId: "warded-band" })],
-      "e1",
-      "worn",
-    );
+    }));
 
     expect(!result.success && result.errors[0].message)
       .toContain("stackable and declares equippedEffects");
+  });
+
+  it("refuses to equip an Item no catalog knows", () => {
+    /* The other half of the barrier's consequence: refused means absent. */
+    const result = equipWith(undefined);
+
+    expect(result.success).toBe(false);
+    expect(!result.success && result.errors[0].code)
+      .toBe("equipment.transition.item_unknown");
   });
 
   it("leaves use content out of the equipping decision", () => {
@@ -1211,33 +1301,30 @@ describe("the catalog and the transition agree about a definition", () => {
      * folding use content in would let an unrelated authoring mistake block a
      * transition that never reads it.
      */
-    const definition = {
-      id: "warded-band",
-      name: "Warded Band",
-      description: "A test Item.",
+    const definition = definitionOf({
       inventoryMode: "individual",
       useEffects: [BAD_EFFECT],
-    } as unknown as ItemDefinition;
+    });
 
-    registerDefinition("item", definition);
-
+    /*
+     * The equipment surface is clean, so equipping is permitted...
+     */
     expect(findItemEquipmentDefinitionIssues(definition)).toEqual([]);
-    expect(findItemCatalogIssues()).toEqual([]);
 
-    const { result } = transition(
-      [entry({ itemId: "warded-band" })],
-      "e1",
-      "worn",
-    );
+    const result = equipWith(definition);
 
+    expect(result.success).toBe(true);
     expect(result.success && result.payload.disposition).toBe("available");
 
     /*
-     * The same malformed Effect IS reported where it belongs: catalogs.ts
-     * walks every rule-bearing field, so the potion is not silently fine.
+     * ...and the malformed Effect is still reported where it belongs. A
+     * definition broken in EITHER surface is malformed content and does not
+     * enter a catalog; the two surfaces are kept apart everywhere else, which
+     * is what stops a broken potion from making a belt unwearable.
      */
-    expect(findCatalogReferenceIssues()).toEqual([
-      expect.stringContaining("malformed rule"),
+    expect(registerDefinition("item", definition).ok).toBe(false);
+    expect(findItemStructuralIssues(definition)).toEqual([
+      expect.stringContaining("malformed use rule"),
     ]);
   });
 });
@@ -1308,7 +1395,15 @@ describe("no definition boundary throws", () => {
 
     expect(() => findItemEquipmentDefinitionIssues(definition)).not.toThrow();
 
-    registerDefinition("item", definition as unknown as ItemDefinition);
+    /* Registration must survive it too, and must refuse what it dislikes. */
+    let registration: { readonly ok: boolean } = { ok: false };
+
+    expect(() => {
+      registration = registerDefinition(
+        "item",
+        definition as unknown as ItemDefinition,
+      );
+    }).not.toThrow();
 
     expect(() => findItemCatalogIssues()).not.toThrow();
 
@@ -1317,21 +1412,27 @@ describe("no definition boundary throws", () => {
     ]);
 
     const run = () =>
-      resolveEquipmentTransition({
-        resolved,
-        item: { characterId: character.id, entryId: "e1" },
-        destination: "worn",
-      });
+      resolveTransitionWith(
+        {
+          resolved,
+          item: { characterId: character.id, entryId: "e1" },
+          destination: "worn",
+        },
+        () => definition as unknown as ItemDefinition,
+      );
 
     expect(run).not.toThrow();
 
     /*
-     * And the two still agree. A boundary that stops throwing by quietly
-     * accepting everything is the same bug with better manners.
+     * And the three still agree. A boundary that stops throwing by quietly
+     * accepting everything is the same bug with better manners, so what is
+     * asserted is that the registry, the per-definition validator and the
+     * transition reach the SAME verdict about the same value.
      */
-    const catalogClean = findItemCatalogIssues().length === 0;
+    const sound = findItemEquipmentDefinitionIssues(definition).length === 0;
 
-    expect(run().success).toBe(catalogClean);
+    expect(registration.ok).toBe(sound);
+    expect(run().success).toBe(sound);
   });
 
   it.each(HOSTILE_VALUES.map((value, index) => [index, value] as const))(

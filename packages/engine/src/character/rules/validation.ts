@@ -29,7 +29,6 @@
  */
 
 import { isValidCheckScopeSelector } from "../../checks/validation";
-import type { CheckScopeSelector } from "../../checks/scopes";
 import {
   CHECK_MODIFIER_ACTIVATIONS,
   type CheckModifierActivation,
@@ -41,8 +40,13 @@ import {
 import { isValidActionCapacityAmount } from "../foundation/actions/validation";
 import { isSenseId } from "../foundation/senses/scopes";
 import { isValidSenseSelector } from "../foundation/senses/validation";
-import { isCapabilityGrantMode, type Effect } from "./effects";
-import type { NamedRequirement, Requirement } from "./requirements";
+/*
+ * No Effect, Requirement or NamedRequirement type is imported here any more,
+ * and their absence is the point. Every entry point takes `unknown` and
+ * narrows through predicates; naming the validated shapes would only be useful
+ * for an `as`, which is the assertion these functions exist to avoid making.
+ */
+import { isCapabilityGrantMode } from "./effects";
 
 
 /* -------------------------------------------------------------------------- */
@@ -93,21 +97,19 @@ export type RuleValidationIssue =
  */
 function findGrantModeIssues(
   path: string,
-  effect: {
-    readonly type: "grantTrait" | "grantSkill" | "grantTechnique";
-    readonly mode?: unknown;
-  },
+  effectType: "grantTrait" | "grantSkill" | "grantTechnique",
+  mode: unknown,
 ): readonly InvalidGrantModeIssue[] {
-  if (effect.mode === undefined) return [];
+  if (mode === undefined) return [];
 
-  if (isCapabilityGrantMode(effect.mode)) return [];
+  if (isCapabilityGrantMode(mode)) return [];
 
   return [
     {
       type: "invalid-grant-mode",
       path: `${path}.mode`,
-      effectType: effect.type,
-      mode: effect.mode,
+      effectType,
+      mode,
     },
   ];
 }
@@ -133,7 +135,7 @@ export interface InvalidBodyMultiplierIssue {
   readonly type: "invalid-body-multiplier";
   readonly path: string;
   readonly effectType: string;
-  readonly multiplier: number;
+  readonly multiplier: unknown;
 }
 
 
@@ -171,7 +173,12 @@ export interface InvalidEffectAmountIssue {
     | "modifyCheck"
     | "modifyActionCapacity"
     | "modifySense";
-  readonly amount: number;
+  /*
+   * `unknown`, not `number`. This issue exists BECAUSE the amount was not a
+   * number, and declaring it as one would be the validator restating the
+   * assumption it just disproved — every consumer inheriting the lie.
+   */
+  readonly amount: unknown;
 }
 
 
@@ -201,7 +208,7 @@ export interface InvalidActionCapacityKindIssue {
 export interface InvalidCheckScopeIssue {
   readonly type: "invalid-check-scope";
   readonly path: string;
-  readonly kind: CheckScopeSelector["kind"];
+  readonly kind: unknown;
 }
 
 
@@ -269,7 +276,7 @@ export interface InvalidRequirementNumberIssue {
     | "levelMinimum";
   readonly field:
     | "minimum";
-  readonly value: number;
+  readonly value: unknown;
 }
 
 
@@ -279,7 +286,7 @@ export interface InvalidRequirementMasteryIssue {
   readonly requirementType:
     | "skillMastery"
     | "techniqueMastery";
-  readonly minimumMastery: number;
+  readonly minimumMastery: unknown;
 }
 
 
@@ -421,14 +428,26 @@ function isFiniteNumber(
 }
 
 
-function isPositiveInteger(
-  value: number,
+/*
+ * Body multipliers are all around 1 and must stay finite and above zero.
+ * Written as one predicate rather than `isFiniteNumber(x) && x > 0`, because
+ * the second half of that expression compares a value the first half has only
+ * just established is a number — and TypeScript is right to refuse it when the
+ * value arrives as `unknown`.
+ */
+function isPositiveFiniteNumber(
+  value: unknown,
 ): boolean {
-  return (
-    Number.isFinite(value) &&
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+
+function isPositiveInteger(
+  value: unknown,
+): boolean {
+  return typeof value === "number" &&
     Number.isInteger(value) &&
-    value >= 1
-  );
+    value >= 1;
 }
 
 
@@ -468,12 +487,26 @@ function isKnownActionCapacityKind(
  * the first dereference is the specific mistake spatial validation was
  * hardened against, and it looks fixed in review because the guard is visibly
  * there.
+ *
+ * These are type PREDICATES rather than assertions, which is what lets the
+ * validators take `unknown` and narrow without a single `as`. That matters
+ * more than it looks: `candidate as Effect` tells the compiler the value is a
+ * valid Effect, which is precisely the claim this function exists to test, so
+ * every field read afterwards is well-typed and unfounded. Narrowing to a
+ * record of `unknown` fields keeps the reads honest — each one hands an
+ * unknown to a predicate that takes unknown.
  */
-function isRuleNode(value: unknown): value is { readonly type: string } {
-  return typeof value === "object" &&
-    value !== null &&
-    typeof (value as { readonly type?: unknown }).type === "string" &&
-    (value as { readonly type: string }).type.length > 0;
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+
+type RuleNode = Record<string, unknown> & { readonly type: string };
+
+function isRuleNode(value: unknown): value is RuleNode {
+  return isRecord(value) &&
+    typeof value.type === "string" &&
+    value.type.length > 0;
 }
 
 
@@ -498,22 +531,26 @@ export function findEffectValidationIssues(
 
   const issues: RuleValidationIssue[] = [];
 
-  /*
-   * Narrowed only AFTER the structural guard. Every case below reads fields
-   * off the union, and the guard is what makes those reads true rather than
-   * merely well-typed — a `default` branch catches the discriminants the union
-   * does not contain.
-   */
-  const effect = candidate as Effect;
+  const effect: RuleNode = candidate;
 
-  switch (effect.type) {
+  /*
+   * The discriminant is read into a LOCAL before the switch, and that is not
+   * cosmetic. TypeScript narrows a discriminated union through `switch
+   * (obj.kind)`, but this object is not a union — it is a record of unknowns —
+   * so narrowing the property access would do nothing. Narrowing the local
+   * string does exactly what the issue payloads need: inside each case, `type`
+   * is the literal set that case matched.
+   */
+  const type = effect.type;
+
+  switch (type) {
     case "modifyBaseAttribute":
     case "modifyResolvedAttribute": {
       if (!isFiniteNumber(effect.amount)) {
         issues.push({
           type: "invalid-effect-amount",
           path: `${path}.amount`,
-          effectType: effect.type,
+          effectType: type,
           amount: effect.amount,
         });
       }
@@ -527,7 +564,7 @@ export function findEffectValidationIssues(
         issues.push({
           type: "invalid-effect-amount",
           path: `${path}.amount`,
-          effectType: effect.type,
+          effectType: type,
           amount: effect.amount,
         });
       }
@@ -555,8 +592,12 @@ export function findEffectValidationIssues(
            * used to throw here, one line before the guard that would have
            * caught it.
            */
-          kind: (scope as CheckScopeSelector | undefined)
-            ?.kind as CheckScopeSelector["kind"],
+          /*
+           * Read THROUGH the record guard rather than off the value. An absent
+           * `check` is the commonest way this Effect is malformed and used to
+           * throw here, one line before the guard that would have caught it.
+           */
+          kind: isRecord(scope) ? scope.kind : undefined,
         });
       }
 
@@ -596,7 +637,7 @@ export function findEffectValidationIssues(
         issues.push({
           type: "invalid-effect-amount",
           path: `${path}.amount`,
-          effectType: effect.type,
+          effectType: type,
           amount: effect.amount,
         });
       }
@@ -617,7 +658,7 @@ export function findEffectValidationIssues(
         issues.push({
           type: "invalid-effect-amount",
           path: `${path}.amount`,
-          effectType: effect.type,
+          effectType: type,
           amount: effect.amount,
         });
       }
@@ -651,12 +692,12 @@ export function findEffectValidationIssues(
         issues.push({
           type: "missing-effect-reference",
           path: `${path}.traitId`,
-          effectType: effect.type,
+          effectType: type,
           field: "traitId",
         });
       }
 
-      issues.push(...findGrantModeIssues(path, effect));
+      issues.push(...findGrantModeIssues(path, type, effect.mode));
 
       break;
     }
@@ -667,12 +708,12 @@ export function findEffectValidationIssues(
         issues.push({
           type: "missing-effect-reference",
           path: `${path}.skillId`,
-          effectType: effect.type,
+          effectType: type,
           field: "skillId",
         });
       }
 
-      issues.push(...findGrantModeIssues(path, effect));
+      issues.push(...findGrantModeIssues(path, type, effect.mode));
 
       break;
     }
@@ -683,12 +724,12 @@ export function findEffectValidationIssues(
         issues.push({
           type: "missing-effect-reference",
           path: `${path}.techniqueId`,
-          effectType: effect.type,
+          effectType: type,
           field: "techniqueId",
         });
       }
 
-      issues.push(...findGrantModeIssues(path, effect));
+      issues.push(...findGrantModeIssues(path, type, effect.mode));
 
       break;
     }
@@ -702,11 +743,11 @@ export function findEffectValidationIssues(
     case "modifyResolvedIntrinsicPhysicalForce":
     case "modifyBaseDestructionResistance":
     case "modifyResolvedDestructionResistance": {
-      if (!isFiniteNumber(effect.multiplier) || effect.multiplier <= 0) {
+      if (!isPositiveFiniteNumber(effect.multiplier)) {
         issues.push({
           type: "invalid-body-multiplier",
           path: `${path}.multiplier`,
-          effectType: effect.type,
+          effectType: type,
           multiplier: effect.multiplier,
         });
       }
@@ -719,7 +760,7 @@ export function findEffectValidationIssues(
     case "modifyResolvedBodyAnatomy": {
       const operation = effect.operation;
 
-      if (typeof operation !== "object" || operation === null) {
+      if (!isRecord(operation)) {
         issues.push({
           type: "malformed-rule-node",
           path: `${path}.operation`,
@@ -730,8 +771,8 @@ export function findEffectValidationIssues(
       }
 
       if (
-        effect.type === "modifyBaseBodyAnatomy" &&
-        (operation as { readonly mode: string }).mode === "suppress"
+        type === "modifyBaseBodyAnatomy" &&
+        operation.mode === "suppress"
       ) {
         issues.push({
           type: "suppress-on-base-anatomy",
@@ -794,7 +835,7 @@ export function findEffectValidationIssues(
             type: "unknown-rule-type",
             path: `${path}.operation.mode`,
             kind: "effect",
-            value: (operation as { readonly mode?: unknown }).mode,
+            value: operation.mode,
           });
       }
 
@@ -813,7 +854,7 @@ export function findEffectValidationIssues(
         type: "unknown-rule-type",
         path: `${path}.type`,
         kind: "effect",
-        value: (effect as { readonly type: string }).type,
+        value: type,
       });
   }
 
@@ -826,7 +867,7 @@ export function findEffectValidationIssues(
  * Validate an array of Effects.
  */
 export function findEffectsValidationIssues(
-  effects: readonly Effect[] | undefined,
+  effects: unknown,
   path = "effects",
 ): readonly RuleValidationIssue[] {
   if (effects === undefined) return [];
@@ -890,16 +931,18 @@ function findRequirementIssuesInternal(
 
   const issues: RuleValidationIssue[] = [];
 
-  const requirement = candidate as Requirement;
+  const requirement: RuleNode = candidate;
 
-  switch (requirement.type) {
+  const type = requirement.type;
+
+  switch (type) {
     case "attributeMinimum":
     case "derivedAttributeMinimum": {
       if (!isFiniteNumber(requirement.minimum)) {
         issues.push({
           type: "invalid-requirement-number",
           path: `${path}.minimum`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "minimum",
           value: requirement.minimum,
         });
@@ -914,7 +957,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "invalid-requirement-number",
           path: `${path}.minimum`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "minimum",
           value: requirement.minimum,
         });
@@ -929,7 +972,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.speciesId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "speciesId",
         });
       }
@@ -943,7 +986,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.subspeciesId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "subspeciesId",
         });
       }
@@ -957,7 +1000,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.clanId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "clanId",
         });
       }
@@ -971,7 +1014,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.traitId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "traitId",
         });
       }
@@ -985,7 +1028,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.skillId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "skillId",
         });
       }
@@ -999,7 +1042,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.skillId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "skillId",
         });
       }
@@ -1008,7 +1051,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "invalid-requirement-mastery",
           path: `${path}.minimumMastery`,
-          requirementType: requirement.type,
+          requirementType: type,
           minimumMastery: requirement.minimumMastery,
         });
       }
@@ -1022,7 +1065,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.techniqueId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "techniqueId",
         });
       }
@@ -1036,7 +1079,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.techniqueId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "techniqueId",
         });
       }
@@ -1045,7 +1088,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "invalid-requirement-mastery",
           path: `${path}.minimumMastery`,
-          requirementType: requirement.type,
+          requirementType: type,
           minimumMastery: requirement.minimumMastery,
         });
       }
@@ -1059,7 +1102,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.conditionId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "conditionId",
         });
       }
@@ -1073,7 +1116,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "missing-requirement-reference",
           path: `${path}.itemId`,
-          requirementType: requirement.type,
+          requirementType: type,
           field: "itemId",
         });
       }
@@ -1098,7 +1141,7 @@ function findRequirementIssuesInternal(
         issues.push({
           type: "empty-compound-requirement",
           path: `${path}.requirements`,
-          requirementType: requirement.type,
+          requirementType: type,
         });
 
         break;
@@ -1143,7 +1186,7 @@ function findRequirementIssuesInternal(
         type: "unknown-rule-type",
         path: `${path}.type`,
         kind: "requirement",
-        value: (requirement as { readonly type: string }).type,
+        value: type,
       });
   }
 
@@ -1156,7 +1199,7 @@ function findRequirementIssuesInternal(
  * Validate one Requirement tree.
  */
 export function findRequirementValidationIssues(
-  requirement: Requirement | unknown,
+  requirement: unknown,
   path = "requirement",
 ): readonly RuleValidationIssue[] {
   return findRequirementIssuesInternal(
@@ -1183,7 +1226,7 @@ export function findRequirementValidationIssues(
  * prerequisites.
  */
 export function findRequirementsValidationIssues(
-  requirements: readonly Requirement[] | undefined,
+  requirements: unknown,
   path = "requirements",
 ): readonly RuleValidationIssue[] {
   if (requirements === undefined) return [];
@@ -1230,7 +1273,7 @@ export function findRequirementsValidationIssues(
  * than dereferenced.
  */
 export function findNamedRequirementsValidationIssues(
-  requirements: readonly NamedRequirement[] | undefined,
+  requirements: unknown,
   path = "requirements",
 ): readonly RuleValidationIssue[] {
   if (requirements === undefined) return [];
@@ -1245,16 +1288,12 @@ export function findNamedRequirementsValidationIssues(
   for (const [index, candidate] of (requirements as readonly unknown[]).entries()) {
     const where = `${path}[${index}]`;
 
-    if (typeof candidate !== "object" || candidate === null) {
+    if (!isRecord(candidate)) {
       issues.push({ type: "malformed-named-requirement", path: where });
       continue;
     }
 
-    const entry = candidate as {
-      readonly id?: unknown;
-      readonly requirement?: unknown;
-      readonly summary?: unknown;
-    };
+    const entry = candidate;
 
     if (typeof entry.id !== "string" || !isNonEmptyId(entry.id)) {
       issues.push({
@@ -1283,7 +1322,7 @@ export function findNamedRequirementsValidationIssues(
       });
     }
 
-    if (typeof entry.requirement !== "object" || entry.requirement === null) {
+    if (!isRecord(entry.requirement)) {
       issues.push({
         type: "malformed-named-requirement",
         path: `${where}.requirement`,
@@ -1293,7 +1332,7 @@ export function findNamedRequirementsValidationIssues(
 
     issues.push(
       ...findRequirementValidationIssues(
-        entry.requirement as Requirement,
+        entry.requirement,
         `${where}.requirement`,
       ),
     );
@@ -1316,8 +1355,8 @@ export function findNamedRequirementsValidationIssues(
  * It does not check whether referenced ids exist in their respective catalogs.
  */
 export function findRuleValidationIssues(
-  effects: readonly Effect[] | undefined = [],
-  requirements: readonly Requirement[] | undefined = [],
+  effects: unknown = [],
+  requirements: unknown = [],
 ): readonly RuleValidationIssue[] {
   return [
     ...findEffectsValidationIssues(effects),

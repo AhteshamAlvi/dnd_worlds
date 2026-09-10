@@ -390,8 +390,16 @@ describe("the split is invisible from the character API", () => {
     ).toContain("character.injury.body_part_not_applicable");
   });
 
-  it("still reports a CONTENT error through catalog validation", () => {
-    registerDefinition("injury", {
+  it("refuses a CONTENT error before the Injury enters the catalog", () => {
+    /*
+     * rules/validation.ts owns what a malformed Effect is, and an Injury's
+     * Effects are held to it like everyone else's — but the judgement moved
+     * earlier. This used to register the Injury and check that catalog
+     * validation reported it afterwards; the registration barrier refuses it,
+     * so the malformed definition never becomes something a character can
+     * reference.
+     */
+    const result = registerDefinition("injury", {
       ...SHATTERED_ARM,
       effects: [
         // A malformed Effect: modifyCheck with no usable scope.
@@ -403,19 +411,13 @@ describe("the split is invisible from the character API", () => {
       ],
     });
 
-    // rules/validation.ts owns what a malformed Effect is, and catalogs.ts
-    // walks every registered definition through it — including an Injury's.
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("invalid-check-scope");
+
     expect(
       listDefinitions("injury").map((definition) => definition.id),
-    ).toContain("shattered-arm");
-
-    const resolved = resolveCharacter(
-      createTestCharacter({ injuries: [ON_LEFT_ARM] }),
-    );
-
-    // The malformed content does not stop the character resolving; it is
-    // reported as a catalog problem, which is where authored content is judged.
-    expect(resolved.success).toBe(true);
+    ).not.toContain("shattered-arm");
   });
 
   it("keeps unknown Injury ids reported by character validation", () => {

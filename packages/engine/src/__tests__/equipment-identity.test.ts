@@ -843,7 +843,7 @@ describe("inventory grouping cannot change a character", () => {
      * the vocabulary carries a multiplier — so the catalog refuses it until
      * quantity-scaled Effects exist.
      */
-    registerDefinition("item", {
+    const result = registerDefinition("item", {
       id: "tainted-coins",
       name: "Tainted Coins",
       description: "A test Item that stacks and wrongly claims a passive rule.",
@@ -853,9 +853,17 @@ describe("inventory grouping cannot change a character", () => {
       ],
     });
 
-    expect(findItemCatalogIssues()).toEqual([
-      expect.stringContaining("tainted-coins"),
-    ]);
+    /*
+     * Refused at registration rather than reported afterwards. The rule is the
+     * same one findItemCatalogIssues() applies to authored content — the
+     * registry is handed the same validator — so a stackable Item bearing
+     * passive Effects simply never becomes an Item anyone can carry.
+     */
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("stackable and declares possessedEffects");
+
+    expect(findItemCatalogIssues()).toEqual([]);
   });
 
   it("leaves the authored catalog clean, and its Items individual", () => {

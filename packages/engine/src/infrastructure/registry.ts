@@ -80,9 +80,43 @@ export interface Registry<TDefinition extends Definition> {
     readonly findCatalogIssues: () => readonly string[];
 }
 
+/*
+ * What a domain knows about its own definitions that infrastructure cannot.
+ *
+ * Injected rather than imported, because this file sits below everything and
+ * imports nothing — the whole reason provenance and registries live here. A
+ * registry cannot ask character/rules whether an Effect is well formed, so the
+ * domain hands it a function that can.
+ *
+ * REQUIRED, not optional. An optional structural check is one every new
+ * registry starts life without, and the failure is silent: the catalog accepts
+ * malformed content and the fault surfaces somewhere else entirely. Making it
+ * a parameter means a domain that has nothing to check has to say so — see
+ * `declaresNoRules` — rather than simply never noticing the question.
+ *
+ * Takes `unknown` because a host's registered definition is exactly that. It
+ * returns human-readable strings rather than typed issues, because the caller
+ * that needs them is a registration refusal a person reads.
+ */
+export type StructuralValidator =
+    (definition: unknown) => readonly string[];
+
+
+/*
+ * For a domain whose definitions carry no Effects, Requirements or other rule
+ * content — BodyParts, Reference Forms, Special Points.
+ *
+ * A named export rather than an inline `() => []`, so that "this domain has no
+ * rules to check" is a claim someone made on purpose and can be searched for,
+ * instead of an empty function that reads as an oversight.
+ */
+export const declaresNoRules: StructuralValidator = () => [];
+
+
 export function createRegistry<TDefinition extends Definition>(
     label: string,
     authored: Readonly<Record<string, TDefinition>>,
+    findStructuralIssues: StructuralValidator,
 ): Registry<TDefinition> {
     // Insertion-ordered, so a picker lists custom entries in the order they
     // were registered rather than a hash order that changes between runs.
@@ -96,20 +130,60 @@ export function createRegistry<TDefinition extends Definition>(
     const get = (id: string): TDefinition | undefined =>
         isAuthoredId(id) ? authored[id] : custom.get(id);
 
-    function checkDefinition(definition: TDefinition): string | null {
-        if (!DEFINITION_ID_PATTERN.test(definition.id)) {
-            return `${label} id "${definition.id}" must be lowercase letters, digits and single hyphens.`;
+    /*
+     * Everything wrong with a definition offered for registration.
+     *
+     * Identity and naming first, then the domain's own structural rules. The
+     * order matters for the message rather than the verdict: a definition with
+     * no usable id produces a complaint nobody can act on if it also lists
+     * three malformed Effects, and the id is the thing to fix first.
+     *
+     * Reads through `unknown` rather than off TDefinition, because a host
+     * calling register() from JavaScript, or from TypeScript with a cast, can
+     * hand this anything at all — and a validator that trusted its parameter
+     * type would throw on the first field it read.
+     */
+    function findRegistrationIssues(candidate: unknown): readonly string[] {
+        if (typeof candidate !== "object" || candidate === null) {
+            return [`${label} definitions must be objects.`];
+        }
+
+        const definition = candidate as {
+            readonly id?: unknown;
+            readonly name?: unknown;
+            readonly description?: unknown;
+        };
+
+        if (
+            typeof definition.id !== "string" ||
+            !DEFINITION_ID_PATTERN.test(definition.id)
+        ) {
+            return [
+                `${label} id ${JSON.stringify(definition.id) ?? "undefined"} must be lowercase letters, digits and single hyphens.`,
+            ];
         }
 
         if (isAuthoredId(definition.id)) {
-            return `${label} "${definition.id}" is defined by the engine and cannot be redefined.`;
+            return [
+                `${label} "${definition.id}" is defined by the engine and cannot be redefined.`,
+            ];
         }
 
-        if (definition.name.trim().length === 0) {
-            return `${label} "${definition.id}" needs a name.`;
+        if (
+            typeof definition.name !== "string" ||
+            definition.name.trim().length === 0
+        ) {
+            return [`${label} "${definition.id}" needs a name.`];
         }
 
-        return null;
+        /*
+         * The domain's rules run last and are reported TOGETHER, not one at a
+         * time. An author fixing a homebrew Item should learn about all four
+         * of its malformed Effects in one pass rather than four.
+         */
+        return findStructuralIssues(candidate).map(
+            (issue) => `${label} "${definition.id}" ${issue}`,
+        );
     }
 
     return {
@@ -123,11 +197,24 @@ export function createRegistry<TDefinition extends Definition>(
         get,
 
         register: (definition) => {
-            const problem = checkDefinition(definition);
-            if (problem !== null) return { ok: false, reason: problem };
+            /*
+             * VALIDATED BEFORE ANYTHING IS STORED, which is what makes a
+             * refusal atomic.
+             *
+             * Re-registering an existing custom id replaces it — that is an
+             * edit, not a collision — so a check performed after the write, or
+             * a write performed before a later check failed, would let a
+             * malformed replacement delete a working definition and leave the
+             * catalog with neither. A host correcting a typo would lose the
+             * entry it was correcting.
+             */
+            const problems = findRegistrationIssues(definition);
+            const firstProblem = problems[0];
 
-            // Re-registering an existing custom id replaces it: that is an
-            // edit, not a collision.
+            if (firstProblem !== undefined) {
+                return { ok: false, reason: problems.join(" ") };
+            }
+
             custom.set(definition.id, definition);
             return { ok: true };
         },
@@ -161,6 +248,16 @@ export function createRegistry<TDefinition extends Definition>(
                     issues.push(
                         `${label} "${definition.id}" has an empty description.`,
                     );
+                }
+
+                /*
+                 * The same structural rules the registration barrier applies,
+                 * run here so AUTHORED content is held to them too. Nothing
+                 * registers the engine's own catalog, so it would otherwise be
+                 * the one body of content nobody checked.
+                 */
+                for (const issue of findStructuralIssues(definition)) {
+                    issues.push(`${label} "${definition.id}" ${issue}`);
                 }
             }
 

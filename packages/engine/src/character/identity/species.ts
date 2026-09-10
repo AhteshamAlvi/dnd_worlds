@@ -31,6 +31,8 @@
  * Source when the catalog is filled out: Rulebook "06 Races".
  */
 
+import { findContentStructuralIssues } from "../rules/definitions";
+
 import {
   createRegistry,
   scanReferences,
@@ -173,6 +175,7 @@ export const SPECIES_DEFINITIONS = {
 const SPECIES_REGISTRY = createRegistry<SpeciesDefinition>(
   "Species",
   SPECIES_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 export type KnownSpeciesId = keyof typeof SPECIES_DEFINITIONS;

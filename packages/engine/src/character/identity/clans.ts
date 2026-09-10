@@ -10,6 +10,8 @@
  * Sharingan is a grantTrait, not a new engine concept.
  */
 
+import { findContentStructuralIssues } from "../rules/definitions";
+
 import {
   createRegistry,
   scanReferences,
@@ -37,6 +39,7 @@ export const CLAN_DEFINITIONS = {
 const CLAN_REGISTRY = createRegistry<ClanDefinition>(
   "Clan",
   CLAN_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 export type KnownClanId = keyof typeof CLAN_DEFINITIONS;

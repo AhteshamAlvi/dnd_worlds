@@ -120,6 +120,9 @@ describe("registerDefinition", () => {
         description: "Registered in every domain.",
         // Skills and Techniques are the domains with required extra fields.
         mastery: { maximumMastery: 10 },
+        // And an Item must say whether its copies are objects or a count;
+        // the registration barrier refuses one that does not.
+        inventoryMode: "individual",
       });
 
       expect(result).toEqual({ ok: true });
@@ -292,8 +295,15 @@ describe("findCatalogReferenceIssues", () => {
     );
   });
 
-  it("reports a structurally malformed rule as well as a missing one", () => {
-    registerDefinition("trait", {
+  it("refuses a structurally malformed rule at registration", () => {
+    /*
+     * This used to register the Trait and then assert that catalog validation
+     * complained about it. The registration barrier makes that impossible, and
+     * the impossibility is the improvement: malformed content is refused
+     * before it can be referenced, so the fault is reported to whoever offered
+     * it rather than to whoever later resolved a character carrying it.
+     */
+    const result = registerDefinition("trait", {
       id: "broken",
       name: "Broken",
       description: "A test Trait.",
@@ -302,9 +312,43 @@ describe("findCatalogReferenceIssues", () => {
       ],
     });
 
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("invalid-effect-amount");
+
+    expect(isKnownDefinitionId("trait", "broken")).toBe(false);
+  });
+
+  it("reports a missing reference, and still lets content refer forward", () => {
+    /*
+     * The half the registration barrier deliberately does NOT take over.
+     *
+     * A structurally sound definition registers even though the id it names
+     * does not exist yet, because content legitimately refers forward: a Clan
+     * may grant a Technique registered a moment later, and refusing it at
+     * registration would make load order a rule nobody authored. So existence
+     * is checked after every catalog has loaded, and the complaint disappears
+     * when the thing it named turns up.
+     */
+    expect(registerDefinition("trait", {
+      id: "initiate",
+      name: "Initiate",
+      description: "A test Trait granting a Technique registered later.",
+      effects: [{ type: "grantTechnique", techniqueId: "late-arrival" }],
+    }).ok).toBe(true);
+
     expect(findCatalogReferenceIssues()).toEqual([
-      expect.stringContaining("malformed rule: invalid-effect-amount"),
+      expect.stringContaining('grants unknown Technique "late-arrival"'),
     ]);
+
+    expect(registerDefinition("technique", {
+      id: "late-arrival",
+      name: "Late Arrival",
+      description: "A test Technique.",
+      mastery: { maximumMastery: 3 },
+    }).ok).toBe(true);
+
+    expect(findCatalogReferenceIssues()).toEqual([]);
   });
 
   // Content is resolvable the moment it is registered, so a reference to

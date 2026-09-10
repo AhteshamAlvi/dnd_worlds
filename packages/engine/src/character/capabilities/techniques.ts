@@ -33,6 +33,8 @@
  * is the whole of it.
  */
 
+import { findContentStructuralIssues } from "../rules/definitions";
+
 import { createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
@@ -183,6 +185,7 @@ export const TECHNIQUE_DEFINITIONS = {
 const TECHNIQUE_REGISTRY = createRegistry<TechniqueDefinition>(
   "Technique",
   TECHNIQUE_DEFINITIONS,
+  findContentStructuralIssues,
 );
 
 export type KnownTechniqueId = keyof typeof TECHNIQUE_DEFINITIONS;

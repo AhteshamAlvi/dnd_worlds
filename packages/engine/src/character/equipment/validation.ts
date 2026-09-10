@@ -54,6 +54,7 @@
 import {
   findEffectsValidationIssues,
   findNamedRequirementsValidationIssues,
+  findRequirementsValidationIssues,
 } from "../rules/validation";
 
 import type { Effect } from "../rules/effects";
@@ -508,4 +509,51 @@ export function isValidInventoryEntry(
 ): value is CharacterItem {
   return findInventoryEntryIssues([value as CharacterItem], getItemDefinition)
     .length === 0;
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Registration                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every structural fault in an Item definition, as readable strings.
+ *
+ * What the Item registry is handed, so a host offering a malformed Item gets a
+ * refusal instead of a catalog entry that breaks something later.
+ *
+ * TWO SURFACES, checked together here and kept apart everywhere else. The
+ * equipment surface decides whether the Item may be worn and is what the equip
+ * transition asks about. The use surface is the Effects and Requirements that
+ * fire when a player uses the thing; nothing executes them yet, and equipping
+ * must never depend on their validity — a potion with a broken healing Effect
+ * is a broken potion, not a reason to refuse to strap the belt on.
+ *
+ * They meet at REGISTRATION and nowhere else, because a definition that is
+ * malformed in either half is malformed content and does not belong in a
+ * catalog at all. When the use path lands it can take the second half over as
+ * findItemUseDefinitionIssues() without disturbing the first.
+ */
+export function findItemStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const candidate = definition as
+    Partial<Record<keyof ItemDefinition, unknown>> | null;
+
+  const useSurface = candidate === null || typeof candidate !== "object"
+    ? []
+    : [
+        ...findEffectsValidationIssues(candidate.useEffects, "useEffects")
+          .map((issue) => `${issue.type} at ${issue.path}`),
+        ...findRequirementsValidationIssues(
+          candidate.useRequirements,
+          "useRequirements",
+        ).map((issue) => `${issue.type} at ${issue.path}`),
+      ];
+
+  return [
+    ...findItemEquipmentDefinitionIssues(definition)
+      .map(describeItemDefinitionIssue),
+    ...useSurface.map((issue) => `has a malformed use rule: ${issue}.`),
+  ];
 }
