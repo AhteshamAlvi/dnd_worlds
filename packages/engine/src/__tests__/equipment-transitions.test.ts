@@ -1324,7 +1324,7 @@ describe("the catalog and the transition agree about a definition", () => {
      */
     expect(registerDefinition("item", definition).ok).toBe(false);
     expect(findItemStructuralIssues(definition)).toEqual([
-      expect.stringContaining("malformed use rule"),
+      expect.stringContaining("malformed useEffects"),
     ]);
   });
 });

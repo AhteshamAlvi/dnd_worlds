@@ -43,7 +43,7 @@ import {
 
 import { resolveCharacter } from "../character/resolution";
 
-import { createTestCharacter } from "./fixtures/character";
+import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 import { validDefinitionFor, validDefinitions } from "./fixtures/catalog";
 
 import { findSpeciesCatalogIssues } from "../character/identity/species";
@@ -53,7 +53,12 @@ import { findSkillCatalogIssues } from "../character/capabilities/skills";
 import { findTechniqueCatalogIssues } from "../character/capabilities/techniques";
 import { findConditionCatalogIssues } from "../character/status/conditions";
 import { findInjuryCatalogIssues } from "../character/status/injuries";
-import { findItemCatalogIssues } from "../character/equipment/index";
+import {
+  findItemCatalogIssues,
+  findItemStructuralIssues,
+  findItemUseDefinitionIssues,
+} from "../character/equipment/index";
+import { resolveItemUse as resolveItemUseWith } from "../character/equipment/use";
 import { findBodyPartCatalogIssues } from "../character/foundation/body/anatomy/body-parts";
 import { findReferenceFormCatalogIssues } from "../character/foundation/body/anatomy/reference-forms";
 import { findSpecialPointCatalogIssues } from "../character/foundation/body/critical-points/special-points";
@@ -521,6 +526,7 @@ describe("no domain-owned compound field can throw", () => {
     ["item", "equipRequirements"],
     ["item", "useEffects"],
     ["item", "useRequirements"],
+    ["item", "consumesOnUse"],
     ["body-part", "tags"],
     ["body-part", "reference"],
     ["body-part", "sensitivity"],
@@ -1145,5 +1151,177 @@ describe("existence is still checked after every catalog has loaded", () => {
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.reason)
       .toContain("missing-effect-reference");
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Item use: one verdict, two doors                                           */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A definition reaches Item use through two doors. Registration is one; the
+ * unbound resolver, handed a lookup by a host or a test, is the other — and the
+ * engine's own authored catalog is never registered, so the barrier alone does
+ * not cover it.
+ *
+ * The property worth testing is PARITY, not either side of it. A test of the
+ * resolver alone would pass again the day a use rule was added to registration
+ * only, which is exactly how the equip transition and the catalog once came to
+ * disagree about a stackable Item.
+ */
+describe("registration and Item use refuse the same use surfaces", () => {
+  const NEEDS_ONE_ARM = { type: "hasTrait", traitId: "one-armed" } as const;
+
+  const MALFORMED_USE: readonly (readonly [string, Record<string, unknown>])[] = [
+    ["a consumesOnUse that is a string", { consumesOnUse: "true" }],
+    ["a consumesOnUse that is a number", { consumesOnUse: 1 }],
+    ["a consumesOnUse that is null", { consumesOnUse: null }],
+    ["a consumesOnUse that is an object", { consumesOnUse: {} }],
+    ["use Effects that are not a list", { useEffects: {} }],
+    ["a null use Effect", { useEffects: [null] }],
+    [
+      "a use Effect with an amount that is not a number",
+      {
+        useEffects: [
+          { type: "modifyResolvedAttribute", attribute: "wis", amount: Number.NaN },
+        ],
+      },
+    ],
+    ["a use Effect nothing recognises", { useEffects: [{ type: "modifyMorale" }] }],
+    ["use requirements that are not a list", { useRequirements: {} }],
+    ["use requirements that are null", { useRequirements: null }],
+    ["a null use requirement", { useRequirements: [null] }],
+    ["a BARE use requirement", { useRequirements: [NEEDS_ONE_ARM] }],
+    [
+      "a use requirement with a blank id",
+      { useRequirements: [{ id: "  ", requirement: NEEDS_ONE_ARM }] },
+    ],
+    [
+      "two use requirements sharing an id",
+      {
+        useRequirements: [
+          { id: "same", requirement: NEEDS_ONE_ARM },
+          { id: "same", requirement: { type: "levelMinimum", minimum: 2 } },
+        ],
+      },
+    ],
+    [
+      "a use requirement with an empty summary",
+      { useRequirements: [{ id: "x", summary: "", requirement: NEEDS_ONE_ARM }] },
+    ],
+    [
+      "a use requirement whose rule is null",
+      { useRequirements: [{ id: "x", requirement: null }] },
+    ],
+    [
+      "a use requirement compound with no children",
+      { useRequirements: [{ id: "x", requirement: { type: "all" } }] },
+    ],
+  ];
+
+  const SOUND_USE: readonly (readonly [string, Record<string, unknown>])[] = [
+    ["no use surface at all", {}],
+    ["an explicit reusable declaration", { consumesOnUse: false }],
+    ["an empty use Effect list", { useEffects: [] }],
+    ["an empty use gate", { useRequirements: [] }],
+    ["a consumable with nothing else", { consumesOnUse: true }],
+    [
+      "a named use gate with a summary",
+      {
+        useRequirements: [
+          { id: "needs-one-arm", summary: "One-armed only.", requirement: NEEDS_ONE_ARM },
+        ],
+      },
+    ],
+    [
+      "a use Effect",
+      {
+        useEffects: [
+          { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+        ],
+      },
+    ],
+  ];
+
+  function definitionWith(fields: Record<string, unknown>): Record<string, unknown> {
+    return { ...validDefinitionFor("item"), ...fields };
+  }
+
+  function useWith(definition: unknown) {
+    const character = createTestCharacter({
+      items: [
+        { entryId: "e1", itemId: "house-rule", quantity: 1, state: "carried" },
+      ],
+    });
+
+    return resolveItemUseWith(
+      {
+        resolved: {
+          ...resolveTestCharacter(createTestCharacter()),
+          character,
+        },
+        item: { characterId: character.id, entryId: "e1" },
+      },
+      () => definition as never,
+    );
+  }
+
+  it.each(MALFORMED_USE)("refuses %s through both doors", (_label, fields) => {
+    const definition = definitionWith(fields);
+
+    /* 1. It never enters a catalog... */
+    expect(registerDefinition("item", definition as never).ok).toBe(false);
+    expect(getDefinition("item", "house-rule")).toBeUndefined();
+
+    /* 2. ...the use validator says why, as does the whole-Item one... */
+    expect(findItemUseDefinitionIssues(definition)).not.toEqual([]);
+    expect(findItemStructuralIssues(definition)).not.toEqual([]);
+
+    /* 3. ...and a resolver handed it anyway still refuses it. */
+    const result = useWith(definition);
+
+    expect(result.success).toBe(false);
+    expect(!result.success && result.errors[0].code)
+      .toBe("equipment.use.definition_invalid");
+  });
+
+  it.each(SOUND_USE)("accepts %s through both doors", (_label, fields) => {
+    const definition = definitionWith(fields);
+
+    expect(findItemUseDefinitionIssues(definition)).toEqual([]);
+    expect(registerDefinition("item", definition as never).ok).toBe(true);
+
+    const result = useWith(definition);
+
+    expect(result.success).toBe(true);
+  });
+
+  it("has no use rule that only one door knows", () => {
+    /*
+     * The tables above can only test the faults somebody listed. This asks the
+     * question the other way round, over every hostile value in every use
+     * field: whatever registration decides, the use validator decides too.
+     */
+    for (const field of ["useEffects", "useRequirements", "consumesOnUse"]) {
+      for (const value of HOSTILE_VALUES) {
+        const definition = definitionWith({ [field]: value });
+
+        if (value === undefined) delete definition[field];
+
+        const registered = registerDefinition("item", definition as never).ok;
+        const useIsClean = findItemUseDefinitionIssues(definition).length === 0;
+
+        expect({ field, value, useIsClean }).toEqual({
+          field,
+          value,
+          useIsClean: registered,
+        });
+
+        expect(useWith(definition).success).toBe(registered);
+
+        clearCustomDefinitions();
+      }
+    }
   });
 });

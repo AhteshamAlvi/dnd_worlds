@@ -196,13 +196,13 @@ Outlined here, priced elsewhere:
 
 Expected values, not gates. XP totals assume the Development Value scoring above. ⚠ These in-fiction time estimates predate the current XP curve's higher 3,000-total-to-30 (§1, up from an earlier 1,310) and haven't been individually rechecked against it — treat them as rough until someone re-times a few sample arcs against the new curve.
 
-| Stage | Level | In-fiction time | CON → AP (derived) | Ren / Control | Hatsu |
-|---|---|---|---|---|---|
-| Creation | 1 | — | — (not yet awakened) | — | — |
-| First-arc end | 3–5 | 3–4 months | CON 13–14 → 120–200 | II / 1 | II (seed) |
-| Year one | 6–10 | 1 year | CON 15–16 → 315–500 | IV / 2 | IV, first form |
-| Professional | 13–20 | 2–4 years | CON 17–19 → 800–2k | IV–VI / 2–3 | IV–VI |
-| Elite | 21–26 | 8–15 years | CON 20–22 → 3.3k–8.4k | VIII / 4 | VI–VIII |
-| Master | 27–30 | 20+ years | CON 23–25 → 13k–35k | X / 5 | VIII–X |
+| Stage         | Level |
+| ------------- | ----- |
+| Creation      | 1     |
+| First-arc end | 3–5   |
+| Year one      | 6–10  |
+| Professional  | 13–20 |
+| Elite         | 21–26 |
+| Master        | 27–30 |
 
 Elite users are rare because the arithmetic says so. Reaching elite means driving CON deep into the superhuman band — a dozen hard-won regimens at doubling time-cost past the mundane cap, across a decade of *sustained* dedication — while spending a GP budget that can only ever cover a fraction of the Path, and surviving everything that hunts the promising. No wall stops anyone; the years, the costs, and the danger do the filtering. The world's masters are the survivors of that triple filter. Treat every one as a named institution.

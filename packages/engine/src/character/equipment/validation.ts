@@ -54,11 +54,9 @@
 import {
   findEffectsValidationIssues,
   findNamedRequirementsValidationIssues,
-  findRequirementsValidationIssues,
 } from "../rules/validation";
 
 import type { Effect } from "../rules/effects";
-import type { NamedRequirement } from "../rules/requirements";
 
 import { isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
 
@@ -156,23 +154,34 @@ export function isCharacterItemShape(value: unknown): value is CharacterItem {
 /* -------------------------------------------------------------------------- */
 
 /**
- * What can be wrong with an Item definition's EQUIPMENT surface.
+ * What can be wrong with an Item definition, on any of its surfaces.
  *
- * One list, checked by everything that has to decide whether a definition may
- * be worn. It was previously two: findItemCatalogIssues() checked the
- * inventory mode and the stackable-passive-Effects rule, while the equip
- * transition checked the inventory mode and the equip gate — so a stackable
- * Item bearing equippedEffects was reported broken by the catalog and equipped
- * perfectly happily a moment later, and a malformed passive Effect was caught
- * by neither. Two validators over one subject is two answers to one question,
- * and the caller who asked the more permissive one never finds out.
+ * An Item is asked three different questions by different callers, and each
+ * question has exactly one validator over this one vocabulary of issues:
  *
- * The name says EQUIPMENT because the scope is deliberately partial. Use-time
- * content is not checked here and must not be: a potion whose healing Effect
- * is malformed is a broken potion, not a reason to refuse to strap the belt it
- * hangs from onto a character. When the use path exists it gets its own
- * findItemUseDefinitionIssues(), and a whole-Item catalog check can combine
- * the two without making equipping depend on use validity.
+ * CORE — whether this is an Item at all: an object with an inventory mode.
+ *   Both operational surfaces need it, so both include it.
+ *
+ * EQUIPMENT — whether the Item may be worn: the stackable-no-passive-Effects
+ *   rule, the passive Effect lists and the equip gate. Asked by the equip
+ *   transition.
+ *
+ * USE — whether the Item may be used: `useEffects`, the named use gate and the
+ *   consumption declaration. Asked by the use resolver.
+ *
+ * The operational surfaces are kept apart in BOTH directions. A potion whose
+ * healing Effect is malformed is a broken potion, not a reason to refuse to
+ * take off the belt it hangs from; and a belt whose equippedEffects are
+ * malformed is not a reason to refuse to drink from the flask on it. They meet
+ * at registration, through findItemStructuralIssues(), because a definition
+ * broken in either half is malformed content and does not belong in a catalog.
+ *
+ * One validator per surface is the point rather than a tidiness. The catalog
+ * and the equip transition once each held half of the equipment rules, and a
+ * stackable Item bearing equippedEffects was reported broken by one and
+ * equipped by the other. Two validators over one subject are two answers to
+ * one question, and the caller who asked the more permissive one never finds
+ * out.
  */
 export type ItemDefinitionIssue =
   | {
@@ -186,6 +195,10 @@ export type ItemDefinitionIssue =
   | {
       readonly type: "stackable-passive-effects";
       readonly where: "possessedEffects" | "equippedEffects";
+    }
+  | {
+      readonly type: "invalid-consumes-on-use";
+      readonly value: unknown;
     }
   | {
       readonly type: "malformed-rule";
@@ -209,43 +222,91 @@ export function describeItemDefinitionIssue(
     case "stackable-passive-effects":
       return `is stackable and declares ${issue.where}, which apply once per entry regardless of quantity`;
 
+    case "invalid-consumes-on-use":
+      return "declares a consumesOnUse that is neither true nor false";
+
     case "malformed-rule":
       return `has a malformed ${issue.where}: ${issue.issue} at ${issue.path}`;
   }
 }
 
 
+/** A definition's fields, readable without trusting any of them. */
+type ItemFields = Partial<Record<keyof ItemDefinition, unknown>>;
+
+
+function fieldsOf(candidate: unknown): ItemFields | undefined {
+  return typeof candidate === "object" && candidate !== null
+    ? candidate as ItemFields
+    : undefined;
+}
+
+
 /**
- * Everything wrong with one Item definition's equipment surface.
+ * One Effect list, checked as a list before its contents.
  *
- * The inventory mode, the rule that stackable content carries no passive
- * Effects, the structural soundness of those Effects, and the equip gate's own
- * metadata. Use-time content is excluded — see ItemDefinitionIssue above for
- * why that is a decision rather than an omission.
- *
- * Takes `unknown`, because a host registers these and a definition reaching
- * here may be anything. Nothing is read before it has been checked, and
- * nothing throws.
+ * A non-array is refused explicitly rather than left to the Effect validator's
+ * own guard, because the message a caller needs is about the FIELD —
+ * `equippedEffects: {}` is not an Effect that is malformed, it is a list that
+ * is not a list, and it used to pass silently because an object has no
+ * `length` for a loop to run over.
  */
-export function findItemEquipmentDefinitionIssues(
-  candidate: unknown,
+function findEffectListIssues(
+  where: "possessedEffects" | "equippedEffects" | "useEffects",
+  effects: unknown,
 ): readonly ItemDefinitionIssue[] {
-  if (typeof candidate !== "object" || candidate === null) {
-    return [{ type: "malformed-definition" }];
+  if (effects === undefined) return [];
+
+  if (!Array.isArray(effects)) {
+    return [{ type: "malformed-rule", where, issue: "not-a-list", path: where }];
   }
 
-  const definition = candidate as Partial<Record<keyof ItemDefinition, unknown>>;
+  return findEffectsValidationIssues(
+    effects as unknown as readonly Effect[],
+    where,
+  ).map((issue): ItemDefinitionIssue => ({
+    type: "malformed-rule",
+    where,
+    issue: issue.type,
+    path: issue.path,
+  }));
+}
 
+
+/**
+ * One named gate, checked as a NAMED gate.
+ *
+ * The complete wrapper — every id, every summary, repeated ids, and the
+ * Requirement tree inside each entry — because a gate is refused to a player
+ * by name, and a blank or repeated id is a refusal nobody can address or
+ * override.
+ */
+function findNamedGateIssues(
+  where: "equipRequirements" | "useRequirements",
+  requirements: unknown,
+): readonly ItemDefinitionIssue[] {
+  return findNamedRequirementsValidationIssues(requirements, where).map(
+    (issue): ItemDefinitionIssue => ({
+      type: "malformed-rule",
+      where,
+      issue: issue.type,
+      path: issue.path,
+    }),
+  );
+}
+
+
+function coreIssuesOf(definition: ItemFields): readonly ItemDefinitionIssue[] {
+  return isItemInventoryMode(definition.inventoryMode)
+    ? []
+    : [{ type: "invalid-inventory-mode", mode: definition.inventoryMode }];
+}
+
+
+function equipmentIssuesOf(
+  definition: ItemFields,
+): readonly ItemDefinitionIssue[] {
   const issues: ItemDefinitionIssue[] = [];
-
-  const modeIsValid = isItemInventoryMode(definition.inventoryMode);
-
-  if (!modeIsValid) {
-    issues.push({
-      type: "invalid-inventory-mode",
-      mode: definition.inventoryMode,
-    });
-  }
 
   /*
    * The mode gates only the STACKING rule, not the structural checks. Without
@@ -254,65 +315,106 @@ export function findItemEquipmentDefinitionIssues(
    * Effect is malformed whatever the mode was going to be, and reporting both
    * at once saves an author a round trip.
    */
-  const stacks = modeIsValid &&
-    isStackableItem(candidate as ItemDefinition);
+  const stacks = isItemInventoryMode(definition.inventoryMode) &&
+    isStackableItem(definition as ItemDefinition);
 
-  const passive = [
-    ["possessedEffects", definition.possessedEffects],
-    ["equippedEffects", definition.equippedEffects],
-  ] as const;
+  for (const where of ["possessedEffects", "equippedEffects"] as const) {
+    const effects = definition[where];
 
-  for (const [where, effects] of passive) {
-    if (effects === undefined) continue;
-
-    /*
-     * A non-array is refused explicitly rather than left to the Effect
-     * validator's own guard, because the message a caller needs is about the
-     * FIELD — `equippedEffects: {}` is not an Effect that is malformed, it is
-     * a list that is not a list, and it used to pass silently because an
-     * object has no `length` for a loop to run over.
-     */
-    if (!Array.isArray(effects)) {
-      issues.push({
-        type: "malformed-rule",
-        where,
-        issue: "not-a-list",
-        path: where,
-      });
-
-      continue;
-    }
-
-    if (stacks && effects.length > 0) {
+    if (stacks && Array.isArray(effects) && effects.length > 0) {
       issues.push({ type: "stackable-passive-effects", where });
     }
 
-    for (const issue of findEffectsValidationIssues(
-      effects as unknown as readonly Effect[],
-      where,
-    )) {
-      issues.push({
-        type: "malformed-rule",
-        where,
-        issue: issue.type,
-        path: issue.path,
-      });
-    }
+    issues.push(...findEffectListIssues(where, effects));
   }
 
-  for (const issue of findNamedRequirementsValidationIssues(
-    definition.equipRequirements as readonly NamedRequirement[] | undefined,
-    "equipRequirements",
-  )) {
-    issues.push({
-      type: "malformed-rule",
-      where: "equipRequirements",
-      issue: issue.type,
-      path: issue.path,
-    });
+  issues.push(
+    ...findNamedGateIssues("equipRequirements", definition.equipRequirements),
+  );
+
+  return issues;
+}
+
+
+function useIssuesOf(definition: ItemFields): readonly ItemDefinitionIssue[] {
+  const issues: ItemDefinitionIssue[] = [
+    ...findEffectListIssues("useEffects", definition.useEffects),
+    ...findNamedGateIssues("useRequirements", definition.useRequirements),
+  ];
+
+  /*
+   * Present means a real yes or no. `"true"` and `1` read as yes to a person
+   * and as not-`true` to a resolver asking `=== true`, so an author who meant
+   * a consumable would get a reusable Item and nothing would say so.
+   */
+  const consumes = definition.consumesOnUse;
+
+  if (consumes !== undefined && typeof consumes !== "boolean") {
+    issues.push({ type: "invalid-consumes-on-use", value: consumes });
   }
 
   return issues;
+}
+
+
+/**
+ * Whether a value is an Item definition at all.
+ *
+ * The rules both operational surfaces depend on and neither owns. Takes
+ * `unknown`, because a host registers these and a definition reaching here
+ * may be anything; nothing is read before it has been checked, and nothing
+ * throws. The same holds for every validator below.
+ */
+export function findItemCoreDefinitionIssues(
+  candidate: unknown,
+): readonly ItemDefinitionIssue[] {
+  const definition = fieldsOf(candidate);
+
+  return definition === undefined
+    ? [{ type: "malformed-definition" }]
+    : coreIssuesOf(definition);
+}
+
+
+/**
+ * Everything wrong with one Item definition's equipment surface.
+ *
+ * The core, the rule that stackable content carries no passive Effects, the
+ * structural soundness of those Effects, and the equip gate. Use-time content
+ * is excluded — see ItemDefinitionIssue for why that is a decision rather than
+ * an omission.
+ */
+export function findItemEquipmentDefinitionIssues(
+  candidate: unknown,
+): readonly ItemDefinitionIssue[] {
+  const definition = fieldsOf(candidate);
+
+  if (definition === undefined) return [{ type: "malformed-definition" }];
+
+  return [...coreIssuesOf(definition), ...equipmentIssuesOf(definition)];
+}
+
+
+/**
+ * Everything wrong with one Item definition's use surface.
+ *
+ * The core, `useEffects`, the named use gate with its ids, summaries and
+ * nested Requirement trees, and `consumesOnUse`. Passive and equip content is
+ * excluded for the same reason use content is excluded from the equipment
+ * surface.
+ *
+ * The use resolver asks this and the registry asks findItemStructuralIssues(),
+ * which is built from the same rules, so a definition one refuses the other
+ * refuses too.
+ */
+export function findItemUseDefinitionIssues(
+  candidate: unknown,
+): readonly ItemDefinitionIssue[] {
+  const definition = fieldsOf(candidate);
+
+  if (definition === undefined) return [{ type: "malformed-definition" }];
+
+  return [...coreIssuesOf(definition), ...useIssuesOf(definition)];
 }
 
 
@@ -522,38 +624,29 @@ export function isValidInventoryEntry(
  * What the Item registry is handed, so a host offering a malformed Item gets a
  * refusal instead of a catalog entry that breaks something later.
  *
- * TWO SURFACES, checked together here and kept apart everywhere else. The
- * equipment surface decides whether the Item may be worn and is what the equip
- * transition asks about. The use surface is the Effects and Requirements that
- * fire when a player uses the thing; nothing executes them yet, and equipping
- * must never depend on their validity — a potion with a broken healing Effect
- * is a broken potion, not a reason to refuse to strap the belt on.
+ * EVERY SURFACE, WITH THE CORE COUNTED ONCE. The surfaces are kept apart
+ * everywhere else — equipping never depends on use validity, and using never
+ * depends on equipment validity — and meet here because a definition broken in
+ * either half is malformed content.
  *
- * They meet at REGISTRATION and nowhere else, because a definition that is
- * malformed in either half is malformed content and does not belong in a
- * catalog at all. When the use path lands it can take the second half over as
- * findItemUseDefinitionIssues() without disturbing the first.
+ * Composed from the per-surface rules rather than from the two public
+ * validators' results. Both of those include the core, so concatenating them
+ * would report a missing inventory mode twice. The rules themselves are shared,
+ * which is what keeps registration and the use resolver in agreement: neither
+ * can accept a use surface the other refuses.
  */
 export function findItemStructuralIssues(
-  definition: unknown,
+  candidate: unknown,
 ): readonly string[] {
-  const candidate = definition as
-    Partial<Record<keyof ItemDefinition, unknown>> | null;
+  const definition = fieldsOf(candidate);
 
-  const useSurface = candidate === null || typeof candidate !== "object"
-    ? []
+  const issues: readonly ItemDefinitionIssue[] = definition === undefined
+    ? [{ type: "malformed-definition" }]
     : [
-        ...findEffectsValidationIssues(candidate.useEffects, "useEffects")
-          .map((issue) => `${issue.type} at ${issue.path}`),
-        ...findRequirementsValidationIssues(
-          candidate.useRequirements,
-          "useRequirements",
-        ).map((issue) => `${issue.type} at ${issue.path}`),
+        ...coreIssuesOf(definition),
+        ...equipmentIssuesOf(definition),
+        ...useIssuesOf(definition),
       ];
 
-  return [
-    ...findItemEquipmentDefinitionIssues(definition)
-      .map(describeItemDefinitionIssue),
-    ...useSurface.map((issue) => `has a malformed use rule: ${issue}.`),
-  ];
+  return issues.map((issue) => `${describeItemDefinitionIssue(issue)}.`);
 }

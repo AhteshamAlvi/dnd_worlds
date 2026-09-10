@@ -33,7 +33,7 @@
 import type { Definition } from "../../infrastructure/registry";
 
 import type { Effect } from "../rules/effects";
-import type { NamedRequirement, Requirement } from "../rules/requirements";
+import type { NamedRequirement } from "../rules/requirements";
 
 import { isEquippedItemState, type ItemEquipmentState } from "./state";
 import type { InventoryEntryId } from "./references";
@@ -149,6 +149,11 @@ export interface ItemDefinition extends Definition {
    *
    * The universal Effect vocabulary will expand as additional reusable
    * mechanics such as healing are introduced.
+   *
+   * Resolved by resolveItemUse(), exactly once per use and never scaled by
+   * quantity, into the use result and nowhere else. They are never collected
+   * as possessed or equipped Effects — not before a use, not after one, and
+   * not while the Item is held.
    */
   readonly useEffects?: readonly Effect[];
 
@@ -158,12 +163,11 @@ export interface ItemDefinition extends Definition {
    *
    * An empty or omitted list means there are no equip prerequisites.
    *
-   * NAMED, unlike the use requirements below, because an equip attempt is
-   * something a character does on purpose and is refused to their face. The
-   * player is told which requirement stopped them, a GM may override it by
-   * name, and both of those need an identity that survives the requirement
-   * being rephrased or the list being reordered. `useRequirements` stay bare
-   * until the shared Item application work gives them the same job.
+   * NAMED, as use requirements are, because an equip attempt is something a
+   * character does on purpose and is refused to their face. The player is
+   * told which requirement stopped them, a GM may override it by name, and
+   * both of those need an identity that survives the requirement being
+   * rephrased or the list being reordered.
    *
    * These are TRANSITION-TIME gates. They are asked when the Item is put on
    * and never again: an Item already worn stays worn when the character loses
@@ -179,8 +183,47 @@ export interface ItemDefinition extends Definition {
    * Requirements that must be satisfied before the Item can be used.
    *
    * An empty or omitted list means there are no use prerequisites.
+   *
+   * NAMED for the reason equip requirements are: a use is attempted on
+   * purpose and refused by name, so each requirement carries an id that stays
+   * stable when the list is reordered or the summary reworded.
+   *
+   * Asked against the character as they stand BEFORE the use, and asked every
+   * time — unlike the equip gate, which is a moment, a use gate is the
+   * "must keep requiring something to function" mechanic that the equip gate
+   * deliberately is not.
    */
-  readonly useRequirements?: readonly Requirement[];
+  readonly useRequirements?: readonly NamedRequirement[];
+
+
+  /**
+   * When true, one successful use removes one unit from the selected entry.
+   * False or omitted means the Item is reusable.
+   *
+   * Declared, never inferred. Stackable is not consumable — a whetstone is a
+   * count and survives a sharpening — and neither is having use Effects, a
+   * name, a tag or a quantity. A guess right for potions would be wrong,
+   * silently, for the first reusable thing an author made stackable.
+   */
+  readonly consumesOnUse?: boolean;
+}
+
+
+/**
+ * Whether an Item declares anything that makes USING it meaningful.
+ *
+ * At least one of: a use Effect to resolve, a use gate to pass, or a unit to
+ * consume. A sword, a cursed idol, or gauntlets with only passive Effects are
+ * not actively usable merely because they exist, and resolving a "use" of one
+ * would report a successful event in which nothing happened.
+ *
+ * Reads the definition as typed, so ask it only of a definition whose use
+ * surface has passed findItemUseDefinitionIssues().
+ */
+export function isActivelyUsableItem(definition: ItemDefinition): boolean {
+  return (definition.useEffects?.length ?? 0) > 0 ||
+    (definition.useRequirements?.length ?? 0) > 0 ||
+    definition.consumesOnUse === true;
 }
 
 

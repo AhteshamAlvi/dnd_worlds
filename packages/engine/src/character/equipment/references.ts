@@ -133,6 +133,32 @@ export type InventoryReferenceIssue =
   | "unknown-entry"
   | "invalid-entry";
 
+/**
+ * One reference issue, as a sentence addressed to a developer.
+ *
+ * Shared by every resolver that takes an InventoryItemRef, so the equip
+ * transition and the use resolver describe one failure the same way while each
+ * keeps its own diagnostic code.
+ */
+export function describeInventoryReferenceIssue(
+  issue: InventoryReferenceIssue,
+): string {
+  switch (issue) {
+    case "invalid-reference":
+      return "The inventory reference is not a well-formed { characterId, entryId }.";
+
+    case "character-mismatch":
+      return "The inventory reference names a different character than the one supplied.";
+
+    case "unknown-entry":
+      return "The character owns no inventory entry with that id.";
+
+    case "invalid-entry":
+      return "The named inventory entry is present but structurally invalid.";
+  }
+}
+
+
 export type InventoryEntryResolution =
   | { readonly ok: true; readonly entry: CharacterItem }
   | { readonly ok: false; readonly issue: InventoryReferenceIssue };

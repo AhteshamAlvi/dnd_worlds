@@ -121,11 +121,12 @@ type Effect =
 - A validator **reports** a malformed entry; only a reference *collector* skips one. The distinction is why `ranks: [null]` used to register cleanly — a collector runs beside a validator and would otherwise report the same fault twice, but a validator doing it turns a lost rank into silence.
 - A Reference Form is checked for **reachability**, not merely for having a root. Counting roots and checking every parent exists is not acyclicity: a good root beside two slots parented to each other has one root and no dangling reference, and is still a disconnected cycle. Every slot must walk its parent chain home.
 - `rules/definitions.ts` owns `collectRuleBundles()` — the walk of every rule-bearing field, in one place. It used to live in `catalogs.ts` keyed by domain; the barrier needed the same knowledge and a registry importing `catalogs.ts` would close a module-initialisation cycle, so the walk moved down rather than being copied.
-- Items get `findItemStructuralIssues()`, which checks **both** surfaces — equipment *and* use. The two meet at registration and nowhere else: a definition broken in either half is malformed content, but equipping never depends on use validity.
+- A bundle's requirements are **one** discriminated field, `RuleRequirementBundle = { kind: "bare" | "named", entries }`, never a bare projection beside a named copy of the same list. Acquisition, Mastery and stage requirements are `bare`; Skill application, Item equip and Item use requirements are `named`. `findRuleBundleIssues()` validates a named list *as* a named list — ids, summaries, duplicates, nested trees — and `ruleBundleRequirementTrees()` is the one place it is projected to inner `requirement`s, for the reference collector only. So `useRequirements: {}` is refused as `malformed-named-requirement` rather than read as an empty gate, and a nested fault is reported once at the path the author wrote. The walk recognises an Item by any rule-bearing field, gates included.
+- Items get `findItemStructuralIssues()`, which checks **every** surface — core, equipment *and* use — and counts the core once. Each operational surface has one validator of its own, `findItemEquipmentDefinitionIssues()` for the equip transition and `findItemUseDefinitionIssues()` for the use resolver, and both include `findItemCoreDefinitionIssues()`. The surfaces meet at registration and nowhere else: a definition broken in either half is malformed content, but equipping never depends on use validity and using never depends on equipment validity.
 
 **Effect resolution keeps its `never` guard**, deliberately. `rules/resolution.ts` still throws on an unrecognised Effect discriminant, because that guard was added after ten Body effect variants were introduced and silently dropped, and softening it into a skip would trade a loud developer error for exactly that silence again. The barrier is what makes it unreachable from host data — `registerDefinition("item", { possessedEffects: [{ type: "bogus" }] })` is now refused — rather than a reason to weaken it.
 
-**Named requirements.** `NamedRequirement { id, requirement, summary? }` in `rules/requirements.ts`, with `NamedRequirementResolution` and `resolveNamedRequirements()` / `namedRequirementDisposition()` beside the evaluator. Used wherever a requirement gates something a character *attempts* and must be reportable and overridable by name — a Skill's `ApplicationRequirement` and an Item's `equipRequirements` are both aliases over it. Acquisition requirements stay bare `Requirement[]`: they are asked once and never addressed again. Ids must be non-empty and unique within their bundle, checked at catalog validation; they are never derived from an array index or the requirement's contents, because both change when content is reordered or rephrased and would break every stored override that named them.
+**Named requirements.** `NamedRequirement { id, requirement, summary? }` in `rules/requirements.ts`, with `NamedRequirementResolution` and `resolveNamedRequirements()` / `namedRequirementDisposition()` beside the evaluator. Used wherever a requirement gates something a character *attempts* and must be reportable and overridable by name — a Skill's `ApplicationRequirement` is an alias over it, and an Item's `equipRequirements` and `useRequirements` are both typed as it. Acquisition requirements stay bare `Requirement[]`: they are asked once and never addressed again. Ids must be non-empty and unique within their bundle, checked at catalog validation; they are never derived from an array index or the requirement's contents, because both change when content is reordered or rephrased and would break every stored override that named them.
 
 Attribute requirements carry a `layer: "stored" | "base" | "resolved"` — permanent acquisition normally checks `base`, so a temporary Condition can't revoke a capability the character trained for.
 
@@ -798,7 +799,7 @@ CharacterInjury { id, injuryId, location: {bodyPartIds: NonEmpty, specialPointDe
 
 ### Equipment — 2 authored items
 
-`gauntlets` (equippedEffects: +2 to Combat Ability checks), `cursed-idol` (possessedEffects: CHA -1). `ItemDefinition` supports `possessedEffects`, `equippedEffects`, `useEffects`, `equipRequirements`, `useRequirements`. `useEffects` are declared but **not executed anywhere** — no use-item pipeline exists, and `equipRequirements` are **not evaluated anywhere** either.
+`gauntlets` (equippedEffects: +2 to Combat Ability checks), `cursed-idol` (possessedEffects: CHA -1). `ItemDefinition` supports `possessedEffects`, `equippedEffects`, `useEffects`, `equipRequirements`, `useRequirements`, `consumesOnUse`. Both gates are `NamedRequirement[]`. `equipRequirements` are evaluated by the equip transition; `useRequirements`, `useEffects` and `consumesOnUse` by the Item use resolver.
 
 #### Inventory entries, not Item lines
 
@@ -856,13 +857,41 @@ Every resolution carries a trace (`character.equipment.transition`) recording on
 
 **One definition validator, two callers.** `findItemEquipmentDefinitionIssues()` in `equipment/validation.ts` holds every per-definition rule that decides whether an Item may be *worn* — inventory mode, the stackable-no-passive-Effects rule, structural soundness of `possessedEffects`/`equippedEffects`, and the equip gate's own metadata — and both `findItemCatalogIssues()` and the transition resolver ask it. They previously each held half the list, so a stackable Item declaring `equippedEffects` was reported broken by the catalog and equipped happily by the transition.
 
-The name says *equipment* because the scope is deliberately partial. `useEffects`/`useRequirements` are outside it: a broken healing Effect is a broken potion, not a reason to refuse to strap the belt on. When the use path lands it gets `findItemUseDefinitionIssues()`, and a whole-Item catalog check can combine the two without making equipping depend on use validity. `catalogs.ts` walks use fields for references today.
+The name says *equipment* because the scope is deliberately partial. `useEffects`, `useRequirements` and `consumesOnUse` are outside it: a broken healing Effect is a broken potion, not a reason to refuse to strap the belt on — or to take it off. They belong to `findItemUseDefinitionIssues()`, and `findItemStructuralIssues()` combines the surfaces at registration.
 
 It takes `unknown` and never throws, and neither do the universal rule validators beneath it.
 
 **The transition touches no Effects.** It returns a new Character with one entry's `state` changed — order preserved, every other entry the same object, `entryId`/`itemId`/`quantity` intact. `equippedEffects` appear and disappear because `resolveCharacter()` reads the new state, exactly as if a host had edited the sheet.
 
-**Not built:** ActionProfiles or costs for equipping, runtime/coordinator commitment, persistence, Item use, `useEffects`, quantity decrement, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū. Equipping a second sword is currently permitted — an honest gap, not a rule.
+#### Using an Item
+
+```ts
+resolveItemUse({ resolved, item: InventoryItemRef })
+  → EngineResult<ItemUseResolution>
+
+ItemUse { source, item, itemId, quantityBefore, quantityAfter, consumed }
+```
+
+The third timing an Item's Effects can have, and the only one that is an **event**. `possessedEffects` and `equippedEffects` are passive and collected by `collectItemEffectSources()`; `useEffects` never are — not before a use, not after one, not while held. They appear in a use result and nowhere else.
+
+Order: input → `InventoryItemRef` → definition lookup → `findItemUseDefinitionIssues()` → does the Item declare a use → positive quantity → named `useRequirements` against the **pre-use** `RequirementContext` → `useEffects` → optional decrement.
+
+- **Actively usable** means a non-empty `useEffects`, a non-empty `useRequirements`, or `consumesOnUse: true` — `isActivelyUsableItem()`. Anything else is `not-usable`: a sword is not a potion because it exists.
+- **Effects resolve once**, through `resolveRuleEffects()`, with `{ type: "item", id: itemId, instanceId: entryId }` provenance, returned as `ResolvedRuleEffects`. Quantity never multiplies them. Nothing stored is rewritten — no Attribute, BP or Body Strength changes here; routing a use's consequences to the mechanics that own those facts is not built.
+- **Consumption is declared, never inferred** — not from `inventoryMode`, `useEffects`, name, tags or quantity. `consumesOnUse: true` removes exactly one unit from the entry the reference names, matched by `entryId`. A stack needs no concrete object to be drawn from. An entry reaching zero stays on the sheet; a held or worn one returns to `carried` in the same replacement. No splitting, merging or bulk use.
+- **Atomic.** A refusal returns no Effects and no Character, and its `ItemUse` reports facts — `consumed: 0`, `quantityAfter === quantityBefore` — never what the use would have consumed. A reusable use returns the supplied Character itself; a consuming one returns a replacement with order and every unrelated entry preserved by identity.
+- **Use gates are asked every time**, unlike the equip gate: a use requirement is the "must keep requiring something to function" mechanic the equip gate deliberately is not.
+
+Dispositions: `executed` · `not-usable` · `quantity-unavailable` · `requirements-unsatisfied` · `requirements-unresolved`. Failures:
+
+```
+equipment.use.{input_invalid,reference_invalid,character_mismatch,
+               entry_unknown,entry_invalid,item_unknown,definition_invalid}
+```
+
+Trace: `character.equipment.use`. The unbound `resolveItemUse(input, lookup)` in `equipment/use.ts` is what tests drive with malformed injected definitions, and registration and the resolver are tested to refuse exactly the same use surfaces.
+
+**Not built:** ActionProfiles, action intents, costs or targets for equipping or using an Item, runtime/coordinator commitment, persistence, routing resolved `useEffects` into durable state, bulk use, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū. Equipping a second sword is currently permitted — an honest gap, not a rule.
 
 ---
 
@@ -1130,6 +1159,6 @@ Scripts: `npm test` (engine vitest — must be run from `packages/engine`, the r
 3. **Export the Nen subsystem**, or write down why it is deliberately gated. ~3,800 LOC of finished, untested, unreachable code is the largest single risk in the package. (Aura is now fully exported through its own barrel.)
 4. **Write Nen tests.** It is the only major subsystem with zero coverage.
 5. **Author Injury content.** The machinery, validation, and recovery integration are all done and tested against an empty catalog.
-6. **Start combat**, which unblocks Condition effects, Injury effects, the `useEffects` pipeline, and Body damage's caller side.
+6. **Start combat**, which unblocks Condition effects, Injury effects, routing resolved `useEffects` into the mechanics they affect, and Body damage's caller side.
 7. **Resolve the height/weight duplication** between `CharacterDetails` and `Body`.
 8. **Consume Fatigue.** The 0–10 condition and its typed states now resolve on every character and nothing reads them — Body recovery, Skills and Combat each owe a rule for 5–8, and Combat owes the Exertion Load that feeds it.

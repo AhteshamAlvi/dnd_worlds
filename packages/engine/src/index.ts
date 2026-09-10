@@ -1402,6 +1402,9 @@ export type {
   ItemEquipmentState,
   ItemId,
   ItemInventoryMode,
+  ItemUse,
+  ItemUseInput,
+  ItemUseResolution,
   ItemValidationIssue,
 } from "./character/equipment/index";
 
@@ -1412,6 +1415,12 @@ export type {
  * appear and disappear through ordinary resolveCharacter(), never because the
  * transition edited them. Ordinary refusals are dispositions inside the
  * success payload — a rule saying no is an answer, not a fault.
+ *
+ * Item use, as one pure resolution too. useEffects resolve exactly once, with
+ * the definition and entry ids as provenance, into the use result and nowhere
+ * else; a declared `consumesOnUse` removes one unit from the referenced entry
+ * in a replacement Character. A refused use returns no Effects and no
+ * Character. It is not an action: no cost, no targets, no adjudication.
  */
 export {
   EQUIPMENT_TRANSITION_KINDS,
@@ -1425,6 +1434,7 @@ export {
   getActiveItemEffects,
   getItemDefinition,
   isConcreteInventoryObject,
+  isActivelyUsableItem,
   isEquippedItemState,
   isInventoryEntryId,
   isInventoryItemRef,
@@ -1434,6 +1444,7 @@ export {
   isValidCharacterItem,
   resolveEquipmentTransition,
   resolveInventoryItemRef,
+  resolveItemUse,
 } from "./character/equipment/index";
 
 /* ── Character: progression ─────────────────────────────────────────────── */

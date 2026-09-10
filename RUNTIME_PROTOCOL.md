@@ -314,13 +314,13 @@ between forms, no Item operations, no Skill execution, no attacks or damage, no 
 no Condition stacking, no universal dice roller, no event sourcing, and no repository-wide rewrite
 of every legacy transition.
 
-Items have identity now and still have no operations. `CharacterItem` carries a stable `entryId` and
-an engagement state of `carried` / `held` / `worn`, and `InventoryItemRef { characterId, entryId }`
-is the reference an operation would name one owned object with — but no operation names one yet.
-Equipping, unequipping, using an Item, decrementing a quantity and splitting a stack are all
-unbuilt, so nothing in the inventory is a transition and none of it reaches this protocol. The
-identity exists so that when those operations arrive they can address a particular object rather
-than an array index.
+Items have identity, and their operations are pure resolutions rather than transitions.
+`CharacterItem` carries a stable `entryId` and an engagement state of `carried` / `held` / `worn`,
+and `InventoryItemRef { characterId, entryId }` is the reference equip, unequip and use each name
+one owned object with.
+Splitting and merging a stack are unbuilt, and nothing in the inventory is yet a transition that
+reaches this protocol. The identity exists so that every inventory operation — equipping, using,
+consuming — addresses a particular object rather than an array index.
 
 One rule about grouping is settled in advance because it could not wait: an Item declares whether
 its copies are `individual` objects or a `stackable` count, an individual entry may hold at most
@@ -332,5 +332,16 @@ Equip and unequip now resolve, and still do not reach this protocol. `resolveEqu
 is a pure calculation returning a REPLACEMENT Character; it charges no Action cost, issues no
 runtime request, and commits nothing through the coordinator. The caller receives a new value and
 decides what to do with it. That is deliberate rather than unfinished: an equip that cost an Action
-would need a scheduled action to charge it to, and no ActionProfile for equipping exists yet. The protocol being ready does not make any of them ready; deferred
+would need a scheduled action to charge it to, and no ActionProfile for equipping exists yet.
+
+Item use resolves too, and does not reach this protocol either. `resolveItemUse()` evaluates named
+`useRequirements` against the character as they stand before the use, resolves `useEffects` exactly
+once into the canonical sourced Effect output with `{ type: "item", id: itemId, instanceId: entryId }`
+provenance, and — only when the Item declares `consumesOnUse: true` — returns a REPLACEMENT
+Character with one unit removed from the referenced entry. It charges no cost, selects no target,
+commits nothing, and routes none of those Effects into the stored facts they describe. A refused use
+returns neither Effects nor a Character, so there is nothing for a caller to half-apply. Attaching a
+use to a neutral action intent, adjudication and settlement is where it first becomes a transition.
+
+The protocol being ready does not make any of them ready; deferred
 migrations and unbuilt mechanics are listed in [`BACKLOG.md`](BACKLOG.md).

@@ -28,36 +28,73 @@
  */
 
 import {
+  findEffectsValidationIssues,
   findNamedRequirementsValidationIssues,
   findRuleValidationIssues,
+  type RuleValidationIssue,
 } from "./validation";
 
 
 /**
- * One place a definition keeps rules, and what is in it.
+ * The requirements one place declares, and which FORM they are written in.
  *
- * `effects` and `requirements` are `unknown` rather than typed arrays, and
- * that is deliberate: this walk runs over host-registered content, so a field
- * that should hold a list may hold anything at all, and the validators these
- * feed take `unknown` precisely so the malformation is reported instead of
- * dereferenced.
+ * ONE field, discriminated, where there used to be two. A bundle carried
+ * `requirements` — bare Requirement trees, for reference walking — and, for a
+ * named gate, a second field beside it holding the same rules again in their
+ * named form, for metadata checking. Two fields describing one list are two
+ * things a caller can disagree about: the projection had already discarded
+ * every entry it could not read, so a malformed named list and an empty one
+ * looked identical through it, and nothing in the type said which field was
+ * the truth.
  *
- * `namedRequirements` carries the same requirements in their named form when
- * the field has one, ALONGSIDE rather than instead of `requirements` — the two
- * are checked for different things. `requirements` is walked for catalog
- * references, and this is checked for the id and summary metadata that a bare
- * Requirement does not have.
+ * So the bundle holds the list exactly as authored and says what kind of list
+ * it is. Structural validation checks it in that form — ids, summaries,
+ * duplicates and nested trees for a named list — and a walk that wants only
+ * the trees asks ruleBundleRequirementTrees(), the one place a named list is
+ * projected.
+ *
+ * bare  — acquisition and Mastery requirements: asked once, addressed never.
+ * named — gates a character attempts and is refused by name: a Skill's
+ *         application requirements, an Item's equip and use requirements.
+ *
+ * `entries` is `unknown` for the reason `effects` is: host content may put
+ * anything in the field, and the validators these feed take `unknown` so the
+ * malformation is reported instead of dereferenced.
  */
+export type RuleRequirementBundle =
+  | {
+      readonly kind: "bare";
+      readonly entries: unknown;
+    }
+  | {
+      readonly kind: "named";
+      readonly entries: unknown;
+    };
+
+
+/** One place a definition keeps rules, and what is in it. */
 export interface RuleBundle {
   readonly where: string;
   readonly effects: unknown;
-  readonly requirements: unknown;
-  readonly namedRequirements?: unknown;
+  readonly requirements: RuleRequirementBundle;
 }
+
+
+const NO_REQUIREMENTS: RuleRequirementBundle = { kind: "bare", entries: [] };
 
 
 function fieldOf(definition: Record<string, unknown>, key: string): unknown {
   return definition[key];
+}
+
+
+/*
+ * ABSENT only. A `null` gate is a malformed list rather than an omitted one,
+ * and defaulting it with `??` would hand the validator an empty list and call
+ * the gate clean.
+ */
+function presentOr(value: unknown, fallback: unknown): unknown {
+  return value === undefined ? fallback : value;
 }
 
 
@@ -94,40 +131,40 @@ export function collectRuleBundles(
 
   const bundles: RuleBundle[] = [];
 
-  /* Items keep three Effect lists apart because their TIMING differs. */
+  /*
+   * Items keep three Effect lists apart because their TIMING differs, and
+   * both of their gates are NAMED: equipping and using are attempts a
+   * character makes on purpose and is refused by name.
+   */
   const itemFields = [
     ["possessed", "possessedEffects", undefined],
     ["equipped", "equippedEffects", "equipRequirements"],
     ["used", "useEffects", "useRequirements"],
   ] as const;
 
+  /*
+   * Any rule-bearing Item field marks the definition as an Item, both gates
+   * included. An Item declaring only a use gate would otherwise fall through
+   * to the generic walk, which looks for `requirements` and walks nothing.
+   */
   const isItem = itemFields.some(
-    ([, effectField]) => fieldOf(content, effectField) !== undefined,
-  ) || fieldOf(content, "equipRequirements") !== undefined;
+    ([, effectField, requirementField]) =>
+      fieldOf(content, effectField) !== undefined ||
+      (requirementField !== undefined &&
+        fieldOf(content, requirementField) !== undefined),
+  );
 
   if (isItem) {
     for (const [where, effectField, requirementField] of itemFields) {
-      const requirements = requirementField === undefined
-        ? []
-        : fieldOf(content, requirementField) ?? [];
-
-      /*
-       * Only equip requirements are NAMED. Use requirements stay bare until
-       * the shared Item application work gives them the same job — being
-       * reported to a player and overridden by name — and claiming them here
-       * would validate metadata nothing authors yet.
-       */
-      const named = requirementField === "equipRequirements"
-        ? { namedRequirements: requirements }
-        : {};
-
       bundles.push({
         where,
         effects: fieldOf(content, effectField) ?? [],
-        requirements: requirementField === "equipRequirements"
-          ? entriesOf(requirements).map((entry) => entry["requirement"])
-          : requirements,
-        ...named,
+        requirements: requirementField === undefined
+          ? NO_REQUIREMENTS
+          : {
+              kind: "named",
+              entries: presentOr(fieldOf(content, requirementField), []),
+            },
       });
     }
 
@@ -137,7 +174,7 @@ export function collectRuleBundles(
   bundles.push({
     where: "definition",
     effects: fieldOf(content, "effects") ?? [],
-    requirements: fieldOf(content, "requirements") ?? [],
+    requirements: { kind: "bare", entries: fieldOf(content, "requirements") ?? [] },
   });
 
   const application = recordOf(fieldOf(content, "application"));
@@ -149,10 +186,7 @@ export function collectRuleBundles(
       bundles.push({
         where: "application",
         effects: [],
-        requirements: entriesOf(applicationRequirements).map(
-          (entry) => entry["requirement"],
-        ),
-        namedRequirements: applicationRequirements,
+        requirements: { kind: "named", entries: applicationRequirements },
       });
     }
   }
@@ -163,7 +197,7 @@ export function collectRuleBundles(
     bundles.push({
       where: `rank ${String(rank["rank"])}`,
       effects: rank["effects"] ?? [],
-      requirements: rank["requirements"] ?? [],
+      requirements: { kind: "bare", entries: rank["requirements"] ?? [] },
     });
   }
 
@@ -171,7 +205,7 @@ export function collectRuleBundles(
     bundles.push({
       where: `stage ${String(stage["stage"])}`,
       effects: stage["effects"] ?? [],
-      requirements: stage["requirements"] ?? [],
+      requirements: { kind: "bare", entries: stage["requirements"] ?? [] },
     });
   }
 
@@ -184,12 +218,81 @@ export function collectRuleBundles(
       bundles.push({
         where: `${state} injury`,
         effects: treatment[state],
-        requirements: [],
+        requirements: NO_REQUIREMENTS,
       });
     }
   }
 
   return bundles;
+}
+
+
+/**
+ * The Requirement TREES in a bundle, whichever form they were written in.
+ *
+ * For a walk that inspects what a requirement asks about — catalog reference
+ * checking — rather than how it is named. A bare list already is that; a named
+ * list is projected to each entry's inner `requirement`.
+ *
+ * A COLLECTOR's projection, and safe only for a collector. Entries that are
+ * not objects are skipped and a list that is not a list projects to nothing,
+ * which would be exactly wrong for validation — it would turn
+ * `useRequirements: {}` into an empty gate. findRuleBundleIssues() validates
+ * the unprojected list, so that fault is refused there while this walk simply
+ * finds no references in it.
+ */
+export function ruleBundleRequirementTrees(bundle: RuleBundle): unknown {
+  const { requirements } = bundle;
+
+  if (requirements.kind === "bare") return requirements.entries;
+
+  return entriesOf(requirements.entries).map((entry) => entry["requirement"]);
+}
+
+
+/**
+ * One structural fault in a bundle.
+ *
+ * `rule` is a malformed Effect or Requirement tree; `requirement` is a fault
+ * in a named requirement's wrapper or in the tree it names.
+ */
+export interface RuleBundleIssue {
+  readonly kind: "rule" | "requirement";
+  readonly issue: RuleValidationIssue;
+}
+
+
+/**
+ * Every structural fault in one bundle.
+ *
+ * Shared by the registration barrier and by catalog validation, which render
+ * the same faults for different readers. It used to be two copies of one loop.
+ *
+ * A bare list is checked as Requirement trees. A named list is checked as a
+ * NAMED list — the wrapper and, through it, every tree inside — and never as
+ * its projection, so a nested fault is reported once, at the path the author
+ * wrote, rather than once per representation.
+ */
+export function findRuleBundleIssues(
+  bundle: RuleBundle,
+): readonly RuleBundleIssue[] {
+  const { requirements } = bundle;
+
+  if (requirements.kind === "bare") {
+    return findRuleValidationIssues(bundle.effects, requirements.entries).map(
+      (issue): RuleBundleIssue => ({ kind: "rule", issue }),
+    );
+  }
+
+  return [
+    ...findEffectsValidationIssues(bundle.effects).map(
+      (issue): RuleBundleIssue => ({ kind: "rule", issue }),
+    ),
+    ...findNamedRequirementsValidationIssues(
+      requirements.entries,
+      bundle.where,
+    ).map((issue): RuleBundleIssue => ({ kind: "requirement", issue })),
+  ];
 }
 
 
@@ -204,7 +307,7 @@ export function collectRuleBundles(
  *
  * Strings rather than typed issues, because the consumer is a registration
  * refusal a person reads. The typed form is still available from
- * rules/validation.ts for callers that need to switch on it.
+ * findRuleBundleIssues() for callers that need to switch on it.
  */
 export function findContentStructuralIssues(
   definition: unknown,
@@ -214,23 +317,9 @@ export function findContentStructuralIssues(
   for (const bundle of collectRuleBundles(definition)) {
     const where = bundle.where === "definition" ? "" : ` (${bundle.where})`;
 
-    for (const issue of findRuleValidationIssues(
-      bundle.effects,
-      bundle.requirements,
-    )) {
+    for (const { kind, issue } of findRuleBundleIssues(bundle)) {
       issues.push(
-        `has a malformed rule${where}: ${issue.type} at ${issue.path}.`,
-      );
-    }
-
-    if (bundle.namedRequirements === undefined) continue;
-
-    for (const issue of findNamedRequirementsValidationIssues(
-      bundle.namedRequirements,
-      bundle.where,
-    )) {
-      issues.push(
-        `has a malformed requirement${where}: ${issue.type} at ${issue.path}.`,
+        `has a malformed ${kind}${where}: ${issue.type} at ${issue.path}.`,
       );
     }
   }

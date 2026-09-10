@@ -37,10 +37,10 @@ import {
 import type { Effect } from "./rules/effects";
 import type { NamedRequirement, Requirement } from "./rules/requirements";
 import {
-  findNamedRequirementsValidationIssues,
-  findRuleValidationIssues,
-} from "./rules/validation";
-import { collectRuleBundles } from "./rules/definitions";
+  collectRuleBundles,
+  findRuleBundleIssues,
+  ruleBundleRequirementTrees,
+} from "./rules/definitions";
 
 import { clanRegistry, type ClanDefinition } from "./identity/clans";
 import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
@@ -353,27 +353,16 @@ export function findCatalogReferenceIssues(): readonly string[] {
         const where =
           bundle.where === "definition" ? "" : ` (${bundle.where})`;
 
-        for (const issue of findRuleValidationIssues(
-          bundle.effects,
-          bundle.requirements,
-        )) {
-          issues.push(
-            `${label} "${definition.id}"${where} has a malformed rule: ${issue.type} at ${issue.path}.`,
-          );
-        }
-
         /*
-         * The metadata a bare Requirement does not have. A blank or repeated
-         * requirement id makes a finding nothing can address and an override
-         * that lands on two requirements at once — invisible until a GM tries
-         * to use it, which is the worst moment to discover it.
+         * A named bundle is validated as a named list, including the metadata
+         * a bare Requirement does not have. A blank or repeated requirement id
+         * makes a finding nothing can address and an override that lands on
+         * two requirements at once — invisible until a GM tries to use it,
+         * which is the worst moment to discover it.
          */
-        for (const issue of findNamedRequirementsValidationIssues(
-          bundle.namedRequirements,
-          bundle.where,
-        )) {
+        for (const { kind, issue } of findRuleBundleIssues(bundle)) {
           issues.push(
-            `${label} "${definition.id}"${where} has a malformed requirement: ${issue.type} at ${issue.path}.`,
+            `${label} "${definition.id}"${where} has a malformed ${kind}: ${issue.type} at ${issue.path}.`,
           );
         }
 
@@ -393,8 +382,13 @@ export function findCatalogReferenceIssues(): readonly string[] {
           }
         }
 
+        /*
+         * References live in the Requirement TREES, so a named gate is
+         * projected to the rules inside it here — and only here, in a
+         * collector, after the unprojected list has been validated above.
+         */
         for (const reference of collectRequirementReferences(
-          bundle.requirements,
+          ruleBundleRequirementTrees(bundle),
         )) {
           const targetDomain = REQUIREMENT_DOMAINS[reference.domain];
 

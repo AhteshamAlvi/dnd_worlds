@@ -10,6 +10,11 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import {
+  collectRuleBundles,
+  ruleBundleRequirementTrees,
+} from "../character/rules/definitions";
+
 import { minimalSkillApplication } from "../character/capabilities/applications";
 
 import {
@@ -292,6 +297,98 @@ describe("findCatalogReferenceIssues", () => {
     );
   });
 
+  it("checks the references inside an Item's named use requirements", () => {
+    /*
+     * An Item with ONLY a use gate, deliberately. The walk used to recognise
+     * an Item by its Effect lists and its equip gate, so a definition like
+     * this fell through to the generic walk, which looks for `requirements`
+     * and found nothing to check.
+     */
+    const result = registerDefinition("item", {
+      id: "spirit-key",
+      inventoryMode: "individual",
+      name: "Spirit Key",
+      description: "A test Item.",
+      useRequirements: [
+        {
+          id: "spirit-touched",
+          requirement: { type: "hasTrait", traitId: "spirit-touched" },
+          summary: "The key turns only for the spirit-touched.",
+        },
+        {
+          id: "moonless-or-one-armed",
+          requirement: {
+            type: "any",
+            requirements: [
+              { type: "hasClan", clanId: "moonless" },
+              { type: "hasTrait", traitId: "one-armed" },
+            ],
+          },
+        },
+      ],
+    });
+
+    expect(result.ok).toBe(true);
+
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining('Item "spirit-key" (used) requires unknown Trait "spirit-touched"'),
+      expect.stringContaining('Item "spirit-key" (used) requires unknown Clan "moonless"'),
+    ]);
+  });
+
+  it("refuses a use gate whose requirements cannot be told apart", () => {
+    const result = registerDefinition("item", {
+      id: "spirit-key",
+      inventoryMode: "individual",
+      name: "Spirit Key",
+      description: "A test Item.",
+      useRequirements: [
+        { id: "same", requirement: { type: "hasTrait", traitId: "one-armed" } },
+        { id: "same", requirement: { type: "levelMinimum", minimum: 2 } },
+      ],
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("duplicate-named-requirement-id at used[1].id");
+    expect(isKnownDefinitionId("item", "spirit-key")).toBe(false);
+  });
+
+  it("refuses a use requirement with a blank id or an empty summary", () => {
+    for (const entry of [
+      { id: "   ", requirement: { type: "hasTrait", traitId: "one-armed" } },
+      { id: "ok", summary: "", requirement: { type: "hasTrait", traitId: "one-armed" } },
+    ]) {
+      const result = registerDefinition("item", {
+        id: "spirit-key",
+        inventoryMode: "individual",
+        name: "Spirit Key",
+        description: "A test Item.",
+        useRequirements: [entry] as never,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason)
+        .toMatch(/invalid-named-requirement-(id|summary)/);
+    }
+  });
+
+  it("refuses a malformed named list rather than reading it as an empty one", () => {
+    for (const useRequirements of [{}, null, 42, "requires-awakening", [null], [42]]) {
+      const result = registerDefinition("item", {
+        id: "spirit-key",
+        inventoryMode: "individual",
+        name: "Spirit Key",
+        description: "A test Item.",
+        useRequirements: useRequirements as never,
+      });
+
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason)
+        .toContain("malformed-named-requirement");
+    }
+  });
+
   it("refuses a structurally malformed rule at registration", () => {
     /*
      * This used to register the Trait and then assert that catalog validation
@@ -529,5 +626,66 @@ describe("registering custom Body content", () => {
     );
 
     expect(criticalPoints.points.map((point) => point.id)).toContain("tail-base:tail-1");
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Rule bundles                                                               */
+/* -------------------------------------------------------------------------- */
+
+describe("collectRuleBundles", () => {
+  const NAMED = {
+    id: "needs-one-arm",
+    requirement: { type: "hasTrait", traitId: "one-armed" },
+  };
+
+  const BARE = { type: "levelMinimum", minimum: 2 };
+
+  it("says which form each requirement list is written in", () => {
+    const item = collectRuleBundles({
+      possessedEffects: [],
+      equipRequirements: [NAMED],
+      useRequirements: [NAMED],
+    });
+
+    expect(item.map((bundle) => [bundle.where, bundle.requirements.kind]))
+      .toEqual([
+        ["possessed", "bare"],
+        ["equipped", "named"],
+        ["used", "named"],
+      ]);
+
+    const skill = collectRuleBundles({
+      requirements: [BARE],
+      application: { requirements: [NAMED] },
+      mastery: { ranks: [{ rank: 2, requirements: [BARE] }] },
+    });
+
+    expect(skill.map((bundle) => [bundle.where, bundle.requirements.kind]))
+      .toEqual([
+        ["definition", "bare"],
+        ["application", "named"],
+        ["rank 2", "bare"],
+      ]);
+  });
+
+  it("keeps a named list exactly as authored, malformed or not", () => {
+    for (const entries of [{}, null, [null], [NAMED]]) {
+      const used = collectRuleBundles({ useRequirements: entries })
+        .find((bundle) => bundle.where === "used");
+
+      expect(used?.requirements).toEqual({ kind: "named", entries });
+    }
+  });
+
+  it("projects named entries to their trees only when asked", () => {
+    const [, equipped] = collectRuleBundles({ equipRequirements: [NAMED] });
+
+    expect(ruleBundleRequirementTrees(equipped!)).toEqual([NAMED.requirement]);
+
+    const [definition] = collectRuleBundles({ requirements: [BARE] });
+
+    expect(ruleBundleRequirementTrees(definition!)).toEqual([BARE]);
   });
 });

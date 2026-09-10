@@ -55,13 +55,22 @@ import {
   type EquipmentTransitionResolution,
 } from "./transitions";
 
+import {
+  resolveItemUse as resolveUse,
+  type ItemUse,
+  type ItemUseInput,
+  type ItemUseResolution,
+} from "./use";
+
 import type { RuleEffectSource } from "../rules/resolution";
 
 import {
   describeItemDefinitionIssue,
   findInventoryEntryIssues,
+  findItemCoreDefinitionIssues,
   findItemEquipmentDefinitionIssues,
   findItemStructuralIssues,
+  findItemUseDefinitionIssues,
   isCharacterItemShape,
   isInventoryEntryId,
   isInventoryQuantity,
@@ -93,6 +102,7 @@ import {
 import {
   ITEM_INVENTORY_MODES,
   getActiveItemEffects,
+  isActivelyUsableItem,
   isItemInventoryMode,
   isStackableItem,
   type CharacterItem,
@@ -192,7 +202,8 @@ export function getItemDefinition(
  *
  * Possessed Effects apply to anything owned; equipped Effects apply on top
  * for what is worn. Use Effects are events and are not collected here — they
- * happen when a player uses the Item, not because it is in a bag.
+ * happen when a player uses the Item, not because it is in a bag, and they
+ * are resolved by resolveItemUse() into its result and nowhere else.
  */
 export function collectItemEffectSources(
   items: readonly CharacterItem[] = [],
@@ -298,6 +309,19 @@ export function resolveEquipmentTransition(
 }
 
 /**
+ * What happens when a character uses one owned entry.
+ *
+ * The rules live in equipment/use.ts and take the catalog as an argument; this
+ * is the binding that supplies the engine's own, exactly as
+ * resolveEquipmentTransition() is.
+ */
+export function resolveItemUse(
+  input: ItemUseInput,
+): EngineResult<ItemUseResolution> {
+  return resolveUse(input, getItemDefinition);
+}
+
+/**
  * What can be wrong with the Item catalog itself, as opposed to a character.
  *
  * The per-definition rules live in equipment/validation.ts and are shared with
@@ -345,6 +369,9 @@ export type {
   ItemDefinition,
   ItemEquipmentState,
   ItemInventoryMode,
+  ItemUse,
+  ItemUseInput,
+  ItemUseResolution,
   ItemValidationIssue,
   InventoryEntryId,
   InventoryEntryResolution,
@@ -360,10 +387,13 @@ export {
   describeItemDefinitionIssue,
   equipmentTransitionKind,
   findInventoryEntry,
+  findItemCoreDefinitionIssues,
   findItemEquipmentDefinitionIssues,
   findItemStructuralIssues,
+  findItemUseDefinitionIssues,
   findInventoryEntryOutcome,
   getActiveItemEffects,
+  isActivelyUsableItem,
   isCharacterItemShape,
   isConcreteInventoryObject,
   isEquippedItemState,

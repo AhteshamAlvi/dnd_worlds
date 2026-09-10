@@ -2067,3 +2067,105 @@ describe("capability code composes the neutral vocabularies", () => {
     ]);
   });
 });
+
+
+/*
+ * A rule bundle holds each requirement list once.
+ *
+ * The walk used to carry a named gate twice: `requirements`, the bare trees
+ * projected out of the named entries, and a second field beside it holding the
+ * same entries in their named form. The projection had already dropped every
+ * entry it could not read, so a malformed named list and an empty one looked
+ * the same through it, and a nested fault was reported under two paths. One
+ * discriminated field replaced the pair, and a second field coming back would
+ * restore both problems without any type error to announce it.
+ */
+describe("a rule bundle holds its requirements once", () => {
+  const DEFINITIONS = join(SRC, "character", "rules", "definitions.ts");
+  const ITEM_TYPES = join(SRC, "character", "equipment", "types.ts");
+  const ITEM_USE = join(SRC, "character", "equipment", "use.ts");
+
+  const everySource = sourceFilesUnder(SRC)
+    .filter((path) => !path.includes("__tests__"))
+    /* The decision log records the field's history in prose stored as data. */
+    .filter((path) => path !== DECISION_LOG);
+
+  const codeOf = (path: string) =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+  const PARALLEL = /\bnamedRequirements\b/;
+
+  const DISCRIMINATED =
+    /\binterface\s+RuleBundle\s*\{[^}]*\breadonly\s+requirements\s*:\s*RuleRequirementBundle\s*;/s;
+
+  it("finds the sources it is checking", () => {
+    expect(everySource).toContain(DEFINITIONS);
+    expect(everySource).toContain(ITEM_TYPES);
+    expect(everySource).toContain(ITEM_USE);
+  });
+
+  it("names no parallel named-requirement field anywhere", () => {
+    expect(everySource.filter((path) => PARALLEL.test(codeOf(path))))
+      .toEqual([]);
+  });
+
+  it("types a bundle's requirements as the discriminated union", () => {
+    const source = codeOf(DEFINITIONS);
+
+    expect(DISCRIMINATED.test(source)).toBe(true);
+    expect(source).toMatch(/readonly\s+kind\s*:\s*"bare"\s*;/);
+    expect(source).toMatch(/readonly\s+kind\s*:\s*"named"\s*;/);
+  });
+
+  it("would catch the parallel representation coming back", () => {
+    /* Guards the guard: a pattern that matches nothing is not enforcement. */
+    expect(PARALLEL.test("readonly namedRequirements?: unknown;")).toBe(true);
+    expect(PARALLEL.test("readonly requirements: RuleRequirementBundle;"))
+      .toBe(false);
+
+    expect(DISCRIMINATED.test(
+      "export interface RuleBundle {\n" +
+      "  readonly where: string;\n" +
+      "  readonly effects: unknown;\n" +
+      "  readonly requirements: unknown;\n}",
+    )).toBe(false);
+
+    expect(DISCRIMINATED.test(
+      "export interface RuleBundle {\n" +
+      "  readonly where: string;\n" +
+      "  readonly effects: unknown;\n" +
+      "  readonly requirements: RuleRequirementBundle;\n}",
+    )).toBe(true);
+  });
+
+  it("types both Item gates as the one shared named contract", () => {
+    const source = codeOf(ITEM_TYPES);
+
+    expect(source).toMatch(
+      /readonly\s+equipRequirements\?\s*:\s*readonly\s+NamedRequirement\[\]\s*;/,
+    );
+    expect(source).toMatch(
+      /readonly\s+useRequirements\?\s*:\s*readonly\s+NamedRequirement\[\]\s*;/,
+    );
+
+    /* No bare Requirement list survives on an Item, and no Item-local copy. */
+    expect(/\breadonly\s+Requirement\[\]/.test(source)).toBe(false);
+    expect(/\binterface\s+\w*UseRequirement\b/.test(source)).toBe(false);
+  });
+
+  it("has Item use delegate to the canonical resolvers", () => {
+    /*
+     * A use resolver with its own requirement aggregate or its own Effect
+     * switch would be a second answer to questions the engine already answers
+     * once, and the first rule change would split them.
+     */
+    const source = codeOf(ITEM_USE);
+
+    expect(source).toContain("resolveNamedRequirements(");
+    expect(source).toContain("namedRequirementDisposition(requirements)");
+    expect(source).toContain("resolveRuleEffects([");
+    expect(source).toContain("findItemUseDefinitionIssues(definition)");
+  });
+});

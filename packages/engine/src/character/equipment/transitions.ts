@@ -92,7 +92,11 @@ import {
 import type { Character } from "../types";
 import type { ResolvedCharacter } from "../resolution";
 
-import { resolveInventoryItemRef, type InventoryItemRef } from "./references";
+import {
+  describeInventoryReferenceIssue,
+  resolveInventoryItemRef,
+  type InventoryItemRef,
+} from "./references";
 import { isConcreteInventoryObject, isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
 import {
   describeItemDefinitionIssue,
@@ -232,18 +236,6 @@ const REFERENCE_ERROR_CODES = {
   "invalid-entry": "equipment.transition.entry_invalid",
 } as const;
 
-const REFERENCE_ERROR_MESSAGES = {
-  "invalid-reference":
-    "The inventory reference is not a well-formed { characterId, entryId }.",
-  "character-mismatch":
-    "The inventory reference names a different character than the one supplied.",
-  "unknown-entry":
-    "The character owns no inventory entry with that id.",
-  "invalid-entry":
-    "The named inventory entry is present but structurally invalid.",
-} as const;
-
-
 /* -------------------------------------------------------------------------- */
 /* Trace                                                                      */
 /* -------------------------------------------------------------------------- */
@@ -363,7 +355,7 @@ export function resolveEquipmentTransition(
     return engineFailure(traceOf(inputs, found.issue), [
       structuralError(
         REFERENCE_ERROR_CODES[found.issue],
-        REFERENCE_ERROR_MESSAGES[found.issue],
+        describeInventoryReferenceIssue(found.issue),
       ),
     ]);
   }
