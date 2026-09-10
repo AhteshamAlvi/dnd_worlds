@@ -120,6 +120,7 @@ export function findReferenceFormDefinitionStructuralIssues(
 
   const issues: string[] = [];
   const slotIds = new Set<string>();
+  const continuityKeys = new Set<string>();
   let roots = 0;
 
   for (const [index, candidate] of parts.entries()) {
@@ -148,6 +149,29 @@ export function findReferenceFormDefinitionStructuralIssues(
       slotIds.add(slotId);
     }
 
+    /*
+     * A continuity key is what makes two forms COMPARABLE — a Wolf's
+     * front-right leg and a Human's right arm are the same identity said
+     * twice, and only because both say "upper-limb:right".
+     *
+     * Repeating one inside a single form makes that identity ambiguous in the
+     * one place it must not be: an Injury names continuity keys, and a
+     * transformation matches on them, so two slots claiming one identity means
+     * a wing fracture that could be on either of two limbs and no way to say
+     * which.
+     */
+    const continuityKey = part["continuityKey"];
+
+    if (typeof continuityKey === "string") {
+      if (continuityKeys.has(continuityKey)) {
+        issues.push(
+          `declares the continuity identity "${continuityKey}" more than once.`,
+        );
+      }
+
+      continuityKeys.add(continuityKey);
+    }
+
     const attachment = part["attachment"];
 
     if (attachment === null) {
@@ -166,6 +190,23 @@ export function findReferenceFormDefinitionStructuralIssues(
       if (!isPositionOnAxis(joint[field])) {
         issues.push(`has an attachment ${field} outside 0..1.`);
       }
+    }
+
+    /*
+     * Optional, and constrained when present. An attachment site is an
+     * identifier the host and later anatomy code look up; a blank one prints
+     * as nothing and matches nothing, which is indistinguishable from having
+     * declared no site at all — except that the author believed they had.
+     */
+    const site = joint["site"];
+
+    if (
+      site !== undefined &&
+      (typeof site !== "string" || site.trim().length === 0)
+    ) {
+      issues.push(
+        `has an attachment site of ${String(site)}, which is not an identifier.`,
+      );
     }
   }
 

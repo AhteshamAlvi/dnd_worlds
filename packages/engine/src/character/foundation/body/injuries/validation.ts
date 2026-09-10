@@ -41,6 +41,8 @@
 import {
   createBodyPartDefinitionMap,
   matchesBodyPartSelector,
+  validateBodyPartSelector,
+  type BodyPartSelector,
 } from "../selectors";
 import type {
   Anatomy,
@@ -325,8 +327,34 @@ function findInjuryApplicabilityIssues(
   const issues: string[] = [];
 
 
-  const hasBodyPartApplicability =
-    applicability["bodyParts"] !== undefined;
+  const bodyParts = applicability["bodyParts"];
+
+  const hasBodyPartApplicability = bodyParts !== undefined;
+
+  /*
+   * PRESENT is not the same as USABLE.
+   *
+   * Counting the field as applicability because it exists let
+   * `{ bodyParts: 42 }` satisfy "must declare anatomical applicability" — an
+   * Injury that declares where it applies and names nothing a body could have.
+   * The selector vocabulary owns what a valid one is, so it is asked rather
+   * than second-guessed here.
+   */
+  if (hasBodyPartApplicability) {
+    if (typeof bodyParts !== "object" || bodyParts === null) {
+      return [
+        `Injury "${injuryId}" declares a BodyPart applicability that is not a selector.`,
+      ];
+    }
+
+    const selector = validateBodyPartSelector(bodyParts as BodyPartSelector);
+
+    if (!selector.valid) {
+      return [
+        `Injury "${injuryId}" declares an invalid BodyPart applicability selector.`,
+      ];
+    }
+  }
 
   const declaredSpecialPointIds = applicability["specialPointDefinitionIds"];
 
@@ -418,20 +446,24 @@ function findInjuryRecoveryIssues(
 
   const recovery = candidate as Record<string, unknown>;
 
-  if (recovery["treatmentRequired"] !== true) {
-    /*
-     * Anything other than an explicit `true` means no treatment gate, which is
-     * the same answer a missing field gives — and the same answer this always
-     * gave, since a falsy value took this branch. A non-boolean is still worth
-     * naming, because "treatmentRequired: 'yes'" reads as a gate and is not.
-     */
-    return typeof recovery["treatmentRequired"] === "boolean" ||
-      recovery["treatmentRequired"] === undefined
-      ? []
-      : [
-          `Injury "${injuryId}" has a treatmentRequired of ${String(recovery["treatmentRequired"])}, which is not a yes or a no.`,
-        ];
+  const treatmentRequired = recovery["treatmentRequired"];
+
+  /*
+   * REQUIRED, and an actual boolean.
+   *
+   * Reading an absent field as `false` was the reasonable-looking default that
+   * made `recovery: {}` a valid recovery contract — an Injury that heals on
+   * its own, which is a real mechanical claim nobody made. The field is
+   * required by the type, so an author who omitted it has not chosen the
+   * permissive answer; they have not answered.
+   */
+  if (typeof treatmentRequired !== "boolean") {
+    return [
+      `Injury "${injuryId}" must say whether treatment is required; it says ${String(treatmentRequired)}.`,
+    ];
   }
+
+  if (!treatmentRequired) return [];
 
   const bpRecoveryCeilingFraction = recovery["bpRecoveryCeilingFraction"];
 

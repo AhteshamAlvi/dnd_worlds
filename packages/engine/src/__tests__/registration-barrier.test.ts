@@ -415,6 +415,38 @@ describe("each domain's local structure is refused at registration", () => {
     ["injury", "no recovery at all", { recovery: undefined }],
     ["special-point", "a placement with no selector", { placement: {} }],
     ["body-part", "a repeated tag", { tags: ["limb", "limb"] }],
+
+    /*
+     * The four that were ACCEPTED rather than throwing, which is the quieter
+     * half of the same problem. Each looked like a validator doing its job and
+     * was letting content through.
+     */
+    [
+      "skill",
+      "a malformed entry in its rank list",
+      { mastery: { maximumMastery: 3, ranks: [null] } },
+    ],
+    [
+      "skill",
+      "a rank list entry that is not a rank at all",
+      { mastery: { maximumMastery: 3, ranks: [42] } },
+    ],
+    ["injury", "a recovery contract that answers nothing", { recovery: {} }],
+    [
+      "injury",
+      "a treatmentRequired that is not a yes or a no",
+      { recovery: { treatmentRequired: "yes" } },
+    ],
+    [
+      "injury",
+      "a BodyPart applicability that is not a selector",
+      { applicability: { bodyParts: 42 } },
+    ],
+    [
+      "injury",
+      "a BodyPart applicability selector that selects nothing",
+      { applicability: { bodyParts: {} } },
+    ],
   ];
 
   it.each(CASES)("refuses a %s with %s", (domain, _label, overrides) => {
@@ -506,40 +538,64 @@ describe("no domain-owned compound field can throw", () => {
     }).not.toThrow();
 
     expect(result).toBeDefined();
-
-    /*
-     * And not throwing is not enough: a boundary that survives by accepting
-     * everything is the same bug with better manners. Whatever it decided,
-     * storage has to agree with it.
-     */
-    const stored = getDefinition(domain, "house-rule") !== undefined;
-
-    expect(stored).toBe(result?.ok === true);
   });
 
-  it("refuses far more of those than it accepts", () => {
-    /*
-     * Guards the sweep above, which would pass vacuously if every hostile
-     * value happened to be legal. Most are not — an OPTIONAL field legitimately
-     * accepts `undefined`, and a couple of domains treat an empty list as
-     * "none declared", so the bar is a large majority rather than everything.
-     */
-    const outcomes = COMPOUND_FIELDS.flatMap(([domain, field]) =>
-      HOSTILE_VALUES.map((value) => {
-        const definition: Record<string, unknown> = {
-          ...validDefinitionFor(domain),
-          [field]: value,
-        };
-
-        if (value === undefined) delete definition[field];
-
-        return registerDefinition(domain, definition as never).ok;
-      }),
+  /*
+   * The sweep above proves only that nothing throws, and that is ALL it is
+   * for.
+   *
+   * It used to also assert that storage agreed with the verdict, which reads
+   * like coverage and is not: register() returns the verdict it just acted on,
+   * so the two agree by construction and the assertion could never fail. An
+   * aggregate "most were refused" threshold was the same mistake at a
+   * distance — it stays green while any one required field is wrongly
+   * accepted, which is exactly the failure worth catching.
+   *
+   * What follows is the honest version: every REQUIRED compound field, with
+   * the values it must refuse named one at a time.
+   */
+  const REQUIRED_REFUSALS: readonly (readonly [CatalogDomain, string, unknown])[] =
+    ([
+      ["skill", "application"],
+      ["injury", "applicability"],
+      ["injury", "recovery"],
+      ["item", "inventoryMode"],
+      ["body-part", "reference"],
+      ["body-part", "sensitivity"],
+      ["reference-form", "parts"],
+      ["special-point", "placement"],
+      ["special-point", "categories"],
+    ] as const).flatMap(([domain, field]) =>
+      [undefined, null, 42, true, "", "   ", Number.NaN, {}].map(
+        (value) => [domain, field, value] as const,
+      ),
     );
 
-    const refused = outcomes.filter((ok) => !ok).length;
+  it.each(REQUIRED_REFUSALS)(
+    "refuses %s with a %s of %s",
+    (domain, field, value) => {
+      const definition: Record<string, unknown> = {
+        ...validDefinitionFor(domain),
+        [field]: value,
+      };
 
-    expect(refused).toBeGreaterThan(outcomes.length * 0.6);
+      if (value === undefined) delete definition[field];
+
+      expect(registerDefinition(domain, definition as never).ok).toBe(false);
+      expect(getDefinition(domain, "house-rule")).toBeUndefined();
+    },
+  );
+
+  it("still accepts each of those fields when it is right", () => {
+    /*
+     * The control the rule above needs. A required-field check that refused
+     * every value would satisfy every case in the table and be useless.
+     */
+    for (const [domain] of COMPOUND_FIELDS) {
+      expect(
+        registerDefinition(domain, validDefinitionFor(domain) as never).ok,
+      ).toBe(true);
+    }
   });
 });
 
@@ -612,6 +668,58 @@ describe("a Reference Form is a tree, not merely rooted", () => {
     ]);
 
     expect(result.ok).toBe(false);
+  });
+
+  it("refuses two slots claiming one continuity identity", () => {
+    /*
+     * A continuity key is what makes two forms comparable — a Wolf's
+     * front-right leg and a Human's right arm are the same identity said
+     * twice. Repeating one inside a single form makes that identity ambiguous
+     * in the one place it must not be: an Injury names continuity keys and a
+     * transformation matches on them, so two slots claiming one identity is a
+     * fracture that could be on either limb with no way to say which.
+     */
+    const result = registerDefinition("reference-form", {
+      ...validDefinitionFor("reference-form"),
+      parts: [
+        { ...part("root", null), continuityKey: "upper-limb:right" },
+        { ...part("arm", joint("root")), continuityKey: "upper-limb:right" },
+      ],
+    } as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("continuity identity");
+
+    expect(getDefinition("reference-form", "house-rule")).toBeUndefined();
+  });
+
+  it.each(["   ", "", 42, null, true])(
+    "refuses an attachment site of %s",
+    (site) => {
+      /*
+       * Optional, and constrained when present. A blank site prints as nothing
+       * and matches nothing, which is indistinguishable from having declared
+       * no site — except that the author believed they had.
+       */
+      const result = formWith([
+        part("root", null),
+        { ...part("arm", joint("root")), attachment: { ...joint("root"), site } },
+      ]);
+
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toContain("attachment site");
+    },
+  );
+
+  it("accepts an attachment that names a real site, and one that names none", () => {
+    expect(formWith([
+      part("root", null),
+      { ...part("arm", joint("root")), attachment: { ...joint("root"), site: "shoulder" } },
+    ]).ok).toBe(true);
+
+    expect(formWith([part("root", null), part("arm", joint("root"))]).ok)
+      .toBe(true);
   });
 
   it("accepts a real tree, including one authored out of order", () => {

@@ -456,17 +456,6 @@ function recordOf(value: unknown): Record<string, unknown> | undefined {
 }
 
 
-function recordsOf(value: unknown): readonly Record<string, unknown>[] {
-  if (!Array.isArray(value)) return [];
-
-  return value.flatMap((entry) => {
-    const record = recordOf(entry);
-
-    return record === undefined ? [] : [record];
-  });
-}
-
-
 /**
  * Everything wrong with one Mastery track.
  *
@@ -505,7 +494,27 @@ export function findMasteryTrackIssues(
 
   const seen = new Set<number>();
 
-  for (const rank of recordsOf(declaredRanks)) {
+  /*
+   * Every entry is REPORTED, never skipped.
+   *
+   * This used to filter the list down to the entries that were objects, which
+   * is what a reference COLLECTOR should do — a collector runs beside a
+   * validator and would otherwise report the same fault twice. A validator
+   * doing it is the opposite: `ranks: [null]` became a track with no ranks and
+   * registered perfectly cleanly, so the author lost a rank and was told
+   * nothing.
+   */
+  for (const [index, entry] of (Array.isArray(declaredRanks) ? declaredRanks : []).entries()) {
+    const rank = recordOf(entry);
+
+    if (rank === undefined) {
+      issues.push(
+        `${label} "${id}" has a rank at position ${index} that is not a rank.`,
+      );
+
+      continue;
+    }
+
     const value = rank["rank"];
 
     if (!isMasteryRank(value)) {
