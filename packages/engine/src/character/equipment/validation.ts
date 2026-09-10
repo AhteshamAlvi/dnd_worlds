@@ -1,12 +1,12 @@
 /*
- * What an inventory can get wrong.
+ * What an inventory entry is, and what one can get wrong.
  *
  * This moved out of equipment/index.ts when entries acquired an identity,
  * because the checks stopped being "is this id known" and became a set of
- * rules about entries — identity, uniqueness, quantity, engagement — that the
- * catalog module has no other reason to know about.
+ * rules about entries — shape, identity, uniqueness, quantity, engagement —
+ * that the catalog module has no other reason to know about.
  *
- * Two things changed in what is checked, and both are consequences of the
+ * Three things changed in what is checked, and each is a consequence of the
  * entry model rather than new policy:
  *
  * A repeated `itemId` is no longer an error. It used to be reported as
@@ -23,6 +23,15 @@
  * an object. Stack splitting, which is how a player would legitimately get
  * there, is deferred.
  *
+ * An INDIVIDUAL Item may not be stacked at all. That rule exists because
+ * permitting repeated `itemId` values and quantities above one at the same
+ * time made the same inventory mean two different things: one entry of two
+ * Cursed Idols contributed one CHA penalty and two entries of one contributed
+ * two, so a character gained or lost a modifier depending on how a host
+ * happened to group identical objects. See ItemInventoryMode in types.ts —
+ * effect-bearing content is individual, and an individual entry therefore has
+ * exactly one representation.
+ *
  * Every function here takes values that may be anything. Inventory arrives
  * from JSON, from hosts and from serialized state, so a validator that assumed
  * its input already matched CharacterItem would be assuming the answer to the
@@ -31,16 +40,100 @@
  *
  * The Item catalog is handed in rather than imported. index.ts owns the
  * registry and imports this module to expose findItemValidationIssues(), so
- * reaching back for isKnownItemId would close a value-import cycle between the
- * two — the same shape the capability lifecycle is guarded against in
+ * reaching back for getItemDefinition would close a value-import cycle between
+ * the two — the same shape the capability lifecycle is guarded against in
  * architecture.test.ts. It also means these rules can be run against a host's
  * own catalog, which is what "custom content is additive" is supposed to mean.
+ *
+ * The field predicates live HERE rather than beside the types they describe,
+ * and references.ts imports them. The direction matters: a lookup has to be
+ * able to refuse a malformed entry, so identity and shape rules must sit below
+ * the reference module rather than beside it.
  */
 
-import { isInventoryEntryId, type InventoryEntryId } from "./references";
 import { isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
 
-import type { CharacterItem } from "./types";
+import { isStackableItem, type CharacterItem, type ItemDefinition } from "./types";
+
+import type { InventoryEntryId } from "./references";
+
+
+/** How this module is told what the catalog contains. */
+export type ItemDefinitionLookup =
+  (itemId: string) => ItemDefinition | undefined;
+
+
+/* -------------------------------------------------------------------------- */
+/* Field rules                                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Whether a value is a usable entry id.
+ *
+ * Whitespace is not identity. `"   "` reads as a filled-in field and prints as
+ * nothing, so it is refused alongside the empty string rather than accepted as
+ * an id nobody can see or type.
+ */
+export function isInventoryEntryId(value: unknown): value is InventoryEntryId {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+
+/**
+ * Whether a value is a legal entry quantity.
+ *
+ * Zero is legal — an emptied quiver is still a quiver — so the floor is zero
+ * rather than one. Fractions are not: half a sword is not a thing a character
+ * owns, and NaN and Infinity are neither integers nor counts. Number.isInteger
+ * refuses all three.
+ */
+export function isInventoryQuantity(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+
+/**
+ * Whether an engaged entry is one identifiable object.
+ *
+ * Both engagement rules collapse into this one test. "A zero-quantity entry
+ * must be carried" and "a held or worn entry must have quantity exactly one"
+ * are the same rule read from either end, and writing them as two checks would
+ * report an empty held quiver twice.
+ */
+function engagementIsCoherent(
+  state: ItemEquipmentState,
+  quantity: number,
+): boolean {
+  return !isEquippedItemState(state) || quantity === 1;
+}
+
+
+/**
+ * Whether a value is structurally a CharacterItem.
+ *
+ * SHAPE only, and deliberately catalog-free: every field the interface
+ * promises exists and holds a legal primitive, and the engagement rule holds
+ * because a held entry of three is not an object no matter which catalog it
+ * came from. What it cannot answer is whether the Item exists or whether an
+ * individual definition is being stacked — both need a catalog, and a
+ * predicate that silently needed one would be unusable from a lookup.
+ *
+ * So a value passing this is safe to READ. It is not thereby a valid entry on
+ * a character sheet; findInventoryEntryIssues() is what says that.
+ */
+export function isCharacterItemShape(value: unknown): value is CharacterItem {
+  if (typeof value !== "object" || value === null) return false;
+
+  const candidate = value as Partial<Record<keyof CharacterItem, unknown>>;
+
+  if (!isInventoryEntryId(candidate.entryId)) return false;
+  if (typeof candidate.itemId !== "string") return false;
+  if (candidate.itemId.trim().length === 0) return false;
+  if (!isInventoryQuantity(candidate.quantity)) return false;
+  if (!isItemEquipmentState(candidate.state)) return false;
+
+  return engagementIsCoherent(candidate.state, candidate.quantity);
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -92,40 +185,13 @@ export type ItemValidationIssue =
       readonly entryId: InventoryEntryId;
       readonly state: ItemEquipmentState;
       readonly quantity: number;
+    }
+  | {
+      readonly type: "invalid-individual-item-quantity";
+      readonly entryId: InventoryEntryId;
+      readonly itemId: string;
+      readonly quantity: number;
     };
-
-
-/* -------------------------------------------------------------------------- */
-/* Field rules                                                                */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Whether a value is a legal entry quantity.
- *
- * Zero is legal — an emptied quiver is still a quiver — so the floor is zero
- * rather than one. Fractions are not: half a sword is not a thing a character
- * owns, and NaN and Infinity are neither integers nor counts. Number.isInteger
- * refuses all three.
- */
-export function isInventoryQuantity(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
-}
-
-
-/**
- * Whether an engaged entry is one identifiable object.
- *
- * Both of the ticket's engagement rules collapse into this one test. "A
- * zero-quantity entry must be carried" and "a held or worn entry must have
- * quantity exactly one" are the same rule read from either end, and writing
- * them as two checks would report an empty held quiver twice.
- */
-function engagementIsCoherent(
-  state: ItemEquipmentState,
-  quantity: number,
-): boolean {
-  return !isEquippedItemState(state) || quantity === 1;
-}
 
 
 /* -------------------------------------------------------------------------- */
@@ -143,7 +209,7 @@ function engagementIsCoherent(
  */
 export function findInventoryEntryIssues(
   items: readonly CharacterItem[] | undefined,
-  isKnownItemId: (itemId: string) => boolean,
+  getItemDefinition: ItemDefinitionLookup,
 ): readonly ItemValidationIssue[] {
   if (!Array.isArray(items)) return [];
 
@@ -186,7 +252,11 @@ export function findInventoryEntryIssues(
      * one Item is a character with two of the thing, which is the case the
      * entry model exists to represent.
      */
-    if (typeof entry.itemId !== "string" || !isKnownItemId(entry.itemId)) {
+    const definition = typeof entry.itemId === "string"
+      ? getItemDefinition(entry.itemId)
+      : undefined;
+
+    if (definition === undefined) {
       issues.push({ type: "unknown-item", entryId, itemId: entry.itemId });
     }
 
@@ -201,6 +271,25 @@ export function findInventoryEntryIssues(
         type: "invalid-item-quantity",
         entryId,
         quantity: entry.quantity,
+      });
+    }
+
+    /*
+     * Only asked once the Item is known and the quantity is a count. An
+     * unknown definition has no inventory mode to test against, and the
+     * unknown-item message is the one that leads to the fix.
+     */
+    if (
+      quantityIsValid &&
+      definition !== undefined &&
+      !isStackableItem(definition) &&
+      (entry.quantity as number) > 1
+    ) {
+      issues.push({
+        type: "invalid-individual-item-quantity",
+        entryId,
+        itemId: definition.id,
+        quantity: entry.quantity as number,
       });
     }
 
@@ -233,11 +322,11 @@ export function findInventoryEntryIssues(
 }
 
 
-/** Whether an entry is structurally sound in its own right. */
+/** Whether an entry is sound in its own right, against a catalog. */
 export function isValidInventoryEntry(
   value: unknown,
-  isKnownItemId: (itemId: string) => boolean,
+  getItemDefinition: ItemDefinitionLookup,
 ): value is CharacterItem {
-  return findInventoryEntryIssues([value as CharacterItem], isKnownItemId)
+  return findInventoryEntryIssues([value as CharacterItem], getItemDefinition)
     .length === 0;
 }

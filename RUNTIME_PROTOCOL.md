@@ -320,5 +320,11 @@ is the reference an operation would name one owned object with — but no operat
 Equipping, unequipping, using an Item, decrementing a quantity and splitting a stack are all
 unbuilt, so nothing in the inventory is a transition and none of it reaches this protocol. The
 identity exists so that when those operations arrive they can address a particular object rather
-than an array index. The protocol being ready does not make any of them ready; deferred
+than an array index.
+
+One rule about grouping is settled in advance because it could not wait: an Item declares whether
+its copies are `individual` objects or a `stackable` count, an individual entry may hold at most
+one, and a stackable definition may declare no passive Effects. That is what keeps one entry equal
+to one mechanical source, so a future decrement or stack split cannot change a character's modifiers
+by regrouping what they already own. The protocol being ready does not make any of them ready; deferred
 migrations and unbuilt mechanics are listed in [`BACKLOG.md`](BACKLOG.md).

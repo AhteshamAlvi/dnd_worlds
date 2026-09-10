@@ -381,6 +381,13 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     resolution:
       "A held or worn entry must hold exactly one; split the stack or carry it.",
   },
+  "invalid-individual-item-quantity": {
+    code: "character.item.individual_quantity_invalid",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" stacks ${issue.quantity} of "${issue.itemId}", which is an individual Item.`,
+    resolution:
+      "Give each copy its own entry; only stackable Items are counted in one.",
+  },
 };
 
 

@@ -96,6 +96,7 @@ describe("attribute provenance", () => {
 
     registerDefinition("item", {
       id: "swift-boots",
+      inventoryMode: "individual",
       name: "Swift Boots",
       description: "A test Item.",
       equippedEffects: [

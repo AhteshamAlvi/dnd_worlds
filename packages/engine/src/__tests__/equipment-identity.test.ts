@@ -33,20 +33,25 @@ import {
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
+  ITEM_DEFINITIONS,
   ITEM_EQUIPMENT_STATES,
   collectItemEffectSources,
   collectItemState,
   createInventoryItemRef,
   findInventoryEntry,
+  findInventoryEntryOutcome,
+  findItemCatalogIssues,
   findItemValidationIssues,
   getActiveItemEffects,
   getItemDefinition,
+  isCharacterItemShape,
   isConcreteInventoryObject,
   isEquippedItemState,
   isInventoryEntryId,
   isInventoryItemRef,
   isInventoryQuantity,
   isItemEquipmentState,
+  isStackableItem,
   resolveInventoryItemRef,
   type CharacterItem,
   type ItemEquipmentState,
@@ -94,6 +99,36 @@ function entry(overrides: Partial<CharacterItem> = {}): CharacterItem {
     state: "carried",
     ...overrides,
   };
+}
+
+
+/*
+ * A stackable Item, registered per test rather than authored.
+ *
+ * The engine's own catalog holds two Items and both are individual, which is
+ * correct: a stackable one would be authored content — a consumable or
+ * ammunition — that this ticket explicitly does not design. Registering it
+ * here exercises the mode without shipping a rule nobody chose.
+ *
+ * It declares no passive Effects, which is not incidental: findItemCatalog-
+ * Issues() refuses a stackable definition that does, and a test fixture
+ * breaking the catalog rule it is meant to sit beside would be the wrong kind
+ * of convenient.
+ */
+const STACKABLE_ID = "trail-rations";
+
+function registerStackable(): void {
+  registerDefinition("item", {
+    id: STACKABLE_ID,
+    name: "Trail Rations",
+    description: "A test Item whose copies are a count and nothing else.",
+    inventoryMode: "stackable",
+  });
+}
+
+
+function stack(overrides: Partial<CharacterItem> = {}): CharacterItem {
+  return entry({ itemId: STACKABLE_ID, ...overrides });
 }
 
 
@@ -257,6 +292,89 @@ describe("inventory references", () => {
 });
 
 
+describe("a lookup never hands back an unvalidated entry", () => {
+  const CHARACTER = "char-abc";
+
+  /*
+   * The defect this suite exists for: findInventoryEntry() matched on entryId
+   * alone and then narrowed the result to CharacterItem, so
+   * `[{ entryId: "sword-1" }]` resolved ok:true and handed the caller an
+   * "entry" with no itemId, no quantity and no state — typed as a complete
+   * one. Matching an id proves an id matched. It proves nothing about the rest
+   * of the object.
+   */
+  const MALFORMED: readonly unknown[] = [
+    { entryId: "target" },
+    { entryId: "target", itemId: null, quantity: 1, state: "carried" },
+    { entryId: "target", itemId: "gauntlets", quantity: Number.NaN, state: "carried" },
+    { entryId: "target", itemId: "gauntlets", quantity: 1, state: "invalid" },
+    { entryId: "target", itemId: "", quantity: 1, state: "carried" },
+    { entryId: "target", itemId: "gauntlets", quantity: -1, state: "carried" },
+    /* Held with a quantity of three is not one object, whatever it claims. */
+    { entryId: "target", itemId: "gauntlets", quantity: 3, state: "held" },
+  ];
+
+  it.each(MALFORMED.map((value, index) => [index, value] as const))(
+    "refuses malformed entry %i rather than resolving it",
+    (_index, malformed) => {
+      const items = [malformed] as unknown as readonly CharacterItem[];
+
+      const resolved = resolveInventoryItemRef(
+        createInventoryItemRef(CHARACTER, "target"),
+        CHARACTER,
+        items,
+      );
+
+      expect(resolved.ok).toBe(false);
+      expect(resolved.ok === false && resolved.issue).toBe("invalid-entry");
+
+      expect(findInventoryEntry(items, "target")).toBeUndefined();
+      expect(isCharacterItemShape(malformed)).toBe(false);
+    },
+  );
+
+  it("distinguishes a corrupt entry from one that is gone", () => {
+    /*
+     * Not folded into unknown-entry on purpose. The object IS on the sheet and
+     * cannot be used, and telling a host it does not exist invites the wrong
+     * fix — dropping a line that needs repairing.
+     */
+    const corrupt = [{ entryId: "target" }] as unknown as readonly CharacterItem[];
+
+    expect(findInventoryEntryOutcome(corrupt, "target"))
+      .toEqual({ ok: false, issue: "invalid-entry" });
+
+    expect(findInventoryEntryOutcome(corrupt, "never-owned"))
+      .toEqual({ ok: false, issue: "unknown-entry" });
+  });
+
+  it("still returns a sound entry standing beside a corrupt one", () => {
+    const ragged = [
+      { entryId: "broken" },
+      entry({ entryId: "sound" }),
+    ] as unknown as readonly CharacterItem[];
+
+    expect(findInventoryEntry(ragged, "sound")?.itemId).toBe("gauntlets");
+    expect(findInventoryEntry(ragged, "broken")).toBeUndefined();
+  });
+
+  it("accepts every field of a sound entry, and says so structurally", () => {
+    /* The positive half: the guard must not be refusing everything. */
+    expect(isCharacterItemShape(entry())).toBe(true);
+    expect(isCharacterItemShape(entry({ state: "held" }))).toBe(true);
+    expect(isCharacterItemShape(entry({ quantity: 0 }))).toBe(true);
+
+    /*
+     * Catalog membership is deliberately NOT part of the shape: whether
+     * "spirit-blade" exists depends on what a host registered, and a lookup
+     * that answered differently before and after a catalog load would be one
+     * nobody could reason about.
+     */
+    expect(isCharacterItemShape(entry({ itemId: "not-a-real-item" }))).toBe(true);
+  });
+});
+
+
 /* -------------------------------------------------------------------------- */
 /* Equipment state                                                            */
 /* -------------------------------------------------------------------------- */
@@ -294,9 +412,11 @@ describe("equipment state", () => {
   });
 
   it("refuses hostile quantities without throwing", () => {
+    registerStackable();
+
     /*
      * 42 is dropped from the sweep because it is a perfectly good count of
-     * arrows. Keeping it would have this test assert that a legal quantity is
+     * rations. Keeping it would have this test assert that a legal quantity is
      * refused, which is the kind of hostile-input check that passes while
      * describing the wrong rule.
      */
@@ -305,7 +425,7 @@ describe("equipment state", () => {
       expect(isInventoryQuantity(value)).toBe(false);
 
       expect(
-        findItemValidationIssues([entry({ quantity: value as number })]),
+        findItemValidationIssues([stack({ quantity: value as number })]),
       ).toContainEqual({
         type: "invalid-item-quantity",
         entryId: "e1",
@@ -316,8 +436,8 @@ describe("equipment state", () => {
     /* Zero is legal: an emptied quiver is still a quiver. So is a real count. */
     expect(isInventoryQuantity(0)).toBe(true);
     expect(isInventoryQuantity(42)).toBe(true);
-    expect(findItemValidationIssues([entry({ quantity: 0 })])).toEqual([]);
-    expect(findItemValidationIssues([entry({ quantity: 42 })])).toEqual([]);
+    expect(findItemValidationIssues([stack({ quantity: 0 })])).toEqual([]);
+    expect(findItemValidationIssues([stack({ quantity: 42 })])).toEqual([]);
 
     /* Fractions and negatives are not counts of anything. */
     for (const value of [1.5, -1, -0.5]) {
@@ -326,9 +446,16 @@ describe("equipment state", () => {
   });
 
   it("refuses a held or worn entry that is not exactly one object", () => {
+    registerStackable();
+
     for (const state of ["held", "worn"] as const) {
+      /*
+       * Read off a STACKABLE Item, so the only rule under test is engagement.
+       * An individual Item at quantity 3 is separately invalid, and asserting
+       * both here would make the test pass for a reason it does not name.
+       */
       for (const quantity of [0, 2, 3]) {
-        expect(findItemValidationIssues([entry({ state, quantity })])).toEqual([
+        expect(findItemValidationIssues([stack({ state, quantity })])).toEqual([
           {
             type: "invalid-engaged-item-quantity",
             entryId: "e1",
@@ -338,16 +465,40 @@ describe("equipment state", () => {
         ]);
       }
 
+      expect(findItemValidationIssues([stack({ state, quantity: 1 })]))
+        .toEqual([]);
+
+      /* And an individual Item engages the same way at one. */
       expect(findItemValidationIssues([entry({ state, quantity: 1 })]))
         .toEqual([]);
     }
   });
 
-  it("lets a carried entry hold any legal quantity, zero included", () => {
+  it("lets a carried stackable entry hold any legal quantity", () => {
+    registerStackable();
+
     for (const quantity of [0, 1, 7]) {
       expect(
-        findItemValidationIssues([entry({ state: "carried", quantity })]),
+        findItemValidationIssues([stack({ state: "carried", quantity })]),
       ).toEqual([]);
+    }
+  });
+
+  it("refuses to stack an individual Item at all", () => {
+    for (const quantity of [2, 7]) {
+      expect(findItemValidationIssues([entry({ quantity })])).toEqual([
+        {
+          type: "invalid-individual-item-quantity",
+          entryId: "e1",
+          itemId: "gauntlets",
+          quantity,
+        },
+      ]);
+    }
+
+    /* Zero and one are the two an individual entry may hold. */
+    for (const quantity of [0, 1]) {
+      expect(findItemValidationIssues([entry({ quantity })])).toEqual([]);
     }
   });
 
@@ -415,6 +566,8 @@ describe("effects by engagement state", () => {
   it("never collects useEffects", () => {
     registerDefinition("item", {
       id: "healing-draught",
+      /* A consumable: nobody asks which draught, and it bears no passive rule. */
+      inventoryMode: "stackable",
       name: "Healing Draught",
       description: "A test Item whose Effects are events.",
       useEffects: [
@@ -624,5 +777,108 @@ describe("Item provenance carries both the definition and the object", () => {
     );
 
     expect(keys.size).toBe(3);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Representation invariance                                                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The same objects must mean the same thing however they were written down.
+ *
+ * Permitting repeated `itemId` values and quantities above one at the same
+ * time made that false: getActiveItemEffects() contributes a definition's
+ * Effects once per ENTRY and cannot scale them by a count, so two Cursed Idols
+ * written as one entry of two produced CHA -1 while two entries of one
+ * produced CHA -2. A character gained a modifier because a host grouped
+ * identical objects differently.
+ *
+ * The fix is not to guess a grouping. It is to leave exactly one legal way to
+ * write each case, which is what ItemInventoryMode does.
+ */
+describe("inventory grouping cannot change a character", () => {
+  it("refuses the ambiguous representation instead of picking a meaning", () => {
+    const grouped = [
+      entry({ entryId: "idols", itemId: "cursed-idol", quantity: 2 }),
+    ];
+
+    const split = [
+      entry({ entryId: "left", itemId: "cursed-idol" }),
+      entry({ entryId: "right", itemId: "cursed-idol" }),
+    ];
+
+    expect(findItemValidationIssues(grouped)).toEqual([
+      {
+        type: "invalid-individual-item-quantity",
+        entryId: "idols",
+        itemId: "cursed-idol",
+        quantity: 2,
+      },
+    ]);
+
+    expect(findItemValidationIssues(split)).toEqual([]);
+  });
+
+  it("resolves the only legal representation to the honest total", () => {
+    const resolved = resolveTestCharacter(
+      createTestCharacter({
+        items: [
+          entry({ entryId: "left", itemId: "cursed-idol" }),
+          entry({ entryId: "right", itemId: "cursed-idol" }),
+        ],
+      }),
+    );
+
+    /* Two idols, two penalties. */
+    expect(resolved.attributes.resolved.cha).toBe(8);
+  });
+
+  it("keeps a stackable Item free of the passive Effects it could not scale", () => {
+    /*
+     * The other half of the invariant, enforced at the catalog rather than the
+     * sheet. A stackable definition with a possessedEffect would apply it once
+     * for a stack of one and once for a stack of fifty, because no Effect in
+     * the vocabulary carries a multiplier — so the catalog refuses it until
+     * quantity-scaled Effects exist.
+     */
+    registerDefinition("item", {
+      id: "tainted-coins",
+      name: "Tainted Coins",
+      description: "A test Item that stacks and wrongly claims a passive rule.",
+      inventoryMode: "stackable",
+      possessedEffects: [
+        { type: "modifyResolvedAttribute", attribute: "cha", amount: -1 },
+      ],
+    });
+
+    expect(findItemCatalogIssues()).toEqual([
+      expect.stringContaining("tainted-coins"),
+    ]);
+  });
+
+  it("leaves the authored catalog clean, and its Items individual", () => {
+    expect(findItemCatalogIssues()).toEqual([]);
+
+    for (const definition of Object.values(ITEM_DEFINITIONS)) {
+      /* Both authored Items bear passive Effects, so both must be individual. */
+      expect(isStackableItem(definition)).toBe(false);
+    }
+  });
+
+  it("lets a stackable Item carry use Effects, which are events", () => {
+    /* A potion is used one at a time; a stack of them is still one event. */
+    registerDefinition("item", {
+      id: "smelling-salts",
+      name: "Smelling Salts",
+      description: "A test consumable.",
+      inventoryMode: "stackable",
+      useEffects: [
+        { type: "modifyResolvedAttribute", attribute: "vit", amount: 1 },
+      ],
+    });
+
+    expect(findItemCatalogIssues()).toEqual([]);
   });
 });

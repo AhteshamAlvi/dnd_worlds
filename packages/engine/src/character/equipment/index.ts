@@ -45,6 +45,8 @@ import type { RuleEffectSource } from "../rules/resolution";
 
 import {
   findInventoryEntryIssues,
+  isCharacterItemShape,
+  isInventoryEntryId,
   isInventoryQuantity,
   isValidInventoryEntry,
   type ItemValidationIssue,
@@ -53,7 +55,7 @@ import {
 import {
   createInventoryItemRef,
   findInventoryEntry,
-  isInventoryEntryId,
+  findInventoryEntryOutcome,
   isInventoryItemRef,
   resolveInventoryItemRef,
   type InventoryEntryId,
@@ -70,7 +72,15 @@ import {
   type ItemEquipmentState,
 } from "./state";
 
-import { getActiveItemEffects, type CharacterItem, type ItemDefinition } from "./types";
+import {
+  ITEM_INVENTORY_MODES,
+  getActiveItemEffects,
+  isItemInventoryMode,
+  isStackableItem,
+  type CharacterItem,
+  type ItemDefinition,
+  type ItemInventoryMode,
+} from "./types";
 
 export type ItemId = string;
 
@@ -84,6 +94,7 @@ export const ITEM_DEFINITIONS = {
     id: "gauntlets",
     name: "Reinforced Gauntlets",
     description: "Weighted gauntlets that lend force to a blow when worn.",
+    inventoryMode: "individual",
     /*
      * Deliberately effect-less, and this is the honest answer rather than a
      * placeholder.
@@ -120,6 +131,13 @@ export const ITEM_DEFINITIONS = {
     name: "Cursed Idol",
     description:
       "A small carved figure that unsettles everyone near whoever carries it.",
+    /*
+     * Individual, and the Item that forced the distinction to exist. A stack
+     * of two idols contributed one CHA penalty while two entries of one
+     * contributed two, so the same pair of objects unsettled a room twice as
+     * much depending on how a host had grouped them.
+     */
+    inventoryMode: "individual",
     possessedEffects: [
       {
         type: "modifyResolvedAttribute",
@@ -231,17 +249,61 @@ export function collectItemState(
 export function findItemValidationIssues(
   items: readonly CharacterItem[] | undefined,
 ): readonly ItemValidationIssue[] {
-  return findInventoryEntryIssues(items, isKnownItemId);
+  return findInventoryEntryIssues(items, getItemDefinition);
 }
 
 
 /** Whether one entry is sound against the authored catalog. */
 export function isValidCharacterItem(value: unknown): value is CharacterItem {
-  return isValidInventoryEntry(value, isKnownItemId);
+  return isValidInventoryEntry(value, getItemDefinition);
 }
 
+/**
+ * What can be wrong with the Item catalog itself, as opposed to a character.
+ *
+ * Two rules beyond the shared registry checks, both about inventoryMode.
+ *
+ * A stackable definition may not declare passive Effects, and this is the
+ * rule that actually closes the grouping hole. `getActiveItemEffects()`
+ * contributes a definition's Effects once per ENTRY and takes no account of
+ * quantity, because no Effect in the vocabulary can be scaled by a count —
+ * there is no "×3" to apply to a Trait grant or a check modifier. So a
+ * stackable Item with a possessedEffect would apply it once for a stack of
+ * one and once for a stack of fifty, which is not a rule anyone would author
+ * on purpose. Until quantity-scaled Effects exist as a real mechanic, the
+ * honest state is that stackable content carries none, and `useEffects` are
+ * unaffected: a potion is an event, and events already happen one at a time.
+ *
+ * Custom entries are checked alongside authored ones, because a host's
+ * malformed Item reaches the same resolution path.
+ */
 export function findItemCatalogIssues(): readonly string[] {
-  return ITEM_REGISTRY.findCatalogIssues();
+  const issues: string[] = [...ITEM_REGISTRY.findCatalogIssues()];
+
+  for (const definition of ITEM_REGISTRY.all()) {
+    if (!isItemInventoryMode(definition.inventoryMode)) {
+      issues.push(
+        `Item "${definition.id}" must declare an inventoryMode of ${ITEM_INVENTORY_MODES.join(" or ")}.`,
+      );
+
+      continue;
+    }
+
+    if (!isStackableItem(definition)) continue;
+
+    const passive = [
+      ...(definition.possessedEffects ?? []),
+      ...(definition.equippedEffects ?? []),
+    ];
+
+    if (passive.length > 0) {
+      issues.push(
+        `Item "${definition.id}" is stackable and declares passive Effects, which apply once per entry regardless of quantity.`,
+      );
+    }
+  }
+
+  return issues;
 }
 
 // Exposed for the catalog index, which needs every registry in one map.
@@ -253,6 +315,7 @@ export type {
   CharacterItem,
   ItemDefinition,
   ItemEquipmentState,
+  ItemInventoryMode,
   ItemValidationIssue,
   InventoryEntryId,
   InventoryEntryResolution,
@@ -262,14 +325,19 @@ export type {
 
 export {
   ITEM_EQUIPMENT_STATES,
+  ITEM_INVENTORY_MODES,
   createInventoryItemRef,
   findInventoryEntry,
+  findInventoryEntryOutcome,
   getActiveItemEffects,
+  isCharacterItemShape,
   isConcreteInventoryObject,
   isEquippedItemState,
   isInventoryEntryId,
   isInventoryItemRef,
   isInventoryQuantity,
   isItemEquipmentState,
+  isItemInventoryMode,
+  isStackableItem,
   resolveInventoryItemRef,
 };

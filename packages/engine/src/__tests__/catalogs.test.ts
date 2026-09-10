@@ -269,6 +269,7 @@ describe("findCatalogReferenceIssues", () => {
   it("checks both halves of an Item's rules", () => {
     registerDefinition("item", {
       id: "spirit-blade",
+      inventoryMode: "individual",
       name: "Spirit Blade",
       description: "A test Item.",
       equippedEffects: [

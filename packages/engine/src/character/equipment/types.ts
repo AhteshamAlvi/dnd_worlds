@@ -44,12 +44,68 @@ import type { InventoryEntryId } from "./references";
 /* -------------------------------------------------------------------------- */
 
 /**
+ * Whether copies of an Item are interchangeable.
+ *
+ * individual — each copy is its own object with its own entry. A sword, a
+ *   suit of armour, a cursed idol: things that get held, worn, enchanted,
+ *   broken and named, and that a player expects to be able to point at.
+ *
+ * stackable — copies are a count and nothing else. Arrows, rations, coins:
+ *   nobody asks which arrow.
+ *
+ * This exists because permitting repeated `itemId` values and quantities above
+ * one AT THE SAME TIME made the same inventory mean two different things. Two
+ * Cursed Idols written as one entry of quantity two produced one CHA penalty;
+ * written as two entries of one they produced two. A character must not gain
+ * or lose a modifier because a host grouped identical objects differently, and
+ * the fix is not to guess a grouping — it is to make one grouping legal.
+ *
+ * So an individual Item may hold zero or one, and a stackable Item may hold
+ * any count but may not declare passive Effects until quantity-scaled Effects
+ * exist as a real mechanic. Either way one entry is exactly one mechanical
+ * source, and neither representation of "two idols" is ambiguous because only
+ * one of them validates.
+ */
+export const ITEM_INVENTORY_MODES = [
+  "individual",
+  "stackable",
+] as const;
+
+export type ItemInventoryMode = typeof ITEM_INVENTORY_MODES[number];
+
+
+export function isItemInventoryMode(
+  value: unknown,
+): value is ItemInventoryMode {
+  return typeof value === "string" &&
+    (ITEM_INVENTORY_MODES as readonly string[]).includes(value);
+}
+
+
+/** Whether copies of this Item are a count rather than distinct objects. */
+export function isStackableItem(definition: ItemDefinition): boolean {
+  return definition.inventoryMode === "stackable";
+}
+
+
+/**
  * A reusable Item definition stored in the Item catalog.
  *
  * Character inventory should reference this definition by id rather than
  * duplicating the full Item definition into character state.
  */
 export interface ItemDefinition extends Definition {
+  /**
+   * Whether copies of this Item are distinct objects or a count.
+   *
+   * Required, and deliberately not defaulted. A default would be applied
+   * silently to every Item an author forgot to think about, and the two
+   * choices differ in what a character's sheet is allowed to say — which is
+   * not a question an omission should answer.
+   */
+  readonly inventoryMode: ItemInventoryMode;
+
+
   /**
    * Effects that apply while the character possesses the Item.
    *

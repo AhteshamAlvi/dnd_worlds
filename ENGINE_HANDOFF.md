@@ -789,13 +789,31 @@ ITEM_EQUIPMENT_STATES = ["carried", "held", "worn"]
 
 `entryId` is the identity of one owned inventory ENTRY and is unique within a character. `itemId` is **not** unique: two entries may name one definition, which is how a character holds one sword and packs another. Array position is never identity — sorting, filtering or re-serializing an inventory must not change what any reference identifies.
 
-`InventoryItemRef { characterId, entryId }` is the reference type for naming one concrete owned object. `resolveInventoryItemRef(ref, characterId, items)` answers `{ ok: true, entry }` or `{ ok: false, issue }` where the issue is `invalid-reference` / `character-mismatch` / `unknown-entry`. Nothing here throws. Later Shū and action-selection work must use this rather than an array index or a bare `itemId`.
+`InventoryItemRef { characterId, entryId }` is the reference type for naming one concrete owned object. `resolveInventoryItemRef(ref, characterId, items)` answers `{ ok: true, entry }` or `{ ok: false, issue }` where the issue is `invalid-reference` / `character-mismatch` / `unknown-entry` / `invalid-entry`. Nothing here throws. Later Shū and action-selection work must use this rather than an array index or a bare `itemId`.
+
+A returned entry is **structurally** sound — `isCharacterItemShape()` has passed, so every field exists with a legal primitive and a held entry really is one object. Catalog membership is deliberately not part of that, because whether an id is known depends on what a host registered. `invalid-entry` is kept distinct from `unknown-entry`: the object is on the sheet and unusable, which is a repair rather than a deletion.
+
+#### Individual vs stackable
+
+```ts
+ITEM_INVENTORY_MODES = ["individual", "stackable"]
+
+ItemDefinition { inventoryMode, ... }   // required, never defaulted
+```
+
+Repeated `itemId` values and quantities above one could not both be free. `getActiveItemEffects()` contributes a definition's Effects once per **entry** and cannot scale them by a count — no Effect in the vocabulary carries a multiplier — so two Cursed Idols written as one entry of two produced CHA −1 while two entries of one produced CHA −2. The same objects meant different things depending on how a host grouped them.
+
+- `individual` — quantity 0 or 1 only. Weapons, armour, cursed objects: anything with passive Effects, or that a player expects to point at.
+- `stackable` — any non-negative quantity, but **may not declare `possessedEffects` or `equippedEffects`** (`findItemCatalogIssues()` refuses it). `useEffects` are fine: a potion is an event, and events already happen one at a time.
+- Either way, only a quantity-one entry may be held or worn.
+
+One entry is therefore exactly one mechanical source wherever passive Effects exist, and "two idols" has exactly one legal spelling. Both authored Items are `individual`; there is no authored stackable Item, because consumables and ammunition are content this ticket did not design.
 
 **State.** `held` and `worn` are distinct states that are both equipped; ask `isEquippedItemState()` rather than comparing against `"carried"` (architecture.test.ts enforces this). An entry may be held or worn only at quantity exactly one — a stack of three swords names no particular sword. Quantity zero is legal and means an emptied entry that still exists; it contributes no effects and no requirement presence.
 
 **Provenance.** An Item's Effect sources carry `{ type: "item", id: itemId, instanceId: entryId }`. Both facts are required: the definition id is what `hasItem` asks about, the entry id is which of two identical gauntlets produced a given bonus. `ContributionSourceRef.instanceId` is optional and absent everywhere else, so every non-Item source keeps the identity and key it always had. Source keys come from `contributionSourceKey()` and nowhere else.
 
-**Not built:** equip/unequip actions, `equipRequirements` evaluation, Item use, quantity decrement, stack splitting or merging, hands, body slots, conflicts, dual-wielding, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū.
+**Not built:** equip/unequip actions, `equipRequirements` evaluation, Item use, quantity decrement, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū.
 
 ---
 
@@ -952,7 +970,7 @@ Key decisions:
 
 ### `character/validation.ts` — the validator
 
-`validateCharacter(character) → EngineResult<ResolvedCharacter>`. The single place every domain's plain issue objects become `EngineError`s, so codes/audiences/subjects stay consistent. **43 error codes**, counted from the descriptor table rather than remembered:
+`validateCharacter(character) → EngineResult<ResolvedCharacter>`. The single place every domain's plain issue objects become `EngineError`s, so codes/audiences/subjects stay consistent. **44 error codes**, counted from the descriptor table rather than remembered:
 
 ```
 character.id.empty · character.name.empty
@@ -965,7 +983,7 @@ character.technique.{unknown,duplicate,mastery_invalid,mastery_unsupported,
                      requirements_unsatisfied,requirements_unresolved}
 character.condition.{unknown,duplicate,lifecycle_invalid}
 character.item.{unknown,entry_id_invalid,entry_duplicate,quantity_invalid,
-                state_invalid,engaged_quantity_invalid}
+                state_invalid,engaged_quantity_invalid,individual_quantity_invalid}
 character.injury.{unknown,instance_id_invalid,instance_id_duplicate,location_invalid,
                   continuity_unknown,body_part_not_applicable,special_point_unknown,
                   special_point_missing,special_point_not_hosted,special_point_not_applicable,

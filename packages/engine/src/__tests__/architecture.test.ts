@@ -336,6 +336,36 @@ describe("equipment state is a vocabulary, not a boolean", () => {
     }
   });
 
+  it("declares the inventory-mode vocabulary exactly once, beside the type", () => {
+    /*
+     * The other closed Item vocabulary, and the one that decides whether a
+     * quantity above one is legal. It lives in types.ts rather than state.ts
+     * because it is a property of the DEFINITION — whether copies of this Item
+     * are distinct objects — not of how one owned entry is being engaged.
+     */
+    const TYPES = join("character", "equipment", "types.ts");
+
+    for (const name of ["ITEM_INVENTORY_MODES", "ItemInventoryMode"]) {
+      const declarers = everySource
+        .filter((path) => !path.includes("__tests__"))
+        .filter((path) =>
+          new RegExp(
+            `\\bconst\\s+${name}\\b\\s*=|\\btype\\s+${name}\\s*=`,
+          ).test(readFileSync(path, "utf8")),
+        );
+
+      expect(declarers).toHaveLength(1);
+      expect(declarers[0]!.endsWith(TYPES)).toBe(true);
+    }
+
+    const predicates = everySource.filter((path) =>
+      /\bfunction\s+isStackableItem\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(predicates).toHaveLength(1);
+    expect(predicates[0]!.endsWith(TYPES)).toBe(true);
+  });
+
   it("asks whether a state is equipped in one place", () => {
     const declarers = everySource.filter((path) =>
       /\bfunction\s+isEquippedItemState\b/.test(readFileSync(path, "utf8")),
@@ -345,18 +375,65 @@ describe("equipment state is a vocabulary, not a boolean", () => {
     expect(declarers[0]!.endsWith(STATE)).toBe(true);
   });
 
-  it("compares no state against a literal outside the vocabulary", () => {
+  it("interprets no state by comparing it against a literal", () => {
     /*
-     * `state !== "carried"` and `state === "held" || state === "worn"` are the
-     * two ways the question gets re-derived. Only state.ts, which DECLARES the
-     * three values, may name them in code.
+     * INTERPRETATION, not use.
+     *
+     * `state !== "carried"`, `state === "held" || state === "worn"` and a
+     * switch over the three are the ways the equipped question gets
+     * re-derived, and each is a second copy of a rule isEquippedItemState()
+     * already owns. Those are what this refuses.
+     *
+     * PRODUCING a state is not that, and an earlier version of this rule
+     * banned every occurrence of the literals — which would have failed
+     * `return { ...entry, state: "held" }`, the ordinary way an equip
+     * transition is written. A guard stricter than its own stated intention
+     * gets argued with rather than obeyed, and the first ticket to hit it
+     * would have loosened it in a hurry rather than carefully.
+     *
+     * So the check is the comparison operators and `case`, in code with
+     * comments stripped. A helper that needs to branch on the vocabulary
+     * belongs in state.ts beside the values, where the switch can be
+     * exhaustive over the declared list.
      */
+    const INTERPRETS = new RegExp(
+      [
+        /* state === "held" */
+        String.raw`(?:===|!==|==|!=)\s*"(?:carried|held|worn)"`,
+        /* "held" === state */
+        String.raw`"(?:carried|held|worn)"\s*(?:===|!==|==|!=)`,
+        /* case "worn": */
+        String.raw`\bcase\s+"(?:carried|held|worn)"\s*:`,
+      ].join("|"),
+    );
+
     const offenders = everySource
       .filter((path) => !path.includes("__tests__"))
       .filter((path) => !path.endsWith(STATE))
-      .filter((path) => /"carried"|"held"|"worn"/.test(stripComments(path)));
+      .filter((path) => INTERPRETS.test(stripComments(path)));
 
     expect(offenders).toEqual([]);
+  });
+
+  it("permits constructing a state, which is what a transition does", () => {
+    /*
+     * Guards the narrowing above rather than only trusting it. If the rule
+     * tightens back into a bare literal search, this fails here — in a test
+     * that says why — instead of in Ticket 4.2's first equip function.
+     */
+    const INTERPRETS = new RegExp(
+      String.raw`(?:===|!==|==|!=)\s*"(?:carried|held|worn)"|` +
+      String.raw`"(?:carried|held|worn)"\s*(?:===|!==|==|!=)|` +
+      String.raw`\bcase\s+"(?:carried|held|worn)"\s*:`,
+    );
+
+    expect(INTERPRETS.test('return { ...entry, state: "held" };')).toBe(false);
+    expect(INTERPRETS.test('const state: ItemEquipmentState = "worn";')).toBe(false);
+    expect(INTERPRETS.test('items.map((e) => ({ ...e, state: "carried" }))')).toBe(false);
+
+    expect(INTERPRETS.test('if (entry.state !== "carried") return;')).toBe(true);
+    expect(INTERPRETS.test('state === "held" || state === "worn"')).toBe(true);
+    expect(INTERPRETS.test('switch (s) { case "worn": return 1; }')).toBe(true);
   });
 });
 
