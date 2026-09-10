@@ -564,8 +564,14 @@ describe("validation of Mastery a capability does not have", () => {
     ]);
   });
 
-  it("reports a track whose maximum is not a rank", () => {
-    registerDefinition("skill", {
+  /*
+   * These moved from "reported by catalog validation" to "refused at
+   * registration", and the move is the improvement: a Skill whose track is
+   * impossible never becomes a capability anyone can train. The rule itself is
+   * unchanged — the registry runs the same validator over authored content.
+   */
+  it("refuses a track whose maximum is not a rank", () => {
+    const result = registerDefinition("skill", {
       application: minimalSkillApplication(),
       id: "test-overreaching",
       name: "Overreaching",
@@ -573,13 +579,15 @@ describe("validation of Mastery a capability does not have", () => {
       mastery: { maximumMastery: 12 as MasteryRank },
     });
 
-    expect(findSkillCatalogIssues()).toEqual([
-      expect.stringContaining("which is not a rank"),
-    ]);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("which is not a rank");
+
+    expect(findSkillCatalogIssues()).toEqual([]);
   });
 
-  it("reports a rank defined past the track's own maximum", () => {
-    registerDefinition("skill", {
+  it("refuses a rank defined past the track's own maximum", () => {
+    const result = registerDefinition("skill", {
       application: minimalSkillApplication(),
       id: "test-overreaching",
       name: "Overreaching",
@@ -587,9 +595,8 @@ describe("validation of Mastery a capability does not have", () => {
       mastery: { maximumMastery: 3, ranks: [{ rank: 5 }] },
     });
 
-    expect(findSkillCatalogIssues()).toEqual([
-      expect.stringContaining("beyond its maximum"),
-    ]);
+    expect(result.ok).toBe(false);
+    expect(findSkillCatalogIssues()).toEqual([]);
   });
 
   it("still walks the rules on a rank now that ranks live on the track", () => {

@@ -983,15 +983,29 @@ describe("live application availability", () => {
      * refuses rather than inventing a contract, and catalog validation reports
      * the definition as unfinished.
      */
-    registerDefinition("skill", {
+    /*
+     * The contractless Skill never gets into a catalog now — the registration
+     * barrier refuses it — so the engine's refusal moved one step earlier and
+     * became a refusal a HOST reads rather than a resolution failure a player
+     * would have seen.
+     *
+     * `capabilities.application.absent` is kept and is not dead: authored
+     * content is never registered, so the resolver's own check is what stands
+     * behind the engine's catalog rather than in front of a host's.
+     */
+    const registration = registerDefinition("skill", {
       id: "test-contractless",
       name: "Contractless",
       description: "A Skill nobody said how to use.",
     } as unknown as SkillDefinition);
 
-    expect(findSkillCatalogIssues().join("\n"))
+    expect(registration.ok).toBe(false);
+    expect(registration.ok === false && registration.reason)
       .toContain("declares no application");
 
+    expect(findSkillCatalogIssues()).toEqual([]);
+
+    /* And an unregistrable Skill is simply not a Skill anyone has. */
     const contractless = resolveSkillApplication({
       skillId: "test-contractless",
       capabilities: resolveCapabilities({
@@ -1003,7 +1017,8 @@ describe("live application availability", () => {
     expect(contractless.success).toBe(false);
 
     if (!contractless.success) {
-      expect(contractless.errors[0].code).toBe("capabilities.application.absent");
+      expect(contractless.errors[0].code)
+        .toBe("capabilities.application.skill.unknown");
     }
   });
 });
@@ -1714,44 +1729,39 @@ describe("an available application projects into a neutral action profile", () =
      */
     const { range: _range, ...action } = minimalSkillApplication().action;
 
-    registerDefinition("skill", {
+    const application = { ...minimalSkillApplication(), action };
+
+    /*
+     * Rangeless content is refused at the door now, so a host cannot read a
+     * catalog complaint and project anyway — the sequence this test was
+     * written for is no longer reachable through registration.
+     *
+     * Both halves of the original property survive and are asserted where they
+     * now live: the RULE, asked of the application directly, and the BARRIER,
+     * which is what stops the content reaching a projection at all.
+     */
+    expect(
+      findSkillApplicationIssues(
+        "test-rangeless",
+        application as unknown as SkillApplicationDefinition,
+        undefined,
+      )
+        .map((error) => error.message)
+        .join("\n"),
+    ).toContain("must state its Range");
+
+    const registration = registerDefinition("skill", {
       id: "test-rangeless",
       name: "Rangeless",
       description: "Host content that never said how far it reaches.",
-      application: {
-        ...minimalSkillApplication(),
-        action,
-      },
+      application,
     } as unknown as SkillDefinition);
 
-    /* The catalog says so... */
-    expect(findSkillCatalogIssues().join("\n")).toContain("must state its Range");
+    expect(registration.ok).toBe(false);
+    expect(registration.ok === false && registration.reason)
+      .toContain("must state its Range");
 
-    const resolved = resolveSkillApplication({
-      skillId: "test-rangeless",
-      capabilities: resolveCapabilities({
-        authoredSkills: [{ skillId: "test-rangeless" }],
-      }),
-      context: emptyContext(),
-    });
-
-    expect(resolved.success).toBe(true);
-
-    if (!resolved.success) return;
-
-    expect(resolved.payload.disposition).toBe("available");
-
-    /* ...and so, independently, does the projection path. */
-    expect(() => buildSkillActionProfile(resolved.payload)).not.toThrow();
-
-    const built = buildSkillActionProfile(resolved.payload);
-
-    expect(built.success).toBe(false);
-
-    if (built.success) return;
-
-    expect(built.errors[0].code)
-      .toBe("capabilities.application.value.range.missing");
+    expect(findSkillCatalogIssues()).toEqual([]);
   });
 
   it("reports rather than throws on any hostile value at the projection boundary", () => {

@@ -34,6 +34,7 @@
 import { findContentStructuralIssues } from "../rules/definitions";
 
 import {
+  composeStructuralValidators,
   createRegistry,
   scanReferences,
 } from "../../infrastructure/registry";
@@ -175,7 +176,10 @@ export const SPECIES_DEFINITIONS = {
 const SPECIES_REGISTRY = createRegistry<SpeciesDefinition>(
   "Species",
   SPECIES_DEFINITIONS,
-  findContentStructuralIssues,
+  composeStructuralValidators(
+    findContentStructuralIssues,
+    findSpeciesDefinitionStructuralIssues,
+  ),
 );
 
 export type KnownSpeciesId = keyof typeof SPECIES_DEFINITIONS;
@@ -363,6 +367,45 @@ export function findSpeciesValidationIssues(
   return issues;
 }
 
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+/**
+ * A Species' own structure.
+ *
+ * The split here is the one the barrier turns on. "Is its own parent" is a
+ * fact about this definition alone and is refused at registration; "descends
+ * from unknown Species" and "has a circular parent chain" are facts about the
+ * CATALOG, and a Sub-species may legitimately be registered before its parent.
+ * Refusing those at registration would make load order a rule nobody authored.
+ */
+export function findSpeciesDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const species = recordOf(definition);
+
+  if (species === undefined) return [];
+
+  const issues: string[] = [];
+
+  const parentId = species["parentSpeciesId"];
+
+  if (parentId !== undefined) {
+    if (typeof parentId !== "string" || parentId.trim().length === 0) {
+      issues.push("names a parent Species that is not an id.");
+    } else if (parentId === species["id"]) {
+      issues.push("is its own parent.");
+    }
+  }
+
+  return issues;
+}
+
+
 export function findSpeciesCatalogIssues(): readonly string[] {
   const issues = [...SPECIES_REGISTRY.findCatalogIssues()];
 
@@ -371,10 +414,8 @@ export function findSpeciesCatalogIssues(): readonly string[] {
 
     if (parentId === undefined) continue;
 
-    if (parentId === definition.id) {
-      issues.push(`Species "${definition.id}" is its own parent.`);
-      continue;
-    }
+    /* Self-parenthood is refused at registration; nothing to repeat here. */
+    if (parentId === definition.id) continue;
 
     if (!isKnownSpeciesId(parentId)) {
       issues.push(

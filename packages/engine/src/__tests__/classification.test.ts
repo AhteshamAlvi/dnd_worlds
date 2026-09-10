@@ -218,18 +218,30 @@ describe("character classifications", () => {
       ]);
     });
 
-    it("survives a Sub-species registered as its own parent", () => {
-      registerDefinition("species", {
+    it("refuses a Sub-species registered as its own parent", () => {
+      /*
+       * Self-parenthood is a fact about the definition alone, so it is refused
+       * at registration rather than reported afterwards. Whether the parent
+       * EXISTS is a different question and deliberately stays a catalog check,
+       * because a Sub-species may legitimately be registered first.
+       */
+      const result = registerDefinition("species", {
         id: "ouroboros",
         name: "Ouroboros",
         description: "Its own ancestor.",
         parentSpeciesId: "ouroboros",
       });
 
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.reason).toContain("its own parent");
+
+      /*
+       * And the walk still terminates on the id, which is the property the
+       * original test cared about: nothing was stored, so there is no cycle to
+       * follow, and asking about an unknown Species is not an exception.
+       */
       expect(speciesAncestry("ouroboros")).toEqual(["ouroboros"]);
-      expect(findSpeciesCatalogIssues()).toEqual([
-        expect.stringContaining("its own parent"),
-      ]);
+      expect(findSpeciesCatalogIssues()).toEqual([]);
     });
   });
 

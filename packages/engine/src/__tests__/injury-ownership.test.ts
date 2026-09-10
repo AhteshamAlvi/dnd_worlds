@@ -207,18 +207,29 @@ describe("the Injury catalog still works from its new home", () => {
      * reimplemented — a second copy of the ceiling rule is how the two would
      * come to disagree.
      */
-    registerDefinition("injury", {
+    const definition = {
       id: "impossible",
       name: "Impossible",
       description: "A test Injury with an out-of-range ceiling.",
       applicability: { bodyParts: { types: ["arm"] } },
       recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 3 },
-    });
+    } as never;
+
+    /*
+     * The delegation is what this test is about, and it now shows up one step
+     * earlier: the registry is handed the SAME anatomical validator, so the
+     * out-of-range ceiling is refused at the door rather than reported by a
+     * catalog walk afterwards. A second copy of the ceiling rule would still
+     * be how the two came to disagree; there is still only one.
+     */
+    const registration = registerDefinition("injury", definition);
+
+    expect(registration.ok).toBe(false);
+    expect(registration.ok === false && registration.reason)
+      .toContain("bpRecoveryCeilingFraction");
 
     const composed = findInjuryCatalogIssues();
-    const anatomicalOnly = findAnatomicalInjuryCatalogIssues(
-      listAnatomicalInjuryDefinitions(),
-    );
+    const anatomicalOnly = findAnatomicalInjuryCatalogIssues([definition]);
 
     expect(
       anatomicalOnly.some((issue) =>
@@ -226,12 +237,22 @@ describe("the Injury catalog still works from its new home", () => {
       ),
     ).toBe(true);
 
-    // Composed output contains the delegated half verbatim.
-    for (const issue of anatomicalOnly) expect(composed).toContain(issue);
+    /* Nothing was stored, so the catalog has nothing left to say. */
+    expect(composed).toEqual([]);
+
+    /*
+     * The delegation, asserted where it now shows: the refusal carries Body's
+     * own message verbatim. The registry re-labels the definition and adds
+     * nothing else, so a second copy of the ceiling rule would produce a
+     * different sentence here and this would fail.
+     */
+    for (const issue of anatomicalOnly) {
+      expect(registration.ok === false && registration.reason).toBe(issue);
+    }
   });
 
-  it("reports a missing applicability declaration", () => {
-    registerDefinition("injury", {
+  it("refuses a missing applicability declaration", () => {
+    const registration = registerDefinition("injury", {
       id: "nowhere",
       name: "Nowhere",
       description: "A test Injury declaring no applicability.",
@@ -241,11 +262,9 @@ describe("the Injury catalog still works from its new home", () => {
       recovery: { treatmentRequired: false },
     });
 
-    expect(
-      findInjuryCatalogIssues().some((issue) =>
-        issue.includes("must declare anatomical applicability"),
-      ),
-    ).toBe(true);
+    expect(registration.ok).toBe(false);
+    expect(registration.ok === false && registration.reason)
+      .toContain("must declare anatomical applicability");
   });
 });
 

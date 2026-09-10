@@ -29,6 +29,7 @@
  */
 
 import {
+  composeStructuralValidators,
   createRegistry,
   scanReferences,
 } from "../../infrastructure/registry";
@@ -198,7 +199,10 @@ export const TRAIT_DEFINITIONS = {
 const TRAIT_REGISTRY = createRegistry<TraitDefinition>(
   "Trait",
   TRAIT_DEFINITIONS,
-  findContentStructuralIssues,
+  composeStructuralValidators(
+    findContentStructuralIssues,
+    findTraitDefinitionStructuralIssues,
+  ),
 );
 
 export type KnownTraitId = keyof typeof TRAIT_DEFINITIONS;
@@ -332,6 +336,38 @@ export function findTraitValidationIssues(
  * are checked generically by catalogs.ts, which runs the shared rule
  * validator over every domain rather than each domain rechecking its own.
  */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+/**
+ * A Trait's own structure.
+ *
+ * Self-parenthood only. Whether the parent EXISTS is a catalog question and
+ * stays below, because a Trait may name a parent registered a moment later.
+ */
+export function findTraitDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const trait = recordOf(definition);
+
+  if (trait === undefined) return [];
+
+  const parentId = trait["parentTraitId"];
+
+  if (parentId === undefined) return [];
+
+  if (typeof parentId !== "string" || parentId.trim().length === 0) {
+    return ["names a parent Trait that is not an id."];
+  }
+
+  return parentId === trait["id"] ? ["is its own parent."] : [];
+}
+
+
 export function findTraitCatalogIssues(): readonly string[] {
   const issues = [...TRAIT_REGISTRY.findCatalogIssues()];
 
@@ -340,10 +376,8 @@ export function findTraitCatalogIssues(): readonly string[] {
 
     if (parentId === undefined) continue;
 
-    if (parentId === trait.id) {
-      issues.push(`Trait "${trait.id}" is its own parent.`);
-      continue;
-    }
+    /* Self-parenthood is refused at registration. */
+    if (parentId === trait.id) continue;
 
     if (!isKnownTraitId(parentId)) {
       issues.push(

@@ -63,7 +63,7 @@
  * and Leg 14 against 16, while both columns summed to 100 and hid it.
  */
 
-import { createRegistry, declaresNoRules } from "../../../../infrastructure/registry";
+import { createRegistry } from "../../../../infrastructure/registry";
 import type { BodyPartDefinition, BodyPartTypeId } from "./types";
 
 export const BODY_PART_DEFINITIONS = {
@@ -261,10 +261,132 @@ export const BODY_PART_DEFINITIONS = {
   },
 } as const satisfies Record<string, BodyPartDefinition>;
 
+/*
+ * Shape validation for authored Body content.
+ *
+ * These domains carry no Effects and no Requirements, so they used to pass
+ * `declaresNoRules` — an honest statement that was also a hole: a BodyPart
+ * with a negative Volume or a Reference Form whose parts attach to nothing
+ * carries no rules to check and is still content nothing downstream can
+ * resolve.
+ *
+ * What is checked here is SHAPE and TOPOLOGY, both of which are properties of
+ * the definition alone: required fields, numeric ranges, duplicate slots, an
+ * attachment graph that is connected and rooted. What is deliberately absent
+ * is anything needing another catalog — a Reference Form naming a BodyPart
+ * type registered a moment later is legal, and that reference is checked after
+ * every catalog has loaded.
+ */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+function isFinitePositive(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+
+function isFiniteAtLeastZero(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
+
+/**
+ * One BodyPart definition's physical shape.
+ *
+ * Every reference figure is a real measurement and every one of them divides,
+ * multiplies or sums into the Body pipeline, so a zero or a negative is not an
+ * extreme value — it is a body part with no size, which drives Structural
+ * Capacity negative and is quietly rescued by a floor somewhere downstream
+ * into a part that ignores its own definition.
+ *
+ * The two that may legitimately be zero say so: a decorative horn generates no
+ * force, and an Arm contributes none of its length to height.
+ */
+export function findBodyPartDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const part = recordOf(definition);
+
+  if (part === undefined) return [];
+
+  const issues: string[] = [];
+
+  const tags = part["tags"];
+
+  if (!Array.isArray(tags)) {
+    issues.push("needs a list of tags.");
+  } else if (tags.some((tag) => typeof tag !== "string" || tag.trim() === "")) {
+    issues.push("has a tag that is not a name.");
+  }
+
+  const reference = recordOf(part["reference"]);
+
+  if (reference === undefined) {
+    issues.push("needs reference measurements.");
+  } else {
+    const POSITIVE = [
+      "lengthCm",
+      "volumeL",
+      "surfaceAreaCm2",
+      "massKg",
+      "structuralCapacity",
+    ] as const;
+
+    for (const field of POSITIVE) {
+      if (!isFinitePositive(reference[field])) {
+        issues.push(`has a reference ${field} that is not a positive measurement.`);
+      }
+    }
+
+    /* Zero is meaningful for both: no force of its own, no vertical extent. */
+    if (!isFiniteAtLeastZero(reference["intrinsicPhysicalForce"])) {
+      issues.push("has a reference intrinsicPhysicalForce below zero or non-finite.");
+    }
+
+    const height = reference["heightContribution"];
+
+    if (!isFiniteAtLeastZero(height) || (height as number) > 1) {
+      issues.push("has a heightContribution outside 0..1.");
+    }
+  }
+
+  const sensitivity = recordOf(part["sensitivity"]);
+
+  if (sensitivity === undefined) {
+    issues.push("needs morphology sensitivities.");
+
+    return issues;
+  }
+
+  for (const field of [
+    "bulkVolume",
+    "adiposityVolume",
+    "muscularityMass",
+    "muscularityForce",
+  ] as const) {
+    if (!isFiniteAtLeastZero(sensitivity[field])) {
+      issues.push(`has a ${field} sensitivity below zero or non-finite.`);
+    }
+  }
+
+  const structural = sensitivity["muscularityStructural"];
+
+  if (!isFiniteAtLeastZero(structural) || (structural as number) > 1) {
+    issues.push("has a muscularityStructural sensitivity outside 0..1.");
+  }
+
+  return issues;
+}
+
+
 const BODY_PART_REGISTRY = createRegistry<BodyPartDefinition>(
   "Body Part",
   BODY_PART_DEFINITIONS,
-  declaresNoRules,
+  findBodyPartDefinitionStructuralIssues,
 );
 
 export type KnownBodyPartTypeId = keyof typeof BODY_PART_DEFINITIONS;
@@ -280,3 +402,16 @@ export function getBodyPartDefinition(
 }
 
 export const bodyPartRegistry = BODY_PART_REGISTRY;
+
+
+/**
+ * What can be wrong with the BodyPart catalog itself.
+ *
+ * These domains had no catalog check while they had no rules to check. They
+ * have real shape validators now, and the registry runs the same one over
+ * AUTHORED content that the barrier runs over registered content — so this is
+ * how the engine's own catalog is held to the rules it imposes on a host.
+ */
+export function findBodyPartCatalogIssues(): readonly string[] {
+  return BODY_PART_REGISTRY.findCatalogIssues();
+}

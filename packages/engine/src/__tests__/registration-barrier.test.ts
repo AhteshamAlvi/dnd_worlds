@@ -34,7 +34,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
-  CATALOG_DOMAINS,
   clearCustomDefinitions,
   findCatalogReferenceIssues,
   getDefinition,
@@ -45,6 +44,42 @@ import {
 import { resolveCharacter } from "../character/resolution";
 
 import { createTestCharacter } from "./fixtures/character";
+import { validDefinitionFor, validDefinitions } from "./fixtures/catalog";
+
+import { findSpeciesCatalogIssues } from "../character/identity/species";
+import { findClanCatalogIssues } from "../character/identity/clans";
+import { findTraitCatalogIssues } from "../character/identity/traits";
+import { findSkillCatalogIssues } from "../character/capabilities/skills";
+import { findTechniqueCatalogIssues } from "../character/capabilities/techniques";
+import { findConditionCatalogIssues } from "../character/status/conditions";
+import { findInjuryCatalogIssues } from "../character/status/injuries";
+import { findItemCatalogIssues } from "../character/equipment/index";
+import { findBodyPartCatalogIssues } from "../character/foundation/body/anatomy/body-parts";
+import { findReferenceFormCatalogIssues } from "../character/foundation/body/anatomy/reference-forms";
+import { findSpecialPointCatalogIssues } from "../character/foundation/body/critical-points/special-points";
+
+import type { CatalogDomain } from "../character/catalogs";
+import type { RegistrationResult } from "../infrastructure/registry";
+
+
+/* Each domain's own catalog check, so "clean" means clean to its owner. */
+function findCatalogIssuesFor(domain: CatalogDomain): readonly string[] {
+  const checks: Record<CatalogDomain, () => readonly string[]> = {
+    species: findSpeciesCatalogIssues,
+    clan: findClanCatalogIssues,
+    trait: findTraitCatalogIssues,
+    skill: findSkillCatalogIssues,
+    technique: findTechniqueCatalogIssues,
+    condition: findConditionCatalogIssues,
+    injury: findInjuryCatalogIssues,
+    item: findItemCatalogIssues,
+    "body-part": findBodyPartCatalogIssues,
+    "reference-form": findReferenceFormCatalogIssues,
+    "special-point": findSpecialPointCatalogIssues,
+  };
+
+  return checks[domain]();
+}
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -176,20 +211,192 @@ describe("a malformed definition is refused and stores nothing", () => {
     }
   });
 
-  it("still accepts sound content, in every domain", () => {
-    /* The positive control: the barrier is not simply refusing everything. */
-    for (const domain of CATALOG_DOMAINS) {
-      const result = registerDefinition(domain, {
-        id: "house-rule",
-        name: "House Rule",
-        description: "Registered in every domain.",
-        mastery: { maximumMastery: 10 },
-        inventoryMode: "individual",
-      } as never);
+  /*
+   * The positive control, and it has to be a REAL definition per domain.
+   *
+   * A generic { id, name, description } is valid in no domain now: a Skill
+   * needs an application, a Reference Form needs a rooted part graph, an
+   * Anatomical Point needs a category. Asserting the barrier accepts nothing
+   * would be easy to pass by accident, which is why each fixture is cloned
+   * from authored content rather than invented — see fixtures/catalog.ts.
+   */
+  it.each(validDefinitions())("accepts sound %s content", (domain, definition) => {
+    const result = registerDefinition(domain, definition as never);
 
-      expect(result).toEqual({ ok: true });
-      expect(isKnownDefinitionId(domain, "house-rule")).toBe(true);
+    expect(result).toEqual({ ok: true });
+    expect(isKnownDefinitionId(domain, "house-rule")).toBe(true);
+  });
+
+  it.each(validDefinitions())(
+    "leaves the %s catalog clean after registering it",
+    (domain, definition) => {
+      /*
+       * Registration and catalog validation are the same rules asked at two
+       * moments, so anything the barrier accepts must survive the second
+       * asking. A disagreement between them would mean content that registers
+       * and then reports itself broken forever.
+       */
+      expect(registerDefinition(domain, definition as never).ok).toBe(true);
+      expect(findCatalogIssuesFor(domain)).toEqual([]);
+    },
+  );
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Identity and naming                                                        */
+/* -------------------------------------------------------------------------- */
+
+describe("the universal fields are checked before the domain's own", () => {
+  it.each([
+    ["missing", undefined],
+    ["null", null],
+    ["a number", 42],
+    ["an object", {}],
+    ["empty", ""],
+    ["blank", "   "],
+  ])("refuses a %s description", (_label, description) => {
+    const definition = {
+      ...validDefinitionFor("trait"),
+      description,
+    };
+
+    let result: RegistrationResult | undefined;
+
+    expect(() => {
+      result = registerDefinition("trait", definition as never);
+    }).not.toThrow();
+
+    expect(result).toBeDefined();
+
+    expect(result?.ok).toBe(false);
+    expect(result?.ok === false && result.reason).toContain("needs a description");
+
+    expect(isKnownDefinitionId("trait", "house-rule")).toBe(false);
+  });
+
+  it("refuses a blank name the same way", () => {
+    const result = registerDefinition("trait", {
+      ...validDefinitionFor("trait"),
+      name: "   ",
+    } as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("needs a name");
+  });
+
+  it("reports the identity fault rather than the domain's", () => {
+    /*
+     * Order, not merely coverage. A definition with no id AND three malformed
+     * Effects produces a complaint nobody can act on if the id is missing from
+     * it, so identity is settled first and the domain rules are not even run.
+     */
+    const result = registerDefinition("trait", {
+      id: "NOT VALID",
+      name: "Broken",
+      description: "A test Trait wrong in two ways at once.",
+      effects: [{ type: "bogus" }],
+    } as never);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason)
+      .toContain("must be lowercase letters");
+    expect(result.ok === false && result.reason).not.toContain("bogus");
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Each domain's own structure                                                */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Every domain now has local rules of its own, and the barrier is only
+ * complete if each of them runs at registration.
+ *
+ * These were previously reported by catalog validation, AFTER the malformed
+ * definition had been stored and could already be referenced by a character.
+ * A representative fault per domain, so a domain whose validator is dropped
+ * from its registry fails here rather than silently accepting content again.
+ */
+describe("each domain's local structure is refused at registration", () => {
+  const CASES: readonly (readonly [CatalogDomain, string, Record<string, unknown>])[] = [
+    ["skill", "no application", { application: undefined }],
+    [
+      "skill",
+      "a Mastery maximum that is not a rank",
+      { mastery: { maximumMastery: 12 } },
+    ],
+    [
+      "technique",
+      "a rank past its own maximum",
+      { mastery: { maximumMastery: 3, ranks: [{ rank: 5 }] } },
+    ],
+    ["species", "itself as its parent", { parentSpeciesId: "house-rule" }],
+    ["trait", "itself as its parent", { parentTraitId: "house-rule" }],
+    [
+      "injury",
+      "a recovery ceiling outside 0..1",
+      { recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 3 } },
+    ],
+    ["injury", "no anatomical applicability", { applicability: {} }],
+    ["item", "no inventory mode", { inventoryMode: undefined }],
+    [
+      "item",
+      "passive Effects on a stackable Item",
+      {
+        inventoryMode: "stackable",
+        possessedEffects: [
+          { type: "modifyResolvedAttribute", attribute: "cha", amount: -1 },
+        ],
+      },
+    ],
+    [
+      "body-part",
+      "a Volume of zero",
+      { reference: { lengthCm: 10, volumeL: 0, surfaceAreaCm2: 10, massKg: 1, structuralCapacity: 1, intrinsicPhysicalForce: 1, heightContribution: 0, heightAxisSign: 1 } },
+    ],
+    ["reference-form", "no parts", { parts: [] }],
+    [
+      "reference-form",
+      "a part attached to a slot it does not contain",
+      {
+        parts: [
+          {
+            slotId: "only",
+            type: "torso",
+            continuityKey: "torso:only",
+            attachment: {
+              parentSlotId: "nowhere",
+              parentPosition: 0.5,
+              childPosition: 0.5,
+            },
+          },
+        ],
+      },
+    ],
+    ["special-point", "no categories", { categories: [] }],
+  ];
+
+  it.each(CASES)("refuses a %s with %s", (domain, _label, overrides) => {
+    const definition: Record<string, unknown> = {
+      ...validDefinitionFor(domain),
+      ...overrides,
+    };
+
+    /* `undefined` in the override means "remove this field entirely". */
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value === undefined) delete definition[key];
     }
+
+    let result: RegistrationResult | undefined;
+
+    expect(() => {
+      result = registerDefinition(domain, definition as never);
+    }).not.toThrow();
+
+    expect(result?.ok).toBe(false);
+    expect(getDefinition(domain, "house-rule")).toBeUndefined();
   });
 });
 
@@ -234,6 +441,26 @@ describe("a refused replacement leaves the good definition standing", () => {
 
     expect(resolved.success).toBe(true);
     expect(resolved.success && resolved.payload.attributes.base.dex).toBe(11);
+  });
+
+  it("keeps it when the replacement breaks a DOMAIN rule rather than a universal one", () => {
+    /*
+     * The same property one layer in. A Skill whose replacement carries an
+     * impossible Mastery track is refused by the Skill's own validator, and
+     * the version already in the catalog has to survive that exactly as it
+     * survives a malformed Effect.
+     */
+    const sound = validDefinitionFor("skill");
+
+    expect(registerDefinition("skill", sound as never).ok).toBe(true);
+
+    const replacement = registerDefinition("skill", {
+      ...sound,
+      mastery: { maximumMastery: 12 },
+    } as never);
+
+    expect(replacement.ok).toBe(false);
+    expect(getDefinition("skill", "house-rule")).toEqual(sound);
   });
 
   it("lets a sound replacement through", () => {

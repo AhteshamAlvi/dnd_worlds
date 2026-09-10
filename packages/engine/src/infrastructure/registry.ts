@@ -113,6 +113,24 @@ export type StructuralValidator =
 export const declaresNoRules: StructuralValidator = () => [];
 
 
+/**
+ * One validator from several.
+ *
+ * Domains have more than one kind of local invariant — a Skill has universal
+ * Effects AND a Mastery track AND an application contract — and the
+ * alternative to composing is a bespoke wrapper per domain that has to
+ * remember to call all of them. Every issue is collected rather than
+ * short-circuiting on the first, because an author fixing homebrew should
+ * learn about all of its faults in one pass.
+ */
+export function composeStructuralValidators(
+    ...validators: readonly StructuralValidator[]
+): StructuralValidator {
+    return (definition) =>
+        validators.flatMap((validate) => validate(definition));
+}
+
+
 export function createRegistry<TDefinition extends Definition>(
     label: string,
     authored: Readonly<Record<string, TDefinition>>,
@@ -174,6 +192,21 @@ export function createRegistry<TDefinition extends Definition>(
             definition.name.trim().length === 0
         ) {
             return [`${label} "${definition.id}" needs a name.`];
+        }
+
+        /*
+         * Checked here as well as in findCatalogIssues, because the two ask at
+         * different moments and only one of them can still say no. A
+         * description arriving blank from a host is content nobody can pick
+         * out of a list, and reporting it later — after it is already in the
+         * catalog and referenced by a character — is a complaint about
+         * something that has already happened.
+         */
+        if (
+            typeof definition.description !== "string" ||
+            definition.description.trim().length === 0
+        ) {
+            return [`${label} "${definition.id}" needs a description.`];
         }
 
         /*

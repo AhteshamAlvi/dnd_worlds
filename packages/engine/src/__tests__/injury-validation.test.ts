@@ -15,6 +15,9 @@ import {
   type CharacterInjury,
 } from "../character/foundation/body/injuries";
 
+import { findAnatomicalInjuryCatalogIssues } from "../character/foundation/body/injuries/validation";
+import type { AnatomicalInjuryDefinition } from "../character/foundation/body/injuries/types";
+
 /*
  * The catalog is CONTENT and lives above Body now, so its lookup comes from
  * status/injuries/ — and Body's validators are HANDED the definitions rather
@@ -220,13 +223,14 @@ describe("treatment status validation", () => {
 
 describe("recovery-cap fraction validation", () => {
   it("accepts a fraction within [0, 1]", () => {
-    registerDefinition("injury", {
+    /* The positive control: registration accepts it and the catalog stays clean. */
+    expect(registerDefinition("injury", {
       id: "broken-rib",
       name: "Broken Rib",
       description: "A test injury.",
       applicability: { bodyParts: { types: ["torso"] } },
       recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 0.5 },
-    });
+    }).ok).toBe(true);
 
     expect(
       findInjuryCatalogIssues().some((issue) => issue.includes("broken-rib")),
@@ -234,32 +238,46 @@ describe("recovery-cap fraction validation", () => {
   });
 
   it("rejects a fraction above 1", () => {
-    registerDefinition("injury", {
+    const definition = {
       id: "broken-rib",
       name: "Broken Rib",
       description: "A test injury.",
       applicability: { bodyParts: { types: ["torso"] } },
       recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 1.5 },
-    });
+    } as unknown as AnatomicalInjuryDefinition;
+
+    /*
+     * Refused at registration now, so it never reaches the catalog — which is
+     * why the rule is asked of the DEFINITION below rather than of a catalog
+     * that no longer contains it.
+     */
+    expect(registerDefinition("injury", definition).ok).toBe(false);
 
     expect(
-      findInjuryCatalogIssues().some(
+      findAnatomicalInjuryCatalogIssues([definition]).some(
         (issue) => issue.includes("broken-rib") && issue.includes("bpRecoveryCeilingFraction"),
       ),
     ).toBe(true);
   });
 
   it("rejects a negative or non-finite fraction", () => {
-    registerDefinition("injury", {
+    const definition = {
       id: "broken-rib",
       name: "Broken Rib",
       description: "A test injury.",
       applicability: { bodyParts: { types: ["torso"] } },
       recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: -0.1 },
-    });
+    } as unknown as AnatomicalInjuryDefinition;
+
+    /*
+     * Refused at registration now, so it never reaches the catalog — which is
+     * why the rule is asked of the DEFINITION below rather than of a catalog
+     * that no longer contains it.
+     */
+    expect(registerDefinition("injury", definition).ok).toBe(false);
 
     expect(
-      findInjuryCatalogIssues().some(
+      findAnatomicalInjuryCatalogIssues([definition]).some(
         (issue) => issue.includes("broken-rib") && issue.includes("bpRecoveryCeilingFraction"),
       ),
     ).toBe(true);

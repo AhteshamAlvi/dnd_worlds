@@ -29,6 +29,7 @@ import {
 
 import { DEFINITION_ID_PATTERN } from "../infrastructure/registry";
 import { validateCharacter } from "../character/validation";
+import { validDefinitions } from "./fixtures/catalog";
 import { createTestCharacter } from "./fixtures/character";
 
 import { createAnatomy } from "../character/foundation/body/anatomy/creation";
@@ -112,22 +113,18 @@ describe("registerDefinition", () => {
     expect(isKnownDefinitionId("species", "yuki")).toBe(false);
   });
 
-  it("works in every domain", () => {
-    for (const domain of CATALOG_DOMAINS) {
-      const result = registerDefinition(domain, {
-        id: "house-rule",
-        name: "House Rule",
-        description: "Registered in every domain.",
-        // Skills and Techniques are the domains with required extra fields.
-        mastery: { maximumMastery: 10 },
-        // And an Item must say whether its copies are objects or a count;
-        // the registration barrier refuses one that does not.
-        inventoryMode: "individual",
-      });
+  it.each(validDefinitions())("works in the %s domain", (domain, definition) => {
+    /*
+     * A real definition per domain, cloned from authored content. A generic
+     * { id, name, description } is valid in none of them now — a Skill needs
+     * an application, a Reference Form a rooted part graph, an Anatomical
+     * Point a category — and inventing eleven fixtures by hand would be
+     * eleven quiet copies of rules that live somewhere else.
+     */
+    const result = registerDefinition(domain, definition as never);
 
-      expect(result).toEqual({ ok: true });
-      expect(isKnownDefinitionId(domain, "house-rule")).toBe(true);
-    }
+    expect(result).toEqual({ ok: true });
+    expect(isKnownDefinitionId(domain, "house-rule")).toBe(true);
   });
 });
 

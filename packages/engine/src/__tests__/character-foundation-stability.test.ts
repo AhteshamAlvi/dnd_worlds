@@ -966,16 +966,26 @@ describe("Recovery refuses invalid input", () => {
   });
 
   it("rejects a recovery ceiling fraction outside 0-1", () => {
-    registerDefinition("injury", {
+    /*
+     * Handed in rather than registered. The registration barrier refuses this
+     * Injury outright, which is the point of it — but Recovery is HANDED its
+     * definitions rather than reaching for a catalog, so a host can still put
+     * a malformed one in front of it, and the check that catches that is the
+     * one under test.
+     */
+    const impossible = {
       id: "impossible-cap",
       name: "Impossible Cap",
       description: "A test Injury with an out-of-range ceiling.",
       applicability: { bodyParts: { types: ["torso"] } },
       recovery: { treatmentRequired: true, bpRecoveryCeilingFraction: 3 },
-    });
+    } as never;
+
+    expect(registerDefinition("injury", impossible).ok).toBe(false);
 
     const issues = findRecoveryInputIssues(
       recoveryInput({
+        injuryDefinitions: [impossible],
         injuries: [
           {
             id: "injury-1",

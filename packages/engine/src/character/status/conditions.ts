@@ -30,6 +30,7 @@
 import { findContentStructuralIssues } from "../rules/definitions";
 
 import {
+  composeStructuralValidators,
   createRegistry,
   scanReferences,
 } from "../../infrastructure/registry";
@@ -134,7 +135,10 @@ export const CONDITION_DEFINITIONS = {
 const CONDITION_REGISTRY = createRegistry<ConditionDefinition>(
   "Condition",
   CONDITION_DEFINITIONS,
-  findContentStructuralIssues,
+  composeStructuralValidators(
+    findContentStructuralIssues,
+    findConditionDefinitionStructuralIssues,
+  ),
 );
 
 export type KnownConditionId = keyof typeof CONDITION_DEFINITIONS;
@@ -217,16 +221,41 @@ export function findConditionValidationIssues(
   return issues;
 }
 
+/*
+ * Reads a definition that may be anything.
+ *
+ * A registered definition arrives from a host, so every structural validator
+ * starts by establishing that there is an object to read at all. The universal
+ * checks in registry.ts have already refused a non-object by the time these
+ * run, but they are exported and callable on their own, and a guard that only
+ * holds because of the order two functions happen to be called in is not a
+ * guard.
+ */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+/** A Condition's own structure: the stage track it progresses through. */
+export function findConditionDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const condition = recordOf(definition);
+
+  if (condition === undefined) return [];
+
+  return findStageTrackIssues(
+    "Condition",
+    String(condition["id"]),
+    condition as StagedContent,
+  ).map((issue) => issue.replace(/^Condition "[^"]*" /, ""));
+}
+
+
 export function findConditionCatalogIssues(): readonly string[] {
-  const issues = [...CONDITION_REGISTRY.findCatalogIssues()];
-
-  for (const condition of CONDITION_REGISTRY.all()) {
-    issues.push(
-      ...findStageTrackIssues("Condition", condition.id, condition),
-    );
-  }
-
-  return issues;
+  return CONDITION_REGISTRY.findCatalogIssues();
 }
 
 // Exposed for the catalog index, which needs every registry in one map.

@@ -39,9 +39,11 @@ import {
   contributesNothing,
   sourceContributions,
 } from "../rules/content";
-import { createRegistry } from "../../infrastructure/registry";
+import { composeStructuralValidators, createRegistry } from "../../infrastructure/registry";
 
 import type { EngineResult } from "../../infrastructure/result";
+
+import { findContentStructuralIssues } from "../rules/definitions";
 
 import {
   EQUIPMENT_TRANSITION_KINDS,
@@ -167,7 +169,10 @@ export const ITEM_DEFINITIONS = {
 const ITEM_REGISTRY = createRegistry<ItemDefinition>(
   "Item",
   ITEM_DEFINITIONS,
-  findItemStructuralIssues,
+  composeStructuralValidators(
+    findContentStructuralIssues,
+    findItemStructuralIssues,
+  ),
 );
 
 export type KnownItemId = keyof typeof ITEM_DEFINITIONS;

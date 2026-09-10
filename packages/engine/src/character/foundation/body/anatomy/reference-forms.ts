@@ -27,7 +27,7 @@
  * one body wear any number of forms without losing itself.
  */
 
-import { createRegistry, declaresNoRules } from "../../../../infrastructure/registry";
+import { createRegistry } from "../../../../infrastructure/registry";
 import type { Definition } from "../../../../infrastructure/registry";
 import { createReferenceForm } from "./creation";
 import {
@@ -76,10 +76,131 @@ export const REFERENCE_FORM_DEFINITIONS = {
 } as const satisfies Record<string, ReferenceFormDefinition>;
 
 
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+function isPositionOnAxis(value: unknown): boolean {
+  return typeof value === "number" &&
+    Number.isFinite(value) &&
+    value >= 0 &&
+    value <= 1;
+}
+
+
+/**
+ * One body plan's shape and topology.
+ *
+ * A form is a graph, and the three ways a graph can be wrong are all
+ * properties of the form ALONE — which is what makes them registration
+ * questions rather than catalog ones. A duplicate slot means two parts claim
+ * one anatomical position. An attachment naming a slot the form does not
+ * contain is a limb attached to nothing. More than one rootless part is two
+ * disconnected bodies wearing one name, and none at all is a cycle.
+ *
+ * What is NOT checked here is whether each part's `type` names a BodyPart
+ * definition that exists. A form may legitimately be registered before the
+ * parts it is built from, so that reference is checked after every catalog has
+ * loaded.
+ */
+export function findReferenceFormDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const form = recordOf(definition);
+
+  if (form === undefined) return [];
+
+  const parts = form["parts"];
+
+  if (!Array.isArray(parts)) return ["needs a list of parts."];
+  if (parts.length === 0) return ["declares no parts, so it is not a body."];
+
+  const issues: string[] = [];
+  const slotIds = new Set<string>();
+  let roots = 0;
+
+  for (const [index, candidate] of parts.entries()) {
+    const part = recordOf(candidate);
+
+    if (part === undefined) {
+      issues.push(`has a part at position ${index} that is not a part.`);
+      continue;
+    }
+
+    for (const field of ["slotId", "type", "continuityKey"] as const) {
+      const value = part[field];
+
+      if (typeof value !== "string" || value.trim().length === 0) {
+        issues.push(`has a part with no ${field}.`);
+      }
+    }
+
+    const slotId = part["slotId"];
+
+    if (typeof slotId === "string") {
+      if (slotIds.has(slotId)) {
+        issues.push(`declares slot "${slotId}" more than once.`);
+      }
+
+      slotIds.add(slotId);
+    }
+
+    const attachment = part["attachment"];
+
+    if (attachment === null) {
+      roots += 1;
+      continue;
+    }
+
+    const joint = recordOf(attachment);
+
+    if (joint === undefined) {
+      issues.push(`has a part whose attachment is neither a joint nor null.`);
+      continue;
+    }
+
+    for (const field of ["parentPosition", "childPosition"] as const) {
+      if (!isPositionOnAxis(joint[field])) {
+        issues.push(`has an attachment ${field} outside 0..1.`);
+      }
+    }
+  }
+
+  /*
+   * Checked after the walk, because a parent may legitimately appear later in
+   * the list than its child — order within a form carries no meaning.
+   */
+  for (const candidate of parts) {
+    const joint = recordOf(recordOf(candidate)?.["attachment"]);
+
+    if (joint === undefined) continue;
+
+    const parentSlotId = joint["parentSlotId"];
+
+    if (typeof parentSlotId !== "string" || !slotIds.has(parentSlotId)) {
+      issues.push(
+        `attaches a part to "${String(parentSlotId)}", which the form does not contain.`,
+      );
+    }
+  }
+
+  if (roots === 0) {
+    issues.push("has no root part, so every part hangs off another.");
+  } else if (roots > 1) {
+    issues.push(`has ${roots} root parts, so it describes more than one body.`);
+  }
+
+  return issues;
+}
+
+
 const REFERENCE_FORM_REGISTRY = createRegistry<ReferenceFormDefinition>(
   "Reference Form",
   REFERENCE_FORM_DEFINITIONS,
-  declaresNoRules,
+  findReferenceFormDefinitionStructuralIssues,
 );
 
 
@@ -99,3 +220,16 @@ export function getReferenceFormDefinition(
 
 
 export const referenceFormRegistry = REFERENCE_FORM_REGISTRY;
+
+
+/**
+ * What can be wrong with the Reference Form catalog itself.
+ *
+ * These domains had no catalog check while they had no rules to check. They
+ * have real shape validators now, and the registry runs the same one over
+ * AUTHORED content that the barrier runs over registered content — so this is
+ * how the engine's own catalog is held to the rules it imposes on a host.
+ */
+export function findReferenceFormCatalogIssues(): readonly string[] {
+  return REFERENCE_FORM_REGISTRY.findCatalogIssues();
+}

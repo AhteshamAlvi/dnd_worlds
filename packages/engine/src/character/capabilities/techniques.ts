@@ -35,7 +35,7 @@
 
 import { findContentStructuralIssues } from "../rules/definitions";
 
-import { createRegistry } from "../../infrastructure/registry";
+import { composeStructuralValidators, createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
 import type { Effect } from "../rules/effects";
@@ -185,7 +185,10 @@ export const TECHNIQUE_DEFINITIONS = {
 const TECHNIQUE_REGISTRY = createRegistry<TechniqueDefinition>(
   "Technique",
   TECHNIQUE_DEFINITIONS,
-  findContentStructuralIssues,
+  composeStructuralValidators(
+    findContentStructuralIssues,
+    findTechniqueDefinitionStructuralIssues,
+  ),
 );
 
 export type KnownTechniqueId = keyof typeof TECHNIQUE_DEFINITIONS;
@@ -292,18 +295,45 @@ export function collectTechniqueEffects(
  * Cross-catalog reference checking belongs to catalogs.ts, which can see the
  * Skills a rank grants without this file importing them.
  */
+/*
+ * Reads a definition that may be anything.
+ *
+ * A registered definition arrives from a host, so every structural validator
+ * starts by establishing that there is an object to read at all. The universal
+ * checks in registry.ts have already refused a non-object by the time these
+ * run, but they are exported and callable on their own, and a guard that only
+ * holds because of the order two functions happen to be called in is not a
+ * guard.
+ */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+
+/** A Technique's own structure: its Mastery track, if it declares one. */
+export function findTechniqueDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const technique = recordOf(definition);
+
+  if (technique === undefined) return [];
+
+  const track = technique["mastery"];
+
+  if (track === undefined) return [];
+
+  return findMasteryTrackIssues(
+    "Technique",
+    String(technique["id"]),
+    track as MasteryTrack,
+  ).map((issue) => issue.replace(/^Technique "[^"]*" /, ""));
+}
+
+
 export function findTechniqueCatalogIssues(): readonly string[] {
-  const issues = [...TECHNIQUE_REGISTRY.findCatalogIssues()];
-
-  for (const technique of TECHNIQUE_REGISTRY.all()) {
-    if (technique.mastery !== undefined) {
-      issues.push(
-        ...findMasteryTrackIssues("Technique", technique.id, technique.mastery),
-      );
-    }
-  }
-
-  return issues;
+  return TECHNIQUE_REGISTRY.findCatalogIssues();
 }
 
 // Exposed for the catalog index, which needs every registry in one map.

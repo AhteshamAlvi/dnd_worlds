@@ -56,7 +56,8 @@
  * Plexus and Gut.
  */
 
-import { createRegistry, declaresNoRules } from "../../../../infrastructure/registry";
+import { createRegistry } from "../../../../infrastructure/registry";
+import { validateSpecialPointDefinition } from "./validation";
 import type { CriticalPointTypeId, SpecialPointDefinition } from "./types";
 
 export const SPECIAL_POINT_DEFINITIONS = {
@@ -267,10 +268,47 @@ export const SPECIAL_POINT_DEFINITIONS = {
   },
 } as const satisfies Record<string, SpecialPointDefinition>;
 
+/**
+ * One Anatomical Point definition's shape.
+ *
+ * A thin wrapper over validateSpecialPointDefinition(), which already owns
+ * every rule — the placement selector, the requirement that a point declare at
+ * least one category, and the pairing of `jointDesignation` with Joint points.
+ * Wrapped rather than reimplemented, so the registry and the resolver cannot
+ * disagree about what a valid point is.
+ *
+ * The guard in front of it is not ceremony: that validator takes a typed
+ * definition and reads `definition.placement.selector`, which throws on a
+ * definition that has no placement — and a definition arriving from a host is
+ * exactly where that happens.
+ */
+export function findAnatomicalPointDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  if (typeof definition !== "object" || definition === null) return [];
+
+  const point = definition as Partial<SpecialPointDefinition>;
+
+  if (typeof point.placement !== "object" || point.placement === null) {
+    return ["needs a placement."];
+  }
+
+  if (!Array.isArray(point.categories)) {
+    return ["needs a list of categories."];
+  }
+
+  return validateSpecialPointDefinition(point as SpecialPointDefinition)
+    .issues
+    .map((issue) =>
+      issue.message.replace(/^Anatomical Point "[^"]*" /, "")
+    );
+}
+
+
 const SPECIAL_POINT_REGISTRY = createRegistry<SpecialPointDefinition>(
   "Special Point",
   SPECIAL_POINT_DEFINITIONS,
-  declaresNoRules,
+  findAnatomicalPointDefinitionStructuralIssues,
 );
 
 export type KnownSpecialPointTypeId = keyof typeof SPECIAL_POINT_DEFINITIONS;
@@ -288,3 +326,16 @@ export function getSpecialPointDefinition(
 }
 
 export const specialPointRegistry = SPECIAL_POINT_REGISTRY;
+
+
+/**
+ * What can be wrong with the Anatomical Point catalog itself.
+ *
+ * These domains had no catalog check while they had no rules to check. They
+ * have real shape validators now, and the registry runs the same one over
+ * AUTHORED content that the barrier runs over registered content — so this is
+ * how the engine's own catalog is held to the rules it imposes on a host.
+ */
+export function findSpecialPointCatalogIssues(): readonly string[] {
+  return SPECIAL_POINT_REGISTRY.findCatalogIssues();
+}

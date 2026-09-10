@@ -50,7 +50,7 @@
 
 import { findContentStructuralIssues } from "../rules/definitions";
 
-import { createRegistry } from "../../infrastructure/registry";
+import { composeStructuralValidators, createRegistry } from "../../infrastructure/registry";
 
 import type { EffectfulDefinition } from "../rules/content";
 import type { Effect } from "../rules/effects";
@@ -570,7 +570,10 @@ export const SKILL_DEFINITIONS = {
 const SKILL_REGISTRY = createRegistry<SkillDefinition>(
   "Skill",
   SKILL_DEFINITIONS,
-  findContentStructuralIssues,
+  composeStructuralValidators(
+    findContentStructuralIssues,
+    findSkillDefinitionStructuralIssues,
+  ),
 );
 
 export type KnownSkillId = keyof typeof SKILL_DEFINITIONS;
@@ -671,42 +674,86 @@ export function collectSkillEffects(
  * by catalogs.ts, which can see every domain at once — asking this file to do
  * it would mean importing every catalog a requirement can name.
  */
-export function findSkillCatalogIssues(): readonly string[] {
-  const issues = [...SKILL_REGISTRY.findCatalogIssues()];
+/*
+ * Reads a definition that may be anything.
+ *
+ * A registered definition arrives from a host, so every structural validator
+ * starts by establishing that there is an object to read at all. The universal
+ * checks in registry.ts have already refused a non-object by the time these
+ * run, but they are exported and callable on their own, and a guard that only
+ * holds because of the order two functions happen to be called in is not a
+ * guard.
+ */
+function recordOf(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null
+    ? value as Record<string, unknown>
+    : undefined;
+}
 
-  for (const skill of SKILL_REGISTRY.all()) {
-    if (skill.mastery !== undefined) {
-      issues.push(...findMasteryTrackIssues("Skill", skill.id, skill.mastery));
-    }
 
-    if (skill.application === undefined) {
-      /*
-       * Required by the type, and checked anyway: a host registers content the
-       * compiler never saw. A Skill with no application is an unfinished
-       * definition, so it is reported here rather than being carried as a
-       * capability nobody can use.
-       */
-      issues.push(
-        `Skill "${skill.id}" declares no application, so there is no way to use it.`,
-      );
-    } else {
-      /*
-       * The application is checked against the Skill's OWN track, because the
-       * two constrain each other: a trackless Skill may declare no Mastery
-       * changes, and a threshold past the end of a real track is a rank
-       * nobody ever reaches.
-       */
-      for (const error of findSkillApplicationIssues(
-        skill.id,
-        skill.application,
-        skill.mastery,
-      )) {
-        issues.push(`Skill "${skill.id}" application: ${error.message}`);
-      }
-    }
+/**
+ * A Skill's own structure, beyond the universal rule vocabulary.
+ *
+ * Handed to the registry, so a Skill missing its application or carrying an
+ * impossible Mastery threshold is refused rather than stored and complained
+ * about later. Catalog-free: everything here is judged against the definition
+ * itself and its OWN track, never against another catalog.
+ */
+export function findSkillDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  const skill = recordOf(definition);
+
+  if (skill === undefined) return [];
+
+  const issues: string[] = [];
+
+  const track = skill["mastery"];
+
+  if (track !== undefined) {
+    issues.push(
+      ...findMasteryTrackIssues("Skill", String(skill["id"]), track as MasteryTrack)
+        .map((issue) => issue.replace(/^Skill "[^"]*" /, "")),
+    );
+  }
+
+  const application = skill["application"];
+
+  if (application === undefined) {
+    /*
+     * Required by the type, and checked anyway: a host registers content the
+     * compiler never saw. A Skill with no application is an unfinished
+     * definition rather than a kind of capability.
+     */
+    issues.push("declares no application, so there is no way to use it.");
+
+    return issues;
+  }
+
+  /*
+   * The application is checked against the Skill's OWN track, because the two
+   * constrain each other: a trackless Skill may declare no Mastery changes,
+   * and a threshold past the end of a real track is a rank nobody reaches.
+   */
+  for (const error of findSkillApplicationIssues(
+    String(skill["id"]),
+    application as SkillApplicationDefinition,
+    track as MasteryTrack | undefined,
+  )) {
+    issues.push(`application: ${error.message}`);
   }
 
   return issues;
+}
+
+
+/*
+ * Only the checks that need OTHER catalogs remain here; the Skill's own
+ * structure is refused at registration by the validator above, which
+ * findCatalogIssues() also runs over authored content.
+ */
+export function findSkillCatalogIssues(): readonly string[] {
+  return SKILL_REGISTRY.findCatalogIssues();
 }
 
 // Exposed for the catalog index, which needs every registry in one map.

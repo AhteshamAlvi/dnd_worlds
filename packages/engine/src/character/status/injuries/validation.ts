@@ -25,6 +25,7 @@
  */
 
 import { findAnatomicalInjuryCatalogIssues } from "../../foundation/body/injuries/validation";
+import type { AnatomicalInjuryDefinition } from "../../foundation/body/injuries/types";
 
 import { injuryRegistry } from "./definitions";
 
@@ -40,8 +41,25 @@ import { injuryRegistry } from "./definitions";
  * foundation/body/injuries/validation.ts's findInjuryLocationIssues.
  */
 export function findInjuryCatalogIssues(): readonly string[] {
-  return [
-    ...injuryRegistry.findCatalogIssues(),
-    ...findAnatomicalInjuryCatalogIssues(injuryRegistry.all()),
-  ];
+  return injuryRegistry.findCatalogIssues();
+}
+
+
+/**
+ * An Injury's own structure: its applicability and its recovery contract.
+ *
+ * Handed to the registry, so a malformed Injury is refused rather than stored.
+ * Both halves are judged against the definition alone — whether its selectors
+ * fit a PARTICULAR character's anatomy is a different question, and belongs to
+ * foundation/body/injuries/validation.ts's findInjuryLocationIssues.
+ */
+export function findInjuryDefinitionStructuralIssues(
+  definition: unknown,
+): readonly string[] {
+  if (typeof definition !== "object" || definition === null) return [];
+
+  const injury = definition as AnatomicalInjuryDefinition;
+
+  return findAnatomicalInjuryCatalogIssues([injury])
+    .map((issue) => issue.replace(/^Injury "[^"]*" /, ""));
 }

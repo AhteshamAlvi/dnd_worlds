@@ -350,10 +350,29 @@ describe("no catalog is outside the registration barrier", () => {
   });
 
   it("names a validator this codebase actually declares", () => {
+    /*
+     * Every validator a registry is allowed to be handed, named rather than
+     * pattern-matched. A twelfth domain arriving with a validator nobody has
+     * reviewed fails here and has to be added deliberately.
+     *
+     * `declaresNoRules` is gone from this list. It was the honest way for
+     * BodyParts, Reference Forms and Anatomical Points to say they carried no
+     * Effects — and it was also a hole, because a BodyPart with a negative
+     * Volume carries no rules and is still unresolvable. All three have real
+     * shape validators now, and nothing is left that needs the escape hatch.
+     */
     const PERMITTED = [
       "findContentStructuralIssues",
       "findItemStructuralIssues",
-      "declaresNoRules",
+      "findSkillDefinitionStructuralIssues",
+      "findTechniqueDefinitionStructuralIssues",
+      "findConditionDefinitionStructuralIssues",
+      "findInjuryDefinitionStructuralIssues",
+      "findSpeciesDefinitionStructuralIssues",
+      "findTraitDefinitionStructuralIssues",
+      "findBodyPartDefinitionStructuralIssues",
+      "findReferenceFormDefinitionStructuralIssues",
+      "findAnatomicalPointDefinitionStructuralIssues",
     ];
 
     for (const path of registryFiles) {
@@ -364,11 +383,31 @@ describe("no catalog is outside the registration barrier", () => {
       expect(calls.length).toBeGreaterThan(0);
 
       for (const args of calls) {
+        /*
+         * At least one, not exactly one: a domain composes its universal rule
+         * walk with its own local structure through
+         * composeStructuralValidators, so most calls name two.
+         */
         const supplied = PERMITTED.filter((name) => args.includes(name));
 
-        expect(supplied).toHaveLength(1);
+        expect(supplied.length).toBeGreaterThan(0);
       }
     }
+  });
+
+  it("leaves no domain relying on declaresNoRules", () => {
+    /*
+     * The escape hatch still exists for a future domain that genuinely has no
+     * local structure, and nothing uses it. If something does again, that is a
+     * claim worth making on purpose rather than inheriting — so this fails and
+     * the name has to be added back to PERMITTED above deliberately.
+     */
+    const users = registryFiles.filter((path) =>
+      registryCalls(readFileSync(path, "utf8"))
+        .some((args) => args.includes("declaresNoRules")),
+    );
+
+    expect(users).toEqual([]);
   });
 
   it("validates before it stores, so a refusal is atomic", () => {
