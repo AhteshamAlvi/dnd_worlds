@@ -56,11 +56,14 @@ import {
 import type { RuleEffectSource } from "../rules/resolution";
 
 import {
+  describeItemDefinitionIssue,
   findInventoryEntryIssues,
+  findItemDefinitionIssues,
   isCharacterItemShape,
   isInventoryEntryId,
   isInventoryQuantity,
   isValidInventoryEntry,
+  type ItemDefinitionIssue,
   type ItemValidationIssue,
 } from "./validation";
 
@@ -287,18 +290,19 @@ export function resolveEquipmentTransition(
 /**
  * What can be wrong with the Item catalog itself, as opposed to a character.
  *
- * Two rules beyond the shared registry checks, both about inventoryMode.
+ * The per-definition rules live in equipment/validation.ts and are shared with
+ * the equip transition, so the two cannot disagree about whether a definition
+ * is usable. They did: a stackable Item bearing equippedEffects was reported
+ * broken here and equipped perfectly happily by the transition a moment later.
  *
- * A stackable definition may not declare passive Effects, and this is the
- * rule that actually closes the grouping hole. `getActiveItemEffects()`
- * contributes a definition's Effects once per ENTRY and takes no account of
- * quantity, because no Effect in the vocabulary can be scaled by a count —
- * there is no "×3" to apply to a Trait grant or a check modifier. So a
- * stackable Item with a possessedEffect would apply it once for a stack of
- * one and once for a stack of fifty, which is not a rule anyone would author
- * on purpose. Until quantity-scaled Effects exist as a real mechanic, the
- * honest state is that stackable content carries none, and `useEffects` are
- * unaffected: a potion is an event, and events already happen one at a time.
+ * The stackable-passive-Effects rule is the one worth restating, because it
+ * looks arbitrary and is not. `getActiveItemEffects()` contributes a
+ * definition's Effects once per ENTRY and takes no account of quantity, because
+ * no Effect in the vocabulary can be scaled by a count — there is no "×3" to
+ * apply to a Trait grant or a check modifier. So a stackable Item with a
+ * possessedEffect would apply it once for a stack of one and once for a stack
+ * of fifty. `useEffects` are unaffected: a potion is an event, and events
+ * already happen one at a time.
  *
  * Custom entries are checked alongside authored ones, because a host's
  * malformed Item reaches the same resolution path.
@@ -307,24 +311,9 @@ export function findItemCatalogIssues(): readonly string[] {
   const issues: string[] = [...ITEM_REGISTRY.findCatalogIssues()];
 
   for (const definition of ITEM_REGISTRY.all()) {
-    if (!isItemInventoryMode(definition.inventoryMode)) {
+    for (const issue of findItemDefinitionIssues(definition)) {
       issues.push(
-        `Item "${definition.id}" must declare an inventoryMode of ${ITEM_INVENTORY_MODES.join(" or ")}.`,
-      );
-
-      continue;
-    }
-
-    if (!isStackableItem(definition)) continue;
-
-    const passive = [
-      ...(definition.possessedEffects ?? []),
-      ...(definition.equippedEffects ?? []),
-    ];
-
-    if (passive.length > 0) {
-      issues.push(
-        `Item "${definition.id}" is stackable and declares passive Effects, which apply once per entry regardless of quantity.`,
+        `Item "${definition.id}" ${describeItemDefinitionIssue(issue)}.`,
       );
     }
   }
@@ -358,8 +347,10 @@ export {
   ITEM_EQUIPMENT_STATES,
   ITEM_INVENTORY_MODES,
   createInventoryItemRef,
+  describeItemDefinitionIssue,
   equipmentTransitionKind,
   findInventoryEntry,
+  findItemDefinitionIssues,
   findInventoryEntryOutcome,
   getActiveItemEffects,
   isCharacterItemShape,

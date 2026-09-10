@@ -835,6 +835,8 @@ equipment.transition.{destination_invalid,reference_invalid,character_mismatch,
 
 Every resolution carries a trace (`character.equipment.transition`) recording only facts already validated as safe to serialize.
 
+**One definition validator, two callers.** `findItemDefinitionIssues()` in `equipment/validation.ts` holds every per-definition rule — inventory mode, the stackable-no-passive-Effects rule, structural soundness of `possessedEffects`/`equippedEffects`, and the equip gate's own metadata — and both `findItemCatalogIssues()` and the transition resolver ask it. They previously each held half the list, so a stackable Item declaring `equippedEffects` was reported broken by the catalog and equipped happily by the transition. `useEffects`/`useRequirements` are deliberately outside it: a broken healing Effect is a broken potion, not a reason to refuse to strap the belt on; `catalogs.ts` still walks them for references.
+
 **The transition touches no Effects.** It returns a new Character with one entry's `state` changed — order preserved, every other entry the same object, `entryId`/`itemId`/`quantity` intact. `equippedEffects` appear and disappear because `resolveCharacter()` reads the new state, exactly as if a host had edited the sheet.
 
 **Not built:** ActionProfiles or costs for equipping, runtime/coordinator commitment, persistence, Item use, `useEffects`, quantity decrement, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū. Equipping a second sword is currently permitted — an honest gap, not a rule.

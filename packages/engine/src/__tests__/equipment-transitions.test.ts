@@ -24,13 +24,19 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
+import {
+  clearCustomDefinitions,
+  findCatalogReferenceIssues,
+  registerDefinition,
+} from "../character/catalogs";
 
 import {
   equipmentTransitionKind,
+  findItemCatalogIssues,
+  findItemDefinitionIssues,
   resolveEquipmentTransition,
   type CharacterItem,
-  type EquipmentTransitionResolution,
+  type ItemDefinition,
   type ItemEquipmentState,
 } from "../character/equipment/index";
 
@@ -994,6 +1000,205 @@ describe("effects follow the stored state, not the transition", () => {
     expect(after.stats.str).toBe(before.stats.str);
     expect(after.body.points.aggregateMaximumBP)
       .toBe(before.body.points.aggregateMaximumBP);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Definition validity, asked once                                            */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A definition the catalog calls unusable must not be equippable.
+ *
+ * It was not. findItemCatalogIssues() checked the inventory mode and the
+ * stackable-passive-Effects rule; the transition checked the inventory mode and
+ * the equip gate. So a stackable Item declaring equippedEffects was reported
+ * broken by the catalog and equipped perfectly happily a moment later, and a
+ * structurally malformed passive Effect was caught by neither.
+ *
+ * Two validators over one subject is two answers to one question, and the
+ * caller who asked the more permissive one never finds out. The rules live in
+ * one function now, and what is tested here is the PARITY rather than either
+ * side of it — a test that only checked the transition would pass again the
+ * next time a rule was added to the catalog alone.
+ */
+describe("the catalog and the transition agree about a definition", () => {
+  const BAD_EFFECT = {
+    type: "modifyResolvedAttribute",
+    attribute: "wis",
+    amount: Number.NaN,
+  };
+
+  const MALFORMED: readonly (readonly [string, Record<string, unknown>])[] = [
+    [
+      "stackable with equipped Effects",
+      {
+        inventoryMode: "stackable",
+        equippedEffects: [
+          { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+        ],
+      },
+    ],
+    [
+      "stackable with possessed Effects",
+      {
+        inventoryMode: "stackable",
+        possessedEffects: [
+          { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+        ],
+      },
+    ],
+    [
+      "a structurally malformed equipped Effect",
+      { inventoryMode: "individual", equippedEffects: [BAD_EFFECT] },
+    ],
+    [
+      "a structurally malformed possessed Effect",
+      { inventoryMode: "individual", possessedEffects: [BAD_EFFECT] },
+    ],
+    [
+      "an unrecognised inventory mode",
+      { inventoryMode: "singleton" },
+    ],
+    [
+      "an equip requirement with a blank id",
+      {
+        inventoryMode: "individual",
+        equipRequirements: [
+          { id: "  ", requirement: { type: "hasTrait", traitId: "one-armed" } },
+        ],
+      },
+    ],
+  ];
+
+  function register(fields: Record<string, unknown>): void {
+    registerDefinition("item", {
+      id: "warded-band",
+      name: "Warded Band",
+      description: "A test Item.",
+      ...fields,
+    } as unknown as ItemDefinition);
+  }
+
+  it.each(MALFORMED)("refuses an Item with %s", (_label, fields) => {
+    register(fields);
+
+    /* The catalog says it is broken... */
+    expect(findItemCatalogIssues()).toEqual([
+      expect.stringContaining("warded-band"),
+    ]);
+
+    /* ...so the transition must refuse to equip it. */
+    const { result } = transition(
+      [entry({ itemId: "warded-band" })],
+      "e1",
+      "worn",
+    );
+
+    expect(result.success).toBe(false);
+    expect(!result.success && result.errors[0].code)
+      .toBe("equipment.transition.definition_invalid");
+  });
+
+  it("permits a sound definition through both", () => {
+    /* The positive control: neither path is simply refusing everything. */
+    register({
+      inventoryMode: "individual",
+      equippedEffects: [
+        { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+      ],
+    });
+
+    expect(findItemCatalogIssues()).toEqual([]);
+
+    const { result } = transition(
+      [entry({ itemId: "warded-band" })],
+      "e1",
+      "worn",
+    );
+
+    expect(result.success && result.payload.disposition).toBe("available");
+  });
+
+  it("refuses before it asks whether the entry is one object", () => {
+    /*
+     * Order matters: a stackable Item declaring passive Effects held at
+     * quantity five is wrong for two reasons, and the DEFINITION is the one to
+     * report. Telling an author their stack is not a single object would send
+     * them to fix the sheet when the fault is in the content.
+     */
+    register({
+      inventoryMode: "stackable",
+      equippedEffects: [
+        { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+      ],
+    });
+
+    const { result } = transition(
+      [entry({ itemId: "warded-band", quantity: 5 })],
+      "e1",
+      "held",
+    );
+
+    expect(result.success).toBe(false);
+    expect(!result.success && result.errors[0].code)
+      .toBe("equipment.transition.definition_invalid");
+  });
+
+  it("says which rule was broken, not merely that one was", () => {
+    register({
+      inventoryMode: "stackable",
+      equippedEffects: [
+        { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
+      ],
+    });
+
+    const { result } = transition(
+      [entry({ itemId: "warded-band" })],
+      "e1",
+      "worn",
+    );
+
+    expect(!result.success && result.errors[0].message)
+      .toContain("stackable and declares equippedEffects");
+  });
+
+  it("leaves use content out of the equipping decision", () => {
+    /*
+     * A potion whose healing Effect is malformed is a broken potion. It is not
+     * a reason to refuse to strap the belt it hangs from onto a character, and
+     * folding use content in would let an unrelated authoring mistake block a
+     * transition that never reads it.
+     */
+    const definition = {
+      id: "warded-band",
+      name: "Warded Band",
+      description: "A test Item.",
+      inventoryMode: "individual",
+      useEffects: [BAD_EFFECT],
+    } as unknown as ItemDefinition;
+
+    registerDefinition("item", definition);
+
+    expect(findItemDefinitionIssues(definition)).toEqual([]);
+    expect(findItemCatalogIssues()).toEqual([]);
+
+    const { result } = transition(
+      [entry({ itemId: "warded-band" })],
+      "e1",
+      "worn",
+    );
+
+    expect(result.success && result.payload.disposition).toBe("available");
+
+    /*
+     * The same malformed Effect IS reported where it belongs: catalogs.ts
+     * walks every rule-bearing field, so the potion is not silently fine.
+     */
+    expect(findCatalogReferenceIssues()).toEqual([
+      expect.stringContaining("malformed rule"),
+    ]);
   });
 });
 

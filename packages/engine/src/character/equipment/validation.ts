@@ -51,9 +51,20 @@
  * the reference module rather than beside it.
  */
 
+import {
+  findEffectsValidationIssues,
+  findNamedRequirementsValidationIssues,
+} from "../rules/validation";
+
 import { isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
 
-import { isStackableItem, type CharacterItem, type ItemDefinition } from "./types";
+import {
+  ITEM_INVENTORY_MODES,
+  isItemInventoryMode,
+  isStackableItem,
+  type CharacterItem,
+  type ItemDefinition,
+} from "./types";
 
 import type { InventoryEntryId } from "./references";
 
@@ -133,6 +144,134 @@ export function isCharacterItemShape(value: unknown): value is CharacterItem {
   if (!isItemEquipmentState(candidate.state)) return false;
 
   return engagementIsCoherent(candidate.state, candidate.quantity);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Definition validation                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What can be wrong with an Item DEFINITION, as opposed to an owned entry.
+ *
+ * One list, checked by everything that has to decide whether a definition is
+ * usable. It was previously two: findItemCatalogIssues() checked the inventory
+ * mode and the stackable-passive-Effects rule, while the equip transition
+ * checked the inventory mode and the equip gate — so a stackable Item bearing
+ * equippedEffects was reported broken by the catalog and equipped perfectly
+ * happily a moment later, and a malformed passive Effect was caught by
+ * neither. Two validators over one subject is two answers to one question, and
+ * the caller who asked the more permissive one never finds out.
+ */
+export type ItemDefinitionIssue =
+  | {
+      readonly type: "invalid-inventory-mode";
+      readonly mode: unknown;
+    }
+  | {
+      readonly type: "stackable-passive-effects";
+      readonly where: "possessedEffects" | "equippedEffects";
+    }
+  | {
+      readonly type: "malformed-rule";
+      readonly where: string;
+      readonly issue: string;
+      readonly path: string;
+    };
+
+
+/** One issue, rendered the same way wherever it is reported. */
+export function describeItemDefinitionIssue(
+  issue: ItemDefinitionIssue,
+): string {
+  switch (issue.type) {
+    case "invalid-inventory-mode":
+      return `must declare an inventoryMode of ${ITEM_INVENTORY_MODES.join(" or ")}`;
+
+    case "stackable-passive-effects":
+      return `is stackable and declares ${issue.where}, which apply once per entry regardless of quantity`;
+
+    case "malformed-rule":
+      return `has a malformed ${issue.where}: ${issue.issue} at ${issue.path}`;
+  }
+}
+
+
+/**
+ * Everything wrong with one Item definition.
+ *
+ * Covers what makes a definition unusable AS EQUIPMENT: the inventory mode,
+ * the rule that stackable content carries no passive Effects, the structural
+ * soundness of those Effects, and the equip gate's own metadata.
+ *
+ * `useEffects` and `useRequirements` are deliberately NOT checked here, and
+ * the omission is a decision rather than an oversight. A potion whose healing
+ * Effect is malformed is a broken potion; it is not a reason to refuse to
+ * strap the belt it hangs from onto a character, and folding it in would make
+ * an unrelated authoring mistake block a transition that never reads it. Use
+ * content is validated by the use path — which does not exist yet — and by
+ * catalogs.ts's reference walk, which already reaches it.
+ *
+ * Takes a definition that may be anything, because a host registers these.
+ */
+export function findItemDefinitionIssues(
+  definition: ItemDefinition,
+): readonly ItemDefinitionIssue[] {
+  if (typeof definition !== "object" || definition === null) {
+    return [{ type: "invalid-inventory-mode", mode: undefined }];
+  }
+
+  const issues: ItemDefinitionIssue[] = [];
+
+  if (!isItemInventoryMode(definition.inventoryMode)) {
+    /*
+     * Reported and then STOPPED for the stacking rule only. Without a mode
+     * there is no way to ask whether passive Effects are permitted, and
+     * guessing one would answer a question the author did not.
+     */
+    issues.push({
+      type: "invalid-inventory-mode",
+      mode: definition.inventoryMode,
+    });
+  }
+
+  const passive = [
+    ["possessedEffects", definition.possessedEffects ?? []],
+    ["equippedEffects", definition.equippedEffects ?? []],
+  ] as const;
+
+  for (const [where, effects] of passive) {
+    if (
+      isItemInventoryMode(definition.inventoryMode) &&
+      isStackableItem(definition) &&
+      effects.length > 0
+    ) {
+      issues.push({ type: "stackable-passive-effects", where });
+    }
+
+    for (const issue of findEffectsValidationIssues(effects)) {
+      issues.push({
+        type: "malformed-rule",
+        where,
+        issue: issue.type,
+        path: issue.path,
+      });
+    }
+  }
+
+  for (const issue of findNamedRequirementsValidationIssues(
+    definition.equipRequirements,
+    "equipRequirements",
+  )) {
+    issues.push({
+      type: "malformed-rule",
+      where: "equipRequirements",
+      issue: issue.type,
+      path: issue.path,
+    });
+  }
+
+  return issues;
 }
 
 

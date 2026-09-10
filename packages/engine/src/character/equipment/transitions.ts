@@ -88,14 +88,17 @@ import {
   resolveNamedRequirements,
   type NamedRequirementResolution,
 } from "../rules/resolution";
-import { findNamedRequirementsValidationIssues } from "../rules/validation";
 
 import type { Character } from "../types";
 import type { ResolvedCharacter } from "../resolution";
 
 import { resolveInventoryItemRef, type InventoryItemRef } from "./references";
 import { isConcreteInventoryObject, isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
-import { isItemInventoryMode, type CharacterItem, type ItemDefinition } from "./types";
+import {
+  describeItemDefinitionIssue,
+  findItemDefinitionIssues,
+} from "./validation";
+import type { CharacterItem, ItemDefinition } from "./types";
 
 
 /* -------------------------------------------------------------------------- */
@@ -395,29 +398,32 @@ export function resolveEquipmentTransition(
   inputs["itemId"] = { value: definition.id };
 
   /*
-   * A definition whose own equip gate is malformed cannot be evaluated, and
-   * guessing past it would be the engine deciding a rule the author did not
-   * write. Reported as a structural failure rather than a refusal, because the
-   * character has done nothing wrong.
+   * The SAME per-definition rules the catalog checks, and deliberately not a
+   * second list.
+   *
+   * This used to check the inventory mode and the equip gate while
+   * findItemCatalogIssues() checked the inventory mode and the stacking rule,
+   * so a stackable Item declaring equippedEffects was reported broken by one
+   * and equipped by the other. A definition the catalog calls unusable must
+   * not be equippable, and the only way to keep that true is for both to ask
+   * one function.
+   *
+   * A structural failure rather than a refusal: the character has done nothing
+   * wrong, and guessing past a malformed rule would be the engine deciding
+   * something the author did not write.
    */
-  const definitionIssues = [
-    ...(isItemInventoryMode(definition.inventoryMode)
-      ? []
-      : ["inventoryMode"]),
-    ...findNamedRequirementsValidationIssues(
-      definition.equipRequirements,
-      "equipRequirements",
-    ).map((issue) => `${issue.type} at ${issue.path}`),
-  ];
+  const definitionIssues = findItemDefinitionIssues(definition);
 
   const firstDefinitionIssue = definitionIssues[0];
 
   if (firstDefinitionIssue !== undefined) {
+    const described = definitionIssues.map(describeItemDefinitionIssue);
+
     return engineFailure(traceOf(inputs, "definition_invalid"), [
       structuralError(
         "equipment.transition.definition_invalid",
-        `Item "${definition.id}" is malformed: ${definitionIssues.join("; ")}.`,
-        { actual: firstDefinitionIssue },
+        `Item "${definition.id}" ${described.join("; ")}.`,
+        { actual: described[0] ?? "malformed" },
       ),
     ]);
   }
