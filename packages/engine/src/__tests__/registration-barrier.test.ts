@@ -61,6 +61,7 @@ import { findSpecialPointCatalogIssues } from "../character/foundation/body/crit
 import type { CatalogDomain } from "../character/catalogs";
 import type { RegistrationResult } from "../infrastructure/registry";
 import { validateBodyPartSelector } from "../character/foundation/body/selectors";
+import { BODY_PART_STATES } from "../character/foundation/body/anatomy/types";
 
 
 /* Each domain's own catalog check, so "clean" means clean to its owner. */
@@ -726,9 +727,18 @@ describe("a nested selector filter can neither throw nor slip through", () => {
   });
 
   it("reports a state that is not a state, rather than iterating it", () => {
-    expect(validateBodyPartSelector({ states: {} }).valid).toBe(false);
-    expect(validateBodyPartSelector({ states: [null, null] }).issues)
-      .toHaveLength(2);
+    expect(validateBodyPartSelector({ states: {} }).issues.map((i) => i.code))
+      .toEqual(["malformed-filter"]);
+
+    /*
+     * A list that is not a list and a list of things that are not states are
+     * different faults: the first needs the field replaced, the second needs
+     * each entry replaced, and one complaint per bad entry is what says so.
+     */
+    expect(
+      validateBodyPartSelector({ states: [null, null] })
+        .issues.map((issue) => issue.code),
+    ).toEqual(["invalid-state", "invalid-state"]);
 
     /* And a real duplicate is still a duplicate. */
     expect(
@@ -736,6 +746,88 @@ describe("a nested selector filter can neither throw nor slip through", () => {
         .issues.map((issue) => issue.code),
     ).toEqual(["duplicate-state"]);
   });
+
+
+  /*
+   * SEMANTICS, on top of shape.
+   *
+   * Each of these validated and was then quietly reinterpreted by matching,
+   * which is worse than being refused outright: the content is accepted, runs,
+   * and means something the author did not write. `{ all: true, ids: [...] }`
+   * selects everything and the ids are dead text; a tagMode of "bogus" falls
+   * past the `=== "all"` branch and loosens "has all these tags" into "has any
+   * of them"; a state of "bogus" matches nothing a body can be, so a filter
+   * that reads as narrow selects nothing at all.
+   */
+  const SEMANTIC_CASES: readonly (readonly [string, unknown, string])[] = [
+    ["all combined with a filter", { all: true, ids: ["arm-1"] }, "all-with-filters"],
+    ["all combined with types", { all: true, types: ["torso"] }, "all-with-filters"],
+    ["all combined with a tagMode", { all: true, tagMode: "any" }, "all-with-filters"],
+    ["an all that is not a boolean", { all: 42, types: ["torso"] }, "invalid-all"],
+    ["an all of \"no\"", { all: "no", types: ["torso"] }, "invalid-all"],
+    ["a tagMode outside the vocabulary", { tags: ["limb"], tagMode: "bogus" }, "invalid-tag-mode"],
+    ["a tagMode of ALL in the wrong case", { tags: ["limb"], tagMode: "All" }, "invalid-tag-mode"],
+    ["a state outside the vocabulary", { states: ["bogus"] }, "invalid-state"],
+    ["a state that is nearly right", { states: ["archived"] }, "invalid-state"],
+  ];
+
+  it.each(SEMANTIC_CASES)("refuses %s", (_label, selector, code) => {
+    expect(validateBodyPartSelector(selector).issues.map((issue) => issue.code))
+      .toContain(code);
+  });
+
+  it.each(
+    PATHS.flatMap(([domain, build]) =>
+      SEMANTIC_CASES.map(([label, selector]) =>
+        [domain, label, selector, build] as const
+      ),
+    ),
+  )(
+    "refuses a %s registered with %s",
+    (domain, _label, selector, build) => {
+      /*
+       * Through REGISTRATION, not only through the validator. The selector is
+       * two levels down inside an Injury's applicability and an Anatomical
+       * Point's placement, and a rule that only holds when called directly is
+       * a rule neither of those paths has.
+       */
+      const result = registerDefinition(domain, build(selector) as never);
+
+      expect(result.ok).toBe(false);
+      expect(getDefinition(domain, "house-rule")).toBeUndefined();
+    },
+  );
+
+  const VALID_SELECTORS: readonly (readonly [string, unknown])[] = [
+    ["a bare all", { all: true }],
+    ["an explicit all: false beside a filter", { all: false, types: ["torso"] }],
+    ["a tagMode of all", { tags: ["limb"], tagMode: "all" }],
+    ["a tagMode of any", { tags: ["limb"], tagMode: "any" }],
+    ["tags with no tagMode at all", { tags: ["limb"] }],
+    ["every real BodyPart state", { states: [...BODY_PART_STATES] }],
+    ["one real state", { states: ["suppressed"] }],
+  ];
+
+  it.each(VALID_SELECTORS)("still accepts %s", (_label, selector) => {
+    expect(validateBodyPartSelector(selector).valid).toBe(true);
+  });
+
+  it.each(
+    PATHS.flatMap(([domain, build]) =>
+      VALID_SELECTORS.map(([label, selector]) =>
+        [domain, label, selector, build] as const
+      ),
+    ),
+  )(
+    "still registers a %s with %s",
+    (domain, _label, selector, build) => {
+      /*
+       * The controls, through the same two paths. Without them every rule
+       * above would be satisfied by a validator that refused everything.
+       */
+      expect(registerDefinition(domain, build(selector) as never).ok).toBe(true);
+    },
+  );
 });
 
 

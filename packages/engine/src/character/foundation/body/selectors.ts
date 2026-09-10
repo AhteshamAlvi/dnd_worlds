@@ -23,6 +23,7 @@
  * Type and tag classification come from BodyPartDefinition.
  */
 
+import { BODY_PART_STATES } from "./anatomy/types";
 import type {
   Anatomy,
   BodyPart,
@@ -149,7 +150,27 @@ export type BodyPartSelectorValidationIssueCode =
    * to add an id when the field needs replacing.
    */
   | "malformed-selector"
-  | "malformed-filter";
+  | "malformed-filter"
+
+  /*
+   * The closed-vocabulary and exclusivity faults.
+   *
+   * Each of these was ACCEPTED and then quietly reinterpreted by matching,
+   * which is worse than being refused: `{ all: true, ids: ["arm"] }` reads as
+   * "every part, and also these" and selects everything; a tagMode of "bogus"
+   * falls past the `=== "all"` branch and behaves as "any", so a selector
+   * meaning "has all these tags" silently becomes "has any of them"; and a
+   * state of "bogus" matches no real BodyPart state, so a filter that looks
+   * restrictive selects nothing at all.
+   *
+   * All three are the same shape of bug — content that validates and then
+   * means something the author did not write — which is the class this whole
+   * barrier exists to remove.
+   */
+  | "all-with-filters"
+  | "invalid-all"
+  | "invalid-tag-mode"
+  | "invalid-state";
 
 
 /*
@@ -335,10 +356,52 @@ export function validateBodyPartSelector(
 
   const selector = candidate as Record<string, unknown>;
 
+  /*
+   * The FILTER FIELDS, named once so exclusivity and presence ask about the
+   * same list. A field added to the selector and not to this list would be
+   * silently permitted beside `all: true`.
+   */
+  const FILTER_FIELDS = ["ids", "types", "tags", "tagMode", "states"] as const;
+
   if (selector["all"] === true) {
+    /*
+     * `all` is exclusive by TYPE — AllBodyPartsSelector declares every filter
+     * as `never` — and was never exclusive in practice, because host content
+     * does not go through the type. "Everything, and also these arms" is not a
+     * narrowing; matching returns true on the first line and the filters are
+     * dead text the author believed was doing something.
+     */
+    const alsoFiltered = FILTER_FIELDS.filter(
+      (field) => selector[field] !== undefined,
+    );
+
+    if (alsoFiltered.length > 0) {
+      issues.push({
+        code: "all-with-filters",
+        message:
+          `BodyPart selector "all" cannot be combined with ${alsoFiltered.join(", ")}.`,
+      });
+    }
+
     return createValidationResult(
       issues,
     );
+  }
+
+  /*
+   * Present on a filtered selector, it must be exactly `false`.
+   *
+   * FilteredBodyPartSelector declares `all?: false`, so anything else is a
+   * value the type forbids — and `all: "no"` or `all: 0` would be read by
+   * matching as "not everything", which is right by accident rather than by
+   * the author having said so.
+   */
+  if (selector["all"] !== undefined && selector["all"] !== false) {
+    issues.push({
+      code: "invalid-all",
+      message:
+        `BodyPart selector "all" must be true or false; it is ${String(selector["all"])}.`,
+    });
   }
 
   const hasIds =
@@ -413,15 +476,19 @@ export function validateBodyPartSelector(
 
       for (const state of states) {
         /*
-         * A state that is not a name is malformed rather than duplicated, and
-         * is reported before the duplicate check so two nulls produce one
-         * complaint per entry rather than a complaint about repetition.
+         * Checked against the VOCABULARY, not merely for being a non-empty
+         * string. A state of "bogus" is not a narrow filter — it matches no
+         * BodyPart that can exist, so a selector carrying one selects nothing
+         * and looks like content that was simply never satisfied.
+         *
+         * Reported before the duplicate check, so two bogus states produce one
+         * complaint each rather than one about repetition.
          */
-        if (typeof state !== "string" || state.trim().length === 0) {
+        if (!(BODY_PART_STATES as readonly unknown[]).includes(state)) {
           issues.push({
-            code: "malformed-filter",
+            code: "invalid-state",
             message:
-              "BodyPart selector state filter contains a value that is not a state.",
+              `BodyPart selector contains ${String(state)}, which is not a BodyPart state.`,
           });
 
           continue;
@@ -447,15 +514,31 @@ export function validateBodyPartSelector(
    * that depends on either being well formed. A tagMode beside a malformed tag
    * filter is a second complaint about a field already being replaced.
    */
-  if (
-    selector["tagMode"] !== undefined &&
-    !hasTags
-  ) {
-    issues.push({
-      code: "tag-mode-without-tags",
-      message:
-        "BodyPart selector tagMode may only be provided when a tag filter exists.",
-    });
+  const tagMode = selector["tagMode"];
+
+  if (tagMode !== undefined) {
+    if (!hasTags) {
+      issues.push({
+        code: "tag-mode-without-tags",
+        message:
+          "BodyPart selector tagMode may only be provided when a tag filter exists.",
+      });
+    }
+
+    /*
+     * A closed vocabulary, checked rather than assumed. matchesBodyPartSelector
+     * asks `tagMode === "all"` and treats everything else as "any", so an
+     * unrecognised mode does not fail — it silently loosens the selector from
+     * "has all these tags" to "has any of them", which is the difference
+     * between a Wing-and-Left filter and a Wing-or-Left one.
+     */
+    if (tagMode !== "all" && tagMode !== "any") {
+      issues.push({
+        code: "invalid-tag-mode",
+        message:
+          `BodyPart selector tagMode must be "all" or "any"; it is ${String(tagMode)}.`,
+      });
+    }
   }
 
   return createValidationResult(
