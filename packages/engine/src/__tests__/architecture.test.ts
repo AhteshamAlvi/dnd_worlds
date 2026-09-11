@@ -2167,5 +2167,12 @@ describe("a rule bundle holds its requirements once", () => {
     expect(source).toContain("namedRequirementDisposition(requirements)");
     expect(source).toContain("resolveRuleEffects([");
     expect(source).toContain("findItemUseDefinitionIssues(definition)");
+
+    /*
+     * The context gate, through the SHARED validator. A local "is it an
+     * object" check is what let `requirementContext: {}` reach the evaluator
+     * and throw.
+     */
+    expect(source).toContain("findRequirementContextIssues(");
   });
 });

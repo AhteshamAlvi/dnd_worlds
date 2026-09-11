@@ -58,7 +58,11 @@ import * as engine from "../index";
 
 import type { EngineResult } from "../infrastructure/result";
 import type { NamedRequirement } from "../character/rules/requirements";
-import type { RequirementContext } from "../character/rules/resolution";
+import {
+  resolveNamedRequirements,
+  type RequirementContext,
+} from "../character/rules/resolution";
+import { hostileRequirementContexts } from "./fixtures/requirement-context";
 import type { Character } from "../character/types";
 
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
@@ -864,6 +868,124 @@ describe("malformed questions are failures, not refusals", () => {
     expect(result.success).toBe(false);
     expect(JSON.stringify(result.trace)).toContain("character.equipment.use");
     expect(JSON.stringify(result.trace)).not.toContain("UNVALIDATED-ENTRY");
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* The requirement context                                                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The resolver checked only that `requirementContext` was an object. So
+ * `{ ...resolved, requirementContext: {} }` passed the guard, and an
+ * attributeMinimum gate then threw reading `attributes.base` — a malformed
+ * input becoming the exception this resolver promises never to raise.
+ *
+ * The gate below reads EVERY field of a context, one requirement type each, so
+ * a field the boundary forgot would reach the evaluator here and throw rather
+ * than pass unnoticed.
+ */
+describe("a malformed requirement context is a failure, not a throw", () => {
+  const EVERY_FIELD_GATE: readonly NamedRequirement[] = [
+    { id: "stored", requirement: { type: "attributeMinimum", attribute: "dex", layer: "stored", minimum: 1 } },
+    { id: "base", requirement: { type: "attributeMinimum", attribute: "dex", layer: "base", minimum: 1 } },
+    { id: "resolved", requirement: { type: "attributeMinimum", attribute: "dex", layer: "resolved", minimum: 1 } },
+    { id: "derived", requirement: { type: "derivedAttributeMinimum", derivedAttribute: "combatAbility", layer: "base", minimum: 0 } },
+    { id: "level", requirement: { type: "levelMinimum", minimum: 1 } },
+    { id: "species", requirement: { type: "hasSpecies", speciesId: "winged-folk" } },
+    { id: "subspecies", requirement: { type: "hasSubspecies", subspeciesId: "sky-born" } },
+    { id: "clan", requirement: { type: "hasClan", clanId: "moonless" } },
+    { id: "trait", requirement: { type: "hasTrait", traitId: "winged" } },
+    { id: "skill", requirement: { type: "hasSkill", skillId: "gliding" } },
+    { id: "skill-mastery", requirement: { type: "skillMastery", skillId: "gliding", minimumMastery: 1 } },
+    { id: "technique", requirement: { type: "hasTechnique", techniqueId: "updraft" } },
+    { id: "technique-mastery", requirement: { type: "techniqueMastery", techniqueId: "updraft", minimumMastery: 1 } },
+    { id: "condition", requirement: { type: "hasCondition", conditionId: "grounded" } },
+    { id: "possessed", requirement: { type: "hasItem", itemId: "feather", state: "possessed" } },
+    { id: "equipped", requirement: { type: "hasItem", itemId: "feather", state: "equipped" } },
+  ];
+
+  function gatedUse() {
+    registerDraught({ useRequirements: EVERY_FIELD_GATE });
+
+    const character = createTestCharacter({ items: [entry()] });
+    const resolved = resolveTestCharacter(character);
+
+    return {
+      character,
+      resolved,
+      item: { characterId: character.id, entryId: "e1" },
+    };
+  }
+
+  it("answers normally against the context resolution built", () => {
+    const { resolved, item } = gatedUse();
+
+    const result = resolveItemUse({ resolved, item });
+
+    expect(result.success && result.payload.disposition)
+      .toBe("requirements-unsatisfied");
+  });
+
+  it("refuses the reported context rather than throwing inside the gate", () => {
+    const { resolved, item } = gatedUse();
+
+    const hostile = { ...resolved, requirementContext: {} } as never;
+
+    /* The evaluator alone would throw on it; the resolver must not. */
+    expect(() => resolveNamedRequirements(EVERY_FIELD_GATE, {} as never)).toThrow();
+
+    let result: ReturnType<typeof resolveItemUse> | undefined;
+
+    expect(() => {
+      result = resolveItemUse({ resolved: hostile, item });
+    }).not.toThrow();
+
+    expect(result && failureCode(result)).toBe("equipment.use.input_invalid");
+  });
+
+  it("refuses every hostile nested field, naming it", () => {
+    const { resolved, item } = gatedUse();
+
+    for (const [label, path, context] of hostileRequirementContexts(
+      resolved.requirementContext,
+    )) {
+      let result: ReturnType<typeof resolveItemUse> | undefined;
+
+      expect(() => {
+        result = resolveItemUse({
+          resolved: { ...resolved, requirementContext: context } as never,
+          item,
+        });
+      }, label).not.toThrow();
+
+      expect(result && failureCode(result), label).toBe("equipment.use.input_invalid");
+      expect(result && !result.success && result.errors[0].message, label)
+        .toContain(path);
+
+      /* Refused before the gate: nothing was consumed or resolved. */
+      expect(JSON.stringify(result?.trace), label).not.toContain("requirement.stored");
+    }
+  });
+
+  it("refuses a hostile context even for an Item with no gate to read it", () => {
+    /*
+     * The context is validated as part of the INPUT, not lazily when a
+     * requirement happens to read it — so whether a malformed context is
+     * accepted does not depend on which Item the caller picked.
+     */
+    registerWhetstone();
+
+    const character = createTestCharacter({ items: [entry({ itemId: "whetstone" })] });
+    const resolved = resolveTestCharacter(character);
+
+    const result = resolveItemUse({
+      resolved: { ...resolved, requirementContext: { ...resolved.requirementContext, level: "1" } } as never,
+      item: { characterId: character.id, entryId: "e1" },
+    });
+
+    expect(failureCode(result)).toBe("equipment.use.input_invalid");
   });
 });
 

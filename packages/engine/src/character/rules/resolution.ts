@@ -81,6 +81,7 @@
 import type { ContributionSourceRef } from "../../infrastructure/contribution-source";
 import type { AttributeModifier } from "../foundation/attributes/modifiers";
 import type { AttributeLayers, Attributes } from "../foundation/attributes/types";
+import { ATTRIBUTE_KEYS } from "../foundation/attributes/base";
 import { resolveDerivedAttribute } from "../foundation/attributes/derived/resolution";
 
 import {
@@ -847,6 +848,237 @@ export const REQUIREMENT_COLLECTIONS = [
 ] as const;
 
 export type RequirementCollection = typeof REQUIREMENT_COLLECTIONS[number];
+
+
+export function isRequirementCollection(
+  value: unknown,
+): value is RequirementCollection {
+  return typeof value === "string" &&
+    (REQUIREMENT_COLLECTIONS as readonly string[]).includes(value);
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Requirement context validation                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * One reason a supplied requirement context cannot be evaluated against.
+ *
+ * `path` names the field from the context root, and `expected` says what
+ * belongs there. Both are addressed to a developer: a malformed context is a
+ * caller's bug, never something a player did.
+ */
+export interface RequirementContextIssue {
+  readonly path: string;
+  readonly expected: string;
+}
+
+
+const ATTRIBUTE_LAYER_NAMES = [
+  "stored",
+  "base",
+  "resolved",
+] as const satisfies readonly (keyof AttributeLayers)[];
+
+const OPTIONAL_ID_COLLECTIONS = [
+  "speciesIds",
+  "subspeciesIds",
+  "clanIds",
+  "traitIds",
+  "skillIds",
+  "techniqueIds",
+  "conditionIds",
+] as const satisfies readonly (keyof RequirementContext)[];
+
+const OPTIONAL_MASTERY_RECORDS = [
+  "skillMastery",
+  "techniqueMastery",
+] as const satisfies readonly (keyof RequirementContext)[];
+
+
+/* A plain record: an object that is not a list, so `[3]` is not a Mastery map. */
+function isContextRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+
+function findIdListIssues(
+  value: unknown,
+  path: string,
+): readonly RequirementContextIssue[] {
+  /*
+   * Refused rather than tolerated even where the evaluator would not throw.
+   * A bare string has an `includes` too, so `traitIds: "one-armed"` would
+   * answer a hasTrait question by substring — "armed" satisfied — which is a
+   * wrong answer delivered confidently rather than an exception.
+   */
+  if (!Array.isArray(value)) return [{ path, expected: "a list of id strings" }];
+
+  const issues: RequirementContextIssue[] = [];
+
+  for (const [index, id] of (value as readonly unknown[]).entries()) {
+    if (typeof id !== "string") {
+      issues.push({ path: `${path}[${index}]`, expected: "an id string" });
+    }
+  }
+
+  return issues;
+}
+
+
+/**
+ * Every field of a requirement context the evaluator could not read.
+ *
+ * resolveRequirement() is typed and trusts what it is handed, deliberately: it
+ * runs for every requirement of every gate, and a context is validated once,
+ * where it crosses a boundary, rather than on every read. This is that
+ * boundary, shared by every resolver that accepts a context from a caller —
+ * so the checks live beside the contract rather than in each caller, where
+ * they would be copies that drift.
+ *
+ * It covers everything the evaluator dereferences: the three Attribute layers
+ * and every score in them, `level`, the optional id lists, the Mastery
+ * records, both Item lists, and `incomplete` against the closed collection
+ * vocabulary. An optional field that is absent — or explicitly `undefined` —
+ * is a collection nobody recorded, which the evaluator already answers as
+ * unresolved.
+ *
+ * READABILITY, NOT LEGALITY. It asks whether a context can be evaluated and
+ * give a meaningful answer: numbers that are finite, ids that are strings,
+ * collections that exist. Whether a Level lies in 1–30 or a Mastery rank
+ * within a track is owned by progression and capabilities, which sit above
+ * this layer, and importing their rules downward would invert the dependency
+ * the universal vocabulary exists to keep.
+ *
+ * Takes `unknown` and never throws.
+ */
+export function findRequirementContextIssues(
+  value: unknown,
+  path = "requirementContext",
+): readonly RequirementContextIssue[] {
+  if (!isContextRecord(value)) {
+    return [{ path, expected: "a requirement context object" }];
+  }
+
+  const issues: RequirementContextIssue[] = [];
+
+  const attributes = value["attributes"];
+
+  if (!isContextRecord(attributes)) {
+    issues.push({
+      path: `${path}.attributes`,
+      expected: "stored, base and resolved Attribute layers",
+    });
+  } else {
+    for (const layer of ATTRIBUTE_LAYER_NAMES) {
+      const scores = attributes[layer];
+      const where = `${path}.attributes.${layer}`;
+
+      if (!isContextRecord(scores)) {
+        issues.push({ path: where, expected: "a record of Attribute scores" });
+        continue;
+      }
+
+      for (const key of ATTRIBUTE_KEYS) {
+        if (!isFiniteNumber(scores[key])) {
+          issues.push({ path: `${where}.${key}`, expected: "a finite number" });
+        }
+      }
+    }
+  }
+
+  if (!isFiniteNumber(value["level"])) {
+    issues.push({ path: `${path}.level`, expected: "a finite number" });
+  }
+
+  for (const field of OPTIONAL_ID_COLLECTIONS) {
+    if (value[field] === undefined) continue;
+
+    issues.push(...findIdListIssues(value[field], `${path}.${field}`));
+  }
+
+  for (const field of OPTIONAL_MASTERY_RECORDS) {
+    const record = value[field];
+
+    if (record === undefined) continue;
+
+    const where = `${path}.${field}`;
+
+    if (!isContextRecord(record)) {
+      issues.push({ path: where, expected: "a record of Mastery ranks by id" });
+      continue;
+    }
+
+    for (const [id, rank] of Object.entries(record)) {
+      if (!isFiniteNumber(rank)) {
+        issues.push({ path: `${where}.${id}`, expected: "a finite Mastery rank" });
+      }
+    }
+  }
+
+  const items = value["items"];
+
+  if (items !== undefined) {
+    /*
+     * Both lists or neither, because the evaluator reads `items` as one
+     * record: an absent `items` is unresolved, a present one is trusted to
+     * answer for possession AND engagement.
+     */
+    if (!isContextRecord(items)) {
+      issues.push({
+        path: `${path}.items`,
+        expected: "possessed and equipped Item id lists",
+      });
+    } else {
+      for (const list of ["possessed", "equipped"] as const) {
+        issues.push(...findIdListIssues(items[list], `${path}.items.${list}`));
+      }
+    }
+  }
+
+  const incomplete = value["incomplete"];
+
+  if (incomplete !== undefined) {
+    const vocabulary = REQUIREMENT_COLLECTIONS.join(", ");
+
+    if (!Array.isArray(incomplete)) {
+      issues.push({
+        path: `${path}.incomplete`,
+        expected: `a list drawn from ${vocabulary}`,
+      });
+    } else {
+      /*
+       * A collection name outside the vocabulary is refused rather than
+       * ignored: "inventory" for "items" reads as a completeness claim and
+       * would silently turn every unknown Item into a definite no.
+       */
+      for (const [index, collection] of (incomplete as readonly unknown[]).entries()) {
+        if (!isRequirementCollection(collection)) {
+          issues.push({
+            path: `${path}.incomplete[${index}]`,
+            expected: `one of ${vocabulary}`,
+          });
+        }
+      }
+    }
+  }
+
+  return issues;
+}
+
+
+/** Whether a value is a requirement context the evaluator can read. */
+export function isRequirementContext(
+  value: unknown,
+): value is RequirementContext {
+  return findRequirementContextIssues(value).length === 0;
+}
 
 
 function isIncomplete(

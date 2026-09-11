@@ -18,10 +18,15 @@ import { minimalSkillApplication } from "../character/capabilities/applications"
 import { clearCustomDefinitions, registerDefinition } from "../character/catalogs";
 
 import {
+  REQUIREMENT_COLLECTIONS,
+  findRequirementContextIssues,
+  isRequirementContext,
   meetsAllRequirements,
   meetsRequirement,
   type RequirementContext,
+  type RequirementContextIssue,
 } from "../character/rules/resolution";
+import { hostileRequirementContexts } from "./fixtures/requirement-context";
 import type { Requirement } from "../character/rules/requirements";
 import { getSkillDefinition } from "../character/capabilities/skills";
 
@@ -614,4 +619,112 @@ describe("derived requirements and Body-derived Strength", () => {
       ),
     ).toBe(false);
   });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* The context boundary                                                       */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * resolveRequirement() trusts the context it is handed, and should: it runs for
+ * every requirement of every gate. A context arriving from a caller is checked
+ * once, at the boundary, by findRequirementContextIssues() — and every field
+ * the evaluator reads has to be in that check, or a resolver promising never to
+ * throw on malformed input will throw from inside the evaluator instead.
+ */
+describe("a requirement context read from anywhere", () => {
+  it("is needed: the evaluator trusts what it is handed", () => {
+    /* Guards the suite: without the boundary, this is a TypeError. */
+    expect(() =>
+      meetsRequirement(
+        { type: "attributeMinimum", attribute: "dex", layer: "base", minimum: 1 },
+        {} as never,
+      ),
+    ).toThrow();
+  });
+
+  it("accepts a context built by character resolution", () => {
+    for (const character of [
+      createTestCharacter(),
+      createTestCharacter({ items: [], traits: [{ traitId: "one-armed" }] }),
+    ]) {
+      const { requirementContext } = resolveTestCharacter(character);
+
+      expect(findRequirementContextIssues(requirementContext)).toEqual([]);
+      expect(isRequirementContext(requirementContext)).toBe(true);
+    }
+  });
+
+  it("accepts a context recording nothing beyond attributes and level", () => {
+    expect(findRequirementContextIssues(contextWith())).toEqual([]);
+  });
+
+  it("treats an explicitly undefined optional field as unrecorded", () => {
+    const context = {
+      ...contextWith(),
+      speciesIds: undefined,
+      skillMastery: undefined,
+      items: undefined,
+      incomplete: undefined,
+    };
+
+    expect(findRequirementContextIssues(context)).toEqual([]);
+  });
+
+  it("accepts every field filled in", () => {
+    const context = contextWith({
+      speciesIds: ["human"],
+      subspeciesIds: [],
+      clanIds: ["zoldyck"],
+      traitIds: ["one-armed"],
+      skillIds: ["parry"],
+      techniqueIds: [],
+      skillMastery: { parry: 2 },
+      techniqueMastery: {},
+      conditionIds: ["prone"],
+      items: { possessed: ["gauntlets"], equipped: [] },
+      incomplete: [...REQUIREMENT_COLLECTIONS],
+    });
+
+    expect(findRequirementContextIssues(context)).toEqual([]);
+  });
+
+  it.each(hostileRequirementContexts(contextWith()))(
+    "refuses %s, naming %s",
+    (_label, path, context) => {
+      let issues: readonly RequirementContextIssue[] = [];
+
+      expect(() => {
+        issues = findRequirementContextIssues(context);
+      }).not.toThrow();
+
+      expect(issues.map((issue) => issue.path)).toContain(path);
+      expect(isRequirementContext(context)).toBe(false);
+    },
+  );
+
+  it("reports every fault in one pass", () => {
+    const issues = findRequirementContextIssues({
+      ...contextWith(),
+      level: "1",
+      traitIds: [42],
+      incomplete: ["inventory"],
+    });
+
+    expect(issues.map((issue) => issue.path)).toEqual([
+      "requirementContext.level",
+      "requirementContext.traitIds[0]",
+      "requirementContext.incomplete[0]",
+    ]);
+  });
+
+  it.each([undefined, null, 42, "context", true, [], Number.NaN])(
+    "refuses a root of %s without throwing",
+    (value) => {
+      expect(findRequirementContextIssues(value)).toEqual([
+        { path: "requirementContext", expected: "a requirement context object" },
+      ]);
+    },
+  );
 });

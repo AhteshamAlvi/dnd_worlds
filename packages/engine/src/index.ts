@@ -544,7 +544,9 @@ export type {
   TechniqueGrant,
   ResolvedRuleEffects,
   RequirementAttributes,
+  RequirementCollection,
   RequirementContext,
+  RequirementContextIssue,
   RequirementDisposition,
   RequirementItems,
   NamedRequirementResolution,
@@ -561,6 +563,14 @@ export {
   resolveNamedRequirements,
   namedRequirementDisposition,
   REQUIREMENT_DISPOSITIONS,
+  /*
+   * The requirement-context boundary. A host handing a context to a resolver
+   * can ask the same question the resolver asks before it evaluates anything.
+   */
+  REQUIREMENT_COLLECTIONS,
+  findRequirementContextIssues,
+  isRequirementCollection,
+  isRequirementContext,
 } from "./character/rules/resolution";
 
 /*

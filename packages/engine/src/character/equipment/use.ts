@@ -81,6 +81,7 @@ import {
 } from "../../infrastructure/result";
 
 import {
+  findRequirementContextIssues,
   namedRequirementDisposition,
   resolveNamedRequirements,
   resolveRuleEffects,
@@ -116,6 +117,9 @@ export interface ItemUseInput {
    * Resolved rather than authored, because use requirements are asked of the
    * resolved view — a Trait granted by a Species satisfies a requirement for it
    * exactly as one taken directly does.
+   *
+   * Its requirement context is validated field by field before the gate reads
+   * it; a context the evaluator could not read is `input_invalid`, not a throw.
    */
   readonly resolved: ResolvedCharacter;
 
@@ -260,35 +264,61 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 
+type ReadableInput =
+  | { readonly ok: true; readonly resolved: ResolvedCharacter }
+  | { readonly ok: false; readonly problem: string };
+
+
 /*
  * Whether the input carries a character this resolver can read.
  *
  * Checked field by field before anything is dereferenced, because
  * `input.resolved.character.id` is three reads into a value a host supplied.
- * The requirement context is included: resolving a use gate reads it, and a
- * resolved character without one would throw inside the evaluator rather than
- * fail here.
+ *
+ * The requirement context is checked COMPLETELY, through the shared
+ * validator, rather than merely for being an object. An object check let
+ * `requirementContext: {}` through, and the evaluator then threw reading
+ * `attributes.base` for the first attributeMinimum gate — the malformed input
+ * reaching exactly the exception this resolver promises never to raise.
  */
-function readableResolvedCharacter(
-  input: unknown,
-): ResolvedCharacter | undefined {
-  if (!isRecord(input)) return undefined;
+function readResolvedCharacter(input: unknown): ReadableInput {
+  if (!isRecord(input)) {
+    return { ok: false, problem: "The Item use input is not an object." };
+  }
 
   const resolved = input["resolved"];
 
-  if (!isRecord(resolved)) return undefined;
+  if (!isRecord(resolved)) {
+    return { ok: false, problem: "No resolved character was supplied to the Item use." };
+  }
 
   const character = resolved["character"];
 
-  if (!isRecord(character)) return undefined;
+  if (!isRecord(character)) {
+    return { ok: false, problem: "The resolved character carries no Character." };
+  }
 
   const id = character["id"];
 
-  if (typeof id !== "string" || id.trim().length === 0) return undefined;
+  if (typeof id !== "string" || id.trim().length === 0) {
+    return { ok: false, problem: "The resolved character's Character has no usable id." };
+  }
 
-  if (!isRecord(resolved["requirementContext"])) return undefined;
+  const contextIssues = findRequirementContextIssues(resolved["requirementContext"]);
 
-  return resolved as unknown as ResolvedCharacter;
+  if (contextIssues.length > 0) {
+    return {
+      ok: false,
+      problem:
+        "The resolved character's requirement context cannot be evaluated: " +
+        contextIssues
+          .map((issue) => `${issue.path} must be ${issue.expected}`)
+          .join("; ") +
+        ".",
+    };
+  }
+
+  return { ok: true, resolved: resolved as unknown as ResolvedCharacter };
 }
 
 
@@ -314,17 +344,15 @@ export function resolveItemUse(
   /* 1. The input and the resolved character                                */
   /* ---------------------------------------------------------------------- */
 
-  const resolved = readableResolvedCharacter(input);
+  const readable = readResolvedCharacter(input);
 
-  if (resolved === undefined) {
+  if (!readable.ok) {
     return engineFailure(traceOf(inputs, "input_invalid"), [
-      structuralError(
-        "equipment.use.input_invalid",
-        "No readable resolved character, with a requirement context, was supplied to the Item use.",
-      ),
+      structuralError("equipment.use.input_invalid", readable.problem),
     ]);
   }
 
+  const { resolved } = readable;
   const character = resolved.character;
 
   inputs["characterId"] = { value: character.id };
