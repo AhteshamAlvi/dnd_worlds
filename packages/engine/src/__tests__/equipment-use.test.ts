@@ -62,7 +62,10 @@ import {
   resolveNamedRequirements,
   type RequirementContext,
 } from "../character/rules/resolution";
-import { hostileRequirementContexts } from "./fixtures/requirement-context";
+import {
+  EVERY_CONTEXT_FIELD_GATE,
+  hostileRequirementContexts,
+} from "./fixtures/requirement-context";
 import type { Character } from "../character/types";
 
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
@@ -887,27 +890,8 @@ describe("malformed questions are failures, not refusals", () => {
  * than pass unnoticed.
  */
 describe("a malformed requirement context is a failure, not a throw", () => {
-  const EVERY_FIELD_GATE: readonly NamedRequirement[] = [
-    { id: "stored", requirement: { type: "attributeMinimum", attribute: "dex", layer: "stored", minimum: 1 } },
-    { id: "base", requirement: { type: "attributeMinimum", attribute: "dex", layer: "base", minimum: 1 } },
-    { id: "resolved", requirement: { type: "attributeMinimum", attribute: "dex", layer: "resolved", minimum: 1 } },
-    { id: "derived", requirement: { type: "derivedAttributeMinimum", derivedAttribute: "combatAbility", layer: "base", minimum: 0 } },
-    { id: "level", requirement: { type: "levelMinimum", minimum: 1 } },
-    { id: "species", requirement: { type: "hasSpecies", speciesId: "winged-folk" } },
-    { id: "subspecies", requirement: { type: "hasSubspecies", subspeciesId: "sky-born" } },
-    { id: "clan", requirement: { type: "hasClan", clanId: "moonless" } },
-    { id: "trait", requirement: { type: "hasTrait", traitId: "winged" } },
-    { id: "skill", requirement: { type: "hasSkill", skillId: "gliding" } },
-    { id: "skill-mastery", requirement: { type: "skillMastery", skillId: "gliding", minimumMastery: 1 } },
-    { id: "technique", requirement: { type: "hasTechnique", techniqueId: "updraft" } },
-    { id: "technique-mastery", requirement: { type: "techniqueMastery", techniqueId: "updraft", minimumMastery: 1 } },
-    { id: "condition", requirement: { type: "hasCondition", conditionId: "grounded" } },
-    { id: "possessed", requirement: { type: "hasItem", itemId: "feather", state: "possessed" } },
-    { id: "equipped", requirement: { type: "hasItem", itemId: "feather", state: "equipped" } },
-  ];
-
   function gatedUse() {
-    registerDraught({ useRequirements: EVERY_FIELD_GATE });
+    registerDraught({ useRequirements: EVERY_CONTEXT_FIELD_GATE });
 
     const character = createTestCharacter({ items: [entry()] });
     const resolved = resolveTestCharacter(character);
@@ -934,7 +918,7 @@ describe("a malformed requirement context is a failure, not a throw", () => {
     const hostile = { ...resolved, requirementContext: {} } as never;
 
     /* The evaluator alone would throw on it; the resolver must not. */
-    expect(() => resolveNamedRequirements(EVERY_FIELD_GATE, {} as never)).toThrow();
+    expect(() => resolveNamedRequirements(EVERY_CONTEXT_FIELD_GATE, {} as never)).toThrow();
 
     let result: ReturnType<typeof resolveItemUse> | undefined;
 

@@ -56,11 +56,19 @@ import {
 
 import { createCharacterId } from "../character/id";
 
-import type { RequirementContext } from "../character/rules/resolution";
+import {
+  findRequirementContextIssues,
+  resolveNamedRequirements,
+  type RequirementContext,
+} from "../character/rules/resolution";
 
 import type { Character } from "../character/types";
 
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
+import {
+  EVERY_CONTEXT_FIELD_GATE,
+  hostileRequirementContexts,
+} from "./fixtures/requirement-context";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -1587,6 +1595,284 @@ describe("no boundary throws", () => {
       ).not.toThrow();
 
       expect(resolveEquipmentTransition(value as never).success).toBe(false);
+    }
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* The requirement context                                                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The transition handed `resolved.requirementContext` straight to the
+ * evaluator, so `requirementContext: {}` made an Attribute-gated equip THROW —
+ * a malformed input escaping as an exception from a function that promises
+ * none. It is now validated through the shared boundary, at the moment an equip
+ * is about to read it.
+ *
+ * And only then, which is half of what this suite proves. Unequipping and the
+ * outcomes decided before the gate never read the context, and must not come
+ * to depend on it: an unrelated context fault that stopped a character taking
+ * their armour off would be the trap "unequipping asks nothing" exists to
+ * prevent, arriving by another route.
+ */
+describe("the requirement context an equip gate reads", () => {
+  /*
+   * A context that throws the moment any field is read. Handed to an outcome
+   * that must not inspect the context, it proves the outcome did not — rather
+   * than merely that it happened to tolerate one malformed value.
+   */
+  const UNREADABLE_CONTEXT: unknown = new Proxy({}, {
+    get: () => {
+      throw new Error("the requirement context was read");
+    },
+  });
+
+  function attempt(
+    items: readonly CharacterItem[],
+    destination: ItemEquipmentState,
+    contextOf: (valid: RequirementContext) => unknown,
+    extra: Partial<Character> = {},
+  ) {
+    const character = characterWith(items, extra);
+    const resolved = resolveTestCharacter(character);
+
+    return () =>
+      resolveEquipmentTransition({
+        resolved: {
+          ...resolved,
+          requirementContext: contextOf(resolved.requirementContext),
+        } as never,
+        item: { characterId: character.id, entryId: "e1" },
+        destination,
+      });
+  }
+
+  const ATTRIBUTE_GATE = [
+    {
+      id: "steady-enough",
+      requirement: { type: "attributeMinimum", attribute: "dex", layer: "base", minimum: 1 },
+    },
+  ] as const;
+
+  it("springs its trap when the context is read", () => {
+    /* Guards the guard: a trap that never fires proves nothing below. */
+    expect(() => findRequirementContextIssues(UNREADABLE_CONTEXT))
+      .toThrow("the requirement context was read");
+  });
+
+  it("refuses the reported context without throwing", () => {
+    registerGated([...ATTRIBUTE_GATE]);
+
+    /* The evaluator alone throws on it; that is the gap being closed. */
+    expect(() => resolveNamedRequirements(ATTRIBUTE_GATE, {} as never)).toThrow();
+
+    const run = attempt([entry({ itemId: "warded-band" })], "worn", () => ({}));
+
+    expect(run).not.toThrow();
+
+    const result = run();
+
+    if (result.success) throw new Error("expected a failure");
+
+    expect(result.errors[0].code).toBe("equipment.transition.input_invalid");
+    expect(result.errors[0].audience).toBe("developer");
+    expect(result.errors[0].message).toContain("requirementContext.attributes");
+    expect(result.trace.root.output).toBe("input_invalid");
+  });
+
+  it("refuses every hostile context in the shared table, naming its field", () => {
+    registerGated(EVERY_CONTEXT_FIELD_GATE);
+
+    const character = characterWith([entry({ itemId: "warded-band" })]);
+    const resolved = resolveTestCharacter(character);
+
+    for (const [label, path, context] of hostileRequirementContexts(
+      resolved.requirementContext,
+    )) {
+      const run = () =>
+        resolveEquipmentTransition({
+          resolved: { ...resolved, requirementContext: context } as never,
+          item: { characterId: character.id, entryId: "e1" },
+          destination: "worn",
+        });
+
+      expect(run, label).not.toThrow();
+
+      const result = run();
+
+      expect(result.success, label).toBe(false);
+
+      if (result.success) continue;
+
+      /* A failure carries no payload, so no replacement Character either. */
+      expect("payload" in result, label).toBe(false);
+
+      expect(result.errors[0].code, label).toBe("equipment.transition.input_invalid");
+      expect(result.errors[0].message, label).toContain(path);
+
+      /* Refused before the gate: no requirement was evaluated into the trace. */
+      expect(
+        Object.keys(result.trace.root.inputs).some((key) => key.startsWith("requirement.")),
+        label,
+      ).toBe(false);
+    }
+  });
+
+  it.each(["held", "worn"] as const)(
+    "checks the context for a %s equip that declares no requirements",
+    (destination) => {
+      registerGated([]);
+
+      for (const run of [
+        /* The authored gauntlets declare no equipRequirements at all... */
+        attempt([entry()], destination, () => ({})),
+        /* ...this one declares an empty list... */
+        attempt([entry({ itemId: "warded-band" })], destination, () => ({})),
+        /* ...and a re-equip is an equip, read off the destination alone. */
+        attempt(
+          [entry({ state: destination === "held" ? "worn" : "held" })],
+          destination,
+          () => ({}),
+        ),
+      ]) {
+        expect(run).not.toThrow();
+
+        const result = run();
+
+        expect(!result.success && result.errors[0].code)
+          .toBe("equipment.transition.input_invalid");
+      }
+    },
+  );
+
+  it("leaves equipping with a valid context exactly as it was", () => {
+    registerGated([NEEDS_TRAIT]);
+
+    const refused = attempt(
+      [entry({ itemId: "warded-band" })],
+      "worn",
+      (valid) => valid,
+    )();
+
+    expect(refused.success && refused.payload.disposition)
+      .toBe("requirements-unsatisfied");
+
+    const permitted = attempt(
+      [entry({ itemId: "warded-band" })],
+      "worn",
+      (valid) => valid,
+      { traits: [{ traitId: "one-armed" }] },
+    )();
+
+    if (!permitted.success || permitted.payload.disposition !== "available") {
+      throw new Error("expected an available transition");
+    }
+
+    expect(permitted.payload.requirements).toEqual([
+      { ...NEEDS_TRAIT, disposition: "satisfied" },
+    ]);
+    expect(permitted.payload.nextCharacter.items?.[0]?.state).toBe("worn");
+
+    const ungated = attempt([entry()], "held", (valid) => valid)();
+
+    expect(ungated.success && ungated.payload.disposition).toBe("available");
+
+    /* Every field read, against a context resolution built: an answer, not a fault. */
+    registerGated(EVERY_CONTEXT_FIELD_GATE, "every-field-band");
+
+    const everyField = attempt(
+      [entry({ itemId: "every-field-band" })],
+      "worn",
+      (valid) => valid,
+    )();
+
+    expect(everyField.success && everyField.payload.disposition)
+      .toBe("requirements-unsatisfied");
+  });
+
+  it.each(["held", "worn"] as const)(
+    "lets a %s Item be unequipped whatever the context holds",
+    (from) => {
+      registerGated([NEEDS_TRAIT]);
+
+      const character = characterWith([entry({ itemId: "warded-band", state: from })]);
+      const resolved = resolveTestCharacter(character);
+
+      const contexts: readonly unknown[] = [
+        UNREADABLE_CONTEXT,
+        ...hostileRequirementContexts(resolved.requirementContext)
+          .map(([, , context]) => context),
+      ];
+
+      for (const context of contexts) {
+        const run = () =>
+          resolveEquipmentTransition({
+            resolved: { ...resolved, requirementContext: context } as never,
+            item: { characterId: character.id, entryId: "e1" },
+            destination: "carried",
+          });
+
+        expect(run).not.toThrow();
+
+        const result = run();
+
+        if (!result.success || result.payload.disposition !== "available") {
+          throw new Error("expected the unequip to be available");
+        }
+
+        expect(result.payload.transition.kind).toBe("unequip");
+        expect(result.payload.requirements).toEqual([]);
+        expect(result.payload.nextCharacter.items?.[0]?.state).toBe("carried");
+      }
+    },
+  );
+
+  it("keeps already-in-state ahead of the context, without reading it", () => {
+    registerGated([NEEDS_TRAIT]);
+
+    for (const state of ["carried", "held", "worn"] as const) {
+      for (const contextOf of [() => UNREADABLE_CONTEXT, () => ({})]) {
+        const run = attempt([entry({ itemId: "warded-band", state })], state, contextOf);
+
+        expect(run).not.toThrow();
+
+        const result = run();
+
+        expect(result.success && result.payload.disposition)
+          .toBe("already-in-state");
+      }
+    }
+  });
+
+  it("keeps not-concrete-object ahead of the context, without reading it", () => {
+    registerDefinition("item", {
+      id: "trail-rations",
+      name: "Trail Rations",
+      description: "A test Item whose copies are a count.",
+      inventoryMode: "stackable",
+    });
+
+    const cases = [
+      entry({ itemId: "trail-rations", quantity: 3 }),
+      entry({ itemId: "trail-rations", quantity: 0 }),
+      entry({ quantity: 0 }),
+    ];
+
+    for (const item of cases) {
+      for (const destination of ["held", "worn"] as const) {
+        for (const contextOf of [() => UNREADABLE_CONTEXT, () => ({})]) {
+          const run = attempt([item], destination, contextOf);
+
+          expect(run).not.toThrow();
+
+          const result = run();
+
+          expect(result.success && result.payload.disposition)
+            .toBe("not-concrete-object");
+        }
+      }
     }
   });
 });

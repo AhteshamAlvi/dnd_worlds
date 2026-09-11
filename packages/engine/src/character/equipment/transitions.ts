@@ -43,7 +43,8 @@
  * player.
  *
  * A malformed input is a failure: a destination that is not a state, a
- * reference to nothing, a corrupt entry. Those are EngineErrors, they are
+ * reference to nothing, a corrupt entry, a requirement context an equip gate
+ * cannot read. Those are EngineErrors, they are
  * addressed to a developer, and collapsing them into a disposition would tell
  * a player "you cannot equip that" when the truth is that the host asked the
  * wrong question.
@@ -84,6 +85,7 @@ import {
 } from "../../infrastructure/result";
 
 import {
+  findRequirementContextIssues,
   namedRequirementDisposition,
   resolveNamedRequirements,
   type NamedRequirementResolution,
@@ -488,6 +490,38 @@ export function resolveEquipmentTransition(
    * that let them put the armour on must still be able to take it off, and a
    * gate on the way out would trap them in it.
    */
+  if (kind === "equip") {
+    /*
+     * The requirement context is a caller's input, validated through the one
+     * shared boundary at the moment the gate is about to READ it, and only
+     * then. Passed straight to the evaluator, `requirementContext: {}` made an
+     * Attribute-gated equip throw from inside resolveRequirement().
+     *
+     * Asked for every equip, whether or not the Item declares a gate, so the
+     * verdict on a malformed input does not depend on which Item was chosen.
+     * Never asked for an unequip, which reads no context: an unrelated context
+     * fault must not trap an Item in its equipped state any more than a lapsed
+     * requirement may. already-in-state and not-concrete-object are decided
+     * above and keep their precedence for the same reason — neither reads it.
+     */
+    const contextIssues = findRequirementContextIssues(
+      resolved.requirementContext,
+    );
+
+    if (contextIssues.length > 0) {
+      return engineFailure(traceOf(inputs, "input_invalid"), [
+        structuralError(
+          "equipment.transition.input_invalid",
+          "The resolved character's requirement context cannot be evaluated: " +
+            contextIssues
+              .map((issue) => `${issue.path} must be ${issue.expected}`)
+              .join("; ") +
+            ".",
+        ),
+      ]);
+    }
+  }
+
   const requirements = kind === "equip"
     ? resolveNamedRequirements(
         definition.equipRequirements ?? [],

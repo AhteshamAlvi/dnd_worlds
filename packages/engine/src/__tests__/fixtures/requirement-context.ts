@@ -12,7 +12,37 @@
  * report, from its default root.
  */
 
+import type { NamedRequirement } from "../../character/rules/requirements";
 import type { RequirementContext } from "../../character/rules/resolution";
+
+
+/**
+ * A gate that reads EVERY field of a requirement context, one requirement type
+ * each.
+ *
+ * Handed a context a boundary forgot to validate, some requirement here reaches
+ * the missing field and throws — so a resolver tested with this gate cannot
+ * pass by never reading the field the table broke. The ids name nothing in any
+ * catalog on purpose: against a real character every one is simply unmet.
+ */
+export const EVERY_CONTEXT_FIELD_GATE: readonly NamedRequirement[] = [
+  { id: "stored", requirement: { type: "attributeMinimum", attribute: "dex", layer: "stored", minimum: 1 } },
+  { id: "base", requirement: { type: "attributeMinimum", attribute: "dex", layer: "base", minimum: 1 } },
+  { id: "resolved", requirement: { type: "attributeMinimum", attribute: "dex", layer: "resolved", minimum: 1 } },
+  { id: "derived", requirement: { type: "derivedAttributeMinimum", derivedAttribute: "combatAbility", layer: "base", minimum: 0 } },
+  { id: "level", requirement: { type: "levelMinimum", minimum: 1 } },
+  { id: "species", requirement: { type: "hasSpecies", speciesId: "winged-folk" } },
+  { id: "subspecies", requirement: { type: "hasSubspecies", subspeciesId: "sky-born" } },
+  { id: "clan", requirement: { type: "hasClan", clanId: "moonless" } },
+  { id: "trait", requirement: { type: "hasTrait", traitId: "winged" } },
+  { id: "skill", requirement: { type: "hasSkill", skillId: "gliding" } },
+  { id: "skill-mastery", requirement: { type: "skillMastery", skillId: "gliding", minimumMastery: 1 } },
+  { id: "technique", requirement: { type: "hasTechnique", techniqueId: "updraft" } },
+  { id: "technique-mastery", requirement: { type: "techniqueMastery", techniqueId: "updraft", minimumMastery: 1 } },
+  { id: "condition", requirement: { type: "hasCondition", conditionId: "grounded" } },
+  { id: "possessed", requirement: { type: "hasItem", itemId: "feather", state: "possessed" } },
+  { id: "equipped", requirement: { type: "hasItem", itemId: "feather", state: "equipped" } },
+];
 
 
 export type HostileRequirementContext = readonly [

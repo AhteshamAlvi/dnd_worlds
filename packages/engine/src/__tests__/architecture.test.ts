@@ -2175,4 +2175,29 @@ describe("a rule bundle holds its requirements once", () => {
      */
     expect(source).toContain("findRequirementContextIssues(");
   });
+
+  it("has the equip transition gate its context through the shared boundary", () => {
+    /*
+     * The transition read the requirement context straight into the evaluator,
+     * and `requirementContext: {}` threw for an Attribute-gated equip. It must
+     * ask the one shared validator, before the gate reads the context — not a
+     * local "is it an object" check, which is exactly the guard that let the
+     * use resolver's version of this through.
+     */
+    const source = codeOf(join(SRC, "character", "equipment", "transitions.ts"));
+
+    expect(source).toContain("findRequirementContextIssues(");
+    expect(source).toContain("equipment.transition.input_invalid");
+    expect(source.indexOf("findRequirementContextIssues("))
+      .toBeLessThan(source.indexOf("resolveNamedRequirements("));
+  });
+
+  it("declares the requirement-context validator exactly once", () => {
+    /* Both active Item operations share it; a second one is a second answer. */
+    const declarers = everySource.filter((path) =>
+      /\bfunction\s+findRequirementContextIssues\b/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toEqual([join(SRC, "character", "rules", "resolution.ts")]);
+  });
 });
