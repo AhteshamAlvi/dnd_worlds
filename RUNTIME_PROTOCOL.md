@@ -286,7 +286,17 @@ character's stored `resolvedAt`.
 |---|---|---|
 | `aura/runtime.ts` | a domain owning a **spendable resource** others need | migrated; stateless handler |
 | `body/recovery/runtime.ts` | a domain that must **ask another owner** to change something | migrated |
+| `character/equipment/runtime.ts` | a domain paying a cost **against its own state**, re-validated fresh each settlement | migrated (Ticket 4.4) |
 | test-only coordinated operation | atomicity across **two independent owners** | in `runtime-protocol.test.ts` |
+
+`character/equipment/runtime.ts` is the first cost handler where the domain being charged and the
+state the charge is decided against are the same thing: `createCharacterItemOperationCostHandler()`
+re-resolves the `Character` in the coordinator's own running draft and re-runs
+`resolveEquipmentTransition()`/`resolveItemUse()` against it, so an entry that moved, emptied, or lost
+a satisfied requirement between preparation and settlement fails to `prepare()` and rolls the whole
+operation back — never Aura's shape (a lookup resolves a *separate* resource's context per owner),
+because there is no separate resource here to look up a context for. See decision
+`equipment.actions.item-operation-is-a-cost-not-an-effect`.
 
 Both existing operations were already behaviourally correct — `spendActionAura` validated before
 deducting and `resolveRecovery` already reported healed Injuries rather than removing them. What the

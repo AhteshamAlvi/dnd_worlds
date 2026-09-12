@@ -275,6 +275,7 @@ describe("findCatalogReferenceIssues", () => {
     registerDefinition("item", {
       id: "spirit-blade",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       name: "Spirit Blade",
       description: "A test Item.",
       equippedEffects: [
@@ -307,6 +308,7 @@ describe("findCatalogReferenceIssues", () => {
     const result = registerDefinition("item", {
       id: "spirit-key",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       name: "Spirit Key",
       description: "A test Item.",
       useRequirements: [
@@ -340,6 +342,7 @@ describe("findCatalogReferenceIssues", () => {
     const result = registerDefinition("item", {
       id: "spirit-key",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       name: "Spirit Key",
       description: "A test Item.",
       useRequirements: [
@@ -362,6 +365,7 @@ describe("findCatalogReferenceIssues", () => {
       const result = registerDefinition("item", {
         id: "spirit-key",
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         name: "Spirit Key",
         description: "A test Item.",
         useRequirements: [entry] as never,
@@ -378,6 +382,7 @@ describe("findCatalogReferenceIssues", () => {
       const result = registerDefinition("item", {
         id: "spirit-key",
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         name: "Spirit Key",
         description: "A test Item.",
         useRequirements: useRequirements as never,

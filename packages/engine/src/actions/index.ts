@@ -167,6 +167,7 @@ export {
   bodyRecoveryConsequence,
   conditionApplicationConsequence,
   conditionRemovalConsequence,
+  itemIntegrityConsequence,
   displacementConsequence,
   informationalConsequence,
   narrativeConsequence,

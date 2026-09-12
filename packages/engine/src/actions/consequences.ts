@@ -276,6 +276,46 @@ export function conditionRemovalConsequence(
 }
 
 
+/* ── Item integrity (Ticket 4.8) ─────────────────────────────────────────── */
+
+/**
+ * Stress or repair to one owned entry, denominated in the Item's own
+ * integrity — routed to `character`, which owns its own entries' integrity
+ * the same way it owns their equip state (Ticket 4.4). Generic here: this
+ * file never imports the equipment domain, and `entryId` is carried as a
+ * plain string because only `character/equipment/runtime.ts`'s effect
+ * handler needs to know what it names.
+ *
+ * A settled miss still stresses the Item that swung — build this from the
+ * SAME consequence list a hit would, and let the resolved entry's own policy
+ * decide what a refused repair or a non-durable target means; this builder
+ * never asks either question.
+ */
+export function itemIntegrityConsequence(
+  context: ConsequenceContext,
+  input: {
+    readonly requestId: string;
+    readonly characterId: string;
+    readonly entryId: string;
+    readonly operation: "stress" | "repair";
+    readonly amount: number;
+  },
+): Consequence {
+  const request: QuantitativeRequest & { readonly entryId: string } = {
+    ...(effectRequest(
+      context,
+      input.requestId,
+      input.operation === "stress" ? "item.stress" : "item.repair",
+      { domain: "character", id: input.characterId },
+      Math.abs(input.amount),
+    ) as QuantitativeRequest),
+    entryId: input.entryId,
+  };
+
+  return { channel: "runtime", request };
+}
+
+
 /* ── Things the engine does not own ───────────────────────────────────── */
 
 /**

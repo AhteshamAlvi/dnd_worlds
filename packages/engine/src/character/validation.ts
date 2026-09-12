@@ -388,6 +388,18 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
     resolution:
       "Give each copy its own entry; only stackable Items are counted in one.",
   },
+  "integrity-not-permitted": {
+    code: "character.item.integrity_not_permitted",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" declares integrity, but "${issue.itemId}" has no integrity policy.`,
+    resolution: "Remove the entry's integrity, or give the Item an integrity policy.",
+  },
+  "invalid-item-integrity": {
+    code: "character.item.integrity_invalid",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" has an integrity of ${describeValue(issue.integrity)}.`,
+    resolution: "Set integrity to a finite number between 0 and the Item's maximum.",
+  },
 };
 
 

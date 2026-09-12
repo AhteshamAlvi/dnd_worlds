@@ -132,6 +132,7 @@ function registerItem(
     name: "Test Item",
     description: "A test Item registered for Item use.",
     inventoryMode: "stackable",
+    shuInteraction: "compatible",
     ...fields,
   } as unknown as ItemDefinition);
 
@@ -161,6 +162,7 @@ function registerWhetstone(): ItemDefinition {
 function registerVial(): ItemDefinition {
   return registerItem("last-breath-vial", {
     inventoryMode: "individual",
+    shuInteraction: "compatible",
     consumesOnUse: true,
     useEffects: [STEADY_WIS],
   });
@@ -648,6 +650,7 @@ describe("possessed, equipped and use Effects stay apart", () => {
   function registerFieldKit(): void {
     registerItem("field-kit", {
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       possessedEffects: [POSSESSED],
       equippedEffects: [EQUIPPED],
       useEffects: [STEADY_WIS],
@@ -695,6 +698,7 @@ describe("possessed, equipped and use Effects stay apart", () => {
   it("stops the passive Effects of a consumable once it is used up", () => {
     registerItem("field-kit", {
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       consumesOnUse: true,
       possessedEffects: [POSSESSED],
       equippedEffects: [EQUIPPED],
@@ -742,6 +746,7 @@ describe("an Item with nothing to use", () => {
       name: "X",
       description: "X.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
     } as const;
 
     expect(isActivelyUsableItem(base)).toBe(false);
@@ -833,6 +838,7 @@ describe("malformed questions are failures, not refusals", () => {
       name: "Calming Draught",
       description: "A test Item.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       consumesOnUse: true,
       useEffects: [STEADY_WIS],
       ...fields,
@@ -991,6 +997,7 @@ describe("the use surface is validated on its own", () => {
       name: "Warded Band",
       description: "A test Item.",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       useEffects: [BAD_EFFECT],
     } as unknown as ItemDefinition;
 
@@ -1023,6 +1030,7 @@ describe("the use surface is validated on its own", () => {
       name: "Calming Draught",
       description: "A test Item.",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       consumesOnUse: true,
       equippedEffects: [BAD_EFFECT],
       useEffects: [STEADY_WIS],
@@ -1049,12 +1057,14 @@ describe("the use surface is validated on its own", () => {
       useEffects: [STEADY_WIS],
     };
 
-    expect(findItemCoreDefinitionIssues(definition)).toHaveLength(1);
-    expect(findItemEquipmentDefinitionIssues(definition)).toHaveLength(1);
-    expect(findItemUseDefinitionIssues(definition)).toHaveLength(1);
+    /* Two core faults now: no inventoryMode, and no shuInteraction. */
+    expect(findItemCoreDefinitionIssues(definition)).toHaveLength(2);
+    expect(findItemEquipmentDefinitionIssues(definition)).toHaveLength(2);
+    expect(findItemUseDefinitionIssues(definition)).toHaveLength(2);
 
     expect(findItemStructuralIssues(definition)).toEqual([
       expect.stringContaining("must declare an inventoryMode"),
+      expect.stringContaining("must declare a shuInteraction"),
     ]);
   });
 
@@ -1064,6 +1074,7 @@ describe("the use surface is validated on its own", () => {
       name: "Calming Draught",
       description: "A test Item.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       consumesOnUse: "true",
       useRequirements: [{ id: "", requirement: NEEDS_ONE_ARM.requirement }],
     })).toEqual([
@@ -1082,6 +1093,7 @@ describe("the use surface is validated on its own", () => {
       name: "Calming Draught",
       description: "A test Item.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       [field]: value,
     };
 
@@ -1111,6 +1123,7 @@ describe("purity", () => {
       name: "Calming Draught",
       description: "A test Item.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       consumesOnUse: true,
       useRequirements: [NEEDS_ONE_ARM],
       useEffects: [STEADY_WIS, STEADY_PER],

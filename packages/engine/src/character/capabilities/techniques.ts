@@ -41,6 +41,11 @@ import type { EffectfulDefinition } from "../rules/content";
 import type { Effect } from "../rules/effects";
 
 import {
+  findImplementConditionalRuleListIssues,
+  type ImplementConditionalRule,
+} from "../equipment/conditions";
+
+import {
   collectMasteryRankEffects,
   findMasteryTrackIssues,
   STANDARD_MASTERY_MAX,
@@ -98,6 +103,14 @@ export interface TechniqueDefinition extends EffectfulDefinition {
    * which capabilities/dependencies.ts reports.
    */
   readonly requiresUnlock?: boolean;
+
+  /**
+   * Bonuses this Technique contributes only while a selected implement
+   * matches a condition — Ticket 4.7. See `TraitDefinition`'s field of the
+   * same name; the contract is identical, and this Technique is the rule's
+   * source.
+   */
+  readonly implementConditionalRules?: readonly ImplementConditionalRule[];
 }
 
 /**
@@ -320,15 +333,31 @@ export function findTechniqueDefinitionStructuralIssues(
 
   if (technique === undefined) return [];
 
+  const issues: string[] = [];
+
   const track = technique["mastery"];
 
-  if (track === undefined) return [];
+  if (track !== undefined) {
+    issues.push(...findMasteryTrackIssues(
+      "Technique",
+      String(technique["id"]),
+      track as MasteryTrack,
+    ).map((issue) => issue.replace(/^Technique "[^"]*" /, "")));
+  }
 
-  return findMasteryTrackIssues(
-    "Technique",
-    String(technique["id"]),
-    track as MasteryTrack,
-  ).map((issue) => issue.replace(/^Technique "[^"]*" /, ""));
+  const conditionalRules = technique["implementConditionalRules"];
+
+  if (conditionalRules !== undefined) {
+    if (!Array.isArray(conditionalRules)) {
+      issues.push("declares implementConditionalRules that is not a list.");
+    } else {
+      for (const issue of findImplementConditionalRuleListIssues(conditionalRules)) {
+        issues.push(`has a malformed implementConditionalRules entry: ${issue.code} — ${issue.message}`);
+      }
+    }
+  }
+
+  return issues;
 }
 
 

@@ -895,7 +895,209 @@ equipment.use.{input_invalid,reference_invalid,character_mismatch,
 
 Trace: `character.equipment.use`. The unbound `resolveItemUse(input, lookup)` in `equipment/use.ts` is what tests drive with malformed injected definitions, and registration and the resolver are tested to refuse exactly the same use surfaces.
 
-**Not built:** ActionProfiles, action intents, costs or targets for equipping or using an Item, runtime/coordinator commitment, persistence, routing resolved `useEffects` into durable state, bulk use, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū. Equipping a second sword is currently permitted — an honest gap, not a rule.
+**Not built (pre-4.4):** ActionProfiles, action intents, costs or targets for equipping or using an Item, runtime/coordinator commitment, persistence, routing resolved `useEffects` into durable state, bulk use, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, weapon families, attack/reach/Range contributions, armor, encumbrance, durability, ammunition, containers, Shū. Equipping a second sword is currently permitted — an honest gap, not a rule.
+
+#### Item operations through the neutral action pipeline (Ticket 4.4)
+
+`character/equipment/actions.ts` and `character/equipment/runtime.ts` connect equip, unequip and Item use to `actions/` and `runtime/coordinator.ts`. Both files are declared SEAMS — the same exception `capabilities/applications.ts` has — because `actions.ts` composes `actions/`, `targeting/` and `spatial/`; `equipment/types.ts` imports only the `ItemUseApplication` TYPE it declares, erased at compile time, so nothing else under `character/equipment/` reaches upward. architecture.test.ts's `APPLICATION_SEAM` list now names it explicitly.
+
+```ts
+type ItemOperation = "equip" | "unequip" | "use";
+
+prepareItemOperation({ operationId, occurredAt, resolved, definition, intent, approach, getItemDefinition, spatial?, checkAdvantage? })
+  → EngineResult<ActionProposal>
+
+createCharacterItemOperationCostHandler(getItemDefinition) → CostHandler   // domain: "character"
+```
+
+**Equip and unequip get an engine-owned default `ActionProfile`:** one Action, no targets (`NO_TARGETS`), focus `"none"` only, instantaneous, threatens nobody. **Use is authored**: `ItemDefinition.useApplication?: ItemUseApplication` declares `allowedTimings`, `structuredActionCost`, `targets`, and optionally `permittedFocusKinds`, `range`, `travel`, `check`, `threatens` — the same neutral vocabulary a Skill's application uses. An Item with no `useApplication` cannot be built into a "use" profile at all (`equipment.actions.use.application-missing`); it can still be used directly through `resolveItemUse()`, unchanged.
+
+`buildItemOperationProfile(operation, definition, item)` builds the `ActionProfile`; its `id` is `item-operation:${operation}:${entryId}` and its `source` is `{ type: "item", id: itemId, instanceId: entryId }` — both the operation and the entry, so two entries of one definition and one entry attempted two different ways never collide.
+
+**Preparation proves, never applies.** `prepareItemOperation()` calls the SAME pure `resolveEquipmentTransition()`/`resolveItemUse()` settlement will call again, purely to turn a disposition into `EligibilityFinding[]` — `nextCharacter` is read for nothing. It attaches exactly one mandatory cost request, `itemOperationCostRequest(...)` (`kind: "character.item-operation"`), which is what settlement re-validates and commits.
+
+**Settlement re-validates and commits atomically, as a COST.** `createCharacterItemOperationCostHandler()` registers `character` itself as a cost-owning domain — the first domain whose cost is paid against its OWN state rather than a separate resource domain owns, as Aura's reference handler is. Its `prepare()` re-resolves the character fresh from the coordinator's running draft (never from a copy it keeps) and re-runs the same resolver; a disposition other than `available`/`executed` is `EngineFailure`, which rolls the WHOLE operation back — the entry that moved, emptied, or lost a requirement between preparation and settlement is caught here, not silently honoured. Its `commit()` turns the already-computed `nextCharacter` into one `item-operation-settled` event (`{ operation, item, itemId, useEffects? }`) — the one place a settled use's `ResolvedRuleEffects` are exposed; `resolveItemUse()` still never applies them. See decision `equipment.actions.item-operation-is-a-cost-not-an-effect` for why this is a `CostHandler` and not an `EffectHandler`.
+
+A settled MISS still executes: the cost handler does not read `gm.succeeded`, so a use with a declared check that the GM resolves as a failure still consumes and still resolves its `useEffects` — the attempt happened. An action that never reaches settlement (`ineligible`/`spatially-invalid`/`missing-facts`, refused by `settleAction()`'s own gate before the coordinator runs at all) consumes nothing.
+
+**Not built (still, post-4.5):** persistence, routing resolved `useEffects` into durable state (host/caller work), bulk use, stack splitting or merging, quantity-scaled passive Effects, hands, body slots, conflicts, dual-wielding, replacement policies, attack/reach/Range contributions, armor, encumbrance, durability, containers, Shū.
+
+#### Selected implements and graded compatibility (Ticket 4.5)
+
+`character/equipment/families.ts` adds `item-family` as an 12th generic catalog domain (`ItemFamilyId` = `string`, `ItemFamilyDefinition` = the bare `Definition` — a family carries no mechanics of its own, pure taxonomy). `ItemDefinition.families?: readonly ItemFamilyId[]` declares which families an Item claims membership in; absent or empty means none, and the Item can still fill a role that sets `allowImprovised: true`.
+
+`character/equipment/implements.ts`:
+
+```ts
+type ImplementCompatibility = "preferred" | "compatible" | "improvised" | "incompatible";
+
+interface ImplementRequirement {
+  role: string;
+  minimum: number; maximum: number;
+  acceptedFamilies: readonly ItemFamilyId[];
+  preferredFamilies?: readonly ItemFamilyId[];   // must be a subset of acceptedFamilies
+  permittedStates?: readonly ItemEquipmentState[];
+  allowImprovised?: boolean;
+}
+
+interface SelectedImplement { role: string; item: InventoryItemRef; }
+interface ImplementResolution { role: string; item: InventoryItemRef; itemId: string; compatibility: ImplementCompatibility; }
+
+resolveSelectedImplements({ resolved, requirements, selections, allowSharedEntries? }, getItemDefinition)
+  → EngineResult<{ resolutions: ImplementResolution[]; issues: ImplementSelectionIssue[] }>
+```
+
+**Preferred vs compatible is a property of the requirement, not the Item** — decision `equipment.implements.preferred-is-a-second-family-list`. The same mace is "compatible" for a role that only names `acceptedFamilies: ["blunt-weapon"]` and "preferred" for one that also lists it in `preferredFamilies`; an Item never opines about which roles it is good at.
+
+**Selection and compatibility are validated separately, and every problem is collected in one pass** rather than stopping at the first. `resolveSelectedImplements()` is pure — it never mutates the character, never consumes anything, and never repeats a catalog lookup a caller already did (the `getItemDefinition` lookup is supplied, exactly as `resolveEquipmentTransition()`/`resolveItemUse()` take one). Issues are precise and typed (`ImplementSelectionIssueKind`): `role-unknown` · `role-below-minimum` · `role-above-maximum` · `duplicate-selection` · `entry-shared-across-roles` (refused unless the caller passes `allowSharedEntries: true`) · the four `InventoryItemRef` reference issues (`invalid-reference`/`character-mismatch`/`unknown-entry`/`invalid-entry`) · `quantity-zero` · `state-not-permitted` · `incompatible` (a resolvable reference whose family matches neither list and `allowImprovised` is not set). Hostile `selections` (not an array, malformed shape) is a structural `EngineFailure`, never a throw.
+
+**Reused, not redeclared**, across the two application surfaces that exist: `SkillApplicationDefinition.implements?: readonly ImplementRequirement[]` (`capabilities/applications.ts`) and `ItemUseApplication.implements?: readonly ImplementRequirement[]` (`equipment/actions.ts`, Ticket 4.4's seam) both validate through the one shared `findImplementRequirementListIssues()`, which also refuses a role declared twice. **Technique and Trait are deliberately untouched** — neither has an execution-time "application" surface to attach a role to (only Skills and Item uses do), so wiring them is not this ticket's scope; Ticket 4.7's conditional bonuses read `ImplementResolution[]` from context regardless of which content type supplied it, and do not need Technique/Trait to own a role of their own.
+
+**`character/actions/preparation.ts` (the adapter) carries the canonical resolutions.** `CharacterActionInputs.implements?: { requirements, selections, getItemDefinition, allowSharedEntries? }` is optional input; `CharacterActionContribution.implementResolutions: readonly ImplementResolution[]` is always present (empty when no implements were asked for) and is what Tickets 4.6/4.7 read — neither repeats the inventory/catalog lookup. Each selection issue becomes an `unsatisfied` `EligibilityFinding` (`decidedBy: "equipment"`, one per role/issue), assembled into `ActionProposal.findings` exactly like a Character requirement finding.
+
+**Family references are forward and checked post-load**, exactly like every other cross-catalog claim: `character/catalogs.ts`'s `findCatalogReferenceIssues()` walks every `ItemDefinition.families`, every `ItemDefinition.useApplication?.implements[]` and every `SkillDefinition.application.implements[]`'s `acceptedFamilies`/`preferredFamilies` against the registered Item Family catalog, reporting `unknown Item Family "..."` — neither the Item nor the Skill domain can see the Item Family catalog to check its own claim.
+
+**Not built (post-4.5, resolved by 4.6 and 4.7):** contribution resolution reading a resolved implement's grade; conditional Skill/Technique/Trait bonuses keyed on `ImplementResolution[]`. **Still not built:** hand/slot occupancy (an implement resolving successfully does not mean the character has enough hands for it).
+
+#### Item performance contributions and the Shū contract (Ticket 4.6)
+
+`ItemDefinition` gains three fields, all in `equipment/types.ts` except the two that reach into the neutral vocabulary (declared in the `equipment/actions.ts` seam, imported as types only):
+
+```ts
+shuInteraction: "compatible" | "incompatible";   // REQUIRED, closed, never inferred
+attack?: ItemAttackContribution;                 // { effects?, check?, range?, travel?, threatens? }
+defense?: ItemDefenseContribution;                // { effects?, range? }
+```
+
+**No exclusive weapon/armor class.** `attack` and `defense` are independent booleans-by-presence — a glaive declares both, a shield only `defense`, a spear only `attack` — and nothing reads either field to decide what "kind" of Item this is. Both reuse the existing check/Range/travel/threat/Effect vocabularies rather than inventing combat-specific ones.
+
+**`shuInteraction` is required, closed, and refused at registration when missing or unknown** (`equipment/validation.ts`'s `coreIssuesOf()`, alongside `inventoryMode`) — `findItemStructuralIssues()` catches it the same way for both authored and custom Items. It is a binary, whole-Item verdict: no `shu: { channels: [...] }` per-channel selection exists or is permitted (architecture-tested), and it is independent of every other axis — consumption, inventory mode, family. `ITEM_DEFINITIONS.gauntlets` is `"compatible"`, `cursed-idol` is `"incompatible"`, chosen only so both branches of the vocabulary are exercised by authored content.
+
+**`character/equipment/contributions.ts`** (new, NOT a seam — it imports the `ItemAttackContribution`/`ItemDefenseContribution` types from `./actions` but never reaches into `actions/`/`spatial/`/`targeting/` itself):
+
+```ts
+resolveItemPerformanceContribution(resolution: ImplementResolution, getItemDefinition)
+  → EngineResult<ItemPerformanceContribution>
+  // { source, role, compatibility, attack?: { declared, effects: ResolvedRuleEffects }, defense?: {...} }
+
+resolveItemPerformanceContributions(resolutions, getItemDefinition)
+  → EngineResult<readonly ItemPerformanceContribution[]>
+```
+
+Takes one already-resolved `ImplementResolution` (Ticket 4.5) — no inventory/catalog lookup is repeated. Resolves `attack.effects`/`defense.effects` through the same `resolveRuleEffects()` every other Effect source uses, with `{ type: "item", id, instanceId: entryId }` provenance, kept entirely separate from `collectItemEffectSources()`'s possessed/equipped list — attack/defense effects never leak into passive derived state. Structurally invalid `attack`/`defense` fields (an unknown check scope, a malformed Range) are lazily validated on resolution (`findItemAttackContributionIssues`/`findItemDefenseContributionIssues`, matching `findItemUseApplicationIssues`'s precedent — not wired into registration or `findItemCatalogIssues()`); an unresolvable `itemId` is an `EngineFailure`.
+
+**Deliberately does not scale by compatibility grade** — decision `equipment.contributions.grade-is-metadata-not-a-multiplier`. The resolved `compatibility` travels beside the Effects as metadata; nothing here computes a hit, a margin, or damage, because no SP-to-BP formula exists in the engine for a number to feed. A future combat/body formula or the Ticket 4.7 conditional-bonus layer reads the grade and decides what it is worth.
+
+**Rule-bearing field walk extended.** `character/rules/definitions.ts`'s `collectRuleBundles()` now recognizes `attack`/`defense` as Item rule-bearing fields (their `effects` list specifically), so a malformed attack/defense Effect is refused at the registration barrier exactly like a malformed `possessedEffects`/`equippedEffects` — never reaching the `resolveRuleEffects()` `never` exhaustiveness guard.
+
+**Not built (post-4.6, resolved by 4.7 and 4.8):** conditional Skill/Technique/Trait bonuses reading a resolved contribution; integrity mutation. **Still not built:** Shū activation, Aura allocation/upkeep, Kō, final damage/injury formulas, hand/slot occupancy (Ticket 4.5's gap, unchanged).
+
+#### Integrity, breaking and repair (Ticket 4.8)
+
+`character/equipment/integrity.ts` (new). Policy is authored, state is instance:
+
+```ts
+interface ItemIntegrityBand { state: "intact"|"degraded"|"broken"|"destroyed"; minimum: number; maximum: number; effects?: readonly Effect[]; }
+interface ItemIntegrityDefinition { maximum: number; repairable: boolean; zeroBehavior: "broken"|"destroyed"; bands?: readonly ItemIntegrityBand[]; }
+
+ItemDefinition.integrity?: ItemIntegrityDefinition       // policy — required for a durable Item
+CharacterItem.integrity?: number                          // instance history; absent reads as maximum
+
+type ItemIntegrityOperation =
+  | { type: "stress"; amount: number; mitigation?: number }   // mitigation: see Shū boundary below
+  | { type: "repair"; amount: number };
+
+resolveItemIntegrityOperation({ resolved, item, operation }, getItemDefinition)
+  → EngineResult<ItemIntegrityResolution>   // "applied" | "not-durable" | "not-repairable"
+```
+
+**Quantity and integrity are independent axes, enforced at registration.** A STACKABLE Item may not declare `integrity` at all (`stackable-durable`, refused the same way `stackable-passive-effects` is); an entry may not carry `integrity` unless its Item declares a policy (`integrity-not-permitted`), and a carried value must stay within `[0, maximum]` (`invalid-item-integrity`) — both checked in `character/validation.ts`'s 44-code table alongside the pre-existing Item entry checks.
+
+**State is derived, never stored.** `resolveIntegrityState(policy, integrity)` checks authored bands in order, first match wins; with none authored (or none matching) a positive figure is `"intact"` and a non-positive one is whatever `zeroBehavior` names. `zeroBehavior: "destroyed"` is terminal for repair — once integrity reaches zero on a destroyed-policy Item, repair refuses regardless of `repairable`, though repair still applies normally above zero either way.
+
+**Settles as an EFFECT, not a cost** — decision `equipment.integrity.stress-and-repair-are-effects-not-costs`, which also records the module-cycle this forced: `createCharacterIntegrityEffectHandler()` and its request/event types (`ItemIntegrityRequest`, `ITEM_STRESS_REQUEST`/`ITEM_REPAIR_REQUEST`, `ItemIntegrityAppliedEvent`) live in `equipment/runtime.ts` (Ticket 4.4's file, which already imports `resolveCharacter()`), never in `integrity.ts` itself — `equipment/validation.ts` imports `integrity.ts` as a value for its registration-time checks, and putting `resolveCharacter()` there closed a cycle back through the equipment catalog that made **every** Item registration fail at module load (`composeStructuralValidators` capturing an `undefined` validator). A stress or refused repair never fails the coordinated operation; it reports `actual` below `requested`, the same shape a resisted or capped effect always takes. `actions/consequences.ts`'s `itemIntegrityConsequence()` builds the request generically (no equipment import — `entryId` travels as a plain field the handler alone interprets). Multiple requests in one batch settle in the COORDINATOR's canonical order (kind, then requestId — see `runtime/requests.ts`), never the caller's array order; two requests on different entries are independent, two on one entry apply in that canonical order, so the result depends only on what was requested.
+
+**Contribution resolution applies the current band.** `resolveItemPerformanceContribution()` (Ticket 4.6) gained a third bucket, `ItemIntegrityContribution` (`{ state, effects }`), populated from `currentIntegrityBand()`'s Effects, sourced to the Item — separate from `attack`/`defense` because a band's Effects are a fact about the Item as a whole, not one performance slot. `ImplementResolution` (Ticket 4.5) gained `integrity?: number`, captured at selection time for the same "no new lookup" reason `families`/`state` were added in Ticket 4.7. Because the item that breaks mid-action is resolved for its contribution BEFORE settlement applies the stress (the coordinator's cost/resolve/effect ordering already guarantees this), an Item contributes at its pre-break performance to the action that breaks it, and only a later resolution sees the broken band.
+
+**The Shū boundary, without Shū.** `ItemIntegrityOperation`'s `stress` variant carries an optional `mitigation?: number` — a pre-computed reduction a future whole-Item enhancement could offer. The resolver performs no Shū calculation and imports nothing from Aura or Nen; it only respects compatibility — mitigation is honoured for a `"compatible"` Item and ignored outright for `"incompatible"`, whatever figure is supplied.
+
+**Not built:** Aura cost, Shū magnitude/upkeep, universal passive wear, crafting, economics, detailed maintenance simulation, hand/slot occupancy.
+
+#### Phase 4 complete: final integration and hardening (Ticket 4.9)
+
+`__tests__/equipment-integration.test.ts` (new) exercises six fixtures end to end — a reusable tool with an active effect, a stackable Shū-incompatible potion, a consumable Shū-compatible attack contribution (grenade), a durable weapon with a negative side effect, armor with defense plus distinct passive/active effects, and an improvised implement boosted by a Trait — each with a success path and a refusal proving the failing stage commits nothing. A test-only generic enhancement envelope (never shipped in engine code) proves compatible Items expose their whole bundle and scale every signed value uniformly — including a negative growing in magnitude — while incompatible Items expose nothing to it.
+
+**The pinned resolve order** — decision `equipment.phase-4.resolve-order-pinned` — is: (1) resolve the entry and its Item definition; (2) resolve the selected role and compatibility grade (Ticket 4.5); (3) collect the Item's own attack/defense Effects and its current integrity band's Effects, sourced to the Item (Tickets 4.6, 4.8); (4) apply matching `ImplementConditionalRule` outputs, sourced to whichever Skill/Technique/Trait declared them (Ticket 4.7); (5) accept a future whole-Item Shū enhancement envelope (not built; test-only proof only); (6) run the owning action/combat/body formula (not built); (7) settle costs, consumption, consequences and integrity atomically through the runtime coordinator, one commit (Tickets 4.4, 4.8); (8) a caller re-resolving from committed state sees exactly what settled, once.
+
+**Architecture hardened**: `actions/` (the neutral action pipeline) never imports `character/` at all, equipment included — a new dependency-direction test alongside the existing "Combat never reached by actions/" one. Combined with the `APPLICATION_SEAM` exception list (`character/equipment/actions.ts`, `character/capabilities/applications.ts`, `character/capabilities/application-resolution.ts`) and the Shū-contract tests from Ticket 4.6, the one-way boundary the whole of Phase 4 was built to preserve — equipment reaches up into `actions/`/`targeting/`/`spatial/` only through its declared seams, and never the other way — is now checked from both directions.
+
+**One selection-to-settlement example**, end to end:
+
+```ts
+// 1-2. Select and grade an implement for an authored role.
+const selected = payloadOf(resolveSelectedImplements(
+  { resolved, requirements: [weaponRole], selections: [{ role: "weapon", item }] },
+  getItemDefinition,
+));
+
+// 3-4. Resolve what the selected Item (and any matching Trait/Technique) contribute.
+const contribution = payloadOf(resolveItemPerformanceContribution(
+  selected.resolutions[0], getItemDefinition, conditionalRules,
+));
+
+// Build and prepare the action itself (a Skill attempt, an Item use — any capability).
+const proposal = payloadOf(prepareAction({ /* profile, intent, eligibility, costRequests */ }));
+const adjudicated = payloadOf(adjudicateAction({ proposal, decision: { kind: "accept" }, /* ... */ }));
+
+// 7. Settle once, atomically — costs, consumption and any integrity stress together.
+const settled = payloadOf(settleAction({
+  adjudicated,
+  context,
+  states: { [ownerKey({ domain: "character", id: character.id })]: character },
+  handlers: {
+    costs: [createCharacterItemOperationCostHandler(getItemDefinition)],
+    effects: [createCharacterIntegrityEffectHandler(getItemDefinition)],
+  },
+  consequences: [/* itemIntegrityConsequence(...) if the attack landed */],
+}));
+
+// 8. Re-resolve from the committed state for the next attempt.
+const next = payloadOf(resolveCharacter(
+  settled.states[ownerKey({ domain: "character", id: character.id })] as Character,
+));
+```
+
+Phase 4 (Tickets 4.4-4.9) is complete: a concrete Item selects, grades, contributes to an action, receives character-rule modifiers, executes and consumes atomically, degrades or breaks through owner-routed integrity requests, and preserves its full positive and negative output for a future all-or-nothing Shū enhancement — without mutation, identity loss, dependency reversal, or silent rule loss. Shū itself, the SP-to-BP damage formula that would consume these contributions, and hand/slot occupancy remain explicitly unbuilt, tracked in `BACKLOG.md`.
+
+#### Implement-conditional bonuses (Ticket 4.7)
+
+`character/equipment/conditions.ts` (new, NOT a seam) lets a Skill, Technique or Trait modify an action from `ImplementResolution[]` (Ticket 4.5) without equipment ever learning what those content types are — see decision `equipment.conditions.one-rule-one-output-not-a-new-effect-variant` for why this could not simply be a new field on the universal `ModifyCheckEffect`.
+
+```ts
+interface ImplementCondition {
+  role?: string; familyIds?: readonly ItemFamilyId[];
+  compatibility?: readonly ImplementCompatibility[]; states?: readonly ItemEquipmentState[];
+  match?: "any" | "all";                 // default "any"; only visible with >1 candidate
+}
+
+type ImplementConditionalOutput =
+  | { kind: "check"; scope: CheckScopeSelector; amount: number; channel?: CheckModifierChannel }
+  | { kind: "performance"; slot: "attack" | "defense"; effects: readonly Effect[] };
+
+interface ImplementConditionalRule { id: string; condition: ImplementCondition; output: ImplementConditionalOutput; }
+```
+
+**One rule, one output — never two.** A rule wanting both a check bonus and a performance effect authors two separately identified rules. `matchesImplementCondition(condition, resolutions)` ANDs every present field; `role` narrows which resolutions are candidates first, everything else filters them, `match` combines multiple candidates ("any" — at least one — is the default).
+
+**No new lookup.** `ImplementResolution` (Ticket 4.5) gained two fields specifically for this — `families: readonly ItemFamilyId[]` and `state: ItemEquipmentState`, captured once at implement-selection time — so a condition never re-reads the inventory or the Item catalog.
+
+**Two landing points, both caller-assembled.** `character/actions/preparation.ts`'s `CharacterActionInputs.implements.conditionalRules?: readonly SourcedImplementConditionalRule[]` feeds `"check"`-output matches into the SAME `modifiers` list `collectCharacterCheckModifiers()` already assembles (`collectMatchedCheckModifiers()`, appended after the ordinary persistent/invoked/contextual channels — no new stacking model). `resolveItemPerformanceContribution()`'s new optional `conditionalRules` parameter feeds `"performance"`-output matches into the matching `attack`/`defense` slot via `collectMatchedPerformanceEffects()`, as EXTRA `RuleEffectSource` entries alongside — never merged into — the Item's own, so `resolveRuleEffects()`'s output keeps every contribution's real source. Neither integration point looks up a Trait, Technique or Skill definition itself: assembling `SourcedImplementConditionalRule[]` from a resolved character's applicable content (and, for a Skill, the one being attempted) is the caller's job, exactly as `CharacterActionInputs.requirements` already is.
+
+**Source stays with the character content, always.** A matched rule's `source` is the Trait/Technique/Skill id that declared it, never `{type:"item",...}` — even when its effects land inside an `ItemPerformanceContribution`. This is what keeps the future Shū boundary answerable: a whole-Item enhancement enhances everything the Item itself contributed (including negative effects), not a character's proficiency bonus that merely fired on the same attempt.
+
+**Authored on `TraitDefinition`, `TechniqueDefinition` and `SkillApplicationDefinition`** as `implementConditionalRules?: readonly ImplementConditionalRule[]` (the Skill field lives on the application, an attempt-time fact, not the bare `SkillDefinition`). Validated at each definition's own registration-time structural check (`findImplementConditionalRuleListIssues()` — structurally rejects empty filter lists, malformed values, duplicate rule ids, and unknown condition/output discriminants) and post-load for family forward-references (`character/catalogs.ts`'s `findCatalogReferenceIssues()`, alongside Item family references from Ticket 4.5).
+
+**Not built:** Shū activation, Aura allocation/upkeep, Kō, final damage/injury formulas, integrity mutation, hand/slot occupancy (Ticket 4.5's gap, unchanged).
 
 ---
 

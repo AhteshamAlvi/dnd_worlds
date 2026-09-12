@@ -117,6 +117,7 @@ function registerGated(
     name: "Warded Band",
     description: "A test Item whose wearing is gated.",
     inventoryMode: "individual",
+    shuInteraction: "compatible",
     equippedEffects: [
       { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
     ],
@@ -263,6 +264,7 @@ describe("permitted transitions", () => {
       name: "Trail Rations",
       description: "A test Item whose copies are a count.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
     });
 
     const { result } = transition(
@@ -704,6 +706,7 @@ describe("identity and quantity", () => {
       name: "Trail Rations",
       description: "A test Item whose copies are a count.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
     });
 
     const { result } = transition(
@@ -728,6 +731,7 @@ describe("identity and quantity", () => {
       name: "Trail Rations",
       description: "A test Item whose copies are a count.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
     });
 
     const { result } = transition(
@@ -843,6 +847,7 @@ describe("malformed questions are failures, not refusals", () => {
       name: "Warded Band",
       description: "A test Item.",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       equipRequirements: requirements,
     } as unknown as ItemDefinition;
 
@@ -1090,6 +1095,7 @@ describe("the catalog and the transition agree about a definition", () => {
       "stackable with equipped Effects",
       {
         inventoryMode: "stackable",
+        shuInteraction: "compatible",
         equippedEffects: [
           { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
         ],
@@ -1099,6 +1105,7 @@ describe("the catalog and the transition agree about a definition", () => {
       "stackable with possessed Effects",
       {
         inventoryMode: "stackable",
+        shuInteraction: "compatible",
         possessedEffects: [
           { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
         ],
@@ -1120,6 +1127,7 @@ describe("the catalog and the transition agree about a definition", () => {
       "an equip requirement with a blank id",
       {
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         equipRequirements: [
           { id: "  ", requirement: { type: "hasTrait", traitId: "one-armed" } },
         ],
@@ -1148,6 +1156,7 @@ describe("the catalog and the transition agree about a definition", () => {
       "a modifyCheck Effect with no check",
       {
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         equippedEffects: [{ type: "modifyCheck", amount: 1 }],
       },
     ],
@@ -1155,6 +1164,7 @@ describe("the catalog and the transition agree about a definition", () => {
       "an equip requirement whose rule is null",
       {
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         equipRequirements: [{ id: "broken", requirement: null }],
       },
     ],
@@ -1162,6 +1172,7 @@ describe("the catalog and the transition agree about a definition", () => {
       "an equip requirement compound with no children",
       {
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         equipRequirements: [{ id: "broken", requirement: { type: "all" } }],
       },
     ],
@@ -1229,6 +1240,7 @@ describe("the catalog and the transition agree about a definition", () => {
     /* The positive control: neither path is simply refusing everything. */
     const definition = definitionOf({
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       equippedEffects: [
         { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
       ],
@@ -1255,6 +1267,7 @@ describe("the catalog and the transition agree about a definition", () => {
      */
     const definition = definitionOf({
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       equippedEffects: [
         { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
       ],
@@ -1284,6 +1297,7 @@ describe("the catalog and the transition agree about a definition", () => {
   it("says which rule was broken, not merely that one was", () => {
     const result = equipWith(definitionOf({
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       equippedEffects: [
         { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
       ],
@@ -1311,6 +1325,7 @@ describe("the catalog and the transition agree about a definition", () => {
      */
     const definition = definitionOf({
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       useEffects: [BAD_EFFECT],
     });
 
@@ -1398,6 +1413,7 @@ describe("no definition boundary throws", () => {
       name: "Warded Band",
       description: "A test Item.",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       [field]: value,
     };
 
@@ -1461,6 +1477,7 @@ describe("no definition boundary throws", () => {
       findItemEquipmentDefinitionIssues({
         id: "x",
         inventoryMode: "individual",
+        shuInteraction: "compatible",
         equippedEffects: [
           { type: "modifyResolvedAttribute", attribute: "wis", amount: 1 },
           { type: "modifyCheck", amount: 1 },
@@ -1484,12 +1501,14 @@ describe("no definition boundary throws", () => {
     const notAList = findItemEquipmentDefinitionIssues({
       id: "x",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       equippedEffects: {},
     });
 
     const badEntry = findItemEquipmentDefinitionIssues({
       id: "x",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       equippedEffects: [null],
     });
 
@@ -1852,6 +1871,7 @@ describe("the requirement context an equip gate reads", () => {
       name: "Trail Rations",
       description: "A test Item whose copies are a count.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
     });
 
     const cases = [

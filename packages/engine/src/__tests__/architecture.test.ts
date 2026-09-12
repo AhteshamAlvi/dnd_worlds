@@ -1249,6 +1249,16 @@ describe("Stage II Phase 2A layering", () => {
   const APPLICATION_SEAM = [
     join(SRC, "character", "capabilities", "applications.ts"),
     join(SRC, "character", "capabilities", "application-resolution.ts"),
+
+    /*
+     * The third seam, ticket 4.4: connecting equip, unequip and Item use to
+     * the neutral action pipeline needs exactly the same composition — an
+     * ActionProfile, an ActionIntent, and prepareAction() — for exactly the
+     * same reason. `character/equipment/types.ts` imports only the
+     * `ItemUseApplication` TYPE this file declares, which is erased at
+     * compile time and adds no runtime edge back into it.
+     */
+    join(SRC, "character", "equipment", "actions.ts"),
   ];
 
   it("never lets Character reach up into spatial/, targeting/ or actions/", () => {
@@ -2199,5 +2209,113 @@ describe("a rule bundle holds its requirements once", () => {
     );
 
     expect(declarers).toEqual([join(SRC, "character", "rules", "resolution.ts")]);
+  });
+});
+
+
+/*
+ * Ticket 4.6 establishes the equipment-side Shū CONTRACT — a binary
+ * `shuInteraction` on every Item — without implementing Shū itself. Nothing
+ * under `character/equipment/` may reach for Aura or Nen to decide that
+ * contract, and the contract itself must stay binary: a per-channel
+ * selection (`shu: { channels: [...] }`) would let a future author enhance
+ * only part of an Item, which is exactly the thing 4.6's header rules out.
+ */
+describe("equipment establishes the Shū contract without Shū itself", () => {
+  const EQUIPMENT = join(SRC, "character", "equipment");
+  const equipmentFiles = sourceFilesUnder(EQUIPMENT);
+
+  function resolvesIntoDomain(fromPath: string, specifier: string, domain: string): boolean {
+    if (!specifier.startsWith(".")) return false;
+
+    const resolved = join(fromPath, "..", specifier);
+
+    return resolved === join(SRC, domain) || resolved.startsWith(join(SRC, domain) + "/");
+  }
+
+  it("finds equipment source to check", () => {
+    expect(equipmentFiles.length).toBeGreaterThan(5);
+  });
+
+  it("never imports Aura or Nen from equipment", () => {
+    const offenders = equipmentFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, join("character", "foundation", "aura")) ||
+        resolvesIntoDomain(path, specifier, join("character", "foundation", "nen"))
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never spells a per-channel Shū selection anywhere in LIVE equipment code", () => {
+    /*
+     * Looks for the shape the header explicitly forbids — `channels` beside
+     * something naming Shū — rather than the bare word "channel", which
+     * appears in this codebase for unrelated reasons (a runtime request
+     * "phase", a dice "purpose") and would make this check noise rather than
+     * a guard. Comments are stripped first: types.ts's own header shows this
+     * EXACT forbidden shape as a documented anti-example, and a check that
+     * flagged its own warning would be worse than no check.
+     */
+    const codeOf = (path: string) =>
+      readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+
+    const offenders = equipmentFiles.filter((path) => {
+      const source = codeOf(path);
+
+      return /shu\w*\s*:\s*\{[^}]*channels/i.test(source) ||
+        /channels\s*:\s*\[[^\]]*\][^;]*shu/i.test(source);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps shuInteraction binary", () => {
+    const source = readFileSync(
+      join(EQUIPMENT, "types.ts"),
+      "utf8",
+    );
+
+    expect(source).toContain('"compatible"');
+    expect(source).toContain('"incompatible"');
+    expect(/SHU_INTERACTIONS\s*=\s*\[\s*"compatible"\s*,\s*"incompatible"\s*,?\s*\]/.test(source))
+      .toBe(true);
+  });
+});
+
+
+/*
+ * Ticket 4.9's own hardening pass: the boundary Phase 4 built has to remain
+ * one-way even after four tickets of equipment reaching UP into `actions/`,
+ * `targeting/` and `spatial/` (the declared seams). This is the other half —
+ * `actions/` may never reach back DOWN into `character/` at all, equipment
+ * included, or the seam becomes a cycle instead of a one-way door.
+ *
+ * `checks/` is deliberately NOT included here: it legitimately composes
+ * `character/foundation/senses/scopes.ts`'s sensory vocabulary by design (see
+ * that file's own header) and always has, independent of Phase 4.
+ */
+describe("neutral actions/ never reaches down into character/", () => {
+  function resolvesIntoDomain(fromPath: string, specifier: string, domain: string): boolean {
+    if (!specifier.startsWith(".")) return false;
+
+    const resolved = join(fromPath, "..", specifier);
+
+    return resolved === join(SRC, domain) || resolved.startsWith(join(SRC, domain) + "/");
+  }
+
+  it("actions/ never imports character/", () => {
+    const actionFiles = sourceFilesUnder(join(SRC, "actions"));
+
+    expect(actionFiles.length).toBeGreaterThan(5);
+
+    const offenders = actionFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) => resolvesIntoDomain(path, specifier, "character")),
+    );
+
+    expect(offenders).toEqual([]);
   });
 });

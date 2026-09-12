@@ -330,12 +330,15 @@ describe("modifiers come through the canonical invocation path", () => {
 describe("the adapter supplies Character-owned inputs and nothing else", () => {
   const resolved = resolveTestCharacter(createTestCharacter());
 
-  it("returns exactly three things", () => {
+  it("returns exactly four things", () => {
     /*
      * Asserted structurally. Difficulty, tie policy, target contributions and
      * spatial facts are not absent by accident — each belongs to the action
      * mechanic, the target's own adapter, or the host, and adding one here is
      * how a Character starts deciding what it is up against.
+     *
+     * implementResolutions joined the other three in Ticket 4.5: canonical,
+     * resolved once here, and read (never recomputed) by later stages.
      */
     const inputs = payloadOf(prepareCharacterActionInputs({
       resolved,
@@ -343,7 +346,7 @@ describe("the adapter supplies Character-owned inputs and nothing else", () => {
     }));
 
     expect(Object.keys(inputs).sort())
-      .toEqual(["baseContributions", "eligibility", "modifiers"]);
+      .toEqual(["baseContributions", "eligibility", "implementResolutions", "modifiers"]);
   });
 
   it("assembles an opposed check one participant at a time", () => {

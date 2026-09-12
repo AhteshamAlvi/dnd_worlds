@@ -123,6 +123,7 @@ function registerStackable(): void {
     name: "Trail Rations",
     description: "A test Item whose copies are a count and nothing else.",
     inventoryMode: "stackable",
+    shuInteraction: "compatible",
   });
 }
 
@@ -568,6 +569,7 @@ describe("effects by engagement state", () => {
       id: "healing-draught",
       /* A consumable: nobody asks which draught, and it bears no passive rule. */
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       name: "Healing Draught",
       description: "A test Item whose Effects are events.",
       useEffects: [
@@ -848,6 +850,7 @@ describe("inventory grouping cannot change a character", () => {
       name: "Tainted Coins",
       description: "A test Item that stacks and wrongly claims a passive rule.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       possessedEffects: [
         { type: "modifyResolvedAttribute", attribute: "cha", amount: -1 },
       ],
@@ -882,6 +885,7 @@ describe("inventory grouping cannot change a character", () => {
       name: "Smelling Salts",
       description: "A test consumable.",
       inventoryMode: "stackable",
+      shuInteraction: "compatible",
       useEffects: [
         { type: "modifyResolvedAttribute", attribute: "vit", amount: 1 },
       ],

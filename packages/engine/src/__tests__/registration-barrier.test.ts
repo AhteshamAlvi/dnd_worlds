@@ -58,6 +58,7 @@ import {
   findItemStructuralIssues,
   findItemUseDefinitionIssues,
 } from "../character/equipment/index";
+import { findItemFamilyCatalogIssues } from "../character/equipment/families";
 import { resolveItemUse as resolveItemUseWith } from "../character/equipment/use";
 import { findBodyPartCatalogIssues } from "../character/foundation/body/anatomy/body-parts";
 import { findReferenceFormCatalogIssues } from "../character/foundation/body/anatomy/reference-forms";
@@ -80,6 +81,7 @@ function findCatalogIssuesFor(domain: CatalogDomain): readonly string[] {
     condition: findConditionCatalogIssues,
     injury: findInjuryCatalogIssues,
     item: findItemCatalogIssues,
+    "item-family": findItemFamilyCatalogIssues,
     "body-part": findBodyPartCatalogIssues,
     "reference-form": findReferenceFormCatalogIssues,
     "special-point": findSpecialPointCatalogIssues,
@@ -205,6 +207,7 @@ describe("a malformed definition is refused and stores nothing", () => {
       name: "Bogus Charm",
       description: "A test Item with an Effect the engine has never heard of.",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       possessedEffects: [{ type: "bogus" }],
     } as never);
 
@@ -372,6 +375,7 @@ describe("each domain's local structure is refused at registration", () => {
       "passive Effects on a stackable Item",
       {
         inventoryMode: "stackable",
+        shuInteraction: "compatible",
         possessedEffects: [
           { type: "modifyResolvedAttribute", attribute: "cha", amount: -1 },
         ],

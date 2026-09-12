@@ -69,6 +69,9 @@ import {
 
 import { itemRegistry } from "./equipment/index";
 import type { ItemDefinition } from "./equipment/types";
+import { itemFamilyRegistry, type ItemFamilyDefinition } from "./equipment/families";
+import type { ImplementRequirement } from "./equipment/implements";
+import type { ImplementConditionalRule } from "./equipment/conditions";
 
 import { bodyPartRegistry } from "./foundation/body/anatomy/body-parts";
 import type { BodyPartDefinition } from "./foundation/body/anatomy/types";
@@ -89,6 +92,7 @@ export type CatalogDomain =
   | "condition"
   | "injury"
   | "item"
+  | "item-family"
   | "body-part"
   | "special-point"
   | "reference-form";
@@ -104,6 +108,7 @@ export interface CatalogDefinitions {
   condition: ConditionDefinition;
   injury: InjuryDefinition;
   item: ItemDefinition;
+  "item-family": ItemFamilyDefinition;
   "body-part": BodyPartDefinition;
   "special-point": SpecialPointDefinition;
   "reference-form": ReferenceFormDefinition;
@@ -121,6 +126,7 @@ export const CATALOG_DOMAINS = [
   "condition",
   "injury",
   "item",
+  "item-family",
   "body-part",
   "special-point",
   "reference-form",
@@ -140,6 +146,7 @@ const REGISTRIES: RegistryByDomain = {
   condition: conditionRegistry,
   injury: injuryRegistry,
   item: itemRegistry,
+  "item-family": itemFamilyRegistry,
   "body-part": bodyPartRegistry,
   "special-point": specialPointRegistry,
 };
@@ -156,6 +163,7 @@ export const CATALOG_DOMAIN_LABELS: Readonly<Record<CatalogDomain, string>> = {
   condition: "Condition",
   injury: "Injury",
   item: "Item",
+  "item-family": "Item Family",
   "body-part": "Body Part",
   "special-point": "Special Point",
   "reference-form": "Reference Form",
@@ -440,6 +448,102 @@ export function findCatalogReferenceIssues(): readonly string[] {
         `Reference Form "${form.id}" is malformed: ${issue.code} — ${issue.message}`,
       );
     }
+  }
+
+  /*
+   * Item family references — forward, by design (Ticket 4.5). An Item's own
+   * `families` and an implement role's `acceptedFamilies`/`preferredFamilies`
+   * are catalog ids, not free text, and neither the Item domain nor the Skill
+   * domain can see the Item Family catalog to check its own claims against
+   * it: exactly the shape every other cross-catalog claim in this function
+   * checks post-load, and exactly why an Item Family carries no mechanics —
+   * see families.ts's header.
+   */
+  function unknownFamilyIssues(
+    where: string,
+    families: readonly unknown[],
+  ): readonly string[] {
+    return families
+      .filter((familyId): familyId is string =>
+        typeof familyId === "string" && !isKnownDefinitionId("item-family", familyId)
+      )
+      .map((familyId) => `${where} references unknown Item Family "${familyId}".`);
+  }
+
+  function implementFamilyIssues(
+    where: string,
+    requirements: readonly ImplementRequirement[] | undefined,
+  ): readonly string[] {
+    const out: string[] = [];
+
+    for (const requirement of requirements ?? []) {
+      out.push(
+        ...unknownFamilyIssues(
+          `${where}, role "${requirement.role}"`,
+          requirement.acceptedFamilies ?? [],
+        ),
+        ...unknownFamilyIssues(
+          `${where}, role "${requirement.role}"`,
+          requirement.preferredFamilies ?? [],
+        ),
+      );
+    }
+
+    return out;
+  }
+
+  /*
+   * An ImplementCondition's familyIds are the same kind of forward,
+   * post-load-only reference — Ticket 4.7 — and are checked the same way.
+   */
+  function conditionalRuleFamilyIssues(
+    where: string,
+    rules: readonly ImplementConditionalRule[] | undefined,
+  ): readonly string[] {
+    const out: string[] = [];
+
+    for (const rule of rules ?? []) {
+      out.push(
+        ...unknownFamilyIssues(
+          `${where}, rule "${rule.id}"`,
+          rule.condition.familyIds ?? [],
+        ),
+      );
+    }
+
+    return out;
+  }
+
+  for (const item of REGISTRIES.item.all()) {
+    issues.push(...unknownFamilyIssues(`Item "${item.id}"`, item.families ?? []));
+    issues.push(
+      ...implementFamilyIssues(`Item "${item.id}" use application`, item.useApplication?.implements),
+    );
+  }
+
+  for (const skill of REGISTRIES.skill.all()) {
+    issues.push(
+      ...implementFamilyIssues(`Skill "${skill.id}" application`, skill.application.implements),
+      ...conditionalRuleFamilyIssues(
+        `Skill "${skill.id}" application`,
+        skill.application.implementConditionalRules,
+      ),
+    );
+  }
+
+  for (const trait of REGISTRIES.trait.all()) {
+    issues.push(
+      ...conditionalRuleFamilyIssues(`Trait "${trait.id}"`, trait.implementConditionalRules),
+    );
+  }
+
+  for (const technique of REGISTRIES.technique.all()) {
+    issues.push(
+      ...conditionalRuleFamilyIssues(
+        `Technique "${technique.id}"`,
+        technique.implementConditionalRules,
+      ),
+    );
   }
 
   /*

@@ -62,13 +62,20 @@ import { isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } fr
 
 import {
   ITEM_INVENTORY_MODES,
+  SHU_INTERACTIONS,
   isItemInventoryMode,
+  isShuInteraction,
   isStackableItem,
   type CharacterItem,
   type ItemDefinition,
 } from "./types";
 
 import type { InventoryEntryId } from "./references";
+
+import {
+  findItemIntegrityDefinitionIssues,
+  type ItemIntegrityDefinition,
+} from "./integrity";
 
 
 /** How this module is told what the catalog contains. */
@@ -193,6 +200,18 @@ export type ItemDefinitionIssue =
       readonly mode: unknown;
     }
   | {
+      readonly type: "invalid-shu-interaction";
+      readonly value: unknown;
+    }
+  | {
+      /** A stackable Item declares integrity — one figure for an independently damageable stack. */
+      readonly type: "stackable-durable";
+    }
+  | {
+      readonly type: "invalid-integrity-definition";
+      readonly value: unknown;
+    }
+  | {
       readonly type: "stackable-passive-effects";
       readonly where: "possessedEffects" | "equippedEffects";
     }
@@ -218,6 +237,15 @@ export function describeItemDefinitionIssue(
 
     case "invalid-inventory-mode":
       return `must declare an inventoryMode of ${ITEM_INVENTORY_MODES.join(" or ")}`;
+
+    case "invalid-shu-interaction":
+      return `must declare a shuInteraction of ${SHU_INTERACTIONS.join(" or ")}`;
+
+    case "stackable-durable":
+      return "is stackable and declares integrity, which cannot say which member of the stack took damage";
+
+    case "invalid-integrity-definition":
+      return "declares an integrity policy that is not a well-formed object";
 
     case "stackable-passive-effects":
       return `is stackable and declares ${issue.where}, which apply once per entry regardless of quantity`;
@@ -297,9 +325,38 @@ function findNamedGateIssues(
 
 
 function coreIssuesOf(definition: ItemFields): readonly ItemDefinitionIssue[] {
-  return isItemInventoryMode(definition.inventoryMode)
-    ? []
-    : [{ type: "invalid-inventory-mode", mode: definition.inventoryMode }];
+  const issues: ItemDefinitionIssue[] = [];
+
+  if (!isItemInventoryMode(definition.inventoryMode)) {
+    issues.push({ type: "invalid-inventory-mode", mode: definition.inventoryMode });
+  }
+
+  if (!isShuInteraction(definition.shuInteraction)) {
+    issues.push({ type: "invalid-shu-interaction", value: definition.shuInteraction });
+  }
+
+  const integrity = definition.integrity;
+
+  if (integrity !== undefined) {
+    if (definition.inventoryMode === "stackable") {
+      issues.push({ type: "stackable-durable" });
+    }
+
+    if (typeof integrity !== "object" || integrity === null) {
+      issues.push({ type: "invalid-integrity-definition", value: integrity });
+    } else {
+      for (const issue of findItemIntegrityDefinitionIssues(integrity as ItemIntegrityDefinition)) {
+        issues.push({
+          type: "malformed-rule",
+          where: "integrity",
+          issue: issue.code,
+          path: "integrity",
+        });
+      }
+    }
+  }
+
+  return issues;
 }
 
 
@@ -473,6 +530,17 @@ export type ItemValidationIssue =
       readonly entryId: InventoryEntryId;
       readonly itemId: string;
       readonly quantity: number;
+    }
+  | {
+      /** An entry declares integrity, but its Item has no integrity policy. */
+      readonly type: "integrity-not-permitted";
+      readonly entryId: InventoryEntryId;
+      readonly itemId: string;
+    }
+  | {
+      readonly type: "invalid-item-integrity";
+      readonly entryId: InventoryEntryId;
+      readonly integrity: unknown;
     };
 
 
@@ -579,6 +647,32 @@ export function findInventoryEntryIssues(
       issues.push({ type: "invalid-item-state", entryId, state: entry.state });
 
       continue;
+    }
+
+    /*
+     * Only asked once the Item is known. Instance integrity is a fact about a
+     * durable Item's entry; an entry of an Item with no integrity policy
+     * carrying one is history for a policy that does not exist.
+     */
+    if (entry.integrity !== undefined && definition !== undefined) {
+      if (definition.integrity === undefined) {
+        issues.push({
+          type: "integrity-not-permitted",
+          entryId,
+          itemId: definition.id,
+        });
+      } else if (
+        typeof entry.integrity !== "number" ||
+        !Number.isFinite(entry.integrity) ||
+        entry.integrity < 0 ||
+        entry.integrity > definition.integrity.maximum
+      ) {
+        issues.push({
+          type: "invalid-item-integrity",
+          entryId,
+          integrity: entry.integrity,
+        });
+      }
     }
 
     /*

@@ -143,6 +143,16 @@ export function collectRuleBundles(
   ] as const;
 
   /*
+   * Attack and defense contributions (Ticket 4.6) carry Effects too, one
+   * level down inside their own contribution object rather than as a flat
+   * Item field — `attack.effects`, not `attackEffects` — because the object
+   * also carries the check/Range/travel/threat facts those Effects arrive
+   * alongside, and splitting the two into a flat field and a sibling object
+   * would let them silently disagree about which Item declared them.
+   */
+  const performanceFields = ["attack", "defense"] as const;
+
+  /*
    * Any rule-bearing Item field marks the definition as an Item, both gates
    * included. An Item declaring only a use gate would otherwise fall through
    * to the generic walk, which looks for `requirements` and walks nothing.
@@ -152,7 +162,7 @@ export function collectRuleBundles(
       fieldOf(content, effectField) !== undefined ||
       (requirementField !== undefined &&
         fieldOf(content, requirementField) !== undefined),
-  );
+  ) || performanceFields.some((field) => fieldOf(content, field) !== undefined);
 
   if (isItem) {
     for (const [where, effectField, requirementField] of itemFields) {
@@ -165,6 +175,27 @@ export function collectRuleBundles(
               kind: "named",
               entries: presentOr(fieldOf(content, requirementField), []),
             },
+      });
+    }
+
+    for (const where of performanceFields) {
+      const contribution = fieldOf(content, where);
+
+      if (contribution === undefined) continue;
+
+      /*
+       * A malformed (non-object) contribution reports ITSELF as the invalid
+       * "effects" list, so the walk still refuses it. A well-formed one with
+       * no `effects` at all is clean — an attack or defense contribution may
+       * declare only a check, a Range or a travel fact and nothing Effects
+       * has to say.
+       */
+      const record = recordOf(contribution);
+
+      bundles.push({
+        where,
+        effects: record === undefined ? contribution : (record["effects"] ?? []),
+        requirements: NO_REQUIREMENTS,
       });
     }
 

@@ -258,6 +258,7 @@ describe("effects reaching a character", () => {
     registerDefinition("item", {
       id: "swift-boots",
       inventoryMode: "individual",
+      shuInteraction: "compatible",
       name: "Swift Boots",
       description: "A test Item.",
       equippedEffects: [

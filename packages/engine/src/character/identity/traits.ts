@@ -46,6 +46,11 @@ import {
   type CapabilityLifecycleEntry,
 } from "../capabilities/lifecycle";
 
+import {
+  findImplementConditionalRuleListIssues,
+  type ImplementConditionalRule,
+} from "../equipment/conditions";
+
 /**
  * Stable semantic identifier for a Trait definition.
  *
@@ -96,6 +101,15 @@ export interface TraitDefinition extends EffectfulDefinition {
    * which capabilities/dependencies.ts reports.
    */
   readonly requiresUnlock?: boolean;
+
+  /**
+   * Bonuses this Trait contributes only while a selected implement matches a
+   * condition — Ticket 4.7. Absent means this Trait contributes nothing
+   * beyond its ordinary `effects`. See `equipment/conditions.ts`'s
+   * `ImplementConditionalRule`: this Trait is the rule's SOURCE, never the
+   * Item the condition matched against.
+   */
+  readonly implementConditionalRules?: readonly ImplementConditionalRule[];
 }
 
 /**
@@ -356,15 +370,33 @@ export function findTraitDefinitionStructuralIssues(
 
   if (trait === undefined) return [];
 
+  const issues: string[] = [];
+
   const parentId = trait["parentTraitId"];
 
-  if (parentId === undefined) return [];
-
-  if (typeof parentId !== "string" || parentId.trim().length === 0) {
-    return ["names a parent Trait that is not an id."];
+  if (parentId !== undefined) {
+    if (typeof parentId !== "string" || parentId.trim().length === 0) {
+      issues.push("names a parent Trait that is not an id.");
+    } else if (parentId === trait["id"]) {
+      issues.push("is its own parent.");
+    }
   }
 
-  return parentId === trait["id"] ? ["is its own parent."] : [];
+  const conditionalRules = trait["implementConditionalRules"];
+
+  if (conditionalRules !== undefined) {
+    if (!Array.isArray(conditionalRules)) {
+      issues.push("declares implementConditionalRules that is not a list.");
+    } else {
+      for (const issue of findImplementConditionalRuleListIssues(
+        conditionalRules as readonly ImplementConditionalRule[],
+      )) {
+        issues.push(`has a malformed implementConditionalRules entry: ${issue.code} — ${issue.message}`);
+      }
+    }
+  }
+
+  return issues;
 }
 
 

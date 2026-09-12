@@ -100,15 +100,116 @@ import {
 } from "./state";
 
 import {
+  buildItemOperationProfile,
+  findItemAttackContributionIssues,
+  findItemDefenseContributionIssues,
+  findItemUseApplicationIssues,
+  prepareItemOperation,
+  type ItemAttackContribution,
+  type ItemDefenseContribution,
+  type ItemOperation,
+  type ItemOperationIntentInput,
+  type ItemOperationPreparationInput,
+  type ItemUseApplication,
+} from "./actions";
+
+import {
+  createCharacterItemOperationCostHandler,
+  createCharacterIntegrityEffectHandler,
+  itemIntegrityRequest,
+  itemOperationCostRequest,
+  ITEM_OPERATION_COST,
+  ITEM_REPAIR_REQUEST,
+  ITEM_STRESS_REQUEST,
+  type ItemIntegrityAppliedEvent,
+  type ItemIntegrityRequest,
+  type ItemOperationCostRequest,
+  type ItemOperationSettledEvent,
+} from "./runtime";
+
+import {
+  ITEM_INTEGRITY_STATES,
+  currentIntegrityBand,
+  findItemIntegrityBandIssues,
+  findItemIntegrityDefinitionIssues,
+  isItemIntegrityState,
+  resolveIntegrityState,
+  resolveItemIntegrityOperation,
+  type ItemIntegrityBand,
+  type ItemIntegrityChange,
+  type ItemIntegrityDefinition,
+  type ItemIntegrityOperation,
+  type ItemIntegrityOperationInput,
+  type ItemIntegrityResolution,
+  type ItemIntegrityState,
+} from "./integrity";
+
+import {
+  findItemFamilyCatalogIssues,
+  getItemFamilyDefinition,
+  isKnownItemFamilyId,
+  itemFamilyRegistry,
+  ITEM_FAMILY_DEFINITIONS,
+  type ItemFamilyDefinition,
+  type ItemFamilyId,
+  type KnownItemFamilyId,
+} from "./families";
+
+import {
+  IMPLEMENT_COMPATIBILITIES,
+  findImplementRequirementIssues,
+  findImplementRequirementListIssues,
+  resolveSelectedImplements,
+  type ImplementCompatibility,
+  type ImplementRequirement,
+  type ImplementSelectionIssue,
+  type ImplementSelectionIssueKind,
+  type ImplementSelectionResolution,
+  type ImplementResolution,
+  type SelectImplementsInput,
+  type SelectedImplement,
+} from "./implements";
+
+import {
+  IMPLEMENT_CONDITIONAL_OUTPUT_KINDS,
+  IMPLEMENT_CONDITION_MATCH_MODES,
+  collectMatchedCheckModifiers,
+  collectMatchedPerformanceEffects,
+  findImplementConditionIssues,
+  findImplementConditionalRuleIssues,
+  findImplementConditionalRuleListIssues,
+  matchesImplementCondition,
+  type CheckModifierConditionalOutput,
+  type ImplementCondition,
+  type ImplementConditionMatchMode,
+  type ImplementConditionalOutput,
+  type ImplementConditionalRule,
+  type PerformanceConditionalOutput,
+  type SourcedImplementConditionalRule,
+} from "./conditions";
+
+import {
   ITEM_INVENTORY_MODES,
+  SHU_INTERACTIONS,
   getActiveItemEffects,
   isActivelyUsableItem,
   isItemInventoryMode,
+  isShuInteraction,
   isStackableItem,
   type CharacterItem,
   type ItemDefinition,
   type ItemInventoryMode,
+  type ShuInteraction,
 } from "./types";
+
+import {
+  contributesNoPerformance,
+  resolveItemPerformanceContribution,
+  resolveItemPerformanceContributions,
+  type ItemContributionFacts,
+  type ItemIntegrityContribution,
+  type ItemPerformanceContribution,
+} from "./contributions";
 
 export type ItemId = string;
 
@@ -123,6 +224,13 @@ export const ITEM_DEFINITIONS = {
     name: "Reinforced Gauntlets",
     description: "Weighted gauntlets that lend force to a blow when worn.",
     inventoryMode: "individual",
+    /*
+     * A real equippable Item, so a future Shū enhancement could plausibly
+     * apply to it. This is the arbitrary half of two illustrative choices —
+     * see cursed-idol below — chosen only so both branches of the closed
+     * ShuInteraction vocabulary are exercised by authored content.
+     */
+    shuInteraction: "compatible",
     /*
      * Deliberately effect-less, and this is the honest answer rather than a
      * placeholder.
@@ -166,6 +274,12 @@ export const ITEM_DEFINITIONS = {
      * much depending on how a host had grouped them.
      */
     inventoryMode: "individual",
+    /*
+     * A cursed affliction, not a made object — the illustrative counterpart
+     * to gauntlets above. An idol's curse is intrinsic to it rather than
+     * "stuff" a future Shū enhancement would reinforce.
+     */
+    shuInteraction: "incompatible",
     possessedEffects: [
       {
         type: "modifyResolvedAttribute",
@@ -362,14 +476,47 @@ export const itemRegistry = ITEM_REGISTRY;
 
 export type {
   CharacterItem,
+  CheckModifierConditionalOutput,
   EquipmentTransition,
   EquipmentTransitionInput,
   EquipmentTransitionKind,
   EquipmentTransitionResolution,
+  ImplementCompatibility,
+  ImplementCondition,
+  ImplementConditionMatchMode,
+  ImplementConditionalOutput,
+  ImplementConditionalRule,
+  ImplementRequirement,
+  ImplementResolution,
+  ImplementSelectionIssue,
+  ImplementSelectionIssueKind,
+  ImplementSelectionResolution,
+  ItemAttackContribution,
+  ItemContributionFacts,
+  ItemDefenseContribution,
   ItemDefinition,
   ItemEquipmentState,
+  ItemFamilyDefinition,
+  ItemFamilyId,
+  ItemIntegrityAppliedEvent,
+  ItemIntegrityBand,
+  ItemIntegrityChange,
+  ItemIntegrityContribution,
+  ItemIntegrityDefinition,
+  ItemIntegrityOperation,
+  ItemIntegrityOperationInput,
+  ItemIntegrityRequest,
+  ItemIntegrityResolution,
+  ItemIntegrityState,
   ItemInventoryMode,
+  ItemOperation,
+  ItemOperationCostRequest,
+  ItemOperationIntentInput,
+  ItemOperationPreparationInput,
+  ItemOperationSettledEvent,
+  ItemPerformanceContribution,
   ItemUse,
+  ItemUseApplication,
   ItemUseInput,
   ItemUseResolution,
   ItemValidationIssue,
@@ -377,22 +524,56 @@ export type {
   InventoryEntryResolution,
   InventoryItemRef,
   InventoryReferenceIssue,
+  KnownItemFamilyId,
+  PerformanceConditionalOutput,
+  SelectImplementsInput,
+  SelectedImplement,
+  ShuInteraction,
+  SourcedImplementConditionalRule,
 };
 
 export {
   EQUIPMENT_TRANSITION_KINDS,
+  IMPLEMENT_COMPATIBILITIES,
+  IMPLEMENT_CONDITIONAL_OUTPUT_KINDS,
+  IMPLEMENT_CONDITION_MATCH_MODES,
   ITEM_EQUIPMENT_STATES,
+  ITEM_FAMILY_DEFINITIONS,
+  ITEM_INTEGRITY_STATES,
   ITEM_INVENTORY_MODES,
+  ITEM_OPERATION_COST,
+  ITEM_REPAIR_REQUEST,
+  ITEM_STRESS_REQUEST,
+  SHU_INTERACTIONS,
+  buildItemOperationProfile,
+  collectMatchedCheckModifiers,
+  collectMatchedPerformanceEffects,
+  contributesNoPerformance,
+  createCharacterIntegrityEffectHandler,
+  createCharacterItemOperationCostHandler,
   createInventoryItemRef,
+  currentIntegrityBand,
   describeItemDefinitionIssue,
   equipmentTransitionKind,
+  findImplementConditionIssues,
+  findImplementConditionalRuleIssues,
+  findImplementConditionalRuleListIssues,
+  findImplementRequirementIssues,
+  findImplementRequirementListIssues,
   findInventoryEntry,
+  findItemAttackContributionIssues,
   findItemCoreDefinitionIssues,
+  findItemDefenseContributionIssues,
   findItemEquipmentDefinitionIssues,
+  findItemFamilyCatalogIssues,
+  findItemIntegrityBandIssues,
+  findItemIntegrityDefinitionIssues,
   findItemStructuralIssues,
+  findItemUseApplicationIssues,
   findItemUseDefinitionIssues,
   findInventoryEntryOutcome,
   getActiveItemEffects,
+  getItemFamilyDefinition,
   isActivelyUsableItem,
   isCharacterItemShape,
   isConcreteInventoryObject,
@@ -401,7 +582,20 @@ export {
   isInventoryItemRef,
   isInventoryQuantity,
   isItemEquipmentState,
+  isItemIntegrityState,
   isItemInventoryMode,
+  isKnownItemFamilyId,
+  isShuInteraction,
   isStackableItem,
+  itemFamilyRegistry,
+  itemIntegrityRequest,
+  itemOperationCostRequest,
+  matchesImplementCondition,
+  prepareItemOperation,
+  resolveIntegrityState,
   resolveInventoryItemRef,
+  resolveItemIntegrityOperation,
+  resolveItemPerformanceContribution,
+  resolveItemPerformanceContributions,
+  resolveSelectedImplements,
 };

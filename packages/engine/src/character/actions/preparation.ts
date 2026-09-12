@@ -46,7 +46,7 @@ import {
   type EngineResult,
   type NonEmptyArray,
 } from "../../infrastructure/result";
-import { createTraceNode } from "../../infrastructure/trace";
+import { createTraceNode, type TraceNode } from "../../infrastructure/trace";
 import type { EligibilityFinding } from "../../actions";
 
 import {
@@ -59,6 +59,16 @@ import {
   type RequirementContext,
 } from "../rules/resolution";
 import type { ResolvedCharacter } from "../resolution";
+import {
+  resolveSelectedImplements,
+  type ImplementRequirement,
+  type ImplementResolution,
+} from "../equipment/implements";
+import {
+  collectMatchedCheckModifiers,
+  type SourcedImplementConditionalRule,
+} from "../equipment/conditions";
+import type { ItemDefinitionLookup } from "../equipment/validation";
 
 
 /*
@@ -91,6 +101,30 @@ export interface CharacterActionInputs {
 
   /** What the player selected for this check, and what the GM handed in. */
   readonly invocation?: CheckInvocation;
+
+  /**
+   * The roles this action names, and which owned objects the player selected
+   * to fill them — see equipment/implements.ts. Omitted means the action
+   * selects no implements at all, which is different from an action that
+   * selects some and the player chose none: an authored role with a nonzero
+   * minimum reports that as a finding, an absent `implements` reports nothing.
+   */
+  readonly implements?: {
+    readonly requirements: readonly ImplementRequirement[];
+    readonly selections: unknown;
+    readonly getItemDefinition: ItemDefinitionLookup;
+    readonly allowSharedEntries?: boolean;
+
+    /**
+     * Implement-conditional rules (Ticket 4.7) that may bear on this attempt
+     * — from the character's applicable Traits and Techniques, and from the
+     * Skill being attempted, if any. Caller-supplied: this adapter evaluates
+     * them against the resolved implements and never looks one up itself.
+     * Only `"check"`-output rules matter here; `"performance"`-output rules
+     * apply within `equipment/contributions.ts` instead.
+     */
+    readonly conditionalRules?: readonly SourcedImplementConditionalRule[];
+  };
 }
 
 
@@ -103,6 +137,13 @@ export interface CharacterActionContribution {
 
   /** Persistent, invoked and contextual, through the one canonical path. */
   readonly modifiers: readonly CheckModifierContribution[];
+
+  /**
+   * Canonical, resolved once. Every later stage — conditional bonuses
+   * (Ticket 4.7), contribution resolution (Ticket 4.6) — reads this rather
+   * than repeating the inventory/catalog lookup that produced it.
+   */
+  readonly implementResolutions: readonly ImplementResolution[];
 }
 
 
@@ -205,6 +246,28 @@ function baseContributionFor(
 
 
 /**
+ * One implement-selection issue, as a finding.
+ *
+ * Every issue kind but "incompatible" is `unsatisfied`: a role that is
+ * missing, excess, duplicated, or names a reference that does not resolve is
+ * a definite no, exactly as an unmet Requirement is. Grading an Item
+ * "incompatible" is the same definite no by the same reasoning — the role
+ * declined to accept it — so it is not a separate status, only a separate
+ * summary.
+ */
+function implementFindingFor(
+  issue: { readonly role: string; readonly message: string },
+): EligibilityFinding {
+  return {
+    id: `equipment.implements.${issue.role}`,
+    status: "unsatisfied",
+    decidedBy: "equipment",
+    summary: issue.message,
+  };
+}
+
+
+/**
  * Everything a Character owes one neutral action, and nothing else.
  *
  * Call it once per participant. For an opposed check, the two results are
@@ -215,35 +278,78 @@ export function prepareCharacterActionInputs(
 ): EngineResult<CharacterActionContribution> {
   const context = input.resolved.requirementContext;
 
-  const eligibility = (input.requirements ?? []).map((named) =>
+  const requirementFindings = (input.requirements ?? []).map((named) =>
     findingFor(named, context)
   );
 
-  const modifiers = collectCharacterCheckModifiers(
-    input.resolved,
-    input.invocation ?? {},
-  );
+  const implementChildren: TraceNode[] = [];
+  let implementResolutions: readonly ImplementResolution[] = [];
+  let implementFindings: readonly EligibilityFinding[] = [];
+
+  if (input.implements !== undefined) {
+    const selected = resolveSelectedImplements(
+      {
+        resolved: input.resolved,
+        requirements: input.implements.requirements,
+        selections: input.implements.selections,
+        ...(input.implements.allowSharedEntries === undefined
+          ? {}
+          : { allowSharedEntries: input.implements.allowSharedEntries }),
+      },
+      input.implements.getItemDefinition,
+    );
+
+    if (!selected.success) return selected;
+
+    implementChildren.push(selected.trace.root);
+    implementResolutions = selected.payload.resolutions;
+    implementFindings = selected.payload.issues.map(implementFindingFor);
+  }
+
+  /*
+   * Base modifiers first, then whatever the resolved implements earned —
+   * the same deterministic order collectCharacterCheckModifiers() already
+   * uses internally (persistent, then invoked, then contextual). A matched
+   * implement-conditional rule contributes through the SAME
+   * CheckModifierContribution shape, so it stacks and traces exactly like
+   * any other check modifier; only its provenance (Ticket 4.7) says where it
+   * came from.
+   */
+  const modifiers = [
+    ...collectCharacterCheckModifiers(input.resolved, input.invocation ?? {}),
+    ...collectMatchedCheckModifiers(
+      input.implements?.conditionalRules ?? [],
+      implementResolutions,
+    ),
+  ];
+
+  const eligibility = [...requirementFindings, ...implementFindings];
 
   const scopeTraceInput = input.checkScope === undefined
     ? "none"
     : input.checkScope.kind;
+
+  const traceInputs = {
+    requirements: { value: requirementFindings.length },
+    modifiers: { value: modifiers.length },
+    checkScope: { value: scopeTraceInput },
+    implements: { value: implementResolutions.length },
+  };
 
   if (input.checkScope === undefined) {
     return engineSuccess({
       eligibility,
       baseContributions: [],
       modifiers,
+      implementResolutions,
     }, {
       root: createTraceNode({
         id: "character.actions.preparation",
         label: "Assemble Character inputs for an action",
-        formula: "requirements become findings; modifiers assemble canonically",
-        inputs: {
-          requirements: { value: eligibility.length },
-          modifiers: { value: modifiers.length },
-          checkScope: { value: scopeTraceInput },
-        },
+        formula: "requirements become findings; modifiers assemble canonically; implements resolve once",
+        inputs: traceInputs,
         output: eligibility.length,
+        children: implementChildren,
       }),
     });
   }
@@ -256,18 +362,15 @@ export function prepareCharacterActionInputs(
     eligibility,
     baseContributions: base.payload,
     modifiers,
+    implementResolutions,
   }, {
     root: createTraceNode({
       id: "character.actions.preparation",
       label: "Assemble Character inputs for an action",
-      formula: "requirements become findings; modifiers assemble canonically",
-      inputs: {
-        requirements: { value: eligibility.length },
-        modifiers: { value: modifiers.length },
-        checkScope: { value: scopeTraceInput },
-      },
+      formula: "requirements become findings; modifiers assemble canonically; implements resolve once",
+      inputs: traceInputs,
       output: eligibility.length,
-      children: [base.trace.root],
+      children: [base.trace.root, ...implementChildren],
     }),
   });
 }

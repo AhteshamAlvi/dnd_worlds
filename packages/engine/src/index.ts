@@ -1457,6 +1457,198 @@ export {
   resolveItemUse,
 } from "./character/equipment/index";
 
+/*
+ * Equip, unequip and Item use, through the neutral action pipeline.
+ *
+ * prepareItemOperation() re-runs resolveEquipmentTransition()/resolveItemUse()
+ * as a dry run to produce eligibility findings, then hands off to the same
+ * prepareAction() every other capability uses — nothing here is a second
+ * preparation pipeline. createCharacterItemOperationCostHandler() is what
+ * settleAction() commits through: it re-reads the character fresh from the
+ * runtime draft and re-runs the same resolver a second time, so a stale
+ * attempt (the entry moved, emptied, or a requirement stopped holding between
+ * preparation and settlement) fails at commit with nothing applied, rather
+ * than silently applying an answer that is no longer true.
+ */
+export type {
+  ItemOperation,
+  ItemOperationCostRequest,
+  ItemOperationIntentInput,
+  ItemOperationPreparationInput,
+  ItemOperationSettledEvent,
+  ItemUseApplication,
+} from "./character/equipment/index";
+
+export {
+  ITEM_OPERATION_COST,
+  buildItemOperationProfile,
+  createCharacterItemOperationCostHandler,
+  findItemUseApplicationIssues,
+  itemOperationCostRequest,
+  prepareItemOperation,
+} from "./character/equipment/index";
+
+/*
+ * Item families, and selected implements graded against them.
+ *
+ * A family (`item-family` in the generic catalog) is pure taxonomy: an id an
+ * Item can claim membership in via `ItemDefinition.families`, and a role's
+ * `ImplementRequirement` can accept or prefer. `resolveSelectedImplements()`
+ * is the one place a caller's selections are validated — reference, quantity,
+ * engagement state, cardinality, duplicate and cross-role sharing — and
+ * compatibility is graded, so every later stage reads the canonical
+ * `ImplementResolution[]` rather than repeating the lookup. See
+ * `character/actions/preparation.ts`'s `implements` input, which is where an
+ * action's own selections and requirements meet this resolver.
+ */
+export type {
+  ImplementCompatibility,
+  ImplementRequirement,
+  ImplementResolution,
+  ImplementSelectionIssue,
+  ImplementSelectionIssueKind,
+  ImplementSelectionResolution,
+  ItemFamilyDefinition,
+  ItemFamilyId,
+  KnownItemFamilyId,
+  SelectImplementsInput,
+  SelectedImplement,
+} from "./character/equipment/index";
+
+export {
+  IMPLEMENT_COMPATIBILITIES,
+  ITEM_FAMILY_DEFINITIONS,
+  findImplementRequirementIssues,
+  findImplementRequirementListIssues,
+  findItemFamilyCatalogIssues,
+  getItemFamilyDefinition,
+  isKnownItemFamilyId,
+  resolveSelectedImplements,
+} from "./character/equipment/index";
+
+/*
+ * Item performance contributions, and the Shū compatibility contract.
+ *
+ * `shuInteraction` is required, closed, and never inferred — see
+ * `ShuInteraction`'s own comment for why guessing it from consumption,
+ * inventory mode or family would be an invented rule. `attack`/`defense` let
+ * any selected Item contribute typed facts without forcing it into an
+ * exclusive weapon or armor class; `resolveItemPerformanceContribution(s)`
+ * resolves those facts, sourced, for a resolved implement selection — the
+ * base layer of the resolve order Ticket 4.5 fixed. It does not scale a
+ * contribution's numbers by its implement grade, decide a hit, or touch a
+ * Body: those belong to a combat/body formula this ticket does not build.
+ */
+export type {
+  ItemAttackContribution,
+  ItemContributionFacts,
+  ItemDefenseContribution,
+  ItemPerformanceContribution,
+  ShuInteraction,
+} from "./character/equipment/index";
+
+export {
+  SHU_INTERACTIONS,
+  contributesNoPerformance,
+  findItemAttackContributionIssues,
+  findItemDefenseContributionIssues,
+  isShuInteraction,
+  resolveItemPerformanceContribution,
+  resolveItemPerformanceContributions,
+} from "./character/equipment/index";
+
+/*
+ * Implement-conditional bonuses (Ticket 4.7) — letting a Skill, Technique or
+ * Trait modify an action from the canonical `ImplementResolution[]` Ticket
+ * 4.5 produces, without equipment ever knowing what a Skill, Technique or
+ * Trait is.
+ *
+ * One rule, one output. An `ImplementConditionalRule` evaluates its
+ * `ImplementCondition` once and declares EXACTLY one output: `"check"` routes
+ * an ordinary `CheckModifierContribution` into the same assembly every other
+ * check modifier goes through (`character/checks/invocation.ts`, reached via
+ * `character/actions/preparation.ts`'s `implements.conditionalRules` input);
+ * `"performance"` routes Effects into an Item's own performance contribution
+ * (`resolveItemPerformanceContribution`'s own `conditionalRules` parameter),
+ * alongside — never merged into — the Item's base Effects. Either way the
+ * matched rule's SOURCE is the Trait, Technique or Skill that declared it,
+ * never the Item the condition matched against; the Item keeps its own
+ * `{type:"item",...}` source regardless of which character rules also fired.
+ *
+ * Assembling `SourcedImplementConditionalRule[]` from a resolved character's
+ * applicable content is a CALLER responsibility — this module never looks up
+ * a Trait, Technique or Skill definition itself, exactly as it never repeats
+ * an inventory or catalog lookup `ImplementResolution` already answered.
+ */
+export type {
+  CheckModifierConditionalOutput,
+  ImplementCondition,
+  ImplementConditionMatchMode,
+  ImplementConditionalOutput,
+  ImplementConditionalRule,
+  PerformanceConditionalOutput,
+  SourcedImplementConditionalRule,
+} from "./character/equipment/index";
+
+export {
+  IMPLEMENT_CONDITIONAL_OUTPUT_KINDS,
+  IMPLEMENT_CONDITION_MATCH_MODES,
+  collectMatchedCheckModifiers,
+  collectMatchedPerformanceEffects,
+  findImplementConditionIssues,
+  findImplementConditionalRuleIssues,
+  findImplementConditionalRuleListIssues,
+  matchesImplementCondition,
+} from "./character/equipment/index";
+
+/*
+ * Integrity, breaking and repair (Ticket 4.8) — per-entry durability, kept
+ * apart from stack quantity and consumption.
+ *
+ * `ItemDefinition.integrity?: ItemIntegrityDefinition` is policy (maximum,
+ * whether it is ever repairable, what zero means, named bands); a
+ * `CharacterItem`'s own `integrity?: number` is history. A STACKABLE Item may
+ * not declare integrity at all — one figure cannot say which member of an
+ * independently damageable stack took the hit.
+ *
+ * `resolveItemIntegrityOperation()` is the pure resolver (stress subtracts,
+ * repair adds, clamped to `[0, maximum]`; state is always DERIVED via
+ * `resolveIntegrityState()`, never stored). `createCharacterIntegrityEffectHandler()`
+ * settles it as an EFFECT, not a cost — unlike the equip/unequip/use cost
+ * handler (Ticket 4.4), a stress or repair request never fails an operation;
+ * it settles what already happened, with a refused repair or an overshoot
+ * landing as `actual` below `requested`, the same shape any resisted or
+ * capped effect takes. `resolveItemPerformanceContribution()` (Ticket 4.6)
+ * folds the CURRENT band's own Effects into a resolved contribution's new
+ * `integrity` bucket, sourced to the Item.
+ */
+export type {
+  ItemIntegrityAppliedEvent,
+  ItemIntegrityBand,
+  ItemIntegrityChange,
+  ItemIntegrityContribution,
+  ItemIntegrityDefinition,
+  ItemIntegrityOperation,
+  ItemIntegrityOperationInput,
+  ItemIntegrityRequest,
+  ItemIntegrityResolution,
+  ItemIntegrityState,
+} from "./character/equipment/index";
+
+export {
+  ITEM_INTEGRITY_STATES,
+  ITEM_REPAIR_REQUEST,
+  ITEM_STRESS_REQUEST,
+  createCharacterIntegrityEffectHandler,
+  currentIntegrityBand,
+  findItemIntegrityBandIssues,
+  findItemIntegrityDefinitionIssues,
+  isItemIntegrityState,
+  itemIntegrityRequest,
+  resolveIntegrityState,
+  resolveItemIntegrityOperation,
+} from "./character/equipment/index";
+
 /* ── Character: progression ─────────────────────────────────────────────── */
 
 /*

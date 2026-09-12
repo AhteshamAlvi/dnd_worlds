@@ -91,6 +91,15 @@ import type { AuraCostRequest } from "../foundation/aura/runtime";
 import type { NamedRequirement, Requirement } from "../rules/requirements";
 
 import {
+  findImplementRequirementListIssues,
+  type ImplementRequirement,
+} from "../equipment/implements";
+import {
+  findImplementConditionalRuleListIssues,
+  type ImplementConditionalRule,
+} from "../equipment/conditions";
+
+import {
   isMasteryRank,
   type MasteryRank,
   type MasteryTrack,
@@ -924,6 +933,27 @@ export interface SkillApplicationDefinition {
 
   /** Checked whenever this Skill is attempted. Never the acquisition list. */
   readonly requirements?: readonly ApplicationRequirement[];
+
+  /**
+   * Concrete implements this Skill's attempt selects, by role — the weapon
+   * Direct Thrust is made with, the arrow Fire Blast never needs. Absent
+   * means the Skill names no implement roles of its own; see
+   * `equipment/implements.ts`. Reused rather than redeclared, for the reason
+   * every other neutral vocabulary on this contract is: a Skill-shaped copy
+   * of `ImplementRequirement` would be a second definition of a closed
+   * concept that TypeScript would accept assignments between forever.
+   */
+  readonly implements?: readonly ImplementRequirement[];
+
+  /**
+   * Bonuses this Skill's attempt contributes only while a selected implement
+   * matches a condition — Ticket 4.7. See `TraitDefinition`'s field of the
+   * same name; the contract is identical, and this Skill is the rule's
+   * source. Lives on the application, not the bare `SkillDefinition`, for the
+   * same reason `implements` does: it is an attempt-time fact, asked every
+   * time, not an acquisition-time one.
+   */
+  readonly implementConditionalRules?: readonly ImplementConditionalRule[];
 
   readonly cost: SkillApplicationCostProfile;
   readonly check: SkillApplicationCheckProfile;
@@ -2762,6 +2792,10 @@ export function findSkillApplicationIssues(
   }
 
   errors.push(...findRequirementIssues(application.requirements ?? []));
+  errors.push(...findImplementRequirementListIssues(application.implements ?? []));
+  errors.push(
+    ...findImplementConditionalRuleListIssues(application.implementConditionalRules ?? []),
+  );
   errors.push(...findCostProfileIssues(application.cost));
   errors.push(...findCheckProfileIssues(application.check));
   errors.push(...findOutcomeProfileIssues(application.check, application.outcome));
