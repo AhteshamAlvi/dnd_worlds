@@ -125,6 +125,20 @@ function characterWith(items: readonly CharacterItem[]) {
 
 const OPERATION: RuntimeOperationContext = { operationId: "op-1", occurredAt: 1_000 };
 
+
+/*
+ * `itemIntegrityConsequence()` validates and returns an EngineResult, because
+ * it is the one consequence builder that CHOOSES a request kind from caller
+ * data — an untyped "mend" used to build a repair. These suites hand it
+ * well-formed input, so unwrapping here keeps each case about what it is
+ * about; the refusal path has its own cases.
+ */
+function integrityConsequence(
+  ...args: Parameters<typeof itemIntegrityConsequence>
+) {
+  return payloadOf(itemIntegrityConsequence(...args));
+}
+
 function characterState(character: unknown) {
   return { [ownerKey({ domain: "character", id: (character as { id: string }).id })]: character };
 }
@@ -427,7 +441,7 @@ describe("settling integrity through the runtime effect handler", () => {
       context: OPERATION,
       states: characterState(character),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
-      consequences: [itemIntegrityConsequence(
+      consequences: [integrityConsequence(
         { operationId: OPERATION.operationId, occurredAt: OPERATION.occurredAt, from: { domain: "caller", id: "gm" } },
         { requestId: "stress-1", characterId: character.id, entryId: "e1", operation: "stress", amount: 4 },
       )],
@@ -450,7 +464,7 @@ describe("settling integrity through the runtime effect handler", () => {
       context: OPERATION,
       states: characterState(character),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
-      consequences: [itemIntegrityConsequence(
+      consequences: [integrityConsequence(
         { operationId: OPERATION.operationId, occurredAt: OPERATION.occurredAt, from: { domain: "caller", id: "gm" } },
         { requestId: "stress-1", characterId: character.id, entryId: "e1", operation: "stress", amount: 4 },
       )],
@@ -481,8 +495,8 @@ describe("settling integrity through the runtime effect handler", () => {
       states: characterState(character),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
       consequences: [
-        itemIntegrityConsequence(context, { requestId: "s1", characterId: character.id, entryId: "e1", operation: "stress", amount: 6 }),
-        itemIntegrityConsequence(context, { requestId: "s2", characterId: character.id, entryId: "e2", operation: "repair", amount: 2 }),
+        integrityConsequence(context, { requestId: "s1", characterId: character.id, entryId: "e1", operation: "stress", amount: 6 }),
+        integrityConsequence(context, { requestId: "s2", characterId: character.id, entryId: "e2", operation: "repair", amount: 2 }),
       ],
     }));
 
@@ -517,8 +531,8 @@ describe("settling integrity through the runtime effect handler", () => {
         states: characterState(character),
         handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
         consequences: [
-          itemIntegrityConsequence(context, { requestId: "s1", characterId: character.id, entryId: "e1", operation: "stress", amount: 6 }),
-          itemIntegrityConsequence(context, { requestId: "s2", characterId: character.id, entryId: "e1", operation: "repair", amount: 2 }),
+          integrityConsequence(context, { requestId: "s1", characterId: character.id, entryId: "e1", operation: "stress", amount: 6 }),
+          integrityConsequence(context, { requestId: "s2", characterId: character.id, entryId: "e1", operation: "repair", amount: 2 }),
         ],
       }));
     }
@@ -535,8 +549,8 @@ describe("settling integrity through the runtime effect handler", () => {
       states: characterState(backward),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
       consequences: [
-        itemIntegrityConsequence(context, { requestId: "s2", characterId: backward.id, entryId: "e1", operation: "repair", amount: 2 }),
-        itemIntegrityConsequence(context, { requestId: "s1", characterId: backward.id, entryId: "e1", operation: "stress", amount: 6 }),
+        integrityConsequence(context, { requestId: "s2", characterId: backward.id, entryId: "e1", operation: "repair", amount: 2 }),
+        integrityConsequence(context, { requestId: "s1", characterId: backward.id, entryId: "e1", operation: "stress", amount: 6 }),
       ],
     }));
 

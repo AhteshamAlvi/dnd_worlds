@@ -1586,6 +1586,7 @@ export {
  */
 export type {
   ItemDefinitionId,
+  ItemDefinitionOutcome,
   ItemOwnedContribution,
   ItemOwnedEffect,
   ItemOwnedSurface,
@@ -1593,8 +1594,11 @@ export type {
 } from "./character/equipment/index";
 
 export {
+  ITEM_DEFINITION_OUTCOME_CODES,
   ITEM_OWNED_SURFACES,
+  describeItemDefinitionOutcome,
   envelopeIsItemOwned,
+  resolveItemDefinition,
   resolveItemEnvelope,
 } from "./character/equipment/index";
 

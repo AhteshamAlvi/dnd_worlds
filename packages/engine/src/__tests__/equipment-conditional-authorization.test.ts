@@ -185,17 +185,21 @@ describe("the engine collects rules from content the character actually has", ()
     });
     const resolved = resolveTestCharacter(character);
 
-    const application = payloadOf(resolveSkillApplication({
+    /*
+     * The collector is told WHICH Skill, not what to think of it — it resolves
+     * the application itself. This assertion is the control: the Skill really
+     * is available, so the empty result below cannot be mistaken for the
+     * collector simply never finding one.
+     */
+    expect(payloadOf(resolveSkillApplication({
       skillId: "house-rule",
       capabilities: resolved.capabilities,
       context: resolved.requirementContext,
-    }));
-
-    expect(application.disposition).toBe("available");
+    })).disposition).toBe("available");
 
     const collected = payloadOf(collectImplementConditionalRules(
       character,
-      application,
+      "house-rule",
       characterContentCatalogs(),
     ));
 
@@ -235,17 +239,15 @@ describe("the engine collects rules from content the character actually has", ()
     const character = createTestCharacter();
     const resolved = resolveTestCharacter(character);
 
-    const application = payloadOf(resolveSkillApplication({
+    expect(payloadOf(resolveSkillApplication({
       skillId: "house-rule",
       capabilities: resolved.capabilities,
       context: resolved.requirementContext,
-    }));
-
-    expect(application.disposition).toBe("skill-not-held");
+    })).disposition).toBe("skill-not-held");
 
     expect(payloadOf(collectImplementConditionalRules(
       character,
-      application,
+      "house-rule",
       characterContentCatalogs(),
     )).rules).toEqual([]);
   });
@@ -419,5 +421,162 @@ describe("a caller cannot manufacture a Trait, Technique or Skill rule", () => {
     );
 
     expect(result.success).toBe(false);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* 13-15. The invoked Skill is resolved here, not accepted                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The brand stopped a caller inventing a RULE. It did nothing about a caller
+ * inventing the VERDICT that authorizes one: the collector took a
+ * `ResolvedSkillApplication` and read `disposition === "available"` off it, so
+ * a plain object saying `{ skillId: "forbidden-art", disposition: "available" }`
+ * authorized a Skill nobody had learned, whose execution requirements nobody
+ * evaluated — and the branded output then certified it.
+ *
+ * The caller now names the Skill and nothing else.
+ */
+describe("the invoked Skill's availability is resolved, not asserted", () => {
+  const SKILL_RULE = {
+    id: "measured-strike",
+    condition: { familyIds: ["blunt-weapon"] },
+    output: { kind: "check", scope: { kind: "attribute", attribute: "dex" }, amount: 2 },
+  } as const;
+
+  function registerGatedSkill(
+    id: string,
+    overrides: Record<string, unknown> = {},
+  ): void {
+    const skill = validDefinitionFor("skill");
+
+    register("skill", {
+      ...skill,
+      id,
+      requirements: [],
+      application: {
+        ...(skill["application"] as Record<string, unknown>),
+        implementConditionalRules: [SKILL_RULE],
+      },
+      ...overrides,
+    });
+  }
+
+  function collectFor(
+    character: ReturnType<typeof createTestCharacter>,
+    skillId: string | undefined,
+    catalogs = characterContentCatalogs(),
+  ) {
+    return payloadOf(collectImplementConditionalRules(character, skillId, catalogs));
+  }
+
+  it("takes a Skill id, so there is no disposition to fabricate", () => {
+    /*
+     * The structural half, and it is the fix. `collectImplementConditionalRules`
+     * accepts `SkillId | undefined`; a `ResolvedSkillApplication` — forged or
+     * genuine — is not assignable to it, so the forgery below does not compile
+     * and the cast is what an untyped host effectively writes.
+     */
+    registerGatedSkill("forbidden-art");
+
+    const forged = { skillId: "forbidden-art", disposition: "available" };
+
+    const character = createTestCharacter();
+
+    expect(collectFor(character, forged as unknown as string).rules).toEqual([]);
+  });
+
+  it("collects nothing for a Skill the character has never learned", () => {
+    registerGatedSkill("forbidden-art");
+
+    expect(collectFor(createTestCharacter(), "forbidden-art").rules).toEqual([]);
+  });
+
+  it("collects nothing when the Skill's execution requirements are unsatisfied", () => {
+    /*
+     * Held, and refused. The disposition this function produces is
+     * "requirements-unsatisfied", which is a definite no — and a caller
+     * asserting "available" over the top of it is exactly the case the old
+     * signature could not tell apart from a real one.
+     */
+    registerGatedSkill("measured-art", {
+      application: {
+        ...(validDefinitionFor("skill")["application"] as Record<string, unknown>),
+        implementConditionalRules: [SKILL_RULE],
+        requirements: [{
+          id: "needs-a-trait",
+          summary: "Requires a Trait nobody has.",
+          requirement: { type: "hasTrait", traitId: "never-registered" },
+        }],
+      },
+    });
+
+    const character = createTestCharacter({
+      skills: [{ skillId: "measured-art", mastery: 1 }],
+    });
+    const resolved = resolveTestCharacter(character);
+
+    expect(payloadOf(resolveSkillApplication({
+      skillId: "measured-art",
+      capabilities: resolved.capabilities,
+      context: resolved.requirementContext,
+    })).disposition).toBe("requirements-unsatisfied");
+
+    expect(collectFor(character, "measured-art").rules).toEqual([]);
+  });
+
+  it("collects nothing when a catalog answers with a different Skill", () => {
+    /*
+     * The same substitution `resolveItemDefinition()` refuses on the equipment
+     * side. A definition answering to an id that is not its own would let one
+     * Skill's rules be collected under another's name.
+     */
+    registerGatedSkill("measured-art");
+    registerGatedSkill("other-art");
+
+    const character = createTestCharacter({
+      skills: [{ skillId: "measured-art", mastery: 1 }],
+    });
+
+    expect(collectFor(character, "measured-art", {
+      ...characterContentCatalogs(),
+      getSkillDefinition: () => characterContentCatalogs().getSkillDefinition("other-art"),
+    }).rules).toEqual([]);
+  });
+
+  it("collects nothing for a Skill no catalog defines", () => {
+    expect(collectFor(createTestCharacter(), "no-such-skill").rules).toEqual([]);
+  });
+
+  it("still collects a held, available Skill's rules — exactly once", () => {
+    /* The control. Every case above would pass against a collector that
+     * refused everything. */
+    registerGatedSkill("measured-art");
+
+    const character = createTestCharacter({
+      skills: [{ skillId: "measured-art", mastery: 1 }],
+    });
+
+    const collected = collectFor(character, "measured-art");
+
+    expect(collected.rules).toHaveLength(1);
+    expect(collected.rules[0]!.source).toEqual({ type: "skill", id: "measured-art" });
+    expect(collected.rules[0]!.rule.id).toBe("measured-strike");
+  });
+
+  it("keeps Trait and Technique rules coming from possession alone", () => {
+    /*
+     * The Skill half changed; the other two did not, and this pins that. A
+     * Trait contributes because the character HAS it, with no invoked Skill in
+     * the picture at all.
+     */
+    register("trait", { id: "keen-edge", implementConditionalRules: [BLADED_CHECK_RULE] });
+
+    expect(collectFor(
+      createTestCharacter({ traits: [{ traitId: "keen-edge" }] }),
+      undefined,
+    ).rules.map((entry) => entry.source)).toEqual([{ type: "trait", id: "keen-edge" }]);
   });
 });

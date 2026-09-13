@@ -82,6 +82,20 @@ afterEach(() => {
 
 const OPERATION: RuntimeOperationContext = { operationId: "op-1", occurredAt: 1_000 };
 
+
+/*
+ * `itemIntegrityConsequence()` validates and returns an EngineResult, because
+ * it is the one consequence builder that CHOOSES a request kind from caller
+ * data — an untyped "mend" used to build a repair. These suites hand it
+ * well-formed input, so unwrapping here keeps each case about what it is
+ * about; the refusal path has its own cases.
+ */
+function integrityConsequence(
+  ...args: Parameters<typeof itemIntegrityConsequence>
+) {
+  return payloadOf(itemIntegrityConsequence(...args));
+}
+
 const DEX_BONUS = {
   type: "modifyCheck",
   check: { kind: "attribute", attribute: "dex" },
@@ -386,7 +400,7 @@ describe("mitigation is carried through settlement and honoured", () => {
 
     const { character } = characterWith([entry({ integrity: 10 })]);
 
-    const request = itemIntegrityRequest({
+    const request = payloadOf(itemIntegrityRequest({
       requestId: "s1",
       operationId: OPERATION.operationId,
       occurredAt: OPERATION.occurredAt,
@@ -394,7 +408,7 @@ describe("mitigation is carried through settlement and honoured", () => {
       to: { domain: "character", id: character.id },
       operation: { type: "stress", amount: 6, mitigation: 4 },
       entryId: "e1",
-    });
+    }));
 
     expect(request.mitigation).toBe(4);
     expect(request.requested).toBe(6);
@@ -426,7 +440,7 @@ describe("mitigation is carried through settlement and honoured", () => {
       states: characterState(character),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
       consequences: [
-        itemIntegrityConsequence(context, {
+        integrityConsequence(context, {
           requestId: "s1",
           characterId: character.id,
           entryId: "e1",
@@ -477,7 +491,7 @@ describe("a batch of integrity requests is simultaneous, not sequential", () => 
       states: characterState(character),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
       consequences: requests.map((request) =>
-        itemIntegrityConsequence(context, { ...request, characterId: character.id })
+        integrityConsequence(context, { ...request, characterId: character.id })
       ),
     }));
 
@@ -928,7 +942,7 @@ describe("an Item contributes to the action that breaks it, and not to the next"
       states: characterState(character),
       handlers: { costs: [], effects: [createCharacterIntegrityEffectHandler(getItemDefinition)] },
       consequences: [
-        itemIntegrityConsequence(context, {
+        integrityConsequence(context, {
           requestId: "s1",
           characterId: character.id,
           entryId: "e1",
@@ -953,5 +967,221 @@ describe("an Item contributes to the action that breaks it, and not to the next"
 
     /* And the stress that caused it did not unwind the action. */
     expect(outcome.events.some((event) => event.kind === "item-integrity-applied")).toBe(true);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* 16-18. A request's KIND is read exhaustively, at every place it is chosen  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Three places choose a request kind from caller data, and all three used to
+ * choose with a ternary — `type === "stress" ? stress : repair`. Every word
+ * that was not "stress" became a repair: at the consequence builder, at the
+ * request builder, and at the handler that reads the kind back. By the time a
+ * malformed request reached settlement it was perfectly well formed, so
+ * nothing downstream could see that anything had been substituted.
+ */
+describe("an unknown integrity request kind is refused rather than mended", () => {
+  function rawRequest(overrides: Record<string, unknown>) {
+    return {
+      requestId: "r1",
+      kind: "item.stress",
+      phase: "effect",
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: { domain: "character", id: "gm" },
+      to: { domain: "character", id: "gm" },
+      requested: 4,
+      entryId: "e1",
+      ...overrides,
+    };
+  }
+
+  function settleRaw(
+    character: ReturnType<typeof createTestCharacter>,
+    requests: readonly Record<string, unknown>[],
+  ) {
+    return createCharacterIntegrityEffectHandler(getItemDefinition)
+      .applyBatch(requests as never, character);
+  }
+
+  it.each([
+    ["an unknown kind", { kind: "item.shatter" }],
+    ["another domain's kind", { kind: "aura.spend" }],
+    ["no kind at all", { kind: undefined }],
+    ["a kind that is not a string", { kind: 42 }],
+    ["a near miss", { kind: "item.repairs" }],
+  ])("settles nothing for %s", (_label, overrides) => {
+    registerSword();
+
+    const { character } = characterWith([entry({ integrity: 10 })]);
+    const batch = settleRaw(character, [rawRequest(overrides)]);
+
+    /*
+     * Not merely "did not repair": nothing at all. The Item is where it was,
+     * the outcome is zero, and no event claims anything happened.
+     */
+    expect((batch.state as typeof character).items![0]!.integrity).toBe(10);
+    expect(batch.outcomes).toEqual([{ requestId: "r1", requested: 4, actual: 0 }]);
+    expect(batch.events).toEqual([]);
+  });
+
+  it.each([
+    ["a zero amount", { requested: 0 }],
+    ["a negative amount", { requested: -4 }],
+    ["a NaN amount", { requested: Number.NaN }],
+    ["an infinite amount", { requested: Number.POSITIVE_INFINITY }],
+    ["an empty entry id", { entryId: "" }],
+    ["a blank entry id", { entryId: "   " }],
+    ["an entry id that is not a string", { entryId: 7 }],
+    ["a negative mitigation", { mitigation: -2 }],
+    ["a NaN mitigation", { mitigation: Number.NaN }],
+  ])("settles nothing for %s", (_label, overrides) => {
+    registerSword();
+
+    const { character } = characterWith([entry({ integrity: 10 })]);
+    const batch = settleRaw(character, [rawRequest(overrides)]);
+
+    expect((batch.state as typeof character).items![0]!.integrity).toBe(10);
+    expect(batch.outcomes[0]?.actual).toBe(0);
+    expect(batch.events).toEqual([]);
+  });
+
+  it("settles nothing for a repair carrying mitigation", () => {
+    /*
+     * Mitigation is protection against STRESS. A repair that carried it was a
+     * caller describing something the model has no meaning for, and honouring
+     * the repair anyway would be answering a question nobody asked.
+     */
+    registerSword();
+
+    const { character } = characterWith([entry({ integrity: 4 })]);
+
+    const batch = settleRaw(character, [
+      rawRequest({ kind: "item.repair", requested: 3, mitigation: 1 }),
+    ]);
+
+    expect((batch.state as typeof character).items![0]!.integrity).toBe(4);
+    expect(batch.outcomes[0]?.actual).toBe(0);
+  });
+
+  it("lets the valid requests beside it settle unchanged", () => {
+    /*
+     * A malformed request is refused, not the batch. The handler cannot fail
+     * an operation — a stress consequence settles what already happened — so
+     * one bad request must not take the good ones with it.
+     */
+    registerSword();
+
+    const { character } = characterWith([entry({ integrity: 10 })]);
+
+    const batch = settleRaw(character, [
+      rawRequest({ requestId: "bad", kind: "item.shatter", requested: 6 }),
+      rawRequest({ requestId: "good", kind: "item.stress", requested: 3 }),
+    ]);
+
+    expect((batch.state as typeof character).items![0]!.integrity).toBe(7);
+
+    expect(batch.outcomes).toEqual([
+      { requestId: "bad", requested: 6, actual: 0 },
+      { requestId: "good", requested: 3, actual: 3 },
+    ]);
+
+    expect(batch.events).toHaveLength(1);
+  });
+
+  it("refuses the same faults at the request builder", () => {
+    for (const operation of [
+      { type: "mend", amount: 4 },
+      { type: undefined, amount: 4 },
+      { type: "stress", amount: 0 },
+      { type: "repair", amount: -4 },
+      { type: "repair", amount: 4, mitigation: 1 },
+    ]) {
+      const result = itemIntegrityRequest({
+        requestId: "r1",
+        operationId: OPERATION.operationId,
+        occurredAt: OPERATION.occurredAt,
+        from: { domain: "character", id: "gon" },
+        to: { domain: "character", id: "gon" },
+        operation: operation as never,
+        entryId: "e1",
+      });
+
+      expect(result.success).toBe(false);
+    }
+
+    /* And an entry id is part of the request, not an afterthought. */
+    expect(itemIntegrityRequest({
+      requestId: "r1",
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: { domain: "character", id: "gon" },
+      to: { domain: "character", id: "gon" },
+      operation: { type: "stress", amount: 4 },
+      entryId: "   ",
+    }).success).toBe(false);
+  });
+
+  it("refuses the same faults at the consequence builder", () => {
+    const context = {
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: { domain: "caller" as const, id: "gm" },
+    };
+
+    for (const input of [
+      { operation: "mend", amount: 4 },
+      { operation: undefined, amount: 4 },
+      { operation: "stress", amount: 0 },
+      { operation: "repair", amount: -4 },
+      { operation: "repair", amount: 4, mitigation: 1 },
+      { operation: "stress", amount: 4, mitigation: -1 },
+      { operation: "stress", amount: 4, entryId: "" },
+    ]) {
+      const result = itemIntegrityConsequence(context, {
+        requestId: "s1",
+        characterId: "gon",
+        entryId: "e1",
+        ...input,
+      } as never);
+
+      expect(result.success).toBe(false);
+    }
+  });
+
+  it("still builds a well-formed request and consequence", () => {
+    /* The control both refusals need. */
+    const context = {
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: { domain: "caller" as const, id: "gm" },
+    };
+
+    expect(payloadOf(itemIntegrityRequest({
+      requestId: "r1",
+      operationId: OPERATION.operationId,
+      occurredAt: OPERATION.occurredAt,
+      from: { domain: "character", id: "gon" },
+      to: { domain: "character", id: "gon" },
+      operation: { type: "repair", amount: 4 },
+      entryId: "e1",
+    })).kind).toBe("item.repair");
+
+    const consequence = payloadOf(itemIntegrityConsequence(context, {
+      requestId: "s1",
+      characterId: "gon",
+      entryId: "e1",
+      operation: "stress",
+      amount: 4,
+      mitigation: 1,
+    }));
+
+    expect(consequence.channel).toBe("runtime");
+
+    expect(consequence.channel === "runtime" && consequence.request)
+      .toMatchObject({ kind: "item.stress", requested: 4, mitigation: 1 });
   });
 });

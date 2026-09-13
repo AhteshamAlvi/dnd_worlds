@@ -43,7 +43,12 @@
  */
 
 import {
+  ACTION_FOCUS_KINDS,
+  THREAT_DECLARATIONS,
   findActionProfileIssues,
+  findAllowedTimingsIssues,
+  isActionFocusKind,
+  isThreatDeclaration,
   prepareAction,
   type ActionCheckProfile,
   type ActionFocus,
@@ -87,6 +92,7 @@ import { isValidCheckScope } from "../../checks";
 import type { ResolvedCharacter } from "../resolution";
 import type { NamedRequirementResolution } from "../rules/resolution";
 import type { Effect } from "../rules/effects";
+import { findEffectsValidationIssues } from "../rules/validation";
 
 import { resolveEquipmentTransition } from "./transitions";
 import { resolveItemUse } from "./use";
@@ -102,6 +108,8 @@ import {
 import type { ItemEquipmentState } from "./state";
 import type { ItemDefinition } from "./types";
 import {
+  ITEM_DEFINITION_OUTCOME_CODES,
+  describeItemDefinitionOutcome,
   findItemStructuralIssues,
   resolveItemDefinition,
   type ItemDefinitionLookup,
@@ -208,6 +216,18 @@ export function findItemUseApplicationIssues(
       "at least one allowed timing",
       Array.isArray(timings) ? "empty list" : timings,
     ));
+  } else {
+    /*
+     * The CONTENTS, through the neutral validator every other consumer of the
+     * timing vocabulary already uses. Proving the field is an array and
+     * stopping there accepted `["acton"]` and `["action", "action"]` — a typo
+     * that matches no timing and a repeat that says nothing the first entry
+     * did — which is exactly the silent-typo failure every closed vocabulary
+     * in this engine is guarded against.
+     */
+    errors.push(
+      ...findAllowedTimingsIssues(timings as readonly ActionTiming[]),
+    );
   }
 
   const cost = application.structuredActionCost;
@@ -260,6 +280,34 @@ export function findItemUseApplicationIssues(
         "one or more focus kinds, or omit the field",
         Array.isArray(kinds) ? "empty list" : kinds,
       ));
+    } else {
+      const seen = new Set<string>();
+
+      for (const kind of kinds as readonly unknown[]) {
+        if (!isActionFocusKind(kind)) {
+          errors.push(surfaceError(
+            "equipment.actions.use-application.focus-kinds.invalid",
+            "A use application names an unknown focus kind.",
+            [...ACTION_FOCUS_KINDS],
+            kind,
+          ));
+
+          continue;
+        }
+
+        if (seen.has(kind)) {
+          errors.push(surfaceError(
+            "equipment.actions.use-application.focus-kinds.duplicate",
+            `A use application permits the "${kind}" focus kind more than once.`,
+            "each focus kind permitted once",
+            kind,
+          ));
+
+          continue;
+        }
+
+        seen.add(kind);
+      }
     }
   }
 
@@ -359,20 +407,50 @@ export interface ItemDefenseContribution {
 
 
 /*
- * `effects` is deliberately NOT validated here. Every rule-bearing Item field
- * — possessed, equipped, used, and now attack/defense — is walked by
- * collectRuleBundles() and checked at the registration barrier, through the
- * same structural Effect validator every other source uses. Checking it again
- * here would be a second opinion about the same question, free to drift.
+ * WHERE A CONTRIBUTION'S NESTED EFFECTS ARE CHECKED, AND WHY IT IS TWICE-SHAPED
  *
- * Everything else is, and from `unknown`. `attack: 42` used to reach
- * `contribution.check` and read a property off a number — which JavaScript
- * obligingly returns `undefined` for, so the Item registered and the fault
- * surfaced later as a contribution that declared nothing.
+ * `attack.effects` and `defense.effects` are walked by `collectRuleBundles()`
+ * and checked at the registration barrier through the same structural Effect
+ * validator every other source uses. That covered REGISTRATION and nothing
+ * else: `resolveItemPerformanceContribution()` asks these validators directly,
+ * against a definition a host's own lookup supplied, and they proved only that
+ * `effects` was a list before handing its contents to `resolveRuleEffects()` —
+ * whose switch ends in a deliberate `never` guard. A malformed Effect reaching
+ * it does not return a failure. It throws.
+ *
+ * So the complete validators below DO check nested Effects, and the composer
+ * the registry is handed (`findItemActionSurfaceIssues`) deliberately does
+ * not: at registration `findContentStructuralIssues` has already walked the
+ * same list, and reporting one fault twice under two vocabularies is the
+ * double-answer this file's neighbours are careful to avoid. Two callers, one
+ * rule, each asking the half nobody else asked.
  */
-export function findItemAttackIssues(
-  value: unknown,
+function findItemContributionEffectIssues(
+  where: "attack" | "defense",
+  effects: unknown,
 ): readonly EngineError[] {
+  if (effects === undefined || !Array.isArray(effects)) return [];
+
+  return findEffectsValidationIssues(effects, "effects").map((issue) =>
+    surfaceError(
+      `equipment.actions.${where}-contribution.effects.${issue.type}`,
+      `${where === "attack" ? "An attack" : "A defense"} contribution's Effect at ${issue.path} is malformed: ${issue.type}.`,
+      "a well-formed Effect",
+      issue.path,
+    )
+  );
+}
+
+
+/**
+ * Everything wrong with an attack contribution EXCEPT its nested Effects.
+ *
+ * Takes `unknown`. `attack: 42` used to reach `contribution.check` and read a
+ * property off a number — which JavaScript obligingly returns `undefined` for,
+ * so the Item registered and the fault surfaced later as a contribution that
+ * declared nothing.
+ */
+function findItemAttackFactIssues(value: unknown): readonly EngineError[] {
   if (value === undefined) return [];
 
   if (!isRecord(value)) {
@@ -437,6 +515,24 @@ export function findItemAttackIssues(
     }
   }
 
+  /*
+   * A CLOSED vocabulary, and it was going unread. `threatens` decides whether
+   * the attack threatens what it targets, and an unrecognised value falls past
+   * every `=== "declared-targets"` comparison downstream — so a typo does not
+   * fail, it silently disarms the weapon.
+   */
+  if (
+    contribution.threatens !== undefined &&
+    !isThreatDeclaration(contribution.threatens)
+  ) {
+    errors.push(surfaceError(
+      "equipment.actions.attack-contribution.threatens.invalid",
+      "An attack contribution's threat declaration is not one the engine knows.",
+      [...THREAT_DECLARATIONS],
+      contribution.threatens,
+    ));
+  }
+
   if (contribution.effects !== undefined && !Array.isArray(contribution.effects)) {
     errors.push(surfaceError(
       "equipment.actions.attack-contribution.effects.invalid",
@@ -450,9 +546,7 @@ export function findItemAttackIssues(
 }
 
 
-export function findItemDefenseIssues(
-  value: unknown,
-): readonly EngineError[] {
+function findItemDefenseFactIssues(value: unknown): readonly EngineError[] {
   if (value === undefined) return [];
 
   if (!isRecord(value)) {
@@ -495,6 +589,30 @@ export function findItemDefenseIssues(
 }
 
 
+/** Everything wrong with an attack contribution, nested Effects included. */
+export function findItemAttackIssues(value: unknown): readonly EngineError[] {
+  return [
+    ...findItemAttackFactIssues(value),
+    ...findItemContributionEffectIssues(
+      "attack",
+      isRecord(value) ? value["effects"] : undefined,
+    ),
+  ];
+}
+
+
+/** Everything wrong with a defense contribution, nested Effects included. */
+export function findItemDefenseIssues(value: unknown): readonly EngineError[] {
+  return [
+    ...findItemDefenseFactIssues(value),
+    ...findItemContributionEffectIssues(
+      "defense",
+      isRecord(value) ? value["effects"] : undefined,
+    ),
+  ];
+}
+
+
 /*
  * The previous names, kept as aliases. Same implementations; renaming three
  * call sites and two barrels would be a diff about spelling.
@@ -516,6 +634,10 @@ export const findItemDefenseContributionIssues = findItemDefenseIssues;
  * its `composeStructuralValidators()` call, and the parity sweep in
  * registration-barrier.test.ts that would fail if either half were dropped.
  *
+ * Nested contribution Effects are the one thing it leaves alone, because
+ * `findContentStructuralIssues` walks them at the same barrier — see the
+ * header above `findItemContributionEffectIssues()`.
+ *
  * Strings rather than typed issues, because the consumer is a registration
  * refusal a person reads — the same contract `findItemStructuralIssues()` has.
  */
@@ -530,8 +652,8 @@ export function findItemActionSurfaceIssues(
     ...(definition.useApplication === undefined
       ? []
       : findItemUseApplicationIssues(definition.useApplication)),
-    ...findItemAttackIssues(definition.attack),
-    ...findItemDefenseIssues(definition.defense),
+    ...findItemAttackFactIssues(definition.attack),
+    ...findItemDefenseFactIssues(definition.defense),
   ];
 
   return issues.map((issue) => `${issue.message} (${issue.code})`);
@@ -927,41 +1049,27 @@ export function prepareItemOperation(
   const lookup = resolveItemDefinition(input.getItemDefinition, entry.itemId);
 
   if (!lookup.ok) {
-    return lookup.issue === "unknown"
-      ? preparationFailure("item_unknown", {
-          code: "equipment.actions.preparation.item_unknown",
-          message: `The entry names Item "${entry.itemId}", which no catalog defines.`,
-          audience: "developer",
-          required: "a known Item id",
-          actual: entry.itemId,
-        })
-      : preparationFailure("definition_invalid", {
-          code: "equipment.actions.preparation.definition_invalid",
-          message:
-            `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
-          audience: "developer",
-          required: "a known Item id",
-          actual: entry.itemId,
-        });
+    /*
+     * The identity check used to live HERE, as an `if (definition.id !==
+     * entry.itemId)` a few lines below, and it was the only one in the engine.
+     * Eight other consumers — transitions, use, implement selection,
+     * contributions, integrity, its runtime handler, the envelope and
+     * inventory validation — read whatever the lookup returned. A rule one
+     * caller enforces is a rule the other eight do not have, so it moved into
+     * the shared boundary every one of them already goes through.
+     */
+    const code = ITEM_DEFINITION_OUTCOME_CODES[lookup.issue];
+
+    return preparationFailure(code, {
+      code: `equipment.actions.preparation.${code}`,
+      message: describeItemDefinitionOutcome(lookup),
+      audience: "developer",
+      required: `the definition named by the entry ("${entry.itemId}")`,
+      actual: lookup.issue === "mismatched" ? String(lookup.actualId) : entry.itemId,
+    });
   }
 
   const definition = lookup.definition;
-
-  /*
-   * A lookup is a function a host wrote, and nothing obliges it to return the
-   * definition it was asked for. Checked rather than assumed, because every
-   * provenance rule above this line is worth exactly as much as this one.
-   */
-  if (definition.id !== entry.itemId) {
-    return preparationFailure("definition_mismatch", {
-      code: "equipment.actions.preparation.definition_mismatch",
-      message:
-        `The lookup answered Item "${entry.itemId}" with definition "${definition.id}".`,
-      audience: "developer",
-      required: entry.itemId,
-      actual: definition.id,
-    });
-  }
 
   /* Validated before it is read, with the same rules registration applies. */
   const definitionIssues = findItemStructuralIssues(definition);

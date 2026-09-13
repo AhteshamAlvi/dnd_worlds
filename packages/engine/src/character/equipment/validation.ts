@@ -82,7 +82,7 @@ export type ItemDefinitionLookup =
 
 
 /**
- * What a lookup answered with, keeping absent and malformed apart.
+ * What a lookup answered with, keeping every way it can be wrong apart.
  *
  * A lookup is a function a HOST wrote. Its signature says
  * `ItemDefinition | undefined` and nothing obliges it to keep that promise: a
@@ -92,18 +92,39 @@ export type ItemDefinitionLookup =
  * — which threw from inside functions whose whole contract is to return issues
  * rather than throw.
  *
- * The two answers stay distinguishable for the reason `InventoryReferenceIssue`
- * keeps "unknown-entry" and "invalid-entry" apart: "no catalog defines that
- * Item" and "the catalog handed back something that is not an Item" lead to
- * opposite fixes, and reporting the second as the first sends a host looking
- * for a missing definition they already have.
+ * Three answers, not one absence, for the reason `InventoryReferenceIssue`
+ * keeps "unknown-entry" and "invalid-entry" apart: each leads to a different
+ * fix, and reporting one as another sends a host looking for the wrong thing.
  *
- * SHAPE only. Whether the object is a SOUND Item definition is
+ * unknown    — no catalog defines that Item. Add the definition.
+ * malformed  — the lookup handed back something that is not an Item at all.
+ *              Fix the lookup, or the JSON behind it.
+ * mismatched — the lookup handed back a real Item with a DIFFERENT id. This
+ *              is the one that used to be invisible, and the one that matters
+ *              most: an entry naming "calming-draught" answered with the
+ *              grenade definition took the grenade's families, its Shū
+ *              verdict, its Effects, its use behaviour, its integrity policy
+ *              and its action profile, and every one of those reads
+ *              succeeded. Preparation checked it and eight other consumers
+ *              did not, so the check moved HERE, where every consumer already
+ *              asks.
+ *
+ * SHAPE and IDENTITY only. Whether the object is a SOUND Item definition is
  * findItemStructuralIssues()'s question, which several callers ask next.
  */
 export type ItemDefinitionOutcome =
   | { readonly ok: true; readonly definition: ItemDefinition }
-  | { readonly ok: false; readonly issue: "unknown" | "malformed" };
+  | {
+      readonly ok: false;
+      readonly issue: "unknown" | "malformed" | "mismatched";
+
+      /** The id that was asked for. Absent only when it was not a string. */
+      readonly requestedId?: string;
+
+      /** What a "mismatched" answer called itself. Typed `unknown` because a
+       * malformed `id` is exactly how a mismatch goes unnoticed. */
+      readonly actualId?: unknown;
+    };
 
 
 export function resolveItemDefinition(
@@ -112,16 +133,61 @@ export function resolveItemDefinition(
 ): ItemDefinitionOutcome {
   if (typeof itemId !== "string") return { ok: false, issue: "unknown" };
 
-  const definition = getItemDefinition(itemId);
+  const candidate: unknown = getItemDefinition(itemId);
 
-  if (definition === undefined) return { ok: false, issue: "unknown" };
+  if (candidate === undefined) {
+    return { ok: false, issue: "unknown", requestedId: itemId };
+  }
 
-  return typeof definition === "object" &&
-    definition !== null &&
-    !Array.isArray(definition)
-    ? { ok: true, definition }
-    : { ok: false, issue: "malformed" };
+  if (
+    typeof candidate !== "object" ||
+    candidate === null ||
+    Array.isArray(candidate)
+  ) {
+    return { ok: false, issue: "malformed", requestedId: itemId };
+  }
+
+  const actualId = (candidate as { readonly id?: unknown }).id;
+
+  if (actualId !== itemId) {
+    return { ok: false, issue: "mismatched", requestedId: itemId, actualId };
+  }
+
+  return { ok: true, definition: candidate as ItemDefinition };
 }
+
+
+/** One lookup failure, as a sentence addressed to a developer. */
+export function describeItemDefinitionOutcome(
+  outcome: Extract<ItemDefinitionOutcome, { readonly ok: false }>,
+): string {
+  const asked = outcome.requestedId ?? "an id that is not a string";
+
+  switch (outcome.issue) {
+    case "unknown":
+      return `No catalog defines Item "${asked}".`;
+
+    case "malformed":
+      return `The catalog answered Item "${asked}" with something that is not an Item definition.`;
+
+    case "mismatched":
+      return `The catalog answered Item "${asked}" with definition "${String(outcome.actualId)}".`;
+  }
+}
+
+
+/**
+ * The diagnostic code suffix each lookup failure reports under.
+ *
+ * One mapping, so nine consumers spell the three failures the same way behind
+ * their own prefixes — `equipment.use.definition_mismatch`,
+ * `equipment.integrity.item_unknown`, and so on.
+ */
+export const ITEM_DEFINITION_OUTCOME_CODES = {
+  unknown: "item_unknown",
+  malformed: "definition_invalid",
+  mismatched: "definition_mismatch",
+} as const;
 
 
 /* -------------------------------------------------------------------------- */
@@ -569,6 +635,30 @@ export type ItemValidationIssue =
       readonly itemId: unknown;
     }
   | {
+      /**
+       * The catalog answered with something that is not an Item definition —
+       * a `null`, a primitive, an array. Distinct from "unknown-item" for the
+       * reason `invalid-entry` is distinct from `unknown-entry` one level out:
+       * the definition is THERE and unusable, and telling a host it does not
+       * exist invites exactly the wrong fix.
+       */
+      readonly type: "invalid-item-definition";
+      readonly entryId: InventoryEntryId;
+      readonly itemId: unknown;
+    }
+  | {
+      /**
+       * The catalog answered with a real Item that calls itself something
+       * else. The worst of the three, because every field on it reads
+       * perfectly: the entry would take that Item's stacking rule, its
+       * integrity policy and its Effects while naming a different one.
+       */
+      readonly type: "mismatched-item-definition";
+      readonly entryId: InventoryEntryId;
+      readonly itemId: unknown;
+      readonly definitionId: unknown;
+    }
+  | {
       readonly type: "invalid-item-quantity";
       readonly entryId: InventoryEntryId;
       readonly quantity: unknown;
@@ -660,13 +750,45 @@ export function findInventoryEntryIssues(
      * Repeated definition ids are deliberately NOT checked. Two entries naming
      * one Item is a character with two of the thing, which is the case the
      * entry model exists to represent.
+     *
+     * The lookup goes through the SHARED boundary rather than being called
+     * directly, because this function then reads `isStackableItem()`,
+     * `definition.id` and `definition.integrity` off the answer — and a host's
+     * lookup answering `null`, a primitive or an array made every one of those
+     * reads throw out of the validator written to report them. A mismatched
+     * answer was worse: it read perfectly and applied another Item's stacking
+     * rule and integrity policy to this entry.
      */
-    const definition = typeof entry.itemId === "string"
-      ? getItemDefinition(entry.itemId)
-      : undefined;
+    const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
 
-    if (definition === undefined) {
-      issues.push({ type: "unknown-item", entryId, itemId: entry.itemId });
+    const definition = lookup.ok ? lookup.definition : undefined;
+
+    if (!lookup.ok) {
+      switch (lookup.issue) {
+        case "unknown":
+          issues.push({ type: "unknown-item", entryId, itemId: entry.itemId });
+
+          break;
+
+        case "malformed":
+          issues.push({
+            type: "invalid-item-definition",
+            entryId,
+            itemId: entry.itemId,
+          });
+
+          break;
+
+        case "mismatched":
+          issues.push({
+            type: "mismatched-item-definition",
+            entryId,
+            itemId: entry.itemId,
+            definitionId: lookup.actualId,
+          });
+
+          break;
+      }
     }
 
     /* ---------------------------------------------------------------------- */

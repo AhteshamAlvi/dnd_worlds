@@ -23,9 +23,25 @@
  * that can produce the branded collection those matchers accept. It reads
  * three sources and no others:
  *
- *   the Skill application currently being invoked, when it is available;
+ *   the Skill currently being invoked, when THIS function finds it available;
  *   every Technique the character actually holds;
  *   every Trait the character actually has.
+ *
+ *
+ * THE SKILL IS RESOLVED HERE, NOT ACCEPTED
+ *
+ * This function used to take a `ResolvedSkillApplication` and read
+ * `disposition === "available"` off it. That is the same mistake one level in:
+ * a caller holding a plain object could write `{ skillId: "forbidden-art",
+ * disposition: "available" }` and authorize a Skill the character has never
+ * learned, whose execution requirements nobody evaluated. The branded output
+ * would then certify it.
+ *
+ * So the caller names the Skill and nothing else. This function resolves the
+ * character, resolves the definition through the supplied catalogs, checks
+ * that the definition answers to the id it was asked for, and resolves the
+ * application against the character's own capabilities and requirement
+ * context. A disposition it did not produce is not evidence.
  *
  * "Actually" is the resolved reading in each case — held, not merely unlocked,
  * and granted content counts exactly as authored content does. A merely
@@ -66,9 +82,9 @@ import { resolveCharacter } from "../resolution";
 import type { Character } from "../types";
 
 import { getResolvedTechniqueIds } from "./resolution";
-import { getSkillDefinition, type SkillDefinition } from "./skills";
+import { getSkillDefinition, type SkillDefinition, type SkillId } from "./skills";
 import { getTechniqueDefinition, type TechniqueDefinition } from "./techniques";
-import type { ResolvedSkillApplication } from "./application-resolution";
+import { resolveSkillApplication } from "./application-resolution";
 
 
 /**
@@ -109,6 +125,11 @@ function ruleSourceError(
 /**
  * Every implement-conditional rule this character may bring to this attempt.
  *
+ * `invokedSkillId` names the Skill being used, not a resolved verdict about
+ * it — see this file's header for why a caller's `disposition` is not
+ * evidence. `undefined` means no Skill is being invoked, which is the ordinary
+ * case for an Item's own use or a bare attack.
+ *
  * Returns the BRANDED collection rather than a bare array, because the brand
  * is the whole mechanism: `collectMatchedCheckModifiers()` and
  * `collectMatchedPerformanceEffects()` accept nothing else, and this function
@@ -125,7 +146,7 @@ function ruleSourceError(
  */
 export function collectImplementConditionalRules(
   character: Character,
-  application: ResolvedSkillApplication | undefined,
+  invokedSkillId: SkillId | undefined,
   catalogs: CharacterContentCatalogs,
 ): EngineResult<AuthorizedImplementConditionalRules> {
   const resolvedResult = resolveCharacter(character);
@@ -156,20 +177,44 @@ export function collectImplementConditionalRules(
   }
 
   /*
-   * The Skill being invoked, and only when it is actually invocable. A Skill
-   * the character does not hold, or whose execution requirements are refused,
-   * is not a Skill they are using — reading its rules anyway would hand them a
+   * The Skill being invoked, resolved rather than taken on trust, and only
+   * when THIS function finds it invocable. A Skill the character does not
+   * hold, or whose execution requirements are unsatisfied or unresolved, is
+   * not a Skill they are using — reading its rules anyway would hand them a
    * bonus for an attempt they cannot make.
    */
-  if (application !== undefined && application.disposition === "available") {
-    const definition = catalogs.getSkillDefinition(application.skillId);
+  let invokedSkill: "available" | "unavailable" | "absent" = "absent";
 
-    if (definition !== undefined) {
-      take(
-        `Skill "${application.skillId}" application`,
-        { type: "skill", id: application.skillId },
-        definition.application?.implementConditionalRules,
-      );
+  if (invokedSkillId !== undefined) {
+    invokedSkill = "unavailable";
+
+    const definition = catalogs.getSkillDefinition(invokedSkillId);
+
+    /*
+     * A catalog is a function a host wrote. A definition answering to an id
+     * that is not its own would let one Skill's rules be collected under
+     * another's name — the same substitution `resolveItemDefinition()` refuses
+     * on the equipment side.
+     */
+    if (definition !== undefined && definition.id === invokedSkillId) {
+      const application = resolveSkillApplication({
+        skillId: invokedSkillId,
+        capabilities: resolved.capabilities,
+        context: resolved.requirementContext,
+        ...(definition.application === undefined
+          ? {}
+          : { definition: definition.application }),
+      });
+
+      if (application.success && application.payload.disposition === "available") {
+        invokedSkill = "available";
+
+        take(
+          `Skill "${invokedSkillId}" application`,
+          { type: "skill", id: invokedSkillId },
+          definition.application?.implementConditionalRules,
+        );
+      }
     }
   }
 
@@ -204,7 +249,8 @@ export function collectImplementConditionalRules(
       formula:
         "the invoked Skill's application, every held Technique, every possessed Trait — each rule sourced to the content that declared it",
       inputs: {
-        skill: { value: application?.skillId ?? "none" },
+        skill: { value: invokedSkillId ?? "none" },
+        skillDisposition: { value: invokedSkill },
         rules: { value: collected.length },
       },
       output: collected.length,

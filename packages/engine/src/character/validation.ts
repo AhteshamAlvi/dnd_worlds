@@ -362,6 +362,20 @@ const REFERENCE_ISSUE_DESCRIPTORS: ReferenceIssueDescriptors = {
       `Inventory entry "${issue.entryId}" names unknown Item ${describeValue(issue.itemId)}.`,
     resolution: "Choose an Item the engine defines, or remove the entry.",
   },
+  "invalid-item-definition": {
+    code: "character.item.definition_invalid",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" names Item ${describeValue(issue.itemId)}, which the catalog answered with something that is not an Item definition.`,
+    resolution:
+      "Repair the catalog entry, or the lookup behind it — the Item is present and unusable, which is a different fix from an Item that is absent.",
+  },
+  "mismatched-item-definition": {
+    code: "character.item.definition_mismatch",
+    describe: (issue) =>
+      `Inventory entry "${issue.entryId}" names Item ${describeValue(issue.itemId)}, which the catalog answered with definition ${describeValue(issue.definitionId)}.`,
+    resolution:
+      "Repair the catalog: a definition answering to an id that is not its own would lend this entry another Item's stacking rule, integrity policy and Effects.",
+  },
   "invalid-item-quantity": {
     code: "character.item.quantity_invalid",
     describe: (issue) =>

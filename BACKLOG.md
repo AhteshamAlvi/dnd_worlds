@@ -7,9 +7,9 @@ to say something is missing, it links here rather than keeping its own list. Two
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: the Phase 4 repair (Items — registration, provenance,
-integrity, Shū boundary).
-Suite at that point: **109 files, 4,352 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: the Phase 4 final boundary repair (definition identity,
+surface validators, Skill authorization, integrity request kinds).
+Suite at that point: **110 files, 4,443 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 

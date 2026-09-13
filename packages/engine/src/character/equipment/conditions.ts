@@ -25,17 +25,27 @@
  * for exactly this reason.
  *
  *
- * THIS FILE KNOWS ONLY IMPLEMENTS
+ * THIS FILE KNOWS ONLY IMPLEMENTS — AND NO CALLER SUPPLIES THE RULES
  *
  * `ImplementCondition`, the rule shape and the matcher are all generic over a
  * `ContributionSourceRef` — this file never imports a Skill, Technique or
- * Trait definition, and never will. `SourcedImplementConditionalRule` pairs a
- * rule with whatever source a CALLER supplies; assembling that list from a
- * resolved character's applicable Traits, Techniques and the Skill currently
- * being attempted is the caller's job — `character/actions/preparation.ts`
- * for check outputs, `contributions.ts`'s caller for performance outputs —
- * exactly as `CharacterActionInputs.requirements` is already caller-supplied
- * rather than looked up here.
+ * Trait definition, and never will.
+ *
+ * Which rules APPLY is a different question, and it is not a caller's to
+ * answer. It used to be: assembling `SourcedImplementConditionalRule[]` was
+ * documented here as "the caller's job", which meant a host could pair any
+ * rule with any source and have it stack and trace as though the character
+ * had the content it named. The derivation now lives in
+ * `character/capabilities/implement-rules.ts`, one layer above both this file
+ * and the content domains, and it is the only thing that can produce the
+ * branded `AuthorizedImplementConditionalRules` the two matchers below
+ * accept — the brand's key is a module-private symbol. It reads the Skill
+ * being invoked (resolving that Skill's availability itself rather than
+ * accepting a verdict), every Technique the character holds and every Trait
+ * they have.
+ *
+ * So the ownership is: equipment owns the rule SHAPE and the MATCHING; the
+ * layer above owns which rules a character brings; and no caller owns either.
  *
  *
  * NO NEW LOOKUP
@@ -50,8 +60,9 @@
 import type { EngineError } from "../../infrastructure/diagnostics";
 import type { ContributionSourceRef } from "../../infrastructure/contribution-source";
 import {
+  CHECK_MODIFIER_ACTIVATIONS,
   isValidCheckScopeSelector,
-  type CheckModifierChannel,
+  type CheckModifierActivation,
   type CheckModifierContribution,
   type CheckScopeSelector,
 } from "../../checks";
@@ -269,7 +280,21 @@ export interface CheckModifierConditionalOutput {
   readonly kind: "check";
   readonly scope: CheckScopeSelector;
   readonly amount: number;
-  readonly channel?: CheckModifierChannel;
+
+  /**
+   * How this authored modifier activates. Omitted means "persistent".
+   *
+   * `CheckModifierActivation`, not `CheckModifierChannel` — the two-value
+   * AUTHORED vocabulary rather than the three-value resolved one. This field
+   * was typed as the wider union, which let a rule declare
+   * `channel: "contextual"` and land a Trait's bonus in the channel reserved
+   * for what the GM, the environment or the calling system hands in at check
+   * time. Contextual modifiers are request-local by construction; content
+   * that could author one would be content asserting it came from somewhere
+   * it did not. See `checks/types.ts`, which has drawn this distinction since
+   * the channel vocabulary was written.
+   */
+  readonly channel?: CheckModifierActivation;
 }
 
 
@@ -387,6 +412,26 @@ export function findImplementConditionalRuleIssues(
         audience: "developer",
         required: "finite number",
         actual: String(checkOutput.amount),
+      });
+    }
+
+    /*
+     * The AUTHORED vocabulary, checked. An explicit channel used to be typed
+     * and never read, so `"contextual"` validated clean and then resolved as a
+     * GM-supplied modifier that no GM supplied — and an ordinary typo landed
+     * in a channel the assembly treats differently rather than failing.
+     */
+    if (
+      checkOutput.channel !== undefined &&
+      !(CHECK_MODIFIER_ACTIVATIONS as readonly unknown[]).includes(checkOutput.channel)
+    ) {
+      errors.push({
+        code: "equipment.conditions.rule.output.channel.invalid",
+        message:
+          "A check output's channel must be one authored content may declare.",
+        audience: "developer",
+        required: [...CHECK_MODIFIER_ACTIVATIONS],
+        actual: String(checkOutput.channel),
       });
     }
   } else {
@@ -545,11 +590,11 @@ export function matchesImplementCondition(
 /**
  * One rule, paired with the content that declared it.
  *
- * Assembling this list is the CALLER's job — this file never looks up a
- * Trait, Technique or Skill. `character/actions/preparation.ts` builds one
- * for every applicable rule with a "check" output; a caller resolving Item
- * performance contributions builds one for every applicable "performance"
- * rule and hands it to `contributions.ts`.
+ * Produced only by `collectImplementConditionalRules()` — this file never
+ * looks up a Trait, Technique or Skill, and neither does any caller of it.
+ * The collection reaches `character/actions/preparation.ts` for `"check"`
+ * outputs and `contributions.ts` for `"performance"` ones, as the SAME
+ * branded value; see this file's header.
  */
 export interface SourcedImplementConditionalRule {
   readonly source: ContributionSourceRef;

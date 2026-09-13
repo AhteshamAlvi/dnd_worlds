@@ -103,7 +103,12 @@ import {
   type InventoryItemRef,
 } from "./references";
 import type { CharacterItem } from "./types";
-import { resolveItemDefinition, type ItemDefinitionLookup } from "./validation";
+import {
+  ITEM_DEFINITION_OUTCOME_CODES,
+  describeItemDefinitionOutcome,
+  resolveItemDefinition,
+  type ItemDefinitionLookup,
+} from "./validation";
 
 
 /* -------------------------------------------------------------------------- */
@@ -1050,21 +1055,15 @@ export function resolveItemIntegrityOperation(
   const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
 
   if (!lookup.ok) {
-    return lookup.issue === "unknown"
-      ? engineFailure(traceOf(inputs, "item_unknown"), [
-          structuralError(
-            "equipment.integrity.item_unknown",
-            `The entry names Item "${entry.itemId}", which no catalog defines.`,
-            { actual: entry.itemId },
-          ),
-        ])
-      : engineFailure(traceOf(inputs, "definition_invalid"), [
-          structuralError(
-            "equipment.integrity.definition_invalid",
-            `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
-            { actual: entry.itemId },
-          ),
-        ]);
+    const code = ITEM_DEFINITION_OUTCOME_CODES[lookup.issue];
+
+    return engineFailure(traceOf(inputs, code), [
+      structuralError(
+        `equipment.integrity.${code}`,
+        describeItemDefinitionOutcome(lookup),
+        { actual: entry.itemId },
+      ),
+    ]);
   }
 
   const definition = lookup.definition;

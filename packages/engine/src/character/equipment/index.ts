@@ -65,7 +65,9 @@ import {
 import type { RuleEffectSource } from "../rules/resolution";
 
 import {
+  ITEM_DEFINITION_OUTCOME_CODES,
   describeItemDefinitionIssue,
+  describeItemDefinitionOutcome,
   findInventoryEntryIssues,
   findItemCoreDefinitionIssues,
   findItemEquipmentDefinitionIssues,
@@ -75,7 +77,9 @@ import {
   isInventoryEntryId,
   isInventoryQuantity,
   isValidInventoryEntry,
+  resolveItemDefinition,
   type ItemDefinitionIssue,
+  type ItemDefinitionOutcome,
   type ItemValidationIssue,
 } from "./validation";
 
@@ -561,6 +565,7 @@ export type {
   ItemDefenseContribution,
   ItemDefinition,
   ItemDefinitionId,
+  ItemDefinitionOutcome,
   ItemEquipmentState,
   ItemFunctionality,
   ItemFamilyDefinition,
@@ -611,6 +616,7 @@ export {
   IMPLEMENT_CONDITIONAL_OUTPUT_KINDS,
   IMPLEMENT_CONDITION_MATCH_MODES,
   ITEM_EQUIPMENT_STATES,
+  ITEM_DEFINITION_OUTCOME_CODES,
   ITEM_FAMILY_DEFINITIONS,
   ITEM_INTEGRITY_OPERATION_TYPES,
   ITEM_INTEGRITY_STATES,
@@ -632,6 +638,7 @@ export {
   createInventoryItemRef,
   currentIntegrityBand,
   describeItemDefinitionIssue,
+  describeItemDefinitionOutcome,
   envelopeIsItemOwned,
   equipmentTransitionKind,
   findImplementConditionIssues,
@@ -685,6 +692,7 @@ export {
   resolveEffectiveStress,
   resolveIntegrityState,
   resolveInventoryItemRef,
+  resolveItemDefinition,
   resolveItemEnvelope,
   resolveItemFunctionality,
   resolveItemIntegrityOperation,

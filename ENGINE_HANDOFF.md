@@ -1116,7 +1116,11 @@ findImplementRequirementsIssues(value: unknown)
 findImplementConditionalRulesIssues(value: unknown)
 ```
 
-The Item registry composes `findContentStructuralIssues` + `findItemStructuralIssues` (validation.ts, the data surfaces) + `findItemActionSurfaceIssues` (actions.ts, the three built from the neutral `actions`/`targeting`/`spatial` vocabularies — validation.ts sits below that seam and may not reach through it). The direct resolvers call the same functions, and `__tests__/equipment-registration-parity.test.ts` sweeps every field through both paths. `resolveItemDefinition(lookup, itemId)` is the one place a lookup's answer is proved to be an Item at all, keeping `"unknown"` and `"malformed"` apart the way `InventoryReferenceIssue` already does.
+The Item registry composes `findContentStructuralIssues` + `findItemStructuralIssues` (validation.ts, the data surfaces) + `findItemActionSurfaceIssues` (actions.ts, the three built from the neutral `actions`/`targeting`/`spatial` vocabularies — validation.ts sits below that seam and may not reach through it). The direct resolvers call the same functions, and `__tests__/equipment-registration-parity.test.ts` sweeps every field through both paths.
+
+The CONTENTS of every closed vocabulary on those surfaces are checked, not just the container: `allowedTimings` through the neutral `findAllowedTimingsIssues()`, `permittedFocusKinds` against `ACTION_FOCUS_KINDS` (duplicates refused), `attack.threatens` against `THREAT_DECLARATIONS`, and nested `attack.effects`/`defense.effects` through the shared Effect validator — the last of which matters because `resolveRuleEffects()` ends its switch in a `never` guard that throws rather than failing. `findItemActionSurfaceIssues` deliberately skips the nested Effects, since `findContentStructuralIssues` walks them at the same barrier and one fault should be reported once.
+
+**Definition identity is enforced once, at the shared boundary.** `resolveItemDefinition(lookup, itemId)` returns three distinguishable failures — `unknown` (no catalog defines it), `malformed` (the answer is not an Item at all) and `mismatched` (a real Item answering to somebody else's id) — carrying `requestedId` and, for a mismatch, `actualId`. All nine consumers go through it: preparation, transitions, use, implement selection, performance contributions, integrity resolution, the integrity effect handler, the envelope and inventory validation. `ITEM_DEFINITION_OUTCOME_CODES` and `describeItemDefinitionOutcome()` give them one spelling behind their own prefixes (`equipment.use.definition_mismatch`, `equipment.integrity.item_unknown`, …), and inventory validation gained `invalid-item-definition` and `mismatched-item-definition` beside `unknown-item`. The identity check used to live in preparation alone — the one consumer where a substituted definition could do no damage.
 
 **2. An Item action's definition comes from its entry.** `prepareItemOperation()` no longer takes a `definition`:
 
@@ -1128,14 +1132,18 @@ It resolves the entry, reads `entry.itemId`, resolves that definition through th
 
 **3. Implement resolution refuses what it cannot see.** `definition?.families ?? []` is gone: a missing or malformed definition is a `definition-unknown` / `definition-invalid` selection issue, never an improvised implement. Improvisation grades a real Item that does not fit the role.
 
-**4. Conditional rules are engine-collected.**
+**4. Conditional rules are engine-collected, and the Skill is resolved here.**
 
 ```ts
-collectImplementConditionalRules(character, application, catalogs)
+collectImplementConditionalRules(character, invokedSkillId, catalogs)
   : EngineResult<AuthorizedImplementConditionalRules>
 ```
 
-Derived from the invoked Skill's application (only while `disposition === "available"`), every held Technique and every possessed Trait. The returned value is branded with a module-private `unique symbol`; `collectMatchedCheckModifiers()` and `collectMatchedPerformanceEffects()` accept nothing else, so a caller cannot manufacture a rule sourced to content the character does not have. `characterContentCatalogs()` supplies the engine's own lookups. The one-rule/one-output contract and the rule's Skill/Technique/Trait source are unchanged.
+Derived from the invoked Skill, every held Technique and every possessed Trait. The returned value is branded with a module-private `unique symbol`; `collectMatchedCheckModifiers()` and `collectMatchedPerformanceEffects()` accept nothing else, so a caller cannot manufacture a rule sourced to content the character does not have. `characterContentCatalogs()` supplies the engine's own lookups. The one-rule/one-output contract and the rule's Skill/Technique/Trait source are unchanged.
+
+The caller names the Skill and **nothing else**. This function resolves the character, resolves the definition through the supplied catalogs, checks the definition answers to the id it was asked for, and resolves the application against the character's own capabilities and requirement context — collecting only when the disposition IT produced is `"available"`. It took a `ResolvedSkillApplication` for one revision, which let a caller holding a plain object write `{ skillId, disposition: "available" }` and have the brand certify a Skill nobody had learned.
+
+An authored check output's `channel` is now `CheckModifierActivation` (`"persistent" | "invoked"`), not the three-value resolved `CheckModifierChannel`: `"contextual"` is what a GM or the environment hands in at check time, and content that could author one would be content asserting it came from somewhere it did not.
 
 **5-6. Integrity became mechanical, and a batch became one instant.**
 
@@ -1144,7 +1152,7 @@ ItemIntegrityOperation = { type: "stress"; amount: number; mitigation?: number }
                        | { type: "repair"; amount: number }
 ```
 
-`amount` must be finite and `> 0` — no `Math.abs()` normalisation — and an unknown discriminant is refused rather than falling through to the repair branch and skipping its repairability gate. `mitigation` now travels the whole path (operation → request → consequence → handler → resolution → trace); `resolveEffectiveStress()` returns `{ requested, mitigated, effective }` with `effective = max(0, amount - mitigation)`, honoured for a `"compatible"` Item and ignored for an `"incompatible"` one. Nothing here calculates Shū.
+`amount` must be finite and `> 0` — no `Math.abs()` normalisation — and an unknown discriminant is refused rather than falling through to the repair branch and skipping its repairability gate. That refusal holds at all three places a kind is chosen: `itemIntegrityRequest()` and `itemIntegrityConsequence()` both validate and return an `EngineResult` (they are the only builders that pick a request kind from caller data, and a ternary made every unrecognised word a repair), and the effect handler's `operationOf()` returns `undefined` for a kind that is neither `item.stress` nor `item.repair`. A refused request keeps its pre-recorded zero outcome and does not stop the valid requests beside it in the same batch from settling. `mitigation` now travels the whole path (operation → request → consequence → handler → resolution → trace); `resolveEffectiveStress()` returns `{ requested, mitigated, effective }` with `effective = max(0, amount - mitigation)`, honoured for a `"compatible"` Item and ignored for an `"incompatible"` one. Nothing here calculates Shū.
 
 The effect handler evaluates every request against the same pre-batch `Character`, groups by entry, and applies one aggregate transition per entry (`aggregateItemIntegrity`) — stress and repair combine algebraically, the clamp applies once, zero-state behaviour is read off the final figure, and per-request `actual` is apportioned proportionally. Outcomes are sorted by request id and events by entry id, so permutations of one batch return byte-identical results.
 
@@ -1177,7 +1185,7 @@ interface ResolvedItemEnvelope {
 
 `resolveItemEnvelope(characterId, ref, items, lookup)` follows the entry to its own definition and takes the verdict from there — there is no argument to override it with. The verdict is binary and whole-Item; there are no enhancement channels, and `architecture.test.ts` fixes the vocabulary (exactly one Shū-named field in `equipment/`, called `shuInteraction`, declared only on the Item definition and on the envelope). Negative Item surfaces are included; anything a Skill, Technique or Trait contributed stays outside, which `envelopeIsItemOwned()` states once as an assertable predicate. `resolveItemUse()` snapshots the envelope before the decrement, so a consumed grenade keeps a complete description through the action that consumed it. No enhancement formula is implemented.
 
-**New test files:** `equipment-registration-parity`, `equipment-provenance`, `equipment-conditional-authorization`, `equipment-integrity-behaviour`, `equipment-shu-envelope`. Each regression was run once against a re-introduced defect to confirm it detects it.
+**New test files:** `equipment-registration-parity`, `equipment-provenance`, `equipment-conditional-authorization`, `equipment-integrity-behaviour`, `equipment-shu-envelope`, `equipment-definition-identity`. Each regression was run once against a re-introduced defect to confirm it detects it.
 
 ---
 

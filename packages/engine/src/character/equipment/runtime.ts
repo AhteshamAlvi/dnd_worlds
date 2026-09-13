@@ -39,7 +39,13 @@
  * somewhere.
  */
 
-import type { EngineResult } from "../../infrastructure/result";
+import {
+  engineFailure,
+  engineSuccess,
+  type EngineResult,
+  type NonEmptyArray,
+} from "../../infrastructure/result";
+import type { EngineError } from "../../infrastructure/diagnostics";
 import { createTraceNode } from "../../infrastructure/trace";
 import type {
   CostCommitResult,
@@ -392,18 +398,42 @@ interface PendingIntegrityRequest {
 
 /** Every request answered with "nothing happened", and nothing mutated. */
 function nilOutcome(request: ItemIntegrityRequest): RuntimeRequestOutcome {
-  return { requestId: request.requestId, requested: request.requested, actual: 0 };
+  return {
+    requestId: request.requestId,
+    ...(typeof request.requested === "number" ? { requested: request.requested } : {}),
+    actual: 0,
+  };
 }
 
 
-function operationOf(request: ItemIntegrityRequest): ItemIntegrityOperation {
-  return request.kind === ITEM_STRESS_REQUEST
-    ? {
-        type: "stress",
-        amount: request.requested,
-        ...(request.mitigation === undefined ? {} : { mitigation: request.mitigation }),
-      }
-    : { type: "repair", amount: request.requested };
+/**
+ * The operation one request names, or nothing.
+ *
+ * EXHAUSTIVE, and that is the whole change. This read
+ * `kind === ITEM_STRESS_REQUEST ? stress : repair`, so every request that was
+ * not a stress became a repair — a request of kind `"item.shatter"`,
+ * `"aura.spend"` or `undefined` routed to this handler mended the Item. The
+ * handler is the last place a request's kind is read, so a fall-through here
+ * is a fall-through nothing downstream can catch.
+ *
+ * The domain rules — a positive finite amount, mitigation only on stress —
+ * stay with `findItemIntegrityOperationIssues()`, which the caller runs next.
+ * What this function owns is the discriminant.
+ */
+function operationOf(request: ItemIntegrityRequest): ItemIntegrityOperation | undefined {
+  if (request.kind === ITEM_STRESS_REQUEST) {
+    return {
+      type: "stress",
+      amount: request.requested,
+      ...(request.mitigation === undefined ? {} : { mitigation: request.mitigation }),
+    };
+  }
+
+  if (request.kind === ITEM_REPAIR_REQUEST) {
+    return { type: "repair", amount: request.requested };
+  }
+
+  return undefined;
 }
 
 
@@ -472,9 +502,27 @@ export function createCharacterIntegrityEffectHandler(
       const pendingByEntry = new Map<string, PendingIntegrityRequest[]>();
 
       for (const request of typed) {
+        /*
+         * Everything about a request is proved BEFORE it is grouped, and a
+         * refusal leaves the zero outcome already recorded for it standing —
+         * so a malformed request settles nothing and, crucially, does not stop
+         * the valid requests beside it in the same batch from settling.
+         */
         const operation = operationOf(request);
 
-        /* Invalid requests are refused BEFORE anything is grouped or applied. */
+        if (operation === undefined) continue;
+
+        /*
+         * Mitigation is protection against STRESS, and `operationOf()` does
+         * not carry it onto a repair — so a repair request that arrived with
+         * one would have had the field silently dropped and the repair
+         * honoured. Asked of the REQUEST rather than the operation, because
+         * the request is where the contradiction is still visible.
+         */
+        if (request.mitigation !== undefined && request.kind !== ITEM_STRESS_REQUEST) {
+          continue;
+        }
+
         if (findItemIntegrityOperationIssues(operation).length > 0) continue;
 
         if (typeof request.entryId !== "string" || request.entryId.trim().length === 0) {
@@ -503,6 +551,12 @@ export function createCharacterIntegrityEffectHandler(
         if (!found.ok) continue;
 
         const entry = found.entry;
+        /*
+         * The SAME shared boundary every other Item consumer goes through, so
+         * an entry answered with a different definition settles nothing rather
+         * than taking that Item's integrity policy. A refusal here leaves the
+         * pre-recorded zero outcome standing and mutates nothing.
+         */
         const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
 
         if (!lookup.ok) continue;
@@ -619,11 +673,17 @@ export function createCharacterIntegrityEffectHandler(
 /**
  * Build a well-formed Item integrity request.
  *
- * Carries `mitigation` through rather than discarding it, and no longer
- * normalises the amount with `Math.abs()`: a caller asking to repair -5 has
- * made a sign error, and turning it into a repair of 5 answered a question
- * nobody asked. A malformed operation produces a request the handler refuses
- * with a zero outcome, which is where that fault belongs.
+ * VALIDATES and returns a result, for the reason `itemIntegrityConsequence()`
+ * does: this builder chooses the request's kind from caller data, and it used
+ * to choose with a ternary — so an operation whose `type` was anything but
+ * `"stress"` became a repair. A host with an unrecognised word in hand got
+ * free maintenance rather than a refusal, and nothing downstream could tell,
+ * because the request it produced was perfectly well formed.
+ *
+ * It also carries `mitigation` through rather than discarding it, and no
+ * longer normalises the amount with `Math.abs()`: a caller asking to repair
+ * -5 has made a sign error, and turning it into a repair of 5 answers a
+ * question nobody asked.
  */
 export function itemIntegrityRequest(input: {
   readonly requestId: string;
@@ -633,21 +693,46 @@ export function itemIntegrityRequest(input: {
   readonly to: RuntimeOwnerRef;
   readonly operation: ItemIntegrityOperation;
   readonly entryId: string;
-}): ItemIntegrityRequest {
-  const mitigation = input.operation.type === "stress"
-    ? input.operation.mitigation
-    : undefined;
+}): EngineResult<ItemIntegrityRequest> {
+  const trace = (output: string) => ({
+    root: createTraceNode({
+      id: "character.equipment.integrity.request",
+      label: "Build an Item integrity request",
+      inputs: { operation: { value: String(input?.operation?.type) } },
+      output,
+    }),
+  });
 
-  return {
+  const errors: EngineError[] = [...findItemIntegrityOperationIssues(input?.operation)];
+
+  if (typeof input?.entryId !== "string" || input.entryId.trim().length === 0) {
+    errors.push({
+      code: "equipment.integrity.request.entry.invalid",
+      message: "An Item integrity request must name the entry it settles against.",
+      audience: "developer",
+      required: "non-empty entry id",
+      actual: String(input?.entryId),
+    });
+  }
+
+  if (errors.length > 0) {
+    return engineFailure(trace("invalid"), errors as NonEmptyArray<EngineError>);
+  }
+
+  const operation = input.operation;
+
+  const mitigation = operation.type === "stress" ? operation.mitigation : undefined;
+
+  return engineSuccess({
     requestId: input.requestId,
-    kind: input.operation.type === "stress" ? ITEM_STRESS_REQUEST : ITEM_REPAIR_REQUEST,
+    kind: operation.type === "stress" ? ITEM_STRESS_REQUEST : ITEM_REPAIR_REQUEST,
     phase: "effect",
     operationId: input.operationId,
     occurredAt: input.occurredAt,
     from: input.from,
     to: input.to,
-    requested: input.operation.amount,
+    requested: operation.amount,
     entryId: input.entryId,
     ...(mitigation === undefined ? {} : { mitigation }),
-  };
+  }, trace(operation.type));
 }

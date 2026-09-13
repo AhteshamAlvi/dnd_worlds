@@ -67,6 +67,7 @@ import { ITEM_EQUIPMENT_STATES, isItemEquipmentState, type ItemEquipmentState } 
 import { resolveItemFunctionality } from "./integrity";
 import {
   describeItemDefinitionIssue,
+  describeItemDefinitionOutcome,
   findItemCoreDefinitionIssues,
   resolveItemDefinition,
   type ItemDefinitionLookup,
@@ -478,8 +479,24 @@ export type ImplementSelectionIssueKind =
   | "state-not-permitted"
   | "definition-unknown"
   | "definition-invalid"
+  | "definition-mismatched"
   | "broken"
   | "incompatible";
+
+
+/**
+ * Which selection issue each shared lookup failure reports as.
+ *
+ * The three outcomes `resolveItemDefinition()` distinguishes, mapped once
+ * rather than at the call site, so a selection reports the same three answers
+ * every other Item consumer does — including "mismatched", which used to be
+ * invisible everywhere but preparation.
+ */
+const IMPLEMENT_LOOKUP_ISSUE_KINDS = {
+  unknown: "definition-unknown",
+  malformed: "definition-invalid",
+  mismatched: "definition-mismatched",
+} as const satisfies Record<string, ImplementSelectionIssueKind>;
 
 
 /** One precise reason a selection did not resolve. */
@@ -736,12 +753,10 @@ export function resolveSelectedImplements(
 
       if (!lookup.ok) {
         issues.push({
-          kind: lookup.issue === "unknown" ? "definition-unknown" : "definition-invalid",
+          kind: IMPLEMENT_LOOKUP_ISSUE_KINDS[lookup.issue],
           role: requirement.role,
           item: selection.item,
-          message: lookup.issue === "unknown"
-            ? `This entry names Item "${entry.itemId}", which no catalog defines.`
-            : `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
+          message: describeItemDefinitionOutcome(lookup),
         });
 
         continue;

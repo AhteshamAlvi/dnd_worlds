@@ -167,6 +167,7 @@ export {
   bodyRecoveryConsequence,
   conditionApplicationConsequence,
   conditionRemovalConsequence,
+  ITEM_INTEGRITY_OPERATIONS,
   itemIntegrityConsequence,
   displacementConsequence,
   informationalConsequence,

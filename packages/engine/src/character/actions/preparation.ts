@@ -125,7 +125,9 @@ export interface CharacterActionInputs {
      * never had and get a check modifier that stacked and traced exactly like
      * a real one. The branded collection can only come from
      * `collectImplementConditionalRules()` — see
-     * `capabilities/implement-rules.ts`.
+     * `capabilities/implement-rules.ts`, which also resolves the invoked
+     * Skill's availability itself rather than accepting a caller's verdict
+     * about it.
      *
      * Only `"check"`-output rules matter here; `"performance"`-output rules
      * apply within `equipment/contributions.ts` instead, from the SAME

@@ -99,7 +99,9 @@ import {
 } from "./references";
 import { isEquippedItemState } from "./state";
 import {
+  ITEM_DEFINITION_OUTCOME_CODES,
   describeItemDefinitionIssue,
+  describeItemDefinitionOutcome,
   findItemUseDefinitionIssues,
   resolveItemDefinition,
   type ItemDefinitionLookup,
@@ -423,26 +425,21 @@ export function resolveItemUse(
 
   if (!lookup.ok) {
     /*
-     * Two answers, kept apart. "No catalog defines that Item" and "the lookup
-     * handed back something that is not an Item" lead to opposite fixes — see
-     * `ItemDefinitionOutcome` in validation.ts, and `InventoryReferenceIssue`
-     * for the same distinction one level out.
+     * Three answers, kept apart, and all three from one place. "No catalog
+     * defines that Item", "the lookup handed back something that is not an
+     * Item" and "the lookup handed back a DIFFERENT Item" lead to three
+     * different fixes — see `ItemDefinitionOutcome` in validation.ts, and
+     * `InventoryReferenceIssue` for the same distinction one level out.
      */
-    return lookup.issue === "unknown"
-      ? engineFailure(traceOf(inputs, "item_unknown"), [
-          structuralError(
-            "equipment.use.item_unknown",
-            `The entry names Item "${entry.itemId}", which no catalog defines.`,
-            { actual: entry.itemId },
-          ),
-        ])
-      : engineFailure(traceOf(inputs, "definition_invalid"), [
-          structuralError(
-            "equipment.use.definition_invalid",
-            `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
-            { actual: entry.itemId },
-          ),
-        ]);
+    const code = ITEM_DEFINITION_OUTCOME_CODES[lookup.issue];
+
+    return engineFailure(traceOf(inputs, code), [
+      structuralError(
+        `equipment.use.${code}`,
+        describeItemDefinitionOutcome(lookup),
+        { actual: entry.itemId },
+      ),
+    ]);
   }
 
   const definition = lookup.definition;

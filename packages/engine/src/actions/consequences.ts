@@ -31,6 +31,13 @@
 
 import type { JsonValue } from "../infrastructure/json";
 import type { EngineError } from "../infrastructure/diagnostics";
+import {
+  engineFailure,
+  engineSuccess,
+  type EngineResult,
+  type NonEmptyArray,
+} from "../infrastructure/result";
+import { createTraceNode } from "../infrastructure/trace";
 import type { RuntimeOwnerRef } from "../runtime/domains";
 import type { RuntimeRequest, QuantitativeRequest } from "../runtime/requests";
 import type { GameTimestamp } from "../time/types";
@@ -301,18 +308,128 @@ export function conditionRemovalConsequence(
  * The amount is NOT normalised with `Math.abs()`. A caller asking to repair
  * -5 has made a sign error, and turning it into a repair of 5 answers a
  * question nobody asked; the integrity resolver refuses it instead.
+ *
+ *
+ * WHY THIS ONE BUILDER RETURNS A RESULT
+ *
+ * Every other consequence builder in this file writes a FIXED request kind.
+ * This one CHOOSES between two from caller data, and it used to choose with a
+ * ternary — `operation === "stress" ? "item.stress" : "item.repair"` — so an
+ * untyped host passing `"mend"`, `"shatter"` or `undefined` did not get a
+ * refusal. It got a repair. The settled Item was mended by a word nobody in
+ * the engine recognised, and no validator downstream could see anything wrong
+ * with it, because by then the request's kind was perfectly legitimate.
+ *
+ * A closed vocabulary read from caller data has to be checked where it is
+ * read, so this builder validates and returns an `EngineResult`. The checks
+ * are the NEUTRAL ones only — a known operation word, a finite positive
+ * amount, a non-empty entry id, a finite non-negative mitigation offered only
+ * against stress. Whether the entry exists, whether its Item is durable and
+ * whether its policy permits a repair are equipment's questions, asked by
+ * `character/equipment/integrity.ts`; this file never imports that domain and
+ * `architecture.test.ts` holds that line.
  */
+export const ITEM_INTEGRITY_OPERATIONS = ["stress", "repair"] as const;
+
+export type ItemIntegrityConsequenceOperation =
+  typeof ITEM_INTEGRITY_OPERATIONS[number];
+
+const ITEM_INTEGRITY_REQUEST_KINDS = {
+  stress: "item.stress",
+  repair: "item.repair",
+} as const;
+
+
 export function itemIntegrityConsequence(
   context: ConsequenceContext,
   input: {
     readonly requestId: string;
     readonly characterId: string;
     readonly entryId: string;
-    readonly operation: "stress" | "repair";
+    readonly operation: ItemIntegrityConsequenceOperation;
     readonly amount: number;
     readonly mitigation?: number;
   },
-): Consequence {
+): EngineResult<Consequence> {
+  const trace = (output: string) => ({
+    root: createTraceNode({
+      id: "actions.consequences.item-integrity",
+      label: "Build an Item integrity consequence",
+      inputs: { operation: { value: String(input?.operation) } },
+      output,
+    }),
+  });
+
+  const errors: EngineError[] = [];
+
+  const kind = ITEM_INTEGRITY_REQUEST_KINDS[
+    input?.operation as ItemIntegrityConsequenceOperation
+  ];
+
+  if (kind === undefined) {
+    errors.push({
+      code: "actions.consequences.item-integrity.operation.invalid",
+      message: "An Item integrity consequence must be a stress or a repair.",
+      audience: "developer",
+      required: [...ITEM_INTEGRITY_OPERATIONS],
+      actual: String(input?.operation),
+    });
+  }
+
+  if (
+    typeof input?.amount !== "number" ||
+    !Number.isFinite(input.amount) ||
+    input.amount <= 0
+  ) {
+    errors.push({
+      code: "actions.consequences.item-integrity.amount.invalid",
+      message: "An Item integrity consequence's amount must be a finite number greater than zero.",
+      audience: "developer",
+      required: "finite number > 0",
+      actual: String(input?.amount),
+    });
+  }
+
+  if (typeof input?.entryId !== "string" || input.entryId.trim().length === 0) {
+    errors.push({
+      code: "actions.consequences.item-integrity.entry.invalid",
+      message: "An Item integrity consequence must name the entry it settles against.",
+      audience: "developer",
+      required: "non-empty entry id",
+      actual: String(input?.entryId),
+    });
+  }
+
+  if (input?.mitigation !== undefined) {
+    if (input.operation !== "stress") {
+      errors.push({
+        code: "actions.consequences.item-integrity.mitigation.not-applicable",
+        message: "Only a stress consequence may carry mitigation.",
+        audience: "developer",
+        required: "mitigation on a stress consequence, or omit the field",
+        actual: String(input.operation),
+      });
+    }
+
+    if (
+      typeof input.mitigation !== "number" ||
+      !Number.isFinite(input.mitigation) ||
+      input.mitigation < 0
+    ) {
+      errors.push({
+        code: "actions.consequences.item-integrity.mitigation.invalid",
+        message: "An Item integrity consequence's mitigation must be a finite, non-negative number.",
+        audience: "developer",
+        required: "finite number >= 0, or omit the field",
+        actual: String(input.mitigation),
+      });
+    }
+  }
+
+  if (errors.length > 0) {
+    return engineFailure(trace("invalid"), errors as NonEmptyArray<EngineError>);
+  }
+
   const request: QuantitativeRequest & {
     readonly entryId: string;
     readonly mitigation?: number;
@@ -320,17 +437,15 @@ export function itemIntegrityConsequence(
     ...(effectRequest(
       context,
       input.requestId,
-      input.operation === "stress" ? "item.stress" : "item.repair",
+      kind!,
       { domain: "character", id: input.characterId },
       input.amount,
     ) as QuantitativeRequest),
     entryId: input.entryId,
-    ...(input.operation === "stress" && input.mitigation !== undefined
-      ? { mitigation: input.mitigation }
-      : {}),
+    ...(input.mitigation === undefined ? {} : { mitigation: input.mitigation }),
   };
 
-  return { channel: "runtime", request };
+  return engineSuccess({ channel: "runtime", request }, trace(kind!));
 }
 
 

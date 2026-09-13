@@ -77,6 +77,8 @@ import {
 } from "./references";
 import type { CharacterItem, ItemDefinition, ItemDefinitionId, ShuInteraction } from "./types";
 import {
+  ITEM_DEFINITION_OUTCOME_CODES,
+  describeItemDefinitionOutcome,
   findItemStructuralIssues,
   resolveItemDefinition,
   type ItemDefinitionLookup,
@@ -239,20 +241,15 @@ export function resolveItemEnvelope(
   const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
 
   if (!lookup.ok) {
-    return engineFailure(
-      trace(lookup.issue === "unknown" ? "item_unknown" : "definition_invalid"),
-      [{
-        code: lookup.issue === "unknown"
-          ? "equipment.envelope.item_unknown"
-          : "equipment.envelope.definition_invalid",
-        message: lookup.issue === "unknown"
-          ? `The entry names Item "${entry.itemId}", which no catalog defines.`
-          : `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
-        audience: "developer",
-        required: "a known Item id",
-        actual: entry.itemId,
-      }] as NonEmptyArray<EngineError>,
-    );
+    const code = ITEM_DEFINITION_OUTCOME_CODES[lookup.issue];
+
+    return engineFailure(trace(code), [{
+      code: `equipment.envelope.${code}`,
+      message: describeItemDefinitionOutcome(lookup),
+      audience: "developer",
+      required: `the definition named by the entry ("${entry.itemId}")`,
+      actual: entry.itemId,
+    }] as NonEmptyArray<EngineError>);
   }
 
   const definition = lookup.definition;

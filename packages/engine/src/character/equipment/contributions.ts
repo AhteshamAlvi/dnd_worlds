@@ -76,7 +76,12 @@ import {
   type ItemIntegrityState,
 } from "./integrity";
 import type { ImplementCompatibility, ImplementResolution } from "./implements";
-import { resolveItemDefinition, type ItemDefinitionLookup } from "./validation";
+import {
+  ITEM_DEFINITION_OUTCOME_CODES,
+  describeItemDefinitionOutcome,
+  resolveItemDefinition,
+  type ItemDefinitionLookup,
+} from "./validation";
 
 
 /** One resolved half of a contribution — attack or defense — sourced. */
@@ -177,20 +182,15 @@ export function resolveItemPerformanceContribution(
   const lookup = resolveItemDefinition(getItemDefinition, resolution.itemId);
 
   if (!lookup.ok) {
-    return engineFailure(
-      traceOf(inputs, lookup.issue === "unknown" ? "item_unknown" : "definition_invalid"),
-      [{
-        code: lookup.issue === "unknown"
-          ? "equipment.contributions.item_unknown"
-          : "equipment.contributions.definition_invalid",
-        message: lookup.issue === "unknown"
-          ? `The resolved implement names Item "${resolution.itemId}", which no catalog defines.`
-          : `The catalog answered Item "${resolution.itemId}" with something that is not an Item definition.`,
-        audience: "developer",
-        required: "a known Item id",
-        actual: resolution.itemId,
-      }],
-    );
+    const code = ITEM_DEFINITION_OUTCOME_CODES[lookup.issue];
+
+    return engineFailure(traceOf(inputs, code), [{
+      code: `equipment.contributions.${code}`,
+      message: describeItemDefinitionOutcome(lookup),
+      audience: "developer",
+      required: `the definition named by the resolved implement ("${resolution.itemId}")`,
+      actual: resolution.itemId,
+    }]);
   }
 
   const definition = lookup.definition;

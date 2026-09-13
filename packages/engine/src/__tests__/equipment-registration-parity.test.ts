@@ -49,6 +49,7 @@ import {
   type ItemDefinition,
 } from "../character/equipment/index";
 import {
+  findImplementConditionalRuleIssues,
   findImplementConditionalRulesIssues,
   findImplementRequirementsIssues,
   resolveSelectedImplements,
@@ -573,6 +574,254 @@ describe("no resolver throws on a hostile caller-supplied value", () => {
       ]) {
         expect(() => validator(value)).not.toThrow();
       }
+    },
+  );
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* 7-9. The closed vocabularies INSIDE those fields                           */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Proving a field is an array proves nothing about what is in it, and four
+ * vocabularies on these surfaces were typed and never read. `["acton"]`
+ * matches no timing and validated clean; a repeated entry said nothing the
+ * first one did; an unrecognised `threatens` fell past every
+ * `=== "declared-targets"` comparison downstream and silently disarmed the
+ * weapon rather than failing.
+ */
+describe("a use application's timings are checked, not merely counted", () => {
+  function useApplicationWith(overrides: Record<string, unknown>): Record<string, unknown> {
+    return itemWith({
+      useApplication: {
+        allowedTimings: ["action"],
+        structuredActionCost: { actions: 1 },
+        targets: { cardinality: { minimum: 0, maximum: 0 } },
+        executionDuration: 0,
+        ...overrides,
+      },
+    });
+  }
+
+  function directProfile(definition: Record<string, unknown>) {
+    return buildItemOperationProfile(
+      "use",
+      definition as unknown as ItemDefinition,
+      { characterId: "gon", entryId: "e1" },
+    );
+  }
+
+  it.each([
+    ["an unknown timing", ["acton"]],
+    ["a timing that is not a string", [42]],
+    ["a null timing", [null]],
+    ["a repeated timing", ["action", "action"]],
+  ])("refuses %s at registration and at the profile builder", (_label, allowedTimings) => {
+    const definition = useApplicationWith({ allowedTimings });
+
+    expect(findItemUseApplicationIssues(definition["useApplication"])).not.toEqual([]);
+    expect(registerDefinition("item", definition as never).ok).toBe(false);
+    expect(directProfile(definition).success).toBe(false);
+  });
+
+  it("still accepts the real timings, each named once", () => {
+    const definition = useApplicationWith({ allowedTimings: ["action", "reaction"] });
+
+    expect(registerDefinition("item", definition as never).ok).toBe(true);
+    expect(directProfile(definition).success).toBe(true);
+  });
+
+  it.each([
+    ["an unknown focus kind", ["attention"]],
+    ["a focus kind that is not a string", [7]],
+    ["a repeated focus kind", ["none", "none"]],
+    ["an empty list", []],
+  ])("refuses %s", (_label, permittedFocusKinds) => {
+    const definition = useApplicationWith({ permittedFocusKinds });
+
+    expect(findItemUseApplicationIssues(definition["useApplication"])).not.toEqual([]);
+    expect(registerDefinition("item", definition as never).ok).toBe(false);
+    expect(directProfile(definition).success).toBe(false);
+  });
+
+  it("still accepts real focus kinds, each named once", () => {
+    const definition = useApplicationWith({ permittedFocusKinds: ["none", "position"] });
+
+    expect(registerDefinition("item", definition as never).ok).toBe(true);
+  });
+});
+
+
+describe("an attack contribution's threat declaration is checked", () => {
+  it.each([
+    ["an unknown declaration", "declared-target"],
+    ["a near miss", "declared_targets"],
+    ["a boolean", true],
+    ["a number", 1],
+  ])("refuses %s", (_label, threatens) => {
+    const definition = itemWith({ attack: { threatens } });
+
+    expect(findItemAttackIssues(definition["attack"]).map((issue) => issue.code))
+      .toContain("equipment.actions.attack-contribution.threatens.invalid");
+
+    expect(registerDefinition("item", definition as never).ok).toBe(false);
+  });
+
+  it("still accepts every declaration the engine knows", () => {
+    for (const threatens of ["none", "declared-targets"]) {
+      expect(findItemAttackIssues({ threatens })).toEqual([]);
+    }
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* 10. Nested contribution Effects                                            */
+/* -------------------------------------------------------------------------- */
+
+describe("a contribution's nested Effects are validated on both paths", () => {
+  const MALFORMED_EFFECTS: readonly (readonly [string, unknown])[] = [
+    ["an Effect discriminant nothing recognises", [{ type: "bogus" }]],
+    ["a null Effect", [null]],
+    ["an Effect that is a number", [42]],
+    ["a non-finite amount", [{ type: "modifyBaseAttribute", attribute: "dex", amount: Number.NaN }]],
+    ["a modifyCheck with no check", [{ type: "modifyCheck", amount: 1 }]],
+  ];
+
+  it.each(
+    (["attack", "defense"] as const).flatMap((slot) =>
+      MALFORMED_EFFECTS.map(([label, effects]) => [slot, label, effects] as const),
+    ),
+  )("refuses %s.effects holding %s", (slot, _label, effects) => {
+    const definition = itemWith({ [slot]: { effects } });
+
+    const issues = slot === "attack"
+      ? findItemAttackIssues(definition[slot])
+      : findItemDefenseIssues(definition[slot]);
+
+    expect(issues).not.toEqual([]);
+    expect(registerDefinition("item", definition as never).ok).toBe(false);
+  });
+
+  it("returns a failure from direct contribution resolution rather than throwing", () => {
+    /*
+     * The reason this is not cosmetic: `resolveRuleEffects()` ends its switch
+     * in a deliberate `never` exhaustiveness guard, so a malformed Effect
+     * reaching it does not return a failure — it THROWS, out of a resolver
+     * whose whole contract is to return one.
+     */
+    const resolution: ImplementResolution = {
+      role: "weapon",
+      item: { characterId: "gon", entryId: "e1" },
+      itemId: "test-blade",
+      compatibility: "compatible",
+      families: [],
+      state: "held",
+    };
+
+    for (const [, effects] of MALFORMED_EFFECTS) {
+      const definition = itemWith({ attack: { effects } });
+
+      let result: ReturnType<typeof resolveItemPerformanceContribution> | undefined;
+
+      expect(() => {
+        result = resolveItemPerformanceContribution(resolution, lookupOf(definition));
+      }).not.toThrow();
+
+      expect(result?.success).toBe(false);
+    }
+  });
+
+  it("reports a malformed contribution Effect exactly once at registration", () => {
+    /*
+     * `findContentStructuralIssues` walks these Effects too, so the composer
+     * the registry is handed deliberately skips them. One fault, one sentence.
+     */
+    const result = registerDefinition("item", itemWith({
+      attack: { effects: [{ type: "bogus" }] },
+    }) as never);
+
+    expect(result.ok).toBe(false);
+
+    const reason = result.ok === false ? result.reason : "";
+
+    expect(reason).toContain("effects[0]");
+    expect(reason.split("effects[0]").length - 1).toBe(1);
+  });
+
+  it("still accepts a well-formed contribution on both paths", () => {
+    const definition = itemWith({
+      attack: {
+        effects: [{ type: "modifyCheck", check: { kind: "attribute", attribute: "dex" }, amount: 2 }],
+        threatens: "declared-targets",
+      },
+      defense: { effects: [] },
+    });
+
+    expect(registerDefinition("item", definition as never).ok).toBe(true);
+    expect(findItemAttackIssues(definition["attack"])).toEqual([]);
+    expect(findItemDefenseIssues(definition["defense"])).toEqual([]);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* 11-12. What channel authored content may declare                           */
+/* -------------------------------------------------------------------------- */
+
+describe("an authored conditional check output may only use the authored channels", () => {
+  function ruleWith(channel: unknown): Record<string, unknown> {
+    return {
+      id: "keen-edge-bonus",
+      condition: { familyIds: ["blunt-weapon"] },
+      output: {
+        kind: "check",
+        scope: { kind: "attribute", attribute: "dex" },
+        amount: 2,
+        ...(channel === undefined ? {} : { channel }),
+      },
+    };
+  }
+
+  function traitWith(channel: unknown) {
+    return registerDefinition("trait", {
+      id: "keen-edge",
+      name: "Keen Edge",
+      description: "A Trait declaring one implement-conditional rule.",
+      implementConditionalRules: [ruleWith(channel)],
+    } as never);
+  }
+
+  it.each(["persistent", "invoked"])("accepts %s", (channel) => {
+    expect(findImplementConditionalRuleIssues(ruleWith(channel))).toEqual([]);
+    expect(traitWith(channel).ok).toBe(true);
+  });
+
+  it("accepts an omitted channel, which reads as persistent", () => {
+    expect(findImplementConditionalRuleIssues(ruleWith(undefined))).toEqual([]);
+    expect(traitWith(undefined).ok).toBe(true);
+  });
+
+  it("refuses contextual, which is a channel no content supplies", () => {
+    /*
+     * A contextual modifier is what the GM, the environment or the calling
+     * system hands in at check time. Content that could author one would be
+     * content asserting it came from somewhere it did not.
+     */
+    expect(findImplementConditionalRuleIssues(ruleWith("contextual")).map((issue) => issue.code))
+      .toContain("equipment.conditions.rule.output.channel.invalid");
+
+    expect(traitWith("contextual").ok).toBe(false);
+  });
+
+  it.each([["a typo", "persistant"], ["a number", 3], ["null", null], ["empty", ""]])(
+    "refuses %s",
+    (_label, channel) => {
+      expect(findImplementConditionalRuleIssues(ruleWith(channel)).map((issue) => issue.code))
+        .toContain("equipment.conditions.rule.output.channel.invalid");
+
+      expect(traitWith(channel).ok).toBe(false);
     },
   );
 });

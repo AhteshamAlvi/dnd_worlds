@@ -101,7 +101,9 @@ import {
 } from "./references";
 import { isConcreteInventoryObject, isEquippedItemState, isItemEquipmentState, type ItemEquipmentState } from "./state";
 import {
+  ITEM_DEFINITION_OUTCOME_CODES,
   describeItemDefinitionIssue,
+  describeItemDefinitionOutcome,
   findItemEquipmentDefinitionIssues,
   resolveItemDefinition,
 } from "./validation";
@@ -381,21 +383,15 @@ export function resolveEquipmentTransition(
   const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
 
   if (!lookup.ok) {
-    return lookup.issue === "unknown"
-      ? engineFailure(traceOf(inputs, "item_unknown"), [
-          structuralError(
-            "equipment.transition.item_unknown",
-            `The entry names Item "${entry.itemId}", which no catalog defines.`,
-            { actual: entry.itemId },
-          ),
-        ])
-      : engineFailure(traceOf(inputs, "definition_invalid"), [
-          structuralError(
-            "equipment.transition.definition_invalid",
-            `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
-            { actual: entry.itemId },
-          ),
-        ]);
+    const code = ITEM_DEFINITION_OUTCOME_CODES[lookup.issue];
+
+    return engineFailure(traceOf(inputs, code), [
+      structuralError(
+        `equipment.transition.${code}`,
+        describeItemDefinitionOutcome(lookup),
+        { actual: entry.itemId },
+      ),
+    ]);
   }
 
   const definition = lookup.definition;
