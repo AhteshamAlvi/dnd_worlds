@@ -1143,6 +1143,8 @@ Derived from the invoked Skill, every held Technique and every possessed Trait. 
 
 The caller names the Skill and **nothing else**. This function resolves the character, resolves the definition through the supplied catalogs, checks the definition answers to the id it was asked for, and resolves the application against the character's own capabilities and requirement context — collecting only when the disposition IT produced is `"available"`. It took a `ResolvedSkillApplication` for one revision, which let a caller holding a plain object write `{ skillId, disposition: "available" }` and have the brand certify a Skill nobody had learned.
 
+All three catalog lookups cross one shape-and-identity boundary (`resolveContentDefinition()`), not just the Skill's. That check landed on the Skill branch alone for one revision, which left a Trait lookup answering with a *different* Trait having its rules collected, branded authorized, and sourced to the Trait the character actually possesses — and a lookup answering `null` throwing out of a function whose contract is to return an `EngineResult`. A lookup that cannot answer for an id the resolved character holds is now an `EngineFailure`, not a silent absence: skipping it would mean a character quietly losing a bonus their sheet says they have.
+
 An authored check output's `channel` is now `CheckModifierActivation` (`"persistent" | "invoked"`), not the three-value resolved `CheckModifierChannel`: `"contextual"` is what a GM or the environment hands in at check time, and content that could author one would be content asserting it came from somewhere it did not.
 
 **5-6. Integrity became mechanical, and a batch became one instant.**

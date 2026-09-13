@@ -44,7 +44,7 @@ import { prepareCharacterActionInputs } from "../character/actions/preparation";
 import type { ImplementResolution } from "../character/equipment/implements";
 import type { CharacterItem } from "../character/equipment/index";
 
-import { payloadOf } from "./fixtures/result";
+import { errorCodesOf, payloadOf } from "./fixtures/result";
 import { validDefinitionFor } from "./fixtures/catalog";
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 
@@ -477,18 +477,28 @@ describe("the invoked Skill's availability is resolved, not asserted", () => {
      * The structural half, and it is the fix. `collectImplementConditionalRules`
      * accepts `SkillId | undefined`; a `ResolvedSkillApplication` — forged or
      * genuine — is not assignable to it, so the forgery below does not compile
-     * and the cast is what an untyped host effectively writes.
+     * and the cast is what an untyped host effectively writes. It names no
+     * Skill any catalog holds, so it is refused rather than believed.
      */
     registerGatedSkill("forbidden-art");
 
     const forged = { skillId: "forbidden-art", disposition: "available" };
 
-    const character = createTestCharacter();
+    const result = collectImplementConditionalRules(
+      createTestCharacter(),
+      forged as unknown as string,
+      characterContentCatalogs(),
+    );
 
-    expect(collectFor(character, forged as unknown as string).rules).toEqual([]);
+    expect(result.success).toBe(false);
   });
 
   it("collects nothing for a Skill the character has never learned", () => {
+    /*
+     * The Skill is real and defined; the character has not learned it. That is
+     * a fact about the CHARACTER, so the collection succeeds and is empty —
+     * unlike a broken catalog, which fails below.
+     */
     registerGatedSkill("forbidden-art");
 
     expect(collectFor(createTestCharacter(), "forbidden-art").rules).toEqual([]);
@@ -527,7 +537,7 @@ describe("the invoked Skill's availability is resolved, not asserted", () => {
     expect(collectFor(character, "measured-art").rules).toEqual([]);
   });
 
-  it("collects nothing when a catalog answers with a different Skill", () => {
+  it("refuses a catalog that answers with a different Skill", () => {
     /*
      * The same substitution `resolveItemDefinition()` refuses on the equipment
      * side. A definition answering to an id that is not its own would let one
@@ -540,14 +550,21 @@ describe("the invoked Skill's availability is resolved, not asserted", () => {
       skills: [{ skillId: "measured-art", mastery: 1 }],
     });
 
-    expect(collectFor(character, "measured-art", {
+    const result = collectImplementConditionalRules(character, "measured-art", {
       ...characterContentCatalogs(),
       getSkillDefinition: () => characterContentCatalogs().getSkillDefinition("other-art"),
-    }).rules).toEqual([]);
+    });
+
+    expect(errorCodesOf(result))
+      .toContain("capabilities.implement-rules.skill.definition_mismatch");
   });
 
-  it("collects nothing for a Skill no catalog defines", () => {
-    expect(collectFor(createTestCharacter(), "no-such-skill").rules).toEqual([]);
+  it("refuses a Skill no catalog defines", () => {
+    expect(errorCodesOf(collectImplementConditionalRules(
+      createTestCharacter(),
+      "no-such-skill",
+      characterContentCatalogs(),
+    ))).toContain("capabilities.implement-rules.skill.unknown");
   });
 
   it("still collects a held, available Skill's rules — exactly once", () => {
@@ -578,5 +595,208 @@ describe("the invoked Skill's availability is resolved, not asserted", () => {
       createTestCharacter({ traits: [{ traitId: "keen-edge" }] }),
       undefined,
     ).rules.map((entry) => entry.source)).toEqual([{ type: "trait", id: "keen-edge" }]);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* Every catalog lookup, not just the Skill's                                 */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The Skill branch grew a shape-and-identity check and the other two did not
+ * — the same "a rule one caller enforces is a rule the others do not have"
+ * failure the Item lookup had, one revision later and one layer up.
+ *
+ * A Trait lookup answering with a DIFFERENT Trait had that Trait's rules
+ * collected, branded authorized, and sourced to the Trait the character
+ * actually possesses: a bonus from content nobody has, wearing the name of
+ * content they do. A lookup answering `null` threw from
+ * `definition.implementConditionalRules`, out of a function whose entire
+ * contract is to return an `EngineResult`.
+ */
+describe("every catalog lookup is proved before it is read", () => {
+  const OWNED_RULE = {
+    id: "owned-bonus",
+    condition: { familyIds: ["blunt-weapon"] },
+    output: { kind: "check", scope: { kind: "attribute", attribute: "dex" }, amount: 1 },
+  } as const;
+
+  const OTHER_RULE = {
+    id: "other-bonus",
+    condition: { familyIds: ["blunt-weapon"] },
+    output: { kind: "check", scope: { kind: "attribute", attribute: "dex" }, amount: 9 },
+  } as const;
+
+  function registerPair(domain: "trait" | "technique"): void {
+    const extra = domain === "technique" ? { mastery: { maximumMastery: 3 } } : {};
+
+    register(domain, {
+      id: `owned-${domain}`,
+      ...extra,
+      implementConditionalRules: [OWNED_RULE],
+    });
+
+    register(domain, {
+      id: `other-${domain}`,
+      ...extra,
+      implementConditionalRules: [OTHER_RULE],
+    });
+  }
+
+  function characterHolding(domain: "trait" | "technique") {
+    return domain === "trait"
+      ? createTestCharacter({ traits: [{ traitId: "owned-trait" }] })
+      : createTestCharacter({ techniques: [{ techniqueId: "owned-technique", mastery: 1 }] });
+  }
+
+  function catalogsAnswering(
+    domain: "trait" | "technique",
+    answer: (id: string) => unknown,
+  ) {
+    const base = characterContentCatalogs();
+
+    return domain === "trait"
+      ? { ...base, getTraitDefinition: answer as never }
+      : { ...base, getTechniqueDefinition: answer as never };
+  }
+
+  it.each(["trait", "technique"] as const)(
+    "refuses a %s catalog answering with a different definition",
+    (domain) => {
+      registerPair(domain);
+
+      const other = domain === "trait"
+        ? characterContentCatalogs().getTraitDefinition(`other-${domain}`)
+        : characterContentCatalogs().getTechniqueDefinition(`other-${domain}`);
+
+      const result = collectImplementConditionalRules(
+        characterHolding(domain),
+        undefined,
+        catalogsAnswering(domain, () => other),
+      );
+
+      expect(errorCodesOf(result))
+        .toContain(`capabilities.implement-rules.${domain}.definition_mismatch`);
+    },
+  );
+
+  it.each(["trait", "technique"] as const)(
+    "brands no borrowed %s rule, under any name",
+    (domain) => {
+      /*
+       * The substance of the mismatch, stated separately from the code: the
+       * borrowed rule must not reach the collection at all — not sourced to
+       * the content it came from, and emphatically not sourced to the content
+       * the character actually has.
+       */
+      registerPair(domain);
+
+      const other = domain === "trait"
+        ? characterContentCatalogs().getTraitDefinition(`other-${domain}`)
+        : characterContentCatalogs().getTechniqueDefinition(`other-${domain}`);
+
+      const result = collectImplementConditionalRules(
+        characterHolding(domain),
+        undefined,
+        catalogsAnswering(domain, () => other),
+      );
+
+      expect(result.success).toBe(false);
+
+      if (result.success) return;
+
+      expect(JSON.stringify(result)).not.toContain("other-bonus");
+    },
+  );
+
+  it.each(
+    (["trait", "technique"] as const).flatMap((domain) =>
+      [null, 42, "owned", true, [], {}, { id: 7 }].map(
+        (answer, index) => [domain, index, answer] as const,
+      ),
+    ),
+  )("neither throws nor brands when the %s lookup answers hostile value %i", (domain, _index, answer) => {
+    registerPair(domain);
+
+    let result: ReturnType<typeof collectImplementConditionalRules> | undefined;
+
+    expect(() => {
+      result = collectImplementConditionalRules(
+        characterHolding(domain),
+        undefined,
+        catalogsAnswering(domain, () => answer),
+      );
+    }).not.toThrow();
+
+    expect(result?.success).toBe(false);
+  });
+
+  it.each(["trait", "technique"] as const)(
+    "refuses a %s the catalog does not define at all",
+    (domain) => {
+      /*
+       * The character's own resolution says they have it. A catalog that
+       * cannot answer for it is disagreeing with the sheet, and skipping would
+       * mean quietly losing a bonus the sheet says they have — the same
+       * reasoning malformed authored rules already get.
+       */
+      registerPair(domain);
+
+      const result = collectImplementConditionalRules(
+        characterHolding(domain),
+        undefined,
+        catalogsAnswering(domain, () => undefined),
+      );
+
+      expect(errorCodesOf(result))
+        .toContain(`capabilities.implement-rules.${domain}.unknown`);
+    },
+  );
+
+  it.each(["trait", "technique"] as const)(
+    "still collects the %s the character really has",
+    (domain) => {
+      /* The control every refusal above needs. */
+      registerPair(domain);
+
+      const collected = payloadOf(collectImplementConditionalRules(
+        characterHolding(domain),
+        undefined,
+        characterContentCatalogs(),
+      ));
+
+      expect(collected.rules).toHaveLength(1);
+      expect(collected.rules[0]!.source).toEqual({ type: domain, id: `owned-${domain}` });
+      expect(collected.rules[0]!.rule.id).toBe("owned-bonus");
+    },
+  );
+
+  it("does not throw when the Skill lookup answers with null", () => {
+    /*
+     * The Skill branch refused a well-shaped definition with the wrong id and
+     * still dereferenced a `null`, because its identity check read `.id` off
+     * the answer before anything had proved there was an answer to read.
+     */
+    const skill = validDefinitionFor("skill");
+
+    register("skill", { ...skill, id: "measured-art", requirements: [] });
+
+    const character = createTestCharacter({
+      skills: [{ skillId: "measured-art", mastery: 1 }],
+    });
+
+    for (const answer of [null, 42, [], { id: 7 }]) {
+      let result: ReturnType<typeof collectImplementConditionalRules> | undefined;
+
+      expect(() => {
+        result = collectImplementConditionalRules(character, "measured-art", {
+          ...characterContentCatalogs(),
+          getSkillDefinition: (() => answer) as never,
+        });
+      }).not.toThrow();
+
+      expect(result?.success).toBe(false);
+    }
   });
 });

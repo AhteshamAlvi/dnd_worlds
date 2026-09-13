@@ -8,8 +8,8 @@ six-second Round survived in `attributes/speed.ts` for exactly as long as it did
 documents each described the timing and none of them was the one that had to be right.
 
 Last verified against the repository: the Phase 4 final boundary repair (definition identity,
-surface validators, Skill authorization, integrity request kinds).
-Suite at that point: **110 files, 4,443 tests, green.** `tsc --noEmit` clean for the engine.
+surface validators, content-catalog authorization, integrity request kinds).
+Suite at that point: **110 files, 4,466 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 

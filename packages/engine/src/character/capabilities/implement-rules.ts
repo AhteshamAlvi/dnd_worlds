@@ -43,6 +43,18 @@
  * application against the character's own capabilities and requirement
  * context. A disposition it did not produce is not evidence.
  *
+ *
+ * AND ALL THREE CATALOG LOOKUPS ARE PROVED, NOT JUST THE SKILL'S
+ *
+ * The identity check above arrived on the Skill branch alone, which left the
+ * other two reading whatever a `CharacterContentCatalogs` handed back. A Trait
+ * lookup answering with a DIFFERENT Trait had that Trait's rules collected,
+ * branded authorized, and sourced to the Trait the character actually
+ * possesses; one answering `null` threw. `resolveContentDefinition()` is the
+ * one boundary all three now cross, and a lookup that cannot answer for an id
+ * the resolved character HAS is a failure rather than a silent absence — see
+ * `contentLookupError()`.
+ *
  * "Actually" is the resolved reading in each case — held, not merely unlocked,
  * and granted content counts exactly as authored content does. A merely
  * OFFERED Trait contributes nothing, because an offer is permission to acquire
@@ -122,6 +134,106 @@ function ruleSourceError(
 }
 
 
+/* -------------------------------------------------------------------------- */
+/* The catalog lookup boundary                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What one content lookup answered with, keeping every way it can be wrong
+ * apart.
+ *
+ * The exact shape `resolveItemDefinition()` returns on the equipment side, and
+ * it is here for the same reason. A `CharacterContentCatalogs` is three
+ * functions a HOST wrote. Their signatures say `Definition | undefined` and
+ * nothing obliges them to keep that promise.
+ *
+ * The Skill branch grew an identity check and the other two did not, which is
+ * the same "a rule one caller enforces is a rule the others do not have"
+ * failure the Item lookup had — one revision later and one layer up. A Trait
+ * lookup answering with a DIFFERENT Trait had its rules collected, branded
+ * authorized, and sourced to the Trait the character actually possesses; a
+ * lookup answering `null` threw from `definition.implementConditionalRules`,
+ * out of a function whose whole contract is to return an `EngineResult`.
+ *
+ * unknown    — the catalog holds no definition for an id the character's own
+ *              resolution says they have (or, for the invoked Skill, for the
+ *              id the caller named).
+ * malformed  — the answer is not a definition object at all.
+ * mismatched — a real definition answering to somebody else's id.
+ */
+type ContentLookupOutcome<D> =
+  | { readonly ok: true; readonly definition: D }
+  | {
+      readonly ok: false;
+      readonly issue: "unknown" | "malformed" | "mismatched";
+      readonly actualId?: unknown;
+    };
+
+
+function resolveContentDefinition<D extends { readonly id: string }>(
+  lookup: (id: string) => D | undefined,
+  id: string,
+): ContentLookupOutcome<D> {
+  const candidate: unknown = lookup(id);
+
+  if (candidate === undefined) return { ok: false, issue: "unknown" };
+
+  if (
+    typeof candidate !== "object" ||
+    candidate === null ||
+    Array.isArray(candidate)
+  ) {
+    return { ok: false, issue: "malformed" };
+  }
+
+  const actualId = (candidate as { readonly id?: unknown }).id;
+
+  if (actualId !== id) return { ok: false, issue: "mismatched", actualId };
+
+  return { ok: true, definition: candidate as D };
+}
+
+
+/**
+ * One refused lookup, as a diagnostic.
+ *
+ * A FAILURE in all three cases, and for all three kinds of content, rather
+ * than a silent skip. Skipping would mean a character quietly losing a bonus
+ * their sheet says they have — the same reasoning `take()` already applies to
+ * malformed authored rules — and for a mismatch it would mean the catalog and
+ * the resolved character disagreeing about what the character has, with
+ * nobody told. The engine's own `characterContentCatalogs()` cannot produce
+ * any of these: resolution and the collector read the same registries.
+ */
+function contentLookupError(
+  kind: "Skill" | "Technique" | "Trait",
+  id: string,
+  outcome: Extract<ContentLookupOutcome<never>, { readonly ok: false }>,
+): EngineError {
+  const codes = {
+    unknown: "unknown",
+    malformed: "definition_invalid",
+    mismatched: "definition_mismatch",
+  } as const;
+
+  const messages = {
+    unknown: `No catalog defines ${kind} "${id}".`,
+    malformed:
+      `The catalog answered ${kind} "${id}" with something that is not a definition.`,
+    mismatched:
+      `The catalog answered ${kind} "${id}" with definition "${String(outcome.actualId)}".`,
+  } as const;
+
+  return {
+    code: `capabilities.implement-rules.${kind.toLowerCase()}.${codes[outcome.issue]}`,
+    message: messages[outcome.issue],
+    audience: "developer",
+    required: `a definition answering to "${id}"`,
+    actual: outcome.issue === "mismatched" ? String(outcome.actualId) : outcome.issue,
+  };
+}
+
+
 /**
  * Every implement-conditional rule this character may bring to this attempt.
  *
@@ -188,15 +300,17 @@ export function collectImplementConditionalRules(
   if (invokedSkillId !== undefined) {
     invokedSkill = "unavailable";
 
-    const definition = catalogs.getSkillDefinition(invokedSkillId);
+    /* Shape and identity first, through the boundary all three lookups share. */
+    const lookup = resolveContentDefinition(
+      (id) => catalogs.getSkillDefinition(id),
+      invokedSkillId,
+    );
 
-    /*
-     * A catalog is a function a host wrote. A definition answering to an id
-     * that is not its own would let one Skill's rules be collected under
-     * another's name — the same substitution `resolveItemDefinition()` refuses
-     * on the equipment side.
-     */
-    if (definition !== undefined && definition.id === invokedSkillId) {
+    if (!lookup.ok) {
+      errors.push(contentLookupError("Skill", invokedSkillId, lookup));
+    } else {
+      const definition = lookup.definition;
+
       const application = resolveSkillApplication({
         skillId: invokedSkillId,
         capabilities: resolved.capabilities,
@@ -218,27 +332,47 @@ export function collectImplementConditionalRules(
     }
   }
 
+  /*
+   * Every possessed Technique and Trait, through the SAME boundary. These two
+   * loops read their ids off the RESOLVED character, so a catalog that cannot
+   * answer for one of them is a catalog disagreeing with the sheet — which is
+   * a fault worth reporting rather than a bonus worth losing quietly.
+   */
   for (const techniqueId of [...getResolvedTechniqueIds(resolved.capabilities)].sort()) {
-    const definition = catalogs.getTechniqueDefinition(techniqueId);
+    const lookup = resolveContentDefinition(
+      (id) => catalogs.getTechniqueDefinition(id),
+      techniqueId,
+    );
 
-    if (definition === undefined) continue;
+    if (!lookup.ok) {
+      errors.push(contentLookupError("Technique", techniqueId, lookup));
+
+      continue;
+    }
 
     take(
       `Technique "${techniqueId}"`,
       { type: "technique", id: techniqueId },
-      definition.implementConditionalRules,
+      lookup.definition.implementConditionalRules,
     );
   }
 
   for (const traitId of [...resolvedTraitIds(resolved.traits)].sort()) {
-    const definition = catalogs.getTraitDefinition(traitId);
+    const lookup = resolveContentDefinition(
+      (id) => catalogs.getTraitDefinition(id),
+      traitId,
+    );
 
-    if (definition === undefined) continue;
+    if (!lookup.ok) {
+      errors.push(contentLookupError("Trait", traitId, lookup));
+
+      continue;
+    }
 
     take(
       `Trait "${traitId}"`,
       { type: "trait", id: traitId },
-      definition.implementConditionalRules,
+      lookup.definition.implementConditionalRules,
     );
   }
 
