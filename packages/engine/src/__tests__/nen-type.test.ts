@@ -352,46 +352,54 @@ describe("migrating a stored Nen state", () => {
    * The intermediate shape: the awakening object as Phase 5.0 first shipped
    * it, with forced and involuntary Zetsu still conflated under an `origin`.
    */
+  /*
+   * The EXACT shape commit 54bd4d3 emitted, taken from its own collapse
+   * settlement rather than reconstructed.
+   *
+   * Note what the forced state does NOT carry: a `recoveryId`. Phase 5.0
+   * stored that relationship in one place only — `awakening.collapseRecovery
+   * .id` — so a migration that expected the forced state to know its own
+   * recovery would fail every genuine collapse save. The first version of
+   * this test added the field to its fixture and hid exactly that.
+   */
+  const PHASE_5_0_COLLAPSE = {
+    condition: "awakened",
+    nodes: "open",
+    currentMethod: "abrupt",
+    currentAwakeningId: "op-1:awakening",
+    history: [{
+      kind: "awakening",
+      id: "op-1:awakening",
+      method: "abrupt",
+      occurredAt: 0,
+      source: { type: "character", id: "teacher" },
+      reawakening: false,
+      eligibilityBypassed: true,
+      appliedOverrides: [],
+    }],
+    naturalAbility: null,
+    externalAbilities: [],
+    forcedStates: [{
+      id: "op-collapse:forced-zetsu:uncontained-collapse",
+      kind: "forced-zetsu",
+      origin: "uncontained-collapse",
+      appliedAt: 10,
+      source: { type: "nen-collapse", id: "uncontained-leakage-exhausted" },
+      exemptions: [],
+    }],
+    nenType: { type: null, known: false },
+    collapseRecovery: {
+      id: "op-collapse:collapse-recovery",
+      beganAt: 10,
+      requiredSleepHours: 8,
+      accumulatedSleepHours: 0,
+      completedAt: null,
+    },
+  };
+
   it("splits a Phase-5.0 collapse state into an involuntary Zetsu", () => {
     const migrated = migrateLegacyNenState({
-      nen: {
-        mastery: PRE_PHASE_5.nen.mastery,
-        awakening: {
-          condition: "awakened",
-          nodes: "open",
-          currentMethod: "abrupt",
-          currentAwakeningId: "awk-1",
-          history: [{
-            kind: "awakening",
-            id: "awk-1",
-            method: "abrupt",
-            occurredAt: 0,
-            source: { type: "character", id: "teacher" },
-            reawakening: false,
-            eligibilityBypassed: true,
-            appliedOverrides: [],
-          }],
-          naturalAbility: null,
-          externalAbilities: [],
-          forcedStates: [{
-            id: "fz-1",
-            kind: "forced-zetsu",
-            origin: "uncontained-collapse",
-            appliedAt: 10,
-            source: { type: "nen-collapse", id: "uncontained-leakage-exhausted" },
-            exemptions: [],
-            recoveryId: "rec-1",
-          }],
-          nenType: { type: null, known: false },
-          collapseRecovery: {
-            id: "rec-1",
-            beganAt: 10,
-            requiredSleepHours: 8,
-            accumulatedSleepHours: 0,
-            completedAt: null,
-          },
-        },
-      },
+      nen: { mastery: PRE_PHASE_5.nen.mastery, awakening: PHASE_5_0_COLLAPSE },
     });
 
     expect(migrated.success).toBe(true);
@@ -403,10 +411,112 @@ describe("migrating a stored Nen state", () => {
     if (held.kind !== "involuntary-zetsu") return;
 
     expect(held.cause).toBe("uncontained-aura-collapse");
-    expect(held.recoveryId).toBe("rec-1");
 
-    /* A null type becomes the explicit unassigned state, not a null. */
+    /*
+     * Taken from the CONTAINING recovery, which is where Phase 5.0 kept it.
+     * The current domain validator requires the two to agree, so a migration
+     * that invented an empty string here would produce a state the engine
+     * then refuses.
+     */
+    expect(held.recoveryId).toBe("op-collapse:collapse-recovery");
+    expect(migrated.payload.awakening.collapseRecovery?.id)
+      .toBe(held.recoveryId);
+
     expect(migrated.payload.awakening.nenType).toEqual(unassignedNenType());
+  });
+
+  it("refuses a collapse state whose recovery is missing or malformed", () => {
+    for (const collapseRecovery of [undefined, null, {}, { id: "" }, { id: 3 }, []]) {
+      const migrated = migrateLegacyNenState({
+        nen: {
+          mastery: PRE_PHASE_5.nen.mastery,
+          awakening: { ...PHASE_5_0_COLLAPSE, collapseRecovery },
+        },
+      });
+
+      expect([String(collapseRecovery), migrated.success])
+        .toEqual([String(collapseRecovery), false]);
+
+      if (migrated.success) continue;
+
+      expect([String(collapseRecovery), migrated.errors.map((e) => e.code)])
+        .toEqual([
+          String(collapseRecovery),
+          ["nen.state.migrate.recovery.unreadable"],
+        ]);
+    }
+  });
+
+  /*
+   * A save that somehow carries a recoveryId is not silently overruled. If it
+   * agrees, it is redundant; if it disagrees, one of the two is wrong and the
+   * migration cannot know which.
+   */
+  it("refuses a nonstandard recoveryId that contradicts the recovery", () => {
+    const conflicting = migrateLegacyNenState({
+      nen: {
+        mastery: PRE_PHASE_5.nen.mastery,
+        awakening: {
+          ...PHASE_5_0_COLLAPSE,
+          forcedStates: [{
+            ...PHASE_5_0_COLLAPSE.forcedStates[0],
+            recoveryId: "some-other-recovery",
+          }],
+        },
+      },
+    });
+
+    expect(conflicting.success).toBe(false);
+    if (conflicting.success) return;
+
+    expect(conflicting.errors.map((e) => e.code))
+      .toContain("nen.state.migrate.recovery.conflict");
+
+    const agreeing = migrateLegacyNenState({
+      nen: {
+        mastery: PRE_PHASE_5.nen.mastery,
+        awakening: {
+          ...PHASE_5_0_COLLAPSE,
+          forcedStates: [{
+            ...PHASE_5_0_COLLAPSE.forcedStates[0],
+            recoveryId: "op-collapse:collapse-recovery",
+          }],
+        },
+      },
+    });
+
+    expect(agreeing.success).toBe(true);
+  });
+
+  /*
+   * The origin is the legacy discriminant, and an unrecognised one is not
+   * "probably external". Defaulting it would have silently turned a corrupt
+   * or future value into a forced Zetsu with a release authority nobody
+   * granted.
+   */
+  it("refuses a missing, null or unknown legacy origin", () => {
+    for (const origin of [undefined, null, "", "voluntary", 3, {}]) {
+      const migrated = migrateLegacyNenState({
+        nen: {
+          mastery: PRE_PHASE_5.nen.mastery,
+          awakening: {
+            ...PHASE_5_0_COLLAPSE,
+            forcedStates: [{
+              ...PHASE_5_0_COLLAPSE.forcedStates[0],
+              origin,
+            }],
+          },
+        },
+      });
+
+      expect([String(origin), migrated.success])
+        .toEqual([String(origin), false]);
+
+      if (migrated.success) continue;
+
+      expect([String(origin), migrated.errors.map((e) => e.code)])
+        .toEqual([String(origin), ["nen.state.migrate.origin.invalid"]]);
+    }
   });
 
   it("rebinds a Phase-5.0 instinctive exemption to its instance and source", () => {
@@ -526,6 +636,129 @@ describe("migrating a stored Nen state", () => {
 
     expect(conflict.errors.map((error) => error.code))
       .toContain("nen.type.legacy.conflict");
+  });
+
+  /*
+   * Presence, not validity. A corrupt `awakened` sitting beside a valid
+   * `awakening` used to be read as the newer shape — the corruption vanished
+   * rather than being reported — because the check asked whether each value
+   * was well-typed instead of whether the field was there.
+   */
+  it("refuses a dual representation however either side is typed", () => {
+    const valid = createUnawakenedNenState(unassignedNenType()).awakening;
+
+    const dual: readonly (readonly [string, unknown])[] = [
+      ["corrupt boolean, valid object", { awakened: "corrupt", awakening: valid }],
+      ["valid boolean, corrupt object", { awakened: true, awakening: "corrupt" }],
+      ["both corrupt", { awakened: 3, awakening: [] }],
+      ["both valid", { awakened: false, awakening: valid }],
+      ["both undefined but present", { awakened: undefined, awakening: undefined }],
+    ];
+
+    for (const [name, awakeningFields] of dual) {
+      const migrated = migrateLegacyNenState({
+        nen: { mastery: PRE_PHASE_5.nen.mastery, ...(awakeningFields as object) },
+      });
+
+      expect([name, migrated.success]).toEqual([name, false]);
+      if (migrated.success) continue;
+
+      expect([name, migrated.errors.map((e) => e.code)])
+        .toEqual([name, ["nen.state.migrate.ambiguous"]]);
+    }
+  });
+
+  it("requires each single representation to be what its presence claims", () => {
+    for (const awakened of [null, 3, "true", {}, []]) {
+      const migrated = migrateLegacyNenState({
+        nen: { mastery: PRE_PHASE_5.nen.mastery, awakened },
+      });
+
+      expect([String(awakened), migrated.success])
+        .toEqual([String(awakened), false]);
+
+      if (migrated.success) continue;
+
+      expect([String(awakened), migrated.errors.map((e) => e.code)])
+        .toEqual([String(awakened), ["nen.state.migrate.awakened.invalid"]]);
+    }
+
+    for (const awakening of [null, 3, "awake", []]) {
+      const migrated = migrateLegacyNenState({
+        nen: { mastery: PRE_PHASE_5.nen.mastery, awakening },
+      });
+
+      expect([String(awakening), migrated.success])
+        .toEqual([String(awakening), false]);
+
+      if (migrated.success) continue;
+
+      expect([String(awakening), migrated.errors.map((e) => e.code)])
+        .toEqual([String(awakening), ["nen.state.migrate.awakening.invalid"]]);
+    }
+  });
+
+  /*
+   * A corrupt affinity is not "nobody decided", and a corrupt `known` is not
+   * `false`. The record said something; normalizing it would be the migration
+   * deciding it said nothing.
+   */
+  it("refuses a malformed Nen Type instead of normalizing it", () => {
+    const rejected: readonly unknown[] = [
+      null,
+      undefined,
+      [],
+      3,
+      "enhancement",
+      {},
+      { type: "fire", known: false },
+      { type: "enhancement", known: "yes" },
+      { type: "enhancement" },
+      { known: true },
+      { type: null, known: true },
+      { status: "made-up" },
+      { status: "assigned", type: null, known: true },
+      { status: "assigned", type: "emission", known: 1 },
+    ];
+
+    for (const nenType of rejected) {
+      const migrated = migrateLegacyNenState({
+        nen: {
+          mastery: PRE_PHASE_5.nen.mastery,
+          awakening: { ...PHASE_5_0_COLLAPSE, nenType },
+        },
+      });
+
+      expect([JSON.stringify(nenType) ?? "undefined", migrated.success])
+        .toEqual([JSON.stringify(nenType) ?? "undefined", false]);
+    }
+  });
+
+  it("accepts both the legacy and the current Nen Type forms", () => {
+    const accepted: readonly (readonly [unknown, unknown])[] = [
+      [{ type: null, known: false }, unassignedNenType()],
+      [{ type: "emission", known: false }, assignedNenType("emission", false)],
+      [{ type: "emission", known: true }, assignedNenType("emission", true)],
+      [unassignedNenType(), unassignedNenType()],
+      [assignedNenType("conjuration", true), assignedNenType("conjuration", true)],
+    ];
+
+    for (const [nenType, expected] of accepted) {
+      const migrated = migrateLegacyNenState({
+        nen: {
+          mastery: PRE_PHASE_5.nen.mastery,
+          awakening: { ...PHASE_5_0_COLLAPSE, nenType },
+        },
+      });
+
+      expect([JSON.stringify(nenType), migrated.success])
+        .toEqual([JSON.stringify(nenType), true]);
+
+      if (!migrated.success) continue;
+
+      expect([JSON.stringify(nenType), migrated.payload.awakening.nenType])
+        .toEqual([JSON.stringify(nenType), expected]);
+    }
   });
 
   it("refuses malformed payloads without throwing", () => {

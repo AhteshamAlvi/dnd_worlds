@@ -206,16 +206,23 @@ export function migrateLegacyNenState(
   const seals = stored["seals"];
 
   /*
-   * Which shape is this? The discriminator is which awakening field exists,
-   * and a payload carrying BOTH is refused rather than resolved by precedence:
-   * the two can disagree, and silently preferring one changes whether somebody
-   * is awakened.
+   * Which shape is this? Decided by FIELD PRESENCE, not by whether the value
+   * found there happens to be well-typed.
+   *
+   * The earlier version asked whether `awakened` was a boolean and whether
+   * `awakening` was a record, which meant a payload carrying a corrupt
+   * `awakened` alongside a valid `awakening` was quietly read as the newer
+   * shape — the corruption disappeared instead of being reported. A payload
+   * carrying both fields is ambiguous however either one is typed: the two can
+   * disagree, and silently preferring one changes whether somebody is
+   * awakened.
+   *
+   * `hasOwnProperty.call` rather than `in` or a truthiness test, so an
+   * inherited property cannot masquerade as a stored one and an own field
+   * holding `undefined` still counts as present — it was written.
    */
-  const hasBoolean = typeof stored["awakened"] === "boolean";
-  const hasObject =
-    stored["awakening"] !== null &&
-    typeof stored["awakening"] === "object" &&
-    !Array.isArray(stored["awakening"]);
+  const hasBoolean = Object.prototype.hasOwnProperty.call(stored, "awakened");
+  const hasObject = Object.prototype.hasOwnProperty.call(stored, "awakening");
 
   if (hasBoolean && hasObject) {
     return fail(traceId, [{
@@ -234,6 +241,32 @@ export function migrateLegacyNenState(
       message: "A stored Nen state must record an awakening.",
       audience: "developer",
       required: "`awakened` (pre-Phase-5) or `awakening`",
+      actual: "neither",
+    }]);
+  }
+
+  /* Present, so it has to be the thing its presence claims. */
+  if (hasBoolean && typeof stored["awakened"] !== "boolean") {
+    return fail(traceId, [{
+      code: "nen.state.migrate.awakened.invalid",
+      message: "A pre-Phase-5 awakening must be a boolean.",
+      audience: "developer",
+      required: "boolean",
+      actual: describeDiagnosticValue(stored["awakened"]),
+    }]);
+  }
+
+  if (
+    hasObject &&
+    (stored["awakening"] === null ||
+      typeof stored["awakening"] !== "object" ||
+      Array.isArray(stored["awakening"]))
+  ) {
+    return fail(traceId, [{
+      code: "nen.state.migrate.awakening.invalid",
+      message: "A stored awakening must be a record.",
+      audience: "developer",
+      required: "object",
       actual: describeDiagnosticValue(stored["awakening"]),
     }]);
   }
@@ -338,7 +371,19 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
     };
   }
 
-  if (legacyStates !== undefined && !Array.isArray(legacyStates)) {
+  const nenType = migrateNenTypeField(stored["nenType"]);
+
+  if (!nenType.ok) return nenType;
+
+  if (legacyStates === undefined) {
+    return {
+      ok: true,
+      value: { ...stored, suppression: current ?? [], nenType: nenType.value } as
+        unknown as NenAwakeningState,
+    };
+  }
+
+  if (!Array.isArray(legacyStates)) {
     return {
       ok: false,
       errors: [{
@@ -351,13 +396,31 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
     };
   }
 
-  const suppression = legacyStates === undefined
-    ? current
-    : (legacyStates as readonly unknown[]).map(migrateForcedState);
+  /*
+   * The containing recovery is passed DOWN rather than looked for on each
+   * forced state, because Phase 5.0 never stored the relationship there.
+   * `awakening.collapseRecovery.id` was the only place it existed, and a
+   * migration that expected the forced state to know its own recovery failed
+   * every genuine collapse save — producing `recoveryId: ""`, which the
+   * current domain validator then refuses.
+   */
+  const recovery = stored["collapseRecovery"];
+  const migrated: unknown[] = [];
+  const errors: EngineError[] = [];
 
-  const nenType = migrateNenTypeField(stored["nenType"]);
+  for (const held of legacyStates as readonly unknown[]) {
+    const result = migrateForcedState(held, recovery);
 
-  if (!nenType.ok) return nenType;
+    if (!result.ok) {
+      errors.push(...result.errors);
+
+      continue;
+    }
+
+    migrated.push(result.value);
+  }
+
+  if (errors.length > 0) return { ok: false, errors };
 
   const { forcedStates: _dropped, ...rest } = stored;
 
@@ -365,95 +428,238 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
     ok: true,
     value: {
       ...rest,
-      suppression: suppression ?? [],
+      suppression: migrated,
       nenType: nenType.value,
     } as unknown as NenAwakeningState,
   };
 }
 
 
-/*
- * One Phase-5.0 forced state, split by the origin it used to carry.
- *
- * An `uncontained-collapse` origin was never an externally imposed state — it
- * was the body's own response — so it becomes an involuntary Zetsu and loses
- * the exemption list it should never have been able to hold. Everything else
- * was externally imposed and becomes a forced Zetsu whose release authority is
- * the source that imposed it, which is what the repair made explicit.
- */
-function migrateForcedState(held: unknown): unknown {
-  if (held === null || typeof held !== "object") return held;
-
-  const legacy = held as Record<string, unknown>;
-
-  if (legacy["origin"] === "uncontained-collapse") {
-    return {
-      id: legacy["id"],
-      kind: "involuntary-zetsu",
-      appliedAt: legacy["appliedAt"],
-      cause: "uncontained-aura-collapse",
-      recoveryId: legacy["recoveryId"] ?? "",
-    };
-  }
-
-  const source = legacy["source"];
-  const exemptions = Array.isArray(legacy["exemptions"])
-    ? (legacy["exemptions"] as readonly unknown[]).map((exemption) => {
-      if (exemption === null || typeof exemption !== "object") return exemption;
-
-      const old = exemption as Record<string, unknown>;
-
-      return {
-        abilityId: old["abilityId"],
-        suppressionId: old["forcedStateId"] ?? old["suppressionId"],
-        source,
-      };
-    })
-    : [];
-
-  return {
-    id: legacy["id"],
-    kind: "forced-zetsu",
-    appliedAt: legacy["appliedAt"],
-    source,
-    release: { rule: "source-authorized", authority: source },
-    exemptions,
-  };
-}
+type MigratedState =
+  | { readonly ok: true; readonly value: unknown }
+  | { readonly ok: false; readonly errors: readonly EngineError[] };
 
 
-function migrateNenTypeField(
-  value: unknown,
-): { readonly ok: true; readonly value: NenTypeKnowledge } | { readonly ok: false; readonly errors: readonly EngineError[] } {
-  if (value === null || typeof value !== "object") {
-    return { ok: true, value: unassignedNenType() };
-  }
-
-  const stored = value as Record<string, unknown>;
-
-  /* Already migrated. */
-  if (stored["status"] === "assigned" || stored["status"] === "unassigned") {
-    return { ok: true, value: value as NenTypeKnowledge };
-  }
-
-  const type = stored["type"];
-
-  if (type === null || type === undefined) {
-    return { ok: true, value: unassignedNenType() };
-  }
-
-  if (!isNenType(type)) {
+/** The recovery id a collapse-origin state belongs to, or why there is none. */
+function readRecoveryId(
+  recovery: unknown,
+): { readonly ok: true; readonly id: string } | { readonly ok: false; readonly errors: readonly EngineError[] } {
+  if (
+    recovery === null ||
+    typeof recovery !== "object" ||
+    Array.isArray(recovery) ||
+    typeof (recovery as { id?: unknown }).id !== "string" ||
+    (recovery as { id: string }).id.trim().length === 0
+  ) {
     return {
       ok: false,
       errors: [{
-        code: "nen.state.migrate.nen-type.invalid",
-        message: "A stored Nen Type must be one of the six Nen Types.",
+        code: "nen.state.migrate.recovery.unreadable",
+        message:
+          "A collapse-origin forced state needs the collapse recovery it belongs to, which this awakening does not carry.",
         audience: "developer",
-        required: "a Nen Type",
-        actual: describeDiagnosticValue(type),
+        required: "awakening.collapseRecovery with a non-empty id",
+        actual: describeDiagnosticValue(recovery),
       }],
     };
   }
 
-  return { ok: true, value: assignedNenType(type, stored["known"] === true) };
+  return { ok: true, id: (recovery as { id: string }).id };
+}
+
+
+/*
+ * One Phase-5.0 forced state, split by the origin it used to carry.
+ *
+ * The origin is EXHAUSTIVE, and an unrecognised one is refused rather than
+ * treated as externally imposed. Defaulting it would turn a corrupt or
+ * future-dated value into a forced Zetsu carrying a release authority nobody
+ * granted — and the final validation pass would not catch it, because the
+ * result would be a perfectly well-formed forced Zetsu.
+ */
+function migrateForcedState(held: unknown, recovery: unknown): MigratedState {
+  if (held === null || typeof held !== "object" || Array.isArray(held)) {
+    return {
+      ok: false,
+      errors: [{
+        code: "nen.state.migrate.suppression.entry.invalid",
+        message: "A stored forced state must be a record.",
+        audience: "developer",
+        required: "object",
+        actual: describeDiagnosticValue(held),
+      }],
+    };
+  }
+
+  const legacy = held as Record<string, unknown>;
+  const origin = legacy["origin"];
+
+  switch (origin) {
+    case "uncontained-collapse": {
+      const recoveryId = readRecoveryId(recovery);
+
+      if (!recoveryId.ok) return recoveryId;
+
+      /*
+       * Phase 5.0 wrote no `recoveryId` here. One that turns up anyway is
+       * either redundant or wrong, and the migration cannot tell which — so an
+       * agreeing value is accepted and a contradicting one is refused rather
+       * than silently overruled.
+       */
+      const declared = legacy["recoveryId"];
+
+      if (declared !== undefined && declared !== recoveryId.id) {
+        return {
+          ok: false,
+          errors: [{
+            code: "nen.state.migrate.recovery.conflict",
+            message:
+              "A stored forced state names a different collapse recovery than the awakening does.",
+            audience: "developer",
+            required: recoveryId.id,
+            actual: describeDiagnosticValue(declared),
+          }],
+        };
+      }
+
+      return {
+        ok: true,
+        value: {
+          id: legacy["id"],
+          kind: "involuntary-zetsu",
+          appliedAt: legacy["appliedAt"],
+          cause: "uncontained-aura-collapse",
+          recoveryId: recoveryId.id,
+        },
+      };
+    }
+
+    case "instinctive-awakening": {
+      const source = legacy["source"];
+
+      const exemptions = Array.isArray(legacy["exemptions"])
+        ? (legacy["exemptions"] as readonly unknown[]).map((exemption) => {
+          if (exemption === null || typeof exemption !== "object") {
+            return exemption;
+          }
+
+          const old = exemption as Record<string, unknown>;
+
+          return {
+            abilityId: old["abilityId"],
+            suppressionId: old["forcedStateId"] ?? old["suppressionId"],
+            source,
+          };
+        })
+        : legacy["exemptions"];
+
+      return {
+        ok: true,
+        value: {
+          id: legacy["id"],
+          kind: "forced-zetsu",
+          appliedAt: legacy["appliedAt"],
+          source,
+          release: { rule: "source-authorized", authority: source },
+          exemptions: exemptions ?? [],
+        },
+      };
+    }
+
+    default:
+      return {
+        ok: false,
+        errors: [{
+          code: "nen.state.migrate.origin.invalid",
+          message:
+            "A stored forced state names an origin this migration does not recognise.",
+          audience: "developer",
+          required: "instinctive-awakening | uncontained-collapse",
+          actual: describeDiagnosticValue(origin),
+        }],
+      };
+  }
+}
+
+
+/*
+ * The Nen Type field, in whichever of the two shapes it was stored.
+ *
+ * REFUSED rather than normalized. The earlier version turned anything that was
+ * not an object into `unassigned` and read `known` as `=== true`, which meant
+ * a corrupt affinity silently became "nobody decided" and a corrupt `known`
+ * silently became `false`. Both are inventions: the record said something, and
+ * the migration does not get to decide it said nothing.
+ *
+ * The genuine legacy form is `{ type: NenType | null, known: boolean }`, where
+ * `{ type: null, known: false }` was what "nobody has established this"
+ * looked like before the state became explicit.
+ */
+function migrateNenTypeField(
+  value: unknown,
+): { readonly ok: true; readonly value: NenTypeKnowledge } | { readonly ok: false; readonly errors: readonly EngineError[] } {
+  const refuse = (
+    required: string,
+    actual: unknown,
+  ): { readonly ok: false; readonly errors: readonly EngineError[] } => ({
+    ok: false,
+    errors: [{
+      code: "nen.state.migrate.nen-type.invalid",
+      message: "A stored awakening must carry a readable Nen Type record.",
+      audience: "developer",
+      required,
+      actual: describeDiagnosticValue(actual),
+    }],
+  });
+
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return refuse("{ type, known } or { status }", value);
+  }
+
+  const stored = value as Record<string, unknown>;
+
+  /* Already current. */
+  if (stored["status"] === "unassigned") {
+    return { ok: true, value: unassignedNenType() };
+  }
+
+  if (stored["status"] === "assigned") {
+    if (!isNenType(stored["type"])) {
+      return refuse("a Nen Type", stored["type"]);
+    }
+
+    if (typeof stored["known"] !== "boolean") {
+      return refuse("boolean", stored["known"]);
+    }
+
+    return { ok: true, value: assignedNenType(stored["type"], stored["known"]) };
+  }
+
+  if (stored["status"] !== undefined) {
+    return refuse("assigned | unassigned", stored["status"]);
+  }
+
+  /* The legacy form. `known` must be a boolean; it was one. */
+  if (typeof stored["known"] !== "boolean") {
+    return refuse("boolean", stored["known"]);
+  }
+
+  const type = stored["type"];
+
+  if (type === null) {
+    /*
+     * `{ type: null, known: true }` was refused by the Phase-5.0 validator as
+     * "a known Nen Type must say which type it is", so a save carrying it is
+     * corrupt rather than merely old.
+     */
+    if (stored["known"] === true) {
+      return refuse("known: false when no type is recorded", stored["known"]);
+    }
+
+    return { ok: true, value: unassignedNenType() };
+  }
+
+  if (!isNenType(type)) return refuse("a Nen Type or null", type);
+
+  return { ok: true, value: assignedNenType(type, stored["known"]) };
 }
