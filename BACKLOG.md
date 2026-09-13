@@ -7,8 +7,9 @@ to say something is missing, it links here rather than keeping its own list. Two
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
 
-Last verified against the repository: Stage II Phase 1.3 close.
-Suite at that point: **72 files, 2,074 tests, green.** `tsc --noEmit` clean for the engine.
+Last verified against the repository: the Phase 4 repair (Items — registration, provenance,
+integrity, Shū boundary).
+Suite at that point: **109 files, 4,352 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
@@ -102,6 +103,28 @@ Inventoried at Phase 1 close: **688 exports, 30 state-changing operations.**
 | `advanceGameClock`, `advanceGameTime`, `advanceFromRealTime`, `setTimeScale` | **Not migrating.** Time owns the clock; these are its own boundary, not cross-domain transitions. |
 | `registerDefinition`, `clearCustomDefinitions` | **Not migrating.** Catalog registration is host configuration, not gameplay state. |
 | `applyAttributeModifiers`, `applyPhysicalScaleSteps`, `resolveMovement`, derived attributes, Speed curve | **Pure calculations.** No state owned, no migration owed (`RUNTIME_PROTOCOL.md` §2). |
+
+## 3c · Equipment and Items
+
+Phase 4 (Tickets 4.4-4.9) plus its repair closed the Item boundary: registration, selection,
+contribution, conditional bonuses, integrity, and an authoritative whole-Item Shū envelope. See
+`ENGINE_HANDOFF.md` §8.9 and the `equipment.*` entries in `decisions/log.ts`. What is still missing
+is listed here, and every one of it was deliberately out of the repair's scope rather than
+overlooked.
+
+| Mechanic | State | Detail |
+|---|---|---|
+| **Shū — the enhancement itself** | **Specified but absent** | The boundary is production and the formula is not. `resolveItemEnvelope()` answers *which* Item, *whether* it is compatible, and *what surfaces* an enhancement would reach — identity, a binary verdict, and every Item-owned attack, defense, possessed, equipped, use and integrity-band Effect, positive and negative. Nothing decides the Aura cost, the allocation, the upkeep, or what any of it is multiplied by. `architecture.test.ts` refuses a per-channel compatibility field, so the mechanic must stay whole-Item when it is written. |
+| **Shū damage protection** | **Partially implemented** | The seam exists and is honoured: `ItemIntegrityOperation.mitigation` travels the whole runtime path and `effectiveStress = max(0, amount - mitigation)` is observable on the resolved change, the event and the trace — honoured for a `"compatible"` Item, ignored for an `"incompatible"` one. **Nothing computes a figure to put in it.** `equipment/` imports no Aura or Nen module and must not start. |
+| **Kō** | **Specified but absent** | Not begun. Named here because it is the other half of the Shū/Kō pair and would read the same envelope. |
+| **SP-to-BP damage from an Item contribution** | **Specified but absent** | `resolveItemPerformanceContribution()` produces finished, sourced, graded *facts*; nothing converts them into a hit, a margin or Body damage. Same hole as §4's SP-to-BP row, reached from the equipment side. Implement compatibility is deliberately **not** a multiplier (decision `equipment.contributions.grade-is-metadata-not-a-multiplier`) — the formula that consumes the bundle decides what a grade is worth. |
+| **Hand and slot occupancy** | **Specified but absent** | Two implement roles may both resolve to the same two hands and nothing knows there are two hands to run out of. Unchanged since Ticket 4.5. Encumbrance, load and capacity are absent for the same reason: no mechanic asks for them yet. |
+| **Item family taxonomy** | **Partially implemented** | The catalog, the reference checking and the grading all work; the authored content is one family (`blunt-weapon`), kept so the registry is exercised by real content. A real weapon/implement taxonomy is content design. |
+| **Stack splitting** | **Specified but absent** | A stack of three cannot be split into one held and two carried, which is the legitimate route to engaging one member of a stack. Refused at validation instead (`invalid-engaged-item-quantity`). |
+| **Quantity-scaled Effects** | **Specified but absent** | No Effect in the vocabulary carries a multiplier, which is why a stackable Item may declare no passive Effects at all. Until that exists, `inventoryMode` is the mechanism keeping two spellings of "two idols" from meaning two different things. |
+| **Routing `useEffects` into the mechanics they affect** | **Specified but absent** | `resolveItemUse()` resolves them once, with full provenance, into its result. Nothing applies a healing Effect to a Body or a permanent Attribute change to a sheet — those have owning mechanics that do not exist. Also tracked in §4. |
+
+---
 
 ## 4 · Combat
 

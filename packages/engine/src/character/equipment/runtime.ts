@@ -60,13 +60,18 @@ import type { ResolvedRuleEffects } from "../rules/resolution";
 import { resolveEquipmentTransition, type EquipmentTransition } from "./transitions";
 import { resolveItemUse, type ItemUse } from "./use";
 import {
-  resolveItemIntegrityOperation,
+  aggregateItemIntegrity,
+  findItemIntegrityIssues,
+  findItemIntegrityOperationIssues,
+  permitsRepair,
+  resolveEffectiveStress,
+  withEntryIntegrity,
   type ItemIntegrityOperation,
   type ItemIntegrityState,
 } from "./integrity";
-import type { InventoryItemRef } from "./references";
+import { findInventoryEntryOutcome, type InventoryItemRef } from "./references";
 import type { ItemEquipmentState } from "./state";
-import type { ItemDefinitionLookup } from "./validation";
+import { resolveItemDefinition, type ItemDefinitionLookup } from "./validation";
 import type { ItemOperation } from "./actions";
 
 
@@ -351,6 +356,18 @@ export const ITEM_REPAIR_REQUEST = "item.repair";
 export interface ItemIntegrityRequest extends QuantitativeRequest {
   readonly kind: typeof ITEM_STRESS_REQUEST | typeof ITEM_REPAIR_REQUEST;
   readonly entryId: string;
+
+  /**
+   * Protection a caller already resolved, carried through settlement.
+   *
+   * The runtime half of the seam integrity.ts describes. It used to stop at
+   * the request builder: `itemIntegrityRequest()` took an operation with
+   * `mitigation` on it, wrote `requested` and dropped the rest, and the effect
+   * handler then rebuilt a bare `{ type: "stress", amount }` — so every
+   * mitigation a caller offered survived exactly as far as the function that
+   * was supposed to carry it. Present only on a stress request.
+   */
+  readonly mitigation?: number;
 }
 
 
@@ -361,20 +378,59 @@ export interface ItemIntegrityAppliedEvent extends Omit<RuntimeEvent, "sequence"
   readonly itemId: string;
   readonly stateBefore: ItemIntegrityState;
   readonly stateAfter: ItemIntegrityState;
+
+  /** Stress asked of this entry in the batch, and what mitigation removed. */
+  readonly mitigated?: number;
+}
+
+
+interface PendingIntegrityRequest {
+  readonly request: ItemIntegrityRequest;
+  readonly operation: ItemIntegrityOperation;
+}
+
+
+/** Every request answered with "nothing happened", and nothing mutated. */
+function nilOutcome(request: ItemIntegrityRequest): RuntimeRequestOutcome {
+  return { requestId: request.requestId, requested: request.requested, actual: 0 };
+}
+
+
+function operationOf(request: ItemIntegrityRequest): ItemIntegrityOperation {
+  return request.kind === ITEM_STRESS_REQUEST
+    ? {
+        type: "stress",
+        amount: request.requested,
+        ...(request.mitigation === undefined ? {} : { mitigation: request.mitigation }),
+      }
+    : { type: "repair", amount: request.requested };
 }
 
 
 /**
  * Item integrity as an effect handler for the `character` domain.
  *
- * Every request in the batch is applied, folded into one running Character
- * replacement, in the order the COORDINATOR hands the batch over — its own
- * canonical (kind, then requestId) order, not the caller's array order (see
- * `runtime/requests.ts`: batch member order is for the log only). Two
- * requests on different entries settle independently either way; two on the
- * SAME entry apply one after the other in that canonical order, which is
- * what makes the result depend only on WHAT was requested, never on the
- * order a caller happened to build the request list in.
+ * SIMULTANEOUS, which is the whole of this handler's contract and was the
+ * whole of its bug. It used to fold each request into a running Character and
+ * re-resolve between them, so two stresses and a repair on one sword came out
+ * differently depending on where the repair sat in the batch — and the batch's
+ * order is the coordinator's `(kind, requestId)` sort, which means the answer
+ * depended on what the requests happened to be CALLED.
+ *
+ * Requests in one batch describe one instant. So every one of them is
+ * evaluated against the same pre-batch Character, grouped by entry, and
+ * combined algebraically: total effective stress subtracted, total repair
+ * added, the clamp applied once at the end. One replacement state per affected
+ * entry, one final Character for the batch, and an outcome list sorted by
+ * request id so that two permutations of one batch return byte-identical
+ * results rather than merely equivalent ones.
+ *
+ * Nothing here can fail the operation. A stress consequence settles what has
+ * already happened — the attack that broke the sword landed, at the sword's
+ * pre-break performance — and a handler that could refuse would unwind the
+ * action that caused it. An invalid request, a missing entry, a non-durable
+ * Item or a refused repair is a real, zero-effect outcome, and it mutates
+ * nothing.
  */
 export function createCharacterIntegrityEffectHandler(
   getItemDefinition: ItemDefinitionLookup,
@@ -383,74 +439,192 @@ export function createCharacterIntegrityEffectHandler(
     domain: "character",
 
     applyBatch(requests: readonly RuntimeRequest[], state: unknown): EffectBatchResult {
-      let character = state as Character;
-      const outcomes: RuntimeRequestOutcome[] = [];
+      const preBatch = state as Character;
+
+      const actualByRequestId = new Map<string, RuntimeRequestOutcome>();
       const events: ItemIntegrityAppliedEvent[] = [];
 
-      for (const request of requests) {
-        const req = request as ItemIntegrityRequest;
+      const typed = requests.map((request) => request as ItemIntegrityRequest);
 
-        const operation: ItemIntegrityOperation = req.kind === ITEM_STRESS_REQUEST
-          ? { type: "stress", amount: req.requested }
-          : { type: "repair", amount: req.requested };
+      for (const request of typed) {
+        actualByRequestId.set(request.requestId, nilOutcome(request));
+      }
 
-        const resolvedResult = resolveCharacter(character);
+      const finish = (character: Character): EffectBatchResult => ({
+        state: character,
+        outcomes: [...actualByRequestId.values()].sort((left, right) =>
+          left.requestId < right.requestId ? -1 : left.requestId > right.requestId ? 1 : 0,
+        ),
+        events: [...events].sort((left, right) =>
+          left.entryId < right.entryId ? -1 : left.entryId > right.entryId ? 1 : 0,
+        ),
+      });
 
-        if (!resolvedResult.success) {
-          outcomes.push({ requestId: req.requestId, requested: req.requested, actual: 0 });
+      /*
+       * Resolved ONCE, from the pre-batch state. The old loop re-resolved
+       * between requests, which is what made the running Character a thing at
+       * all.
+       */
+      const resolvedResult = resolveCharacter(preBatch);
 
+      if (!resolvedResult.success) return finish(preBatch);
+
+      const pendingByEntry = new Map<string, PendingIntegrityRequest[]>();
+
+      for (const request of typed) {
+        const operation = operationOf(request);
+
+        /* Invalid requests are refused BEFORE anything is grouped or applied. */
+        if (findItemIntegrityOperationIssues(operation).length > 0) continue;
+
+        if (typeof request.entryId !== "string" || request.entryId.trim().length === 0) {
           continue;
         }
 
-        const resolution = resolveItemIntegrityOperation(
-          {
-            resolved: resolvedResult.payload,
-            item: { characterId: character.id, entryId: req.entryId },
-            operation,
-          },
-          getItemDefinition,
+        const pending = pendingByEntry.get(request.entryId) ?? [];
+
+        pending.push({ request, operation });
+        pendingByEntry.set(request.entryId, pending);
+      }
+
+      let character = preBatch;
+
+      for (const entryId of [...pendingByEntry.keys()].sort()) {
+        const pending = [...pendingByEntry.get(entryId)!].sort((left, right) =>
+          left.request.requestId < right.request.requestId
+            ? -1
+            : left.request.requestId > right.request.requestId
+              ? 1
+              : 0,
         );
 
-        if (!resolution.success || resolution.payload.disposition !== "applied") {
-          /*
-           * Not durable, or a refused repair — a real, zero-effect outcome,
-           * never a coordinator failure. The batch continues.
-           */
-          outcomes.push({ requestId: req.requestId, requested: req.requested, actual: 0 });
+        const found = findInventoryEntryOutcome(preBatch.items, entryId);
 
-          continue;
+        if (!found.ok) continue;
+
+        const entry = found.entry;
+        const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
+
+        if (!lookup.ok) continue;
+
+        const definition = lookup.definition;
+
+        if (definition.integrity === undefined) continue;
+
+        const policy = definition.integrity;
+
+        if (findItemIntegrityIssues(policy).length > 0) continue;
+
+        const before = entry.integrity ?? policy.maximum;
+
+        /*
+         * Every request's OWN effective figure, computed against the shared
+         * pre-batch state. Mitigation applies per request — two blows on one
+         * sword may be protected differently — while the subtraction from
+         * integrity happens once, for the sum.
+         */
+        const stressed: { readonly requestId: string; readonly effective: number; readonly mitigated: number }[] = [];
+        const repaired: { readonly requestId: string; readonly amount: number }[] = [];
+
+        const repairPermitted = permitsRepair(policy, before);
+
+        for (const { request, operation } of pending) {
+          if (operation.type === "stress") {
+            const stress = resolveEffectiveStress(definition.shuInteraction, operation);
+
+            stressed.push({
+              requestId: request.requestId,
+              effective: stress.effective,
+              mitigated: stress.mitigated,
+            });
+
+            continue;
+          }
+
+          if (!repairPermitted) continue;
+
+          repaired.push({ requestId: request.requestId, amount: operation.amount });
         }
 
-        const { change, nextCharacter } = resolution.payload;
+        const totals = {
+          stress: stressed.reduce((sum, entryStress) => sum + entryStress.effective, 0),
+          repair: repaired.reduce((sum, entryRepair) => sum + entryRepair.amount, 0),
+        };
 
-        character = nextCharacter;
+        const aggregate = aggregateItemIntegrity(policy, before, totals);
 
-        const actual = Math.abs(change.integrityAfter - change.integrityBefore);
+        /*
+         * What each request is reported to have done, apportioned by SHARE of
+         * its direction rather than by position. Paying requests out in order
+         * until a clamp ran dry would put the ordering straight back into the
+         * answer, which is the thing this handler exists to remove.
+         */
+        const stressShare = totals.stress === 0 ? 0 : aggregate.honouredStress / totals.stress;
+        const repairShare = totals.repair === 0 ? 0 : aggregate.honouredRepair / totals.repair;
 
-        outcomes.push({ requestId: req.requestId, requested: req.requested, actual });
+        for (const entryStress of stressed) {
+          actualByRequestId.set(entryStress.requestId, {
+            requestId: entryStress.requestId,
+            requested: pending.find((candidate) => candidate.request.requestId === entryStress.requestId)!.request.requested,
+            actual: entryStress.effective * stressShare,
+          });
+        }
+
+        for (const entryRepair of repaired) {
+          actualByRequestId.set(entryRepair.requestId, {
+            requestId: entryRepair.requestId,
+            requested: entryRepair.amount,
+            actual: entryRepair.amount * repairShare,
+          });
+        }
+
+        /*
+         * At most ONE replacement per entry, and only when the figure actually
+         * moved. A repair that would overshoot the maximum is a real outcome
+         * with `actual` below `requested` — the same shape a resisted effect
+         * takes — so it still reports, and still rewrites nothing.
+         */
+        if (aggregate.integrityAfter !== before) {
+          character = withEntryIntegrity(character, entryId, aggregate.integrityAfter);
+        }
+
+        const first = pending[0]!.request;
+        const mitigated = stressed.reduce((sum, entryStress) => sum + entryStress.mitigated, 0);
 
         events.push({
           kind: "item-integrity-applied",
           domain: "character",
-          operationId: req.operationId,
-          occurredAt: req.occurredAt,
-          source: req.from,
-          target: req.to,
-          entryId: req.entryId,
-          itemId: change.itemId,
-          stateBefore: change.stateBefore,
-          stateAfter: change.stateAfter,
-          change: { requested: req.requested, actual },
+          operationId: first.operationId,
+          occurredAt: first.occurredAt,
+          source: first.from,
+          target: first.to,
+          entryId,
+          itemId: entry.itemId,
+          stateBefore: aggregate.stateBefore,
+          stateAfter: aggregate.stateAfter,
+          ...(mitigated === 0 ? {} : { mitigated }),
+          change: {
+            requested: totals.stress + totals.repair + mitigated,
+            actual: Math.abs(aggregate.integrityAfter - before),
+          },
         });
       }
 
-      return { state: character, outcomes, events };
+      return finish(character);
     },
   };
 }
 
 
-/** Build a well-formed Item integrity request. */
+/**
+ * Build a well-formed Item integrity request.
+ *
+ * Carries `mitigation` through rather than discarding it, and no longer
+ * normalises the amount with `Math.abs()`: a caller asking to repair -5 has
+ * made a sign error, and turning it into a repair of 5 answered a question
+ * nobody asked. A malformed operation produces a request the handler refuses
+ * with a zero outcome, which is where that fault belongs.
+ */
 export function itemIntegrityRequest(input: {
   readonly requestId: string;
   readonly operationId: string;
@@ -460,6 +634,10 @@ export function itemIntegrityRequest(input: {
   readonly operation: ItemIntegrityOperation;
   readonly entryId: string;
 }): ItemIntegrityRequest {
+  const mitigation = input.operation.type === "stress"
+    ? input.operation.mitigation
+    : undefined;
+
   return {
     requestId: input.requestId,
     kind: input.operation.type === "stress" ? ITEM_STRESS_REQUEST : ITEM_REPAIR_REQUEST,
@@ -468,7 +646,8 @@ export function itemIntegrityRequest(input: {
     occurredAt: input.occurredAt,
     from: input.from,
     to: input.to,
-    requested: Math.abs(input.operation.amount),
+    requested: input.operation.amount,
     entryId: input.entryId,
+    ...(mitigation === undefined ? {} : { mitigation }),
   };
 }

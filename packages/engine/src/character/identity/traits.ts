@@ -47,7 +47,7 @@ import {
 } from "../capabilities/lifecycle";
 
 import {
-  findImplementConditionalRuleListIssues,
+  findImplementConditionalRulesIssues,
   type ImplementConditionalRule,
 } from "../equipment/conditions";
 
@@ -382,18 +382,16 @@ export function findTraitDefinitionStructuralIssues(
     }
   }
 
-  const conditionalRules = trait["implementConditionalRules"];
-
-  if (conditionalRules !== undefined) {
-    if (!Array.isArray(conditionalRules)) {
-      issues.push("declares implementConditionalRules that is not a list.");
-    } else {
-      for (const issue of findImplementConditionalRuleListIssues(
-        conditionalRules as readonly ImplementConditionalRule[],
-      )) {
-        issues.push(`has a malformed implementConditionalRules entry: ${issue.code} — ${issue.message}`);
-      }
-    }
+  /*
+   * The RAW field. The list guard used to live here, beside a second copy of
+   * it in techniques.ts and a `?? []` in applications.ts — three answers to
+   * "is this a list", one of which said yes to `null`. It lives in the
+   * validator now, which takes `unknown`.
+   */
+  for (const issue of findImplementConditionalRulesIssues(
+    trait["implementConditionalRules"],
+  )) {
+    issues.push(`has a malformed implementConditionalRules entry: ${issue.code} — ${issue.message}`);
   }
 
   return issues;

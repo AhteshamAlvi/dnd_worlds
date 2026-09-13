@@ -41,7 +41,7 @@ import type { EffectfulDefinition } from "../rules/content";
 import type { Effect } from "../rules/effects";
 
 import {
-  findImplementConditionalRuleListIssues,
+  findImplementConditionalRulesIssues,
   type ImplementConditionalRule,
 } from "../equipment/conditions";
 
@@ -345,16 +345,11 @@ export function findTechniqueDefinitionStructuralIssues(
     ).map((issue) => issue.replace(/^Technique "[^"]*" /, "")));
   }
 
-  const conditionalRules = technique["implementConditionalRules"];
-
-  if (conditionalRules !== undefined) {
-    if (!Array.isArray(conditionalRules)) {
-      issues.push("declares implementConditionalRules that is not a list.");
-    } else {
-      for (const issue of findImplementConditionalRuleListIssues(conditionalRules)) {
-        issues.push(`has a malformed implementConditionalRules entry: ${issue.code} — ${issue.message}`);
-      }
-    }
+  /* The RAW field — see traits.ts for why the list guard moved. */
+  for (const issue of findImplementConditionalRulesIssues(
+    technique["implementConditionalRules"],
+  )) {
+    issues.push(`has a malformed implementConditionalRules entry: ${issue.code} — ${issue.message}`);
   }
 
   return issues;

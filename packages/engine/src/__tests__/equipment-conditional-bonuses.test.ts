@@ -14,6 +14,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  authorizeImplementConditionalRules,
   collectMatchedCheckModifiers,
   collectMatchedPerformanceEffects,
   findImplementConditionIssues,
@@ -67,6 +68,19 @@ function sourced(
 }
 
 
+/*
+ * The engine's own brand, applied here because these cases are about the
+ * MATCHER rather than about where a rule came from. Collecting rules from a
+ * character's actual Traits, Techniques and Skill is
+ * collectImplementConditionalRules()'s job and is proved in
+ * equipment-conditional-authorization.test.ts; nothing outside the engine can
+ * reach this function, which is the point of it.
+ */
+function authorized(rules: readonly SourcedImplementConditionalRule[]) {
+  return authorizeImplementConditionalRules(rules);
+}
+
+
 /* -------------------------------------------------------------------------- */
 /* Sources: Skill, Technique, Trait, each matching a concrete Item           */
 /* -------------------------------------------------------------------------- */
@@ -79,7 +93,7 @@ describe("each content type's rule keeps its own source", () => {
       sourced({ type: "skill", id: "direct-thrust" }, { ...BLADED_BONUS, id: "thrust-bonus" }),
     ];
 
-    const contributions = collectMatchedCheckModifiers(rules, [resolution()]);
+    const contributions = collectMatchedCheckModifiers(authorized(rules), [resolution()]);
 
     expect(contributions).toHaveLength(3);
     expect(contributions.map((c) => c.source.type).sort())
@@ -89,7 +103,7 @@ describe("each content type's rule keeps its own source", () => {
 
   it("keeps the Item's own contribution source separate from a matched rule's", () => {
     const rules = [sourced({ type: "trait", id: "keen-edge" }, PERFORMANCE_BONUS)];
-    const matched = collectMatchedPerformanceEffects(rules, resolution({ compatibility: "preferred" }));
+    const matched = collectMatchedPerformanceEffects(authorized(rules), resolution({ compatibility: "preferred" }));
 
     expect(matched.attack).toHaveLength(1);
     expect(matched.attack[0]?.source).toEqual({ type: "trait", id: "keen-edge" });
@@ -178,8 +192,8 @@ it("distinguishes duplicate entries of one Item definition by entryId", () => {
 
   const rules = [sourced({ type: "trait", id: "keen-edge" }, PERFORMANCE_BONUS)];
 
-  const matchedE1 = collectMatchedPerformanceEffects(rules, e1);
-  const matchedE2 = collectMatchedPerformanceEffects(rules, e2);
+  const matchedE1 = collectMatchedPerformanceEffects(authorized(rules), e1);
+  const matchedE2 = collectMatchedPerformanceEffects(authorized(rules), e2);
 
   /* Same definition (rapier), different entries — only the preferred one matches. */
   expect(matchedE1.attack).toHaveLength(0);
@@ -195,7 +209,7 @@ describe("nonmatch, malformed and unresolved are distinct", () => {
   it("a nonmatch contributes nothing, and is not an error", () => {
     const rules = [sourced({ type: "trait", id: "keen-edge" }, { ...BLADED_BONUS, condition: { role: "shield" } })];
 
-    expect(collectMatchedCheckModifiers(rules, [resolution()])).toEqual([]);
+    expect(collectMatchedCheckModifiers(authorized(rules), [resolution()])).toEqual([]);
   });
 
   it("a malformed rule is a structural issue, distinct from a nonmatch", () => {
@@ -240,7 +254,7 @@ it("positive and negative check outputs stack through the same collection", () =
     sourced({ type: "condition", id: "trembling-hands" }, BLADED_PENALTY),
   ];
 
-  const contributions = collectMatchedCheckModifiers(rules, [resolution()]);
+  const contributions = collectMatchedCheckModifiers(authorized(rules), [resolution()]);
 
   expect(contributions.map((c) => c.amount).sort()).toEqual([-1, 2]);
 });
@@ -261,9 +275,9 @@ it("reordering rules or resolutions does not change what matches", () => {
     resolution({ item: { characterId: "gon", entryId: "e2" }, families: ["blunt"] }),
   ];
 
-  const forward = collectMatchedCheckModifiers(rules, resolutions);
-  const backwardRules = collectMatchedCheckModifiers([...rules].reverse(), resolutions);
-  const backwardResolutions = collectMatchedCheckModifiers(rules, [...resolutions].reverse());
+  const forward = collectMatchedCheckModifiers(authorized(rules), resolutions);
+  const backwardRules = collectMatchedCheckModifiers(authorized([...rules].reverse()), resolutions);
+  const backwardResolutions = collectMatchedCheckModifiers(authorized(rules), [...resolutions].reverse());
 
   expect(new Set(forward.map((c) => c.source.id))).toEqual(new Set(backwardRules.map((c) => c.source.id)));
   expect(new Set(forward.map((c) => c.source.id))).toEqual(new Set(backwardResolutions.map((c) => c.source.id)));

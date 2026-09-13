@@ -66,11 +66,17 @@ import {
 } from "./actions";
 import {
   collectMatchedPerformanceEffects,
-  type SourcedImplementConditionalRule,
+  NO_IMPLEMENT_CONDITIONAL_RULES,
+  type AuthorizedImplementConditionalRules,
 } from "./conditions";
-import { currentIntegrityBand, resolveIntegrityState, type ItemIntegrityState } from "./integrity";
+import {
+  currentIntegrityBand,
+  resolveIntegrityState,
+  resolveItemFunctionality,
+  type ItemIntegrityState,
+} from "./integrity";
 import type { ImplementCompatibility, ImplementResolution } from "./implements";
-import type { ItemDefinitionLookup } from "./validation";
+import { resolveItemDefinition, type ItemDefinitionLookup } from "./validation";
 
 
 /** One resolved half of a contribution — attack or defense — sourced. */
@@ -152,10 +158,15 @@ export function resolveItemPerformanceContribution(
 
   /**
    * Implement-conditional rules (Ticket 4.7) whose `"performance"` output may
-   * apply to THIS resolution. Caller-supplied — this file never looks up a
-   * Trait, Technique or Skill; see conditions.ts's header.
+   * apply to THIS resolution.
+   *
+   * The engine's own authorized collection — this file still never looks up a
+   * Trait, Technique or Skill (see conditions.ts's header), and it no longer
+   * accepts a list a caller invented either. One collection serves both
+   * outputs: the same value `character/actions/preparation.ts` routes the
+   * `"check"` half of through.
    */
-  conditionalRules: readonly SourcedImplementConditionalRule[] = [],
+  conditionalRules: AuthorizedImplementConditionalRules = NO_IMPLEMENT_CONDITIONAL_RULES,
 ): EngineResult<ItemPerformanceContribution> {
   const inputs: TraceInputs = {
     role: { value: resolution.role },
@@ -163,17 +174,26 @@ export function resolveItemPerformanceContribution(
     compatibility: { value: resolution.compatibility },
   };
 
-  const definition = getItemDefinition(resolution.itemId);
+  const lookup = resolveItemDefinition(getItemDefinition, resolution.itemId);
 
-  if (definition === undefined) {
-    return engineFailure(traceOf(inputs, "item_unknown"), [{
-      code: "equipment.contributions.item_unknown",
-      message: `The resolved implement names Item "${resolution.itemId}", which no catalog defines.`,
-      audience: "developer",
-      required: "a known Item id",
-      actual: resolution.itemId,
-    }]);
+  if (!lookup.ok) {
+    return engineFailure(
+      traceOf(inputs, lookup.issue === "unknown" ? "item_unknown" : "definition_invalid"),
+      [{
+        code: lookup.issue === "unknown"
+          ? "equipment.contributions.item_unknown"
+          : "equipment.contributions.definition_invalid",
+        message: lookup.issue === "unknown"
+          ? `The resolved implement names Item "${resolution.itemId}", which no catalog defines.`
+          : `The catalog answered Item "${resolution.itemId}" with something that is not an Item definition.`,
+        audience: "developer",
+        required: "a known Item id",
+        actual: resolution.itemId,
+      }],
+    );
   }
+
+  const definition = lookup.definition;
 
   const source: ContributionSourceRef = {
     type: "item",
@@ -203,11 +223,20 @@ export function resolveItemPerformanceContribution(
   const matched = collectMatchedPerformanceEffects(conditionalRules, resolution);
 
   /*
-   * The Item's own Effects come first, as one source; each matched rule is
-   * its OWN source right behind it, never folded into the Item's — a Trait's
-   * bonus stacks and traces as the Trait's, not as something the sword did.
+   * What the Item can still DO, before anything is assembled from it.
+   *
+   * An Item at zero integrity contributes no attack and no defense unless its
+   * own `brokenBehavior` says that channel survives — see integrity.ts. The
+   * whole bucket goes, matched conditional Effects included: a Trait's bonus
+   * to "the attack this sword makes" has nothing to modify once the sword
+   * makes none, and leaving it behind would produce an attack contribution
+   * whose every Effect came from the character and none from the weapon.
    */
-  const attackSources: RuleEffectSource[] = [
+  const functionality = resolveItemFunctionality(definition, resolution.integrity);
+
+  inputs["functional"] = { value: !functionality.broken };
+
+  const attackSources: RuleEffectSource[] = !functionality.attackAvailable ? [] : [
     ...(definition.attack === undefined ? [] : [{ source, effects: definition.attack.effects ?? [] }]),
     ...matched.attack.map(({ source: ruleSource, effect }) => ({
       source: ruleSource,
@@ -215,7 +244,7 @@ export function resolveItemPerformanceContribution(
     })),
   ];
 
-  const defenseSources: RuleEffectSource[] = [
+  const defenseSources: RuleEffectSource[] = !functionality.defenseAvailable ? [] : [
     ...(definition.defense === undefined ? [] : [{ source, effects: definition.defense.effects ?? [] }]),
     ...matched.defense.map(({ source: ruleSource, effect }) => ({
       source: ruleSource,
@@ -276,7 +305,7 @@ export function resolveItemPerformanceContribution(
 export function resolveItemPerformanceContributions(
   resolutions: readonly ImplementResolution[],
   getItemDefinition: ItemDefinitionLookup,
-  conditionalRules: readonly SourcedImplementConditionalRule[] = [],
+  conditionalRules: AuthorizedImplementConditionalRules = NO_IMPLEMENT_CONDITIONAL_RULES,
 ): EngineResult<readonly ItemPerformanceContribution[]> {
   const contributions: ItemPerformanceContribution[] = [];
 

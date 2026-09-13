@@ -459,11 +459,31 @@ export function findCatalogReferenceIssues(): readonly string[] {
    * checks post-load, and exactly why an Item Family carries no mechanics —
    * see families.ts's header.
    */
+  /*
+   * Every walk below takes `unknown` and proves the list before touching it.
+   *
+   * The registration barrier now refuses `families: 42`, a role that is not an
+   * object and a rule list that is not a list — but this function is public,
+   * runs over whatever a host has managed to register, and is precisely the
+   * place a malformed value shows up LAST. It used to call `.filter()` on
+   * whatever sat in the field, so an Item that slipped through anywhere threw
+   * out of the check written to find it.
+   */
+  function listOf(value: unknown): readonly unknown[] {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function recordOfValue(value: unknown): Record<string, unknown> | undefined {
+    return typeof value === "object" && value !== null
+      ? value as Record<string, unknown>
+      : undefined;
+  }
+
   function unknownFamilyIssues(
     where: string,
-    families: readonly unknown[],
+    families: unknown,
   ): readonly string[] {
-    return families
+    return listOf(families)
       .filter((familyId): familyId is string =>
         typeof familyId === "string" && !isKnownDefinitionId("item-family", familyId)
       )
@@ -476,16 +496,16 @@ export function findCatalogReferenceIssues(): readonly string[] {
   ): readonly string[] {
     const out: string[] = [];
 
-    for (const requirement of requirements ?? []) {
+    for (const candidate of listOf(requirements)) {
+      const requirement = recordOfValue(candidate);
+
+      if (requirement === undefined) continue;
+
+      const role = `${where}, role "${String(requirement["role"])}"`;
+
       out.push(
-        ...unknownFamilyIssues(
-          `${where}, role "${requirement.role}"`,
-          requirement.acceptedFamilies ?? [],
-        ),
-        ...unknownFamilyIssues(
-          `${where}, role "${requirement.role}"`,
-          requirement.preferredFamilies ?? [],
-        ),
+        ...unknownFamilyIssues(role, requirement["acceptedFamilies"]),
+        ...unknownFamilyIssues(role, requirement["preferredFamilies"]),
       );
     }
 
@@ -502,11 +522,19 @@ export function findCatalogReferenceIssues(): readonly string[] {
   ): readonly string[] {
     const out: string[] = [];
 
-    for (const rule of rules ?? []) {
+    for (const candidate of listOf(rules)) {
+      const rule = recordOfValue(candidate);
+
+      if (rule === undefined) continue;
+
+      const condition = recordOfValue(rule["condition"]);
+
+      if (condition === undefined) continue;
+
       out.push(
         ...unknownFamilyIssues(
-          `${where}, rule "${rule.id}"`,
-          rule.condition.familyIds ?? [],
+          `${where}, rule "${String(rule["id"])}"`,
+          condition["familyIds"],
         ),
       );
     }
@@ -515,7 +543,7 @@ export function findCatalogReferenceIssues(): readonly string[] {
   }
 
   for (const item of REGISTRIES.item.all()) {
-    issues.push(...unknownFamilyIssues(`Item "${item.id}"`, item.families ?? []));
+    issues.push(...unknownFamilyIssues(`Item "${item.id}"`, item.families));
     issues.push(
       ...implementFamilyIssues(`Item "${item.id}" use application`, item.useApplication?.implements),
     );
@@ -523,10 +551,10 @@ export function findCatalogReferenceIssues(): readonly string[] {
 
   for (const skill of REGISTRIES.skill.all()) {
     issues.push(
-      ...implementFamilyIssues(`Skill "${skill.id}" application`, skill.application.implements),
+      ...implementFamilyIssues(`Skill "${skill.id}" application`, skill.application?.implements),
       ...conditionalRuleFamilyIssues(
         `Skill "${skill.id}" application`,
-        skill.application.implementConditionalRules,
+        skill.application?.implementConditionalRules,
       ),
     );
   }

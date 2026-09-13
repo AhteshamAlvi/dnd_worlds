@@ -60,7 +60,11 @@ import type { Effect } from "../rules/effects";
 import { findEffectsValidationIssues } from "../rules/validation";
 
 import type { ItemFamilyId } from "./families";
-import type { ImplementCompatibility, ImplementResolution } from "./implements";
+import {
+  IMPLEMENT_COMPATIBILITIES,
+  type ImplementCompatibility,
+  type ImplementResolution,
+} from "./implements";
 import type { ItemEquipmentState } from "./state";
 import { ITEM_EQUIPMENT_STATES, isItemEquipmentState } from "./state";
 
@@ -133,6 +137,24 @@ export function findImplementConditionIssues(
     });
   }
 
+  if (condition.familyIds !== undefined && nonEmptyStringArray(condition.familyIds)) {
+    const seen = new Set<string>();
+
+    for (const familyId of condition.familyIds) {
+      if (seen.has(familyId)) {
+        errors.push({
+          code: "equipment.conditions.family-ids.duplicate",
+          message: `A condition names Item family "${familyId}" more than once.`,
+          audience: "developer",
+          required: "each family named once",
+          actual: familyId,
+        });
+      }
+
+      seen.add(familyId);
+    }
+  }
+
   if (condition.compatibility !== undefined) {
     if (!Array.isArray(condition.compatibility) || condition.compatibility.length === 0) {
       errors.push({
@@ -142,6 +164,43 @@ export function findImplementConditionIssues(
         required: "one or more compatibility grades, or omit the field",
         actual: JSON.stringify(condition.compatibility),
       });
+    } else {
+      /*
+       * A CLOSED vocabulary, checked. The list used to be measured and never
+       * read, so `compatibility: ["prefered"]` validated clean and then
+       * matched nothing forever — the silent-typo failure every other closed
+       * list in this engine is guarded against.
+       */
+      const seen = new Set<string>();
+
+      for (const grade of condition.compatibility as readonly unknown[]) {
+        if (
+          typeof grade !== "string" ||
+          !(IMPLEMENT_COMPATIBILITIES as readonly string[]).includes(grade)
+        ) {
+          errors.push({
+            code: "equipment.conditions.compatibility.invalid",
+            message: "A condition names an unknown compatibility grade.",
+            audience: "developer",
+            required: [...IMPLEMENT_COMPATIBILITIES],
+            actual: String(grade),
+          });
+
+          continue;
+        }
+
+        if (seen.has(grade)) {
+          errors.push({
+            code: "equipment.conditions.compatibility.duplicate",
+            message: `A condition names compatibility "${grade}" more than once.`,
+            audience: "developer",
+            required: "each grade named once",
+            actual: grade,
+          });
+        }
+
+        seen.add(grade);
+      }
     }
   }
 
@@ -155,7 +214,9 @@ export function findImplementConditionIssues(
         actual: JSON.stringify(condition.states),
       });
     } else {
-      for (const state of condition.states) {
+      const seenStates = new Set<string>();
+
+      for (const state of condition.states as readonly unknown[]) {
         if (!isItemEquipmentState(state)) {
           errors.push({
             code: "equipment.conditions.states.invalid",
@@ -164,7 +225,21 @@ export function findImplementConditionIssues(
             required: [...ITEM_EQUIPMENT_STATES],
             actual: String(state),
           });
+
+          continue;
         }
+
+        if (seenStates.has(state)) {
+          errors.push({
+            code: "equipment.conditions.states.duplicate",
+            message: `A condition names the "${state}" state more than once.`,
+            audience: "developer",
+            required: "each state named once",
+            actual: state,
+          });
+        }
+
+        seenStates.add(state);
       }
     }
   }
@@ -231,7 +306,7 @@ export interface ImplementConditionalRule {
 export function findImplementConditionalRuleIssues(
   rule: unknown,
 ): readonly EngineError[] {
-  if (typeof rule !== "object" || rule === null) {
+  if (typeof rule !== "object" || rule === null || Array.isArray(rule)) {
     return [{
       code: "equipment.conditions.rule.invalid",
       message: "An implement-conditional rule must be an object.",
@@ -254,7 +329,7 @@ export function findImplementConditionalRuleIssues(
     });
   }
 
-  if (typeof condition !== "object" || condition === null) {
+  if (typeof condition !== "object" || condition === null || Array.isArray(condition)) {
     errors.push({
       code: "equipment.conditions.rule.condition.invalid",
       message: "An implement-conditional rule must declare a condition.",
@@ -266,7 +341,7 @@ export function findImplementConditionalRuleIssues(
     errors.push(...findImplementConditionIssues(condition));
   }
 
-  if (output === undefined || typeof output !== "object" || output === null) {
+  if (output === undefined || typeof output !== "object" || output === null || Array.isArray(output)) {
     errors.push({
       code: "equipment.conditions.rule.output.missing",
       message: "An implement-conditional rule must declare an output.",
@@ -359,13 +434,25 @@ export function findImplementConditionalRuleIssues(
  * across the whole list, the same reason `findImplementRequirementListIssues()`
  * exists beside its per-item counterpart.
  */
-export function findImplementConditionalRuleListIssues(
-  rules: readonly unknown[],
+export function findImplementConditionalRulesIssues(
+  value: unknown,
 ): readonly EngineError[] {
+  if (value === undefined) return [];
+
+  if (!Array.isArray(value)) {
+    return [{
+      code: "equipment.conditions.rules.invalid",
+      message: "An implement-conditional rule list must be a list.",
+      audience: "developer",
+      required: "array of ImplementConditionalRule, or omit the field",
+      actual: String(value),
+    }];
+  }
+
   const errors: EngineError[] = [];
   const ids = new Set<string>();
 
-  for (const candidate of rules) {
+  for (const candidate of value as readonly unknown[]) {
     errors.push(...findImplementConditionalRuleIssues(candidate));
 
     const id = typeof candidate === "object" && candidate !== null
@@ -389,6 +476,14 @@ export function findImplementConditionalRuleListIssues(
 
   return errors;
 }
+
+
+/**
+ * The previous name, kept as an alias. One implementation, three call sites
+ * that already read the way they read.
+ */
+export const findImplementConditionalRuleListIssues =
+  findImplementConditionalRulesIssues;
 
 
 /* -------------------------------------------------------------------------- */
@@ -462,6 +557,87 @@ export interface SourcedImplementConditionalRule {
 }
 
 
+/* -------------------------------------------------------------------------- */
+/* Authorization                                                              */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A CALLER may no longer hand this stage a list it made up.
+ *
+ * The header above still describes the shape of the dependency correctly —
+ * this file knows only implements, and something above it assembles the list
+ * from Skills, Techniques and Traits. What changed is WHO. "The caller's job"
+ * turned out to mean "anybody's job": a host, a UI, or a test could pass
+ * `[{ source: { type: "trait", id: "iron-grip" }, rule: <anything> }]` and get
+ * a check modifier sourced to a Trait the character has never had, matched
+ * against an Item, stacked with real ones and indistinguishable from them in
+ * the trace. Provenance that a caller can assert is not provenance.
+ *
+ * So the collection is a BRANDED value, and the brand is a module-private
+ * symbol. `collectImplementConditionalRules()` in
+ * `character/capabilities/implement-rules.ts` is the only thing that can
+ * produce one, because it is the only thing that can reach
+ * `authorizeImplementConditionalRules()` — which is engine-internal and is
+ * deliberately absent from every public barrel. TypeScript refuses a literal
+ * of this type outside this module (the key cannot be named), and the runtime
+ * check refuses a forged one from untyped JavaScript.
+ */
+
+const AUTHORIZATION: unique symbol = Symbol("nenworld.implement-conditional-rules");
+
+
+/**
+ * Implement-conditional rules the ENGINE derived from content the character
+ * actually has, ready for matching.
+ */
+export interface AuthorizedImplementConditionalRules {
+  readonly [AUTHORIZATION]: true;
+  readonly rules: readonly SourcedImplementConditionalRule[];
+}
+
+
+/**
+ * Brand a derived list as authorized. ENGINE-INTERNAL.
+ *
+ * Not exported from `equipment/index.ts` or the package barrel, and not to be:
+ * exporting it would hand every caller back the forgery this type exists to
+ * prevent.
+ */
+export function authorizeImplementConditionalRules(
+  rules: readonly SourcedImplementConditionalRule[],
+): AuthorizedImplementConditionalRules {
+  return { [AUTHORIZATION]: true, rules };
+}
+
+
+/** The empty authorized collection — no applicable content, not "unchecked". */
+export const NO_IMPLEMENT_CONDITIONAL_RULES: AuthorizedImplementConditionalRules =
+  authorizeImplementConditionalRules([]);
+
+
+/**
+ * Whether a value really carries the engine's brand.
+ *
+ * The runtime half of the guard. TypeScript already refuses a forged literal;
+ * this catches the same forgery arriving from untyped host JavaScript, where
+ * the type system was never in the room.
+ */
+export function isAuthorizedImplementConditionalRules(
+  value: unknown,
+): value is AuthorizedImplementConditionalRules {
+  return typeof value === "object" && value !== null &&
+    (value as { readonly [AUTHORIZATION]?: unknown })[AUTHORIZATION] === true &&
+    Array.isArray((value as { readonly rules?: unknown }).rules);
+}
+
+
+function rulesOf(
+  authorized: AuthorizedImplementConditionalRules,
+): readonly SourcedImplementConditionalRule[] {
+  return isAuthorizedImplementConditionalRules(authorized) ? authorized.rules : [];
+}
+
+
 /**
  * Every "check"-output rule that matched, as ordinary CheckModifierContributions.
  *
@@ -472,12 +648,12 @@ export interface SourcedImplementConditionalRule {
  * source indistinguishable, as they should be.
  */
 export function collectMatchedCheckModifiers(
-  rules: readonly SourcedImplementConditionalRule[],
+  authorized: AuthorizedImplementConditionalRules,
   resolutions: readonly ImplementResolution[],
 ): readonly CheckModifierContribution[] {
   const contributions: CheckModifierContribution[] = [];
 
-  for (const { source, rule } of rules) {
+  for (const { source, rule } of rulesOf(authorized)) {
     if (rule.output.kind !== "check") continue;
     if (!matchesImplementCondition(rule.condition, resolutions)) continue;
 
@@ -503,7 +679,7 @@ export function collectMatchedCheckModifiers(
  * `ItemPerformanceContribution` without sorting them itself.
  */
 export function collectMatchedPerformanceEffects(
-  rules: readonly SourcedImplementConditionalRule[],
+  authorized: AuthorizedImplementConditionalRules,
   resolution: ImplementResolution,
 ): {
   readonly attack: readonly { readonly source: ContributionSourceRef; readonly effect: Effect }[];
@@ -512,7 +688,7 @@ export function collectMatchedPerformanceEffects(
   const attack: { readonly source: ContributionSourceRef; readonly effect: Effect }[] = [];
   const defense: { readonly source: ContributionSourceRef; readonly effect: Effect }[] = [];
 
-  for (const { source, rule } of rules) {
+  for (const { source, rule } of rulesOf(authorized)) {
     if (rule.output.kind !== "performance") continue;
     if (!matchesImplementCondition(rule.condition, [resolution])) continue;
 

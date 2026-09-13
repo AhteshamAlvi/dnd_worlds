@@ -64,7 +64,27 @@ import {
   type InventoryItemRef,
 } from "./references";
 import { ITEM_EQUIPMENT_STATES, isItemEquipmentState, type ItemEquipmentState } from "./state";
-import type { ItemDefinitionLookup } from "./validation";
+import { resolveItemFunctionality } from "./integrity";
+import {
+  describeItemDefinitionIssue,
+  findItemCoreDefinitionIssues,
+  resolveItemDefinition,
+  type ItemDefinitionLookup,
+} from "./validation";
+import { findItemFamilyIssues } from "./families";
+
+
+/*
+ * A RECORD, and an array is not one.
+ *
+ * `[]` is `typeof "object"` and not null, so the old guard let an array
+ * through as a well-formed object with none of the fields set — which read as
+ * "an attack contribution that declares nothing", a perfectly legal thing to
+ * author, rather than as the malformed value it is.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -123,9 +143,29 @@ export interface ImplementRequirement {
 }
 
 
+/**
+ * Everything wrong with one authored role.
+ *
+ * Takes `unknown` and proves the record before reading a field off it. A role
+ * arriving as `42` inside a Skill's `implements` used to reach
+ * `requirement.role.trim()` and throw out of the validator whose entire job
+ * was to report that it was not a role.
+ */
 export function findImplementRequirementIssues(
-  requirement: ImplementRequirement,
+  value: unknown,
 ): readonly EngineError[] {
+  if (!isRecord(value)) {
+    return [{
+      code: "equipment.implements.requirement.invalid",
+      message: "An implement requirement must be an object.",
+      audience: "developer",
+      required: "an ImplementRequirement object",
+      actual: String(value),
+    }];
+  }
+
+  const requirement = value as Partial<Record<keyof ImplementRequirement, unknown>>;
+
   const errors: EngineError[] = [];
   const where = `Implement role "${String(requirement.role)}"`;
 
@@ -142,96 +182,139 @@ export function findImplementRequirementIssues(
     });
   }
 
-  if (!Number.isInteger(requirement.minimum) || requirement.minimum < 0) {
+  const minimum = requirement.minimum;
+  const maximum = requirement.maximum;
+
+  if (!Number.isInteger(minimum) || (minimum as number) < 0) {
     errors.push({
       code: "equipment.implements.cardinality.minimum.invalid",
       message: `${where} must declare a non-negative integer minimum.`,
       audience: "developer",
       required: "integer >= 0",
-      actual: String(requirement.minimum),
+      actual: String(minimum),
     });
   }
 
-  if (!Number.isInteger(requirement.maximum) || requirement.maximum < 0) {
+  if (!Number.isInteger(maximum) || (maximum as number) < 0) {
     errors.push({
       code: "equipment.implements.cardinality.maximum.invalid",
       message: `${where} must declare a non-negative integer maximum.`,
       audience: "developer",
       required: "integer >= 0",
-      actual: String(requirement.maximum),
+      actual: String(maximum),
     });
   } else if (
-    Number.isInteger(requirement.minimum) &&
-    requirement.maximum < requirement.minimum
+    Number.isInteger(minimum) &&
+    (maximum as number) < (minimum as number)
   ) {
     errors.push({
       code: "equipment.implements.cardinality.inverted",
       message: `${where}'s maximum is below its minimum.`,
       audience: "developer",
-      required: `>= ${requirement.minimum}`,
-      actual: String(requirement.maximum),
+      required: `>= ${String(minimum)}`,
+      actual: String(maximum),
     });
   }
 
+  const accepted = requirement.acceptedFamilies;
+
   if (
-    !Array.isArray(requirement.acceptedFamilies) ||
-    requirement.acceptedFamilies.length === 0 ||
-    requirement.acceptedFamilies.some((id) => typeof id !== "string" || id.trim().length === 0)
+    !Array.isArray(accepted) ||
+    accepted.length === 0 ||
+    accepted.some((id) => typeof id !== "string" || id.trim().length === 0)
   ) {
     errors.push({
       code: "equipment.implements.families.empty",
       message: `${where} must accept at least one Item family.`,
       audience: "developer",
       required: "one or more non-empty family ids",
-      actual: Array.isArray(requirement.acceptedFamilies)
-        ? String(requirement.acceptedFamilies.length)
-        : String(requirement.acceptedFamilies),
+      actual: Array.isArray(accepted)
+        ? String(accepted.length)
+        : String(accepted),
     });
-  } else if (requirement.preferredFamilies !== undefined) {
-    if (
-      !Array.isArray(requirement.preferredFamilies) ||
-      requirement.preferredFamilies.some((id) => typeof id !== "string" || id.trim().length === 0)
-    ) {
-      errors.push({
-        code: "equipment.implements.preferred-families.invalid",
-        message: `${where}'s preferred families must be a list of non-empty ids.`,
-        audience: "developer",
-        required: "array of non-empty strings",
-        actual: String(requirement.preferredFamilies),
-      });
-    } else {
-      const accepted = new Set(requirement.acceptedFamilies);
+  } else {
+    /*
+     * A family accepted twice says nothing the first mention did, and the two
+     * readings of why an author wrote it — "it counts double" and "I meant a
+     * second family" — are both wrong in ways nothing downstream can see.
+     */
+    const seen = new Set<string>();
 
-      for (const id of requirement.preferredFamilies) {
-        if (!accepted.has(id)) {
-          errors.push({
-            code: "equipment.implements.preferred-families.not-accepted",
-            message:
-              `${where} prefers family "${id}", which it does not also accept.`,
-            audience: "developer",
-            required: "every preferred family also accepted",
-            actual: id,
-          });
+    for (const id of accepted as readonly string[]) {
+      if (seen.has(id)) {
+        errors.push({
+          code: "equipment.implements.families.duplicate",
+          message: `${where} accepts family "${id}" more than once.`,
+          audience: "developer",
+          required: "each family accepted once",
+          actual: id,
+        });
+      }
+
+      seen.add(id);
+    }
+
+    if (requirement.preferredFamilies !== undefined) {
+      const preferred = requirement.preferredFamilies;
+
+      if (
+        !Array.isArray(preferred) ||
+        preferred.some((id) => typeof id !== "string" || id.trim().length === 0)
+      ) {
+        errors.push({
+          code: "equipment.implements.preferred-families.invalid",
+          message: `${where}'s preferred families must be a list of non-empty ids.`,
+          audience: "developer",
+          required: "array of non-empty strings",
+          actual: String(preferred),
+        });
+      } else {
+        const preferredSeen = new Set<string>();
+
+        for (const id of preferred as readonly string[]) {
+          if (!seen.has(id)) {
+            errors.push({
+              code: "equipment.implements.preferred-families.not-accepted",
+              message:
+                `${where} prefers family "${id}", which it does not also accept.`,
+              audience: "developer",
+              required: "every preferred family also accepted",
+              actual: id,
+            });
+          }
+
+          if (preferredSeen.has(id)) {
+            errors.push({
+              code: "equipment.implements.preferred-families.duplicate",
+              message: `${where} prefers family "${id}" more than once.`,
+              audience: "developer",
+              required: "each family preferred once",
+              actual: id,
+            });
+          }
+
+          preferredSeen.add(id);
         }
       }
     }
   }
 
   if (requirement.permittedStates !== undefined) {
-    if (
-      !Array.isArray(requirement.permittedStates) ||
-      requirement.permittedStates.length === 0
-    ) {
+    const states = requirement.permittedStates;
+
+    if (!Array.isArray(states) || states.length === 0) {
       errors.push({
         code: "equipment.implements.permitted-states.empty",
         message:
           `${where}'s permitted states must be a non-empty list, or omitted for any state.`,
         audience: "developer",
         required: "one or more states, or omit the field",
-        actual: Array.isArray(requirement.permittedStates) ? "empty list" : String(requirement.permittedStates),
+        actual: Array.isArray(states) ? "empty list" : String(states),
       });
     } else {
-      for (const state of requirement.permittedStates) {
+      const seenStates = new Set<string>();
+
+      for (const state of states as readonly unknown[]) {
         if (!isItemEquipmentState(state)) {
           errors.push({
             code: "equipment.implements.permitted-states.invalid",
@@ -240,9 +323,36 @@ export function findImplementRequirementIssues(
             required: [...ITEM_EQUIPMENT_STATES],
             actual: String(state),
           });
+
+          continue;
         }
+
+        if (seenStates.has(state)) {
+          errors.push({
+            code: "equipment.implements.permitted-states.duplicate",
+            message: `${where} permits the "${state}" state more than once.`,
+            audience: "developer",
+            required: "each state permitted once",
+            actual: state,
+          });
+        }
+
+        seenStates.add(state);
       }
     }
+  }
+
+  if (
+    requirement.allowImprovised !== undefined &&
+    typeof requirement.allowImprovised !== "boolean"
+  ) {
+    errors.push({
+      code: "equipment.implements.allow-improvised.invalid",
+      message: `${where}'s allowImprovised must be true or false when present.`,
+      audience: "developer",
+      required: "boolean, or omit the field",
+      actual: String(requirement.allowImprovised),
+    });
   }
 
   return errors;
@@ -252,6 +362,12 @@ export function findImplementRequirementIssues(
 /**
  * Every authored role in one application's declaration, checked together.
  *
+ * Takes `unknown` for the LIST as well as for each entry, because
+ * `implements: 42` on a Skill application is exactly as registerable as a
+ * malformed role inside a real list, and the old signature made the caller
+ * responsible for proving the list first — which two of the three callers
+ * did not do.
+ *
  * The per-role checks are `findImplementRequirementIssues()`; this adds the
  * one thing only visible across the whole list — a role declared twice, which
  * would make a selection naming it ambiguous about which requirement it
@@ -259,30 +375,53 @@ export function findImplementRequirementIssues(
  * a Skill's application, an Item's own use application — so the duplicate-role
  * rule cannot drift between them.
  */
-export function findImplementRequirementListIssues(
-  requirements: readonly ImplementRequirement[],
+export function findImplementRequirementsIssues(
+  value: unknown,
 ): readonly EngineError[] {
+  if (value === undefined) return [];
+
+  if (!Array.isArray(value)) {
+    return [{
+      code: "equipment.implements.requirements.invalid",
+      message: "An implement requirement list must be a list.",
+      audience: "developer",
+      required: "array of ImplementRequirement, or omit the field",
+      actual: String(value),
+    }];
+  }
+
   const errors: EngineError[] = [];
   const roles = new Set<string>();
 
-  for (const requirement of requirements) {
+  for (const requirement of value as readonly unknown[]) {
     errors.push(...findImplementRequirementIssues(requirement));
 
-    if (typeof requirement.role === "string" && roles.has(requirement.role)) {
+    const role = isRecord(requirement) ? requirement["role"] : undefined;
+
+    if (typeof role !== "string") continue;
+
+    if (roles.has(role)) {
       errors.push({
         code: "equipment.implements.role.duplicate",
-        message: `Role "${requirement.role}" is declared more than once.`,
+        message: `Role "${role}" is declared more than once.`,
         audience: "developer",
         required: "each role declared once",
-        actual: requirement.role,
+        actual: role,
       });
     }
 
-    roles.add(requirement.role);
+    roles.add(role);
   }
 
   return errors;
 }
+
+
+/**
+ * The previous name, kept as an alias so the three call sites that already
+ * import it keep reading the way they read. One implementation either way.
+ */
+export const findImplementRequirementListIssues = findImplementRequirementsIssues;
 
 
 /* -------------------------------------------------------------------------- */
@@ -337,6 +476,9 @@ export type ImplementSelectionIssueKind =
   | "invalid-entry"
   | "quantity-zero"
   | "state-not-permitted"
+  | "definition-unknown"
+  | "definition-invalid"
+  | "broken"
   | "incompatible";
 
 
@@ -382,11 +524,6 @@ function structuralError(code: string, message: string): EngineError {
     message,
     audience: "developer",
   };
-}
-
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 
@@ -584,8 +721,72 @@ export function resolveSelectedImplements(
         continue;
       }
 
-      const definition = getItemDefinition(entry.itemId);
-      const families = definition?.families ?? [];
+      /*
+       * The DEFINITION, proved before it is read.
+       *
+       * `definition?.families ?? []` used to stand here, and it quietly turned
+       * a missing Item into an improvised one: an entry naming a definition no
+       * catalog holds graded "improvised" against any role with
+       * `allowImprovised`, so a typo in an itemId — or a host that dropped a
+       * definition between sessions — became a usable club. Improvisation is a
+       * judgement about a REAL object that does not match the role; there is
+       * no object here to judge.
+       */
+      const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
+
+      if (!lookup.ok) {
+        issues.push({
+          kind: lookup.issue === "unknown" ? "definition-unknown" : "definition-invalid",
+          role: requirement.role,
+          item: selection.item,
+          message: lookup.issue === "unknown"
+            ? `This entry names Item "${entry.itemId}", which no catalog defines.`
+            : `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
+        });
+
+        continue;
+      }
+
+      const definition = lookup.definition;
+
+      const definitionIssues = [
+        ...findItemCoreDefinitionIssues(definition).map(describeItemDefinitionIssue),
+        ...findItemFamilyIssues(definition.families).map((issue) => issue.message),
+      ];
+
+      if (definitionIssues.length > 0) {
+        issues.push({
+          kind: "definition-invalid",
+          role: requirement.role,
+          item: selection.item,
+          message:
+            `Item "${entry.itemId}" ${definitionIssues.join("; ")}.`,
+        });
+
+        continue;
+      }
+
+      /*
+       * And whether it is still an object that works. A sword at zero
+       * integrity fills no role unless its own brokenBehavior says it does —
+       * see integrity.ts. Asked here rather than left to whatever consumes the
+       * resolution, so an Item refused as an implement cannot still turn up
+       * contributing an attack.
+       */
+      const functionality = resolveItemFunctionality(definition, entry.integrity);
+
+      if (!functionality.selectableAsImplement) {
+        issues.push({
+          kind: "broken",
+          role: requirement.role,
+          item: selection.item,
+          message: `This Item is ${functionality.state} and fills no role.`,
+        });
+
+        continue;
+      }
+
+      const families = definition.families ?? [];
       const compatibility = gradeCompatibility(requirement, families);
 
       if (compatibility === "incompatible") {
@@ -609,7 +810,7 @@ export function resolveSelectedImplements(
         compatibility,
         families,
         state: entry.state,
-        ...(definition?.integrity === undefined
+        ...(definition.integrity === undefined
           ? {}
           : { integrity: entry.integrity ?? definition.integrity.maximum }),
       });

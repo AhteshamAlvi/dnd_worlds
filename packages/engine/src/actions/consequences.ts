@@ -290,6 +290,17 @@ export function conditionRemovalConsequence(
  * SAME consequence list a hit would, and let the resolved entry's own policy
  * decide what a refused repair or a non-durable target means; this builder
  * never asks either question.
+ *
+ * `mitigation` is protection the CALLING mechanic already resolved, carried
+ * through to settlement rather than re-derived there. Nothing in this file or
+ * in the effect handler calculates it: it is the seam a future whole-Item Shū
+ * enhancement pays into, and `character/equipment/integrity.ts` is where it is
+ * honoured — for a `"compatible"` Item, and ignored outright for an
+ * incompatible one, whatever figure arrives.
+ *
+ * The amount is NOT normalised with `Math.abs()`. A caller asking to repair
+ * -5 has made a sign error, and turning it into a repair of 5 answers a
+ * question nobody asked; the integrity resolver refuses it instead.
  */
 export function itemIntegrityConsequence(
   context: ConsequenceContext,
@@ -299,17 +310,24 @@ export function itemIntegrityConsequence(
     readonly entryId: string;
     readonly operation: "stress" | "repair";
     readonly amount: number;
+    readonly mitigation?: number;
   },
 ): Consequence {
-  const request: QuantitativeRequest & { readonly entryId: string } = {
+  const request: QuantitativeRequest & {
+    readonly entryId: string;
+    readonly mitigation?: number;
+  } = {
     ...(effectRequest(
       context,
       input.requestId,
       input.operation === "stress" ? "item.stress" : "item.repair",
       { domain: "character", id: input.characterId },
-      Math.abs(input.amount),
+      input.amount,
     ) as QuantitativeRequest),
     entryId: input.entryId,
+    ...(input.operation === "stress" && input.mitigation !== undefined
+      ? { mitigation: input.mitigation }
+      : {}),
   };
 
   return { channel: "runtime", request };

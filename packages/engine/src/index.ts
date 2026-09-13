@@ -1520,7 +1520,9 @@ export {
   ITEM_FAMILY_DEFINITIONS,
   findImplementRequirementIssues,
   findImplementRequirementListIssues,
+  findImplementRequirementsIssues,
   findItemFamilyCatalogIssues,
+  findItemFamilyIssues,
   getItemFamilyDefinition,
   isKnownItemFamilyId,
   resolveSelectedImplements,
@@ -1550,11 +1552,50 @@ export type {
 export {
   SHU_INTERACTIONS,
   contributesNoPerformance,
+  findItemActionSurfaceIssues,
   findItemAttackContributionIssues,
+  findItemAttackIssues,
   findItemDefenseContributionIssues,
+  findItemDefenseIssues,
   isShuInteraction,
   resolveItemPerformanceContribution,
   resolveItemPerformanceContributions,
+} from "./character/equipment/index";
+
+/*
+ * The AUTHORITATIVE resolved Item (Phase 4 repair) — one identity, one Shū
+ * verdict, and every Item-owned surface a future whole-Item enhancement would
+ * reach.
+ *
+ * `resolveItemEnvelope()` reads the entry, follows its own `itemId` to the
+ * definition, validates it, and takes `shuInteraction` from there and nowhere
+ * else. A caller chooses which entry; it does not get to say what that entry
+ * is, which is what "an incompatible Item cannot be made compatible by a
+ * caller argument" means in practice.
+ *
+ * BINARY and WHOLE-ITEM. There are no per-channel compatibility fields and
+ * architecture.test.ts refuses one by name. A compatible Item exposes its
+ * attack and defense facts, its possessed, equipped, use and integrity-band
+ * Effects — positive and negative alike, because a cursed blade's penalty is
+ * still something the Item does. Anything a Skill, Technique or Trait
+ * contributed keeps its own source and stays outside the envelope;
+ * `envelopeIsItemOwned()` is that invariant, stated once.
+ *
+ * No formulas. Aura cost, allocation and the enhancement itself belong to the
+ * Shū mechanic when it is built.
+ */
+export type {
+  ItemDefinitionId,
+  ItemOwnedContribution,
+  ItemOwnedEffect,
+  ItemOwnedSurface,
+  ResolvedItemEnvelope,
+} from "./character/equipment/index";
+
+export {
+  ITEM_OWNED_SURFACES,
+  envelopeIsItemOwned,
+  resolveItemEnvelope,
 } from "./character/equipment/index";
 
 /*
@@ -1575,12 +1616,23 @@ export {
  * never the Item the condition matched against; the Item keeps its own
  * `{type:"item",...}` source regardless of which character rules also fired.
  *
- * Assembling `SourcedImplementConditionalRule[]` from a resolved character's
- * applicable content is a CALLER responsibility — this module never looks up
- * a Trait, Technique or Skill definition itself, exactly as it never repeats
- * an inventory or catalog lookup `ImplementResolution` already answered.
+ * Assembling the list is the ENGINE's job, and this is the half the Phase 4
+ * repair changed. It used to be "a CALLER responsibility", which meant a host
+ * could hand preparation a rule sourced to a Trait the character has never
+ * had and receive a check modifier that stacked and traced exactly like a real
+ * one. `collectImplementConditionalRules()` derives the list from the Skill
+ * being invoked, the Techniques the character actually holds and the Traits
+ * they actually have, and returns a BRANDED
+ * `AuthorizedImplementConditionalRules` — the only thing the two matchers
+ * accept. The brand's symbol is module-private, so neither TypeScript nor
+ * untyped host JavaScript can forge one.
+ *
+ * The matchers still never look up a Trait, Technique or Skill themselves,
+ * exactly as they never repeat an inventory or catalog lookup
+ * `ImplementResolution` already answered.
  */
 export type {
+  AuthorizedImplementConditionalRules,
   CheckModifierConditionalOutput,
   ImplementCondition,
   ImplementConditionMatchMode,
@@ -1593,13 +1645,23 @@ export type {
 export {
   IMPLEMENT_CONDITIONAL_OUTPUT_KINDS,
   IMPLEMENT_CONDITION_MATCH_MODES,
+  NO_IMPLEMENT_CONDITIONAL_RULES,
   collectMatchedCheckModifiers,
   collectMatchedPerformanceEffects,
   findImplementConditionIssues,
   findImplementConditionalRuleIssues,
   findImplementConditionalRuleListIssues,
+  findImplementConditionalRulesIssues,
+  isAuthorizedImplementConditionalRules,
   matchesImplementCondition,
 } from "./character/equipment/index";
+
+export type { CharacterContentCatalogs } from "./character/capabilities/implement-rules";
+
+export {
+  characterContentCatalogs,
+  collectImplementConditionalRules,
+} from "./character/capabilities/implement-rules";
 
 /*
  * Integrity, breaking and repair (Ticket 4.8) — per-entry durability, kept
@@ -1623,6 +1685,9 @@ export {
  * `integrity` bucket, sourced to the Item.
  */
 export type {
+  BrokenItemBehavior,
+  ItemFunctionality,
+  ItemIntegrityAggregate,
   ItemIntegrityAppliedEvent,
   ItemIntegrityBand,
   ItemIntegrityChange,
@@ -1633,19 +1698,29 @@ export type {
   ItemIntegrityRequest,
   ItemIntegrityResolution,
   ItemIntegrityState,
+  ItemPassiveEffectChannel,
 } from "./character/equipment/index";
 
 export {
+  ITEM_INTEGRITY_OPERATION_TYPES,
   ITEM_INTEGRITY_STATES,
+  ITEM_PASSIVE_EFFECT_CHANNELS,
   ITEM_REPAIR_REQUEST,
   ITEM_STRESS_REQUEST,
+  aggregateItemIntegrity,
   createCharacterIntegrityEffectHandler,
   currentIntegrityBand,
   findItemIntegrityBandIssues,
   findItemIntegrityDefinitionIssues,
+  findItemIntegrityIssues,
+  findItemIntegrityOperationIssues,
+  isBrokenIntegrityState,
   isItemIntegrityState,
   itemIntegrityRequest,
+  permitsRepair,
+  resolveEffectiveStress,
   resolveIntegrityState,
+  resolveItemFunctionality,
   resolveItemIntegrityOperation,
 } from "./character/equipment/index";
 

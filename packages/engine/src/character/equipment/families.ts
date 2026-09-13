@@ -21,6 +21,7 @@
  * how much, is decided entirely by the role that reads it.
  */
 
+import type { EngineError } from "../../infrastructure/diagnostics";
 import {
   createRegistry,
   type Definition,
@@ -81,3 +82,72 @@ export function findItemFamilyCatalogIssues(): readonly string[] {
 
 // Exposed for the catalog index, which needs every registry in one map.
 export const itemFamilyRegistry = ITEM_FAMILY_REGISTRY;
+
+
+/* -------------------------------------------------------------------------- */
+/* Structural validation                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything wrong with one Item's `families` declaration.
+ *
+ * Takes `unknown` and proves the list before reading a single entry, because
+ * a host registers Items and `families: 42` used to reach `.filter()` in
+ * cross-catalog reference checking and throw from inside the function whose
+ * job was to complain about it. Membership is a SET — a family claimed twice
+ * says nothing the first claim did not, and an author who wrote it twice
+ * meant two families — so repeats are refused rather than collapsed.
+ *
+ * EXISTENCE is still not asked here. A family registered a moment after the
+ * Item that claims it is legal, exactly as every other forward reference in
+ * this engine is; `findCatalogReferenceIssues()` asks that question once
+ * every catalog has loaded. See this file's header.
+ */
+export function findItemFamilyIssues(
+  value: unknown,
+): readonly EngineError[] {
+  if (value === undefined) return [];
+
+  if (!Array.isArray(value)) {
+    return [{
+      code: "equipment.families.invalid",
+      message: "An Item's families must be a list of family ids.",
+      audience: "developer",
+      required: "array of non-empty family ids, or omit the field",
+      actual: String(value),
+    }];
+  }
+
+  const errors: EngineError[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of value as readonly unknown[]) {
+    if (typeof entry !== "string" || entry.trim().length === 0) {
+      errors.push({
+        code: "equipment.families.entry.invalid",
+        message: "An Item's family membership must be a non-empty family id.",
+        audience: "developer",
+        required: "non-empty string",
+        actual: String(entry),
+      });
+
+      continue;
+    }
+
+    if (seen.has(entry)) {
+      errors.push({
+        code: "equipment.families.entry.duplicate",
+        message: `Item family "${entry}" is claimed more than once.`,
+        audience: "developer",
+        required: "each family claimed once",
+        actual: entry,
+      });
+
+      continue;
+    }
+
+    seen.add(entry);
+  }
+
+  return errors;
+}

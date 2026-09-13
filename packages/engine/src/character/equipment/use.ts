@@ -101,9 +101,15 @@ import { isEquippedItemState } from "./state";
 import {
   describeItemDefinitionIssue,
   findItemUseDefinitionIssues,
+  resolveItemDefinition,
   type ItemDefinitionLookup,
 } from "./validation";
 import { isActivelyUsableItem, type CharacterItem } from "./types";
+import {
+  resolveItemFunctionality,
+  type ItemIntegrityState,
+} from "./integrity";
+import { buildItemEnvelope, type ResolvedItemEnvelope } from "./envelope";
 
 
 /* -------------------------------------------------------------------------- */
@@ -162,6 +168,18 @@ export type ItemUseResolution =
       readonly effects: ResolvedRuleEffects;
 
       /**
+       * The authoritative Item envelope, snapshotted BEFORE the decrement.
+       *
+       * A grenade is gone the instant it is used, and a future whole-Item
+       * enhancement applied to it has to survive the action that consumed it
+       * — the Item that no longer exists is still the Item that went off. A
+       * snapshot taken here travels with the result, so nothing downstream
+       * has to re-resolve an entry whose quantity has since changed. See
+       * envelope.ts.
+       */
+      readonly envelope: ResolvedItemEnvelope;
+
+      /**
        * The character after the use. The very Character supplied when nothing
        * stored changed — a reusable Item — and a replacement when a unit was
        * consumed. Never a mutation of the input either way.
@@ -172,6 +190,16 @@ export type ItemUseResolution =
       /** The Item declares no use at all: no Effect, no gate, no consumption. */
       readonly disposition: "not-usable";
       readonly item: InventoryItemRef;
+    }
+  | {
+      /**
+       * The object is broken or destroyed, and its own contract does not say
+       * a use survives that. An ordinary answer about this object rather
+       * than a fault in the content — see integrity.ts's `brokenBehavior`.
+       */
+      readonly disposition: "broken";
+      readonly item: InventoryItemRef;
+      readonly state: ItemIntegrityState;
     }
   | {
       readonly disposition: "quantity-unavailable";
@@ -391,17 +419,33 @@ export function resolveItemUse(
   /* 3-4. The definition                                                    */
   /* ---------------------------------------------------------------------- */
 
-  const definition = getItemDefinition(entry.itemId);
+  const lookup = resolveItemDefinition(getItemDefinition, entry.itemId);
 
-  if (definition === undefined) {
-    return engineFailure(traceOf(inputs, "item_unknown"), [
-      structuralError(
-        "equipment.use.item_unknown",
-        `The entry names Item "${entry.itemId}", which no catalog defines.`,
-        { actual: entry.itemId },
-      ),
-    ]);
+  if (!lookup.ok) {
+    /*
+     * Two answers, kept apart. "No catalog defines that Item" and "the lookup
+     * handed back something that is not an Item" lead to opposite fixes — see
+     * `ItemDefinitionOutcome` in validation.ts, and `InventoryReferenceIssue`
+     * for the same distinction one level out.
+     */
+    return lookup.issue === "unknown"
+      ? engineFailure(traceOf(inputs, "item_unknown"), [
+          structuralError(
+            "equipment.use.item_unknown",
+            `The entry names Item "${entry.itemId}", which no catalog defines.`,
+            { actual: entry.itemId },
+          ),
+        ])
+      : engineFailure(traceOf(inputs, "definition_invalid"), [
+          structuralError(
+            "equipment.use.definition_invalid",
+            `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
+            { actual: entry.itemId },
+          ),
+        ]);
   }
+
+  const definition = lookup.definition;
 
   inputs["itemId"] = { value: entry.itemId };
 
@@ -450,6 +494,28 @@ export function resolveItemUse(
     return engineSuccess(
       { disposition: "not-usable", item },
       traceOf(inputs, "not-usable"),
+    );
+  }
+
+  /* ---------------------------------------------------------------------- */
+  /* 5b. Whether the object still works                                     */
+  /* ---------------------------------------------------------------------- */
+
+  /*
+   * Asked after "does this Item declare a use" and before "is there one
+   * left", because the three are different facts in that order of
+   * generality: what the Item is, what this object is, and how much of it
+   * there is. A shattered flask declares a use, is broken, and may still
+   * read quantity one.
+   */
+  const functionality = resolveItemFunctionality(definition, entry.integrity);
+
+  inputs["integrityState"] = { value: functionality.state };
+
+  if (!functionality.useAvailable) {
+    return engineSuccess(
+      { disposition: "broken", item, state: functionality.state },
+      traceOf(inputs, "broken"),
     );
   }
 
@@ -558,6 +624,7 @@ export function resolveItemUse(
     {
       disposition: "executed",
       use,
+      envelope: buildItemEnvelope(character.id, entry, definition),
       requirements,
       effects,
       nextCharacter: consumes ? withOneUnitConsumed(character, entry) : character,

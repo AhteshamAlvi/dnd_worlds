@@ -72,15 +72,56 @@ import {
 
 import type { InventoryEntryId } from "./references";
 
-import {
-  findItemIntegrityDefinitionIssues,
-  type ItemIntegrityDefinition,
-} from "./integrity";
+import { findItemIntegrityIssues } from "./integrity";
+import { findItemFamilyIssues } from "./families";
 
 
 /** How this module is told what the catalog contains. */
 export type ItemDefinitionLookup =
   (itemId: string) => ItemDefinition | undefined;
+
+
+/**
+ * What a lookup answered with, keeping absent and malformed apart.
+ *
+ * A lookup is a function a HOST wrote. Its signature says
+ * `ItemDefinition | undefined` and nothing obliges it to keep that promise: a
+ * catalog backed by a JSON map answers `null` for a missing key, and every
+ * resolver in this directory used to test only `=== undefined` and then read a
+ * field off whatever came back — `definition.integrity`, `definition.families`
+ * — which threw from inside functions whose whole contract is to return issues
+ * rather than throw.
+ *
+ * The two answers stay distinguishable for the reason `InventoryReferenceIssue`
+ * keeps "unknown-entry" and "invalid-entry" apart: "no catalog defines that
+ * Item" and "the catalog handed back something that is not an Item" lead to
+ * opposite fixes, and reporting the second as the first sends a host looking
+ * for a missing definition they already have.
+ *
+ * SHAPE only. Whether the object is a SOUND Item definition is
+ * findItemStructuralIssues()'s question, which several callers ask next.
+ */
+export type ItemDefinitionOutcome =
+  | { readonly ok: true; readonly definition: ItemDefinition }
+  | { readonly ok: false; readonly issue: "unknown" | "malformed" };
+
+
+export function resolveItemDefinition(
+  getItemDefinition: ItemDefinitionLookup,
+  itemId: unknown,
+): ItemDefinitionOutcome {
+  if (typeof itemId !== "string") return { ok: false, issue: "unknown" };
+
+  const definition = getItemDefinition(itemId);
+
+  if (definition === undefined) return { ok: false, issue: "unknown" };
+
+  return typeof definition === "object" &&
+    definition !== null &&
+    !Array.isArray(definition)
+    ? { ok: true, definition }
+    : { ok: false, issue: "malformed" };
+}
 
 
 /* -------------------------------------------------------------------------- */
@@ -342,18 +383,36 @@ function coreIssuesOf(definition: ItemFields): readonly ItemDefinitionIssue[] {
       issues.push({ type: "stackable-durable" });
     }
 
-    if (typeof integrity !== "object" || integrity === null) {
-      issues.push({ type: "invalid-integrity-definition", value: integrity });
-    } else {
-      for (const issue of findItemIntegrityDefinitionIssues(integrity as ItemIntegrityDefinition)) {
-        issues.push({
-          type: "malformed-rule",
-          where: "integrity",
-          issue: issue.code,
-          path: "integrity",
-        });
-      }
+    /*
+     * One validator, taking `unknown`. The "is this an object" guard used to
+     * live HERE and the rest lived in integrity.ts, which meant a caller
+     * reaching that file directly — the use resolver, the runtime handler —
+     * got the half of the rules that did not include the guard.
+     */
+    for (const issue of findItemIntegrityIssues(integrity)) {
+      issues.push({
+        type: "malformed-rule",
+        where: "integrity",
+        issue: issue.code,
+        path: "integrity",
+      });
     }
+  }
+
+  /*
+   * Family membership, checked at the CORE rather than on either operational
+   * surface. It is neither an equipment fact nor a use fact: it is what kind
+   * of thing the Item counts as, which implement selection reads whichever
+   * surface an attempt came through. `families: 42` used to register cleanly
+   * and then throw inside cross-catalog reference checking.
+   */
+  for (const issue of findItemFamilyIssues(definition.families)) {
+    issues.push({
+      type: "malformed-rule",
+      where: "families",
+      issue: issue.code,
+      path: "families",
+    });
   }
 
   return issues;

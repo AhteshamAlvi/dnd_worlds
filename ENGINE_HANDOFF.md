@@ -1067,7 +1067,7 @@ const next = payloadOf(resolveCharacter(
 ));
 ```
 
-Phase 4 (Tickets 4.4-4.9) is complete: a concrete Item selects, grades, contributes to an action, receives character-rule modifiers, executes and consumes atomically, degrades or breaks through owner-routed integrity requests, and preserves its full positive and negative output for a future all-or-nothing Shū enhancement — without mutation, identity loss, dependency reversal, or silent rule loss. Shū itself, the SP-to-BP damage formula that would consume these contributions, and hand/slot occupancy remain explicitly unbuilt, tracked in `BACKLOG.md`.
+Phase 4 (Tickets 4.4-4.9, plus the repair in §8.9) is complete: a concrete Item selects, grades, contributes to an action, receives engine-collected character-rule modifiers, executes and consumes atomically, degrades or breaks through owner-routed integrity requests — with breakage now mechanically disabling the Item — and exposes its full positive and negative output to a future all-or-nothing Shū enhancement through an authoritative resolved envelope, without mutation, identity loss, dependency reversal, or silent rule loss. Shū itself, the SP-to-BP damage formula that would consume these contributions, and hand/slot occupancy remain explicitly unbuilt, tracked in `BACKLOG.md`.
 
 #### Implement-conditional bonuses (Ticket 4.7)
 
@@ -1091,13 +1091,93 @@ interface ImplementConditionalRule { id: string; condition: ImplementCondition; 
 
 **No new lookup.** `ImplementResolution` (Ticket 4.5) gained two fields specifically for this — `families: readonly ItemFamilyId[]` and `state: ItemEquipmentState`, captured once at implement-selection time — so a condition never re-reads the inventory or the Item catalog.
 
-**Two landing points, both caller-assembled.** `character/actions/preparation.ts`'s `CharacterActionInputs.implements.conditionalRules?: readonly SourcedImplementConditionalRule[]` feeds `"check"`-output matches into the SAME `modifiers` list `collectCharacterCheckModifiers()` already assembles (`collectMatchedCheckModifiers()`, appended after the ordinary persistent/invoked/contextual channels — no new stacking model). `resolveItemPerformanceContribution()`'s new optional `conditionalRules` parameter feeds `"performance"`-output matches into the matching `attack`/`defense` slot via `collectMatchedPerformanceEffects()`, as EXTRA `RuleEffectSource` entries alongside — never merged into — the Item's own, so `resolveRuleEffects()`'s output keeps every contribution's real source. Neither integration point looks up a Trait, Technique or Skill definition itself: assembling `SourcedImplementConditionalRule[]` from a resolved character's applicable content (and, for a Skill, the one being attempted) is the caller's job, exactly as `CharacterActionInputs.requirements` already is.
+**Two landing points, one ENGINE-COLLECTED list.** (This was "both caller-assembled" until the Phase 4 repair — see §8.9.) `character/actions/preparation.ts`'s `CharacterActionInputs.implements.conditionalRules?: AuthorizedImplementConditionalRules` feeds `"check"`-output matches into the SAME `modifiers` list `collectCharacterCheckModifiers()` already assembles (`collectMatchedCheckModifiers()`, appended after the ordinary persistent/invoked/contextual channels — no new stacking model). `resolveItemPerformanceContribution()`'s new optional `conditionalRules` parameter feeds `"performance"`-output matches into the matching `attack`/`defense` slot via `collectMatchedPerformanceEffects()`, as EXTRA `RuleEffectSource` entries alongside — never merged into — the Item's own, so `resolveRuleEffects()`'s output keeps every contribution's real source. Neither integration point looks up a Trait, Technique or Skill definition itself; `collectImplementConditionalRules()` (`character/capabilities/implement-rules.ts`) does, one layer above both, and is the only thing that can produce the branded list they accept.
 
 **Source stays with the character content, always.** A matched rule's `source` is the Trait/Technique/Skill id that declared it, never `{type:"item",...}` — even when its effects land inside an `ItemPerformanceContribution`. This is what keeps the future Shū boundary answerable: a whole-Item enhancement enhances everything the Item itself contributed (including negative effects), not a character's proficiency bonus that merely fired on the same attempt.
 
 **Authored on `TraitDefinition`, `TechniqueDefinition` and `SkillApplicationDefinition`** as `implementConditionalRules?: readonly ImplementConditionalRule[]` (the Skill field lives on the application, an attempt-time fact, not the bare `SkillDefinition`). Validated at each definition's own registration-time structural check (`findImplementConditionalRuleListIssues()` — structurally rejects empty filter lists, malformed values, duplicate rule ids, and unknown condition/output discriminants) and post-load for family forward-references (`character/catalogs.ts`'s `findCatalogReferenceIssues()`, alongside Item family references from Ticket 4.5).
 
 **Not built:** Shū activation, Aura allocation/upkeep, Kō, final damage/injury formulas, integrity mutation, hand/slot occupancy (Ticket 4.5's gap, unchanged).
+
+---
+
+#### §8.9 The Phase 4 repair — registration, provenance, integrity and the Shū boundary
+
+The release review of Tickets 4.4-4.8 found eight gaps. The architecture survived; the boundaries did not. Each fix is recorded in `decisions/log.ts` under an `equipment.*` id.
+
+**1. The registration barrier now covers every new surface.** Five Item fields (`families`, `useApplication`, `attack`, `defense`, `integrity` and its bands) and two Skill-application fields (`implements`, `implementConditionalRules`) each get one `unknown`-accepting validator that proves records, arrays, discriminants and closed vocabularies before reading a field, and refuses duplicates in every set-like list:
+
+```ts
+findItemFamilyIssues(value: unknown): readonly EngineError[]
+findItemUseApplicationIssues(value: unknown)
+findItemAttackIssues(value: unknown) / findItemDefenseIssues(value: unknown)
+findItemIntegrityIssues(value: unknown) / findItemIntegrityOperationIssues(value: unknown)
+findImplementRequirementsIssues(value: unknown)
+findImplementConditionalRulesIssues(value: unknown)
+```
+
+The Item registry composes `findContentStructuralIssues` + `findItemStructuralIssues` (validation.ts, the data surfaces) + `findItemActionSurfaceIssues` (actions.ts, the three built from the neutral `actions`/`targeting`/`spatial` vocabularies — validation.ts sits below that seam and may not reach through it). The direct resolvers call the same functions, and `__tests__/equipment-registration-parity.test.ts` sweeps every field through both paths. `resolveItemDefinition(lookup, itemId)` is the one place a lookup's answer is proved to be an Item at all, keeping `"unknown"` and `"malformed"` apart the way `InventoryReferenceIssue` already does.
+
+**2. An Item action's definition comes from its entry.** `prepareItemOperation()` no longer takes a `definition`:
+
+```ts
+prepareItemOperation({ operationId, occurredAt, resolved, intent, approach, getItemDefinition, ... })
+```
+
+It resolves the entry, reads `entry.itemId`, resolves that definition through the lookup, refuses a lookup that answers with a different `id`, validates it, and builds everything from it. `intent.actor.id` must equal the resolved character's id — an ownership rule separate from the reference rule, since `resolveInventoryItemRef` proves whose entry it is and says nothing about who is acting.
+
+**3. Implement resolution refuses what it cannot see.** `definition?.families ?? []` is gone: a missing or malformed definition is a `definition-unknown` / `definition-invalid` selection issue, never an improvised implement. Improvisation grades a real Item that does not fit the role.
+
+**4. Conditional rules are engine-collected.**
+
+```ts
+collectImplementConditionalRules(character, application, catalogs)
+  : EngineResult<AuthorizedImplementConditionalRules>
+```
+
+Derived from the invoked Skill's application (only while `disposition === "available"`), every held Technique and every possessed Trait. The returned value is branded with a module-private `unique symbol`; `collectMatchedCheckModifiers()` and `collectMatchedPerformanceEffects()` accept nothing else, so a caller cannot manufacture a rule sourced to content the character does not have. `characterContentCatalogs()` supplies the engine's own lookups. The one-rule/one-output contract and the rule's Skill/Technique/Trait source are unchanged.
+
+**5-6. Integrity became mechanical, and a batch became one instant.**
+
+```ts
+ItemIntegrityOperation = { type: "stress"; amount: number; mitigation?: number }
+                       | { type: "repair"; amount: number }
+```
+
+`amount` must be finite and `> 0` — no `Math.abs()` normalisation — and an unknown discriminant is refused rather than falling through to the repair branch and skipping its repairability gate. `mitigation` now travels the whole path (operation → request → consequence → handler → resolution → trace); `resolveEffectiveStress()` returns `{ requested, mitigated, effective }` with `effective = max(0, amount - mitigation)`, honoured for a `"compatible"` Item and ignored for an `"incompatible"` one. Nothing here calculates Shū.
+
+The effect handler evaluates every request against the same pre-batch `Character`, groups by entry, and applies one aggregate transition per entry (`aggregateItemIntegrity`) — stress and repair combine algebraically, the clamp applies once, zero-state behaviour is read off the final figure, and per-request `actual` is apportioned proportionally. Outcomes are sorted by request id and events by entry id, so permutations of one batch return byte-identical results.
+
+**7. Zero integrity governs the Item.** Zero resolves to `zeroBehavior` whatever any band claims; bands must lie inside `[0, maximum]`, may not overlap and may not repeat a state; `resolveIntegrityState()` picks the lowest matching minimum, so authored order cannot change the answer. `resolveItemFunctionality(definition, integrity)` is the single contract every consumer asks:
+
+```ts
+interface BrokenItemBehavior {
+  selectableAsImplement?: boolean;
+  attackAvailable?: boolean;
+  defenseAvailable?: boolean;
+  useAvailable?: boolean;
+  persistentEffects?: readonly ("possessed" | "equipped")[];
+}
+```
+
+Everything defaults to OFF at zero. A broken Item fills no implement role, contributes no attack or defense, cannot be used (`resolveItemUse()` gained a `"broken"` disposition) and applies no passive Effects — unless its own `brokenBehavior` says otherwise. Persistence is authored per channel and never inferred from an Effect's sign. `getActiveItemEffects()` moved from `types.ts` to a new `equipment/effects.ts` so it can ask this without closing a module cycle. Snapshot timing is unchanged: an Item contributes to the action that breaks it, the stress settles afterwards as a consequence, and the next action sees the broken state.
+
+**8. The Shū boundary is production.** `equipment/envelope.ts`:
+
+```ts
+interface ResolvedItemEnvelope {
+  item: InventoryItemRef;
+  definitionId: ItemDefinitionId;
+  shuInteraction: "compatible" | "incompatible";   // read from the definition, never an argument
+  integrityState?: ItemIntegrityState;
+  attack / defense: readonly ItemOwnedContribution[];
+  possessedEffects / equippedEffects / useEffects / integrityEffects: readonly ItemOwnedEffect[];
+}
+```
+
+`resolveItemEnvelope(characterId, ref, items, lookup)` follows the entry to its own definition and takes the verdict from there — there is no argument to override it with. The verdict is binary and whole-Item; there are no enhancement channels, and `architecture.test.ts` fixes the vocabulary (exactly one Shū-named field in `equipment/`, called `shuInteraction`, declared only on the Item definition and on the envelope). Negative Item surfaces are included; anything a Skill, Technique or Trait contributed stays outside, which `envelopeIsItemOwned()` states once as an assertable predicate. `resolveItemUse()` snapshots the envelope before the decrement, so a consumed grenade keeps a complete description through the action that consumed it. No enhancement formula is implemented.
+
+**New test files:** `equipment-registration-parity`, `equipment-provenance`, `equipment-conditional-authorization`, `equipment-integrity-behaviour`, `equipment-shu-envelope`. Each regression was run once against a re-introduced defect to confirm it detects it.
 
 ---
 

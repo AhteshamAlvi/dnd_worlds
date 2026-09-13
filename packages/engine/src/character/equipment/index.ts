@@ -101,8 +101,11 @@ import {
 
 import {
   buildItemOperationProfile,
+  findItemActionSurfaceIssues,
   findItemAttackContributionIssues,
+  findItemAttackIssues,
   findItemDefenseContributionIssues,
+  findItemDefenseIssues,
   findItemUseApplicationIssues,
   prepareItemOperation,
   type ItemAttackContribution,
@@ -128,13 +131,25 @@ import {
 } from "./runtime";
 
 import {
+  ITEM_INTEGRITY_OPERATION_TYPES,
   ITEM_INTEGRITY_STATES,
+  ITEM_PASSIVE_EFFECT_CHANNELS,
+  aggregateItemIntegrity,
   currentIntegrityBand,
   findItemIntegrityBandIssues,
   findItemIntegrityDefinitionIssues,
+  findItemIntegrityIssues,
+  findItemIntegrityOperationIssues,
+  isBrokenIntegrityState,
   isItemIntegrityState,
+  permitsRepair,
+  resolveEffectiveStress,
   resolveIntegrityState,
+  resolveItemFunctionality,
   resolveItemIntegrityOperation,
+  type BrokenItemBehavior,
+  type ItemFunctionality,
+  type ItemIntegrityAggregate,
   type ItemIntegrityBand,
   type ItemIntegrityChange,
   type ItemIntegrityDefinition,
@@ -142,10 +157,22 @@ import {
   type ItemIntegrityOperationInput,
   type ItemIntegrityResolution,
   type ItemIntegrityState,
+  type ItemPassiveEffectChannel,
 } from "./integrity";
 
 import {
+  ITEM_OWNED_SURFACES,
+  envelopeIsItemOwned,
+  resolveItemEnvelope,
+  type ItemOwnedContribution,
+  type ItemOwnedEffect,
+  type ItemOwnedSurface,
+  type ResolvedItemEnvelope,
+} from "./envelope";
+
+import {
   findItemFamilyCatalogIssues,
+  findItemFamilyIssues,
   getItemFamilyDefinition,
   isKnownItemFamilyId,
   itemFamilyRegistry,
@@ -159,6 +186,7 @@ import {
   IMPLEMENT_COMPATIBILITIES,
   findImplementRequirementIssues,
   findImplementRequirementListIssues,
+  findImplementRequirementsIssues,
   resolveSelectedImplements,
   type ImplementCompatibility,
   type ImplementRequirement,
@@ -178,7 +206,11 @@ import {
   findImplementConditionIssues,
   findImplementConditionalRuleIssues,
   findImplementConditionalRuleListIssues,
+  findImplementConditionalRulesIssues,
+  isAuthorizedImplementConditionalRules,
   matchesImplementCondition,
+  NO_IMPLEMENT_CONDITIONAL_RULES,
+  type AuthorizedImplementConditionalRules,
   type CheckModifierConditionalOutput,
   type ImplementCondition,
   type ImplementConditionMatchMode,
@@ -188,16 +220,18 @@ import {
   type SourcedImplementConditionalRule,
 } from "./conditions";
 
+import { getActiveItemEffects } from "./effects";
+
 import {
   ITEM_INVENTORY_MODES,
   SHU_INTERACTIONS,
-  getActiveItemEffects,
   isActivelyUsableItem,
   isItemInventoryMode,
   isShuInteraction,
   isStackableItem,
   type CharacterItem,
   type ItemDefinition,
+  type ItemDefinitionId,
   type ItemInventoryMode,
   type ShuInteraction,
 } from "./types";
@@ -290,12 +324,32 @@ export const ITEM_DEFINITIONS = {
   },
 } as const satisfies Record<string, ItemDefinition>;
 
+/*
+ * THREE validators, and the third is here rather than folded into the second
+ * for a layering reason.
+ *
+ * `findContentStructuralIssues` walks every rule-bearing field.
+ * `findItemStructuralIssues` (validation.ts) owns the Item's own data rules —
+ * inventory mode, Shū verdict, families, integrity, the three Effect lists and
+ * the two named gates. `findItemActionSurfaceIssues` (actions.ts) owns the
+ * three surfaces built from the NEUTRAL vocabularies — `useApplication`,
+ * `attack`, `defense` — which only the seam file may import; validation.ts
+ * sits below that seam and must not reach through it.
+ *
+ * Composed, so the registration barrier asks all three and a definition broken
+ * on any surface is refused. The direct resolvers ask the same functions:
+ * `buildItemOperationProfile()` asks `findItemUseApplicationIssues()`,
+ * `resolveItemPerformanceContribution()` asks the attack/defense pair, and
+ * `resolveItemUse()` asks `findItemUseDefinitionIssues()` — so nothing the
+ * catalog refuses can be resolved through a host's own lookup instead.
+ */
 const ITEM_REGISTRY = createRegistry<ItemDefinition>(
   "Item",
   ITEM_DEFINITIONS,
   composeStructuralValidators(
     findContentStructuralIssues,
     findItemStructuralIssues,
+    findItemActionSurfaceIssues,
   ),
 );
 
@@ -464,6 +518,15 @@ export function findItemCatalogIssues(): readonly string[] {
         `Item "${definition.id}" ${describeItemDefinitionIssue(issue)}.`,
       );
     }
+
+    /*
+     * And the neutral-vocabulary surfaces, so catalog validation asks exactly
+     * what registration asked. The two disagreeing is the failure this whole
+     * file's header warns about, one ticket later.
+     */
+    for (const issue of findItemActionSurfaceIssues(definition)) {
+      issues.push(`Item "${definition.id}" declares a malformed surface: ${issue}`);
+    }
   }
 
   return issues;
@@ -475,6 +538,8 @@ export const itemRegistry = ITEM_REGISTRY;
 /* ── The public inventory contracts ─────────────────────────────────────── */
 
 export type {
+  AuthorizedImplementConditionalRules,
+  BrokenItemBehavior,
   CharacterItem,
   CheckModifierConditionalOutput,
   EquipmentTransition,
@@ -495,9 +560,12 @@ export type {
   ItemContributionFacts,
   ItemDefenseContribution,
   ItemDefinition,
+  ItemDefinitionId,
   ItemEquipmentState,
+  ItemFunctionality,
   ItemFamilyDefinition,
   ItemFamilyId,
+  ItemIntegrityAggregate,
   ItemIntegrityAppliedEvent,
   ItemIntegrityBand,
   ItemIntegrityChange,
@@ -514,6 +582,10 @@ export type {
   ItemOperationIntentInput,
   ItemOperationPreparationInput,
   ItemOperationSettledEvent,
+  ItemOwnedContribution,
+  ItemOwnedEffect,
+  ItemOwnedSurface,
+  ItemPassiveEffectChannel,
   ItemPerformanceContribution,
   ItemUse,
   ItemUseApplication,
@@ -526,6 +598,7 @@ export type {
   InventoryReferenceIssue,
   KnownItemFamilyId,
   PerformanceConditionalOutput,
+  ResolvedItemEnvelope,
   SelectImplementsInput,
   SelectedImplement,
   ShuInteraction,
@@ -539,12 +612,17 @@ export {
   IMPLEMENT_CONDITION_MATCH_MODES,
   ITEM_EQUIPMENT_STATES,
   ITEM_FAMILY_DEFINITIONS,
+  ITEM_INTEGRITY_OPERATION_TYPES,
   ITEM_INTEGRITY_STATES,
   ITEM_INVENTORY_MODES,
   ITEM_OPERATION_COST,
+  ITEM_OWNED_SURFACES,
+  ITEM_PASSIVE_EFFECT_CHANNELS,
   ITEM_REPAIR_REQUEST,
   ITEM_STRESS_REQUEST,
+  NO_IMPLEMENT_CONDITIONAL_RULES,
   SHU_INTERACTIONS,
+  aggregateItemIntegrity,
   buildItemOperationProfile,
   collectMatchedCheckModifiers,
   collectMatchedPerformanceEffects,
@@ -554,20 +632,29 @@ export {
   createInventoryItemRef,
   currentIntegrityBand,
   describeItemDefinitionIssue,
+  envelopeIsItemOwned,
   equipmentTransitionKind,
   findImplementConditionIssues,
   findImplementConditionalRuleIssues,
   findImplementConditionalRuleListIssues,
+  findImplementConditionalRulesIssues,
   findImplementRequirementIssues,
   findImplementRequirementListIssues,
+  findImplementRequirementsIssues,
   findInventoryEntry,
+  findItemActionSurfaceIssues,
   findItemAttackContributionIssues,
+  findItemAttackIssues,
   findItemCoreDefinitionIssues,
   findItemDefenseContributionIssues,
+  findItemDefenseIssues,
   findItemEquipmentDefinitionIssues,
   findItemFamilyCatalogIssues,
+  findItemFamilyIssues,
   findItemIntegrityBandIssues,
   findItemIntegrityDefinitionIssues,
+  findItemIntegrityIssues,
+  findItemIntegrityOperationIssues,
   findItemStructuralIssues,
   findItemUseApplicationIssues,
   findItemUseDefinitionIssues,
@@ -575,6 +662,8 @@ export {
   getActiveItemEffects,
   getItemFamilyDefinition,
   isActivelyUsableItem,
+  isAuthorizedImplementConditionalRules,
+  isBrokenIntegrityState,
   isCharacterItemShape,
   isConcreteInventoryObject,
   isEquippedItemState,
@@ -591,9 +680,13 @@ export {
   itemIntegrityRequest,
   itemOperationCostRequest,
   matchesImplementCondition,
+  permitsRepair,
   prepareItemOperation,
+  resolveEffectiveStress,
   resolveIntegrityState,
   resolveInventoryItemRef,
+  resolveItemEnvelope,
+  resolveItemFunctionality,
   resolveItemIntegrityOperation,
   resolveItemPerformanceContribution,
   resolveItemPerformanceContributions,

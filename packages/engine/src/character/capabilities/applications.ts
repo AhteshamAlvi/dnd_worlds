@@ -91,11 +91,11 @@ import type { AuraCostRequest } from "../foundation/aura/runtime";
 import type { NamedRequirement, Requirement } from "../rules/requirements";
 
 import {
-  findImplementRequirementListIssues,
+  findImplementRequirementsIssues,
   type ImplementRequirement,
 } from "../equipment/implements";
 import {
-  findImplementConditionalRuleListIssues,
+  findImplementConditionalRulesIssues,
   type ImplementConditionalRule,
 } from "../equipment/conditions";
 
@@ -2792,9 +2792,17 @@ export function findSkillApplicationIssues(
   }
 
   errors.push(...findRequirementIssues(application.requirements ?? []));
-  errors.push(...findImplementRequirementListIssues(application.implements ?? []));
+
+  /*
+   * The RAW fields, not `?? []`. Both validators take `unknown` now and refuse
+   * a list that is not a list; defaulting here would turn `implements: null`
+   * into an empty list and call a malformed declaration clean — the exact
+   * collapse `presentOr()` exists to prevent one layer down in
+   * rules/definitions.ts.
+   */
+  errors.push(...findImplementRequirementsIssues(application.implements));
   errors.push(
-    ...findImplementConditionalRuleListIssues(application.implementConditionalRules ?? []),
+    ...findImplementConditionalRulesIssues(application.implementConditionalRules),
   );
   errors.push(...findCostProfileIssues(application.cost));
   errors.push(...findCheckProfileIssues(application.check));

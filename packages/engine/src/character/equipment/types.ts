@@ -35,7 +35,7 @@ import type { Definition } from "../../infrastructure/registry";
 import type { Effect } from "../rules/effects";
 import type { NamedRequirement } from "../rules/requirements";
 
-import { isEquippedItemState, type ItemEquipmentState } from "./state";
+import type { ItemEquipmentState } from "./state";
 import type { InventoryEntryId } from "./references";
 import type { ItemFamilyId } from "./families";
 import type { ItemIntegrityDefinition } from "./integrity";
@@ -140,6 +140,18 @@ export function isStackableItem(definition: ItemDefinition): boolean {
  * Character inventory should reference this definition by id rather than
  * duplicating the full Item definition into character state.
  */
+/**
+ * A catalog Item's id.
+ *
+ * A plain alias, for the reason `CharacterId` and `InventoryEntryId` are: it
+ * crosses JSON, host props and fetch bodies constantly, and branding it would
+ * buy an unwrap at every one of those edges. It exists as a NAME so that a
+ * signature can say which of the two ids it wants — an entry names an object,
+ * a definition names a kind of object, and `string` says neither.
+ */
+export type ItemDefinitionId = string;
+
+
 export interface ItemDefinition extends Definition {
   /**
    * Whether copies of this Item are distinct objects or a count.
@@ -413,46 +425,12 @@ export interface CharacterItem {
 }
 
 
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                    */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Return the passive Effects contributed by one inventory entry in its current
- * state.
+/*
+ * `getActiveItemEffects()` used to live here and now lives in ./effects.ts.
  *
- * Possessed Effects apply at any positive quantity: a Cursed Idol unsettles
- * the people around whoever carries it whether they are carrying one or three.
- * Equipped Effects apply on top while the entry is held or worn.
- *
- * An emptied entry contributes nothing at all. It is still a line in the
- * inventory — the quiver exists — but a rule that applied because a container
- * of nothing was still on the sheet would be a rule applying to an object the
- * character does not have.
- *
- * `useEffects` are excluded here and always will be: they are events produced
- * when a player uses the Item, not passive derived state, and collecting them
- * with the rest is how a Healing Potion heals continuously for being in a bag.
- *
- * This function only collects declared Effects. It does not execute them.
+ * It stopped being a question about DATA the moment integrity gained
+ * mechanical consequences: which passive Effects apply depends on whether the
+ * object still works, which needs `resolveItemFunctionality()`, which this
+ * file cannot import as a value without closing a cycle through validation.ts.
+ * This file keeps the Item shape and interprets none of it.
  */
-export function getActiveItemEffects(
-  definition: ItemDefinition,
-  state: CharacterItem,
-): readonly Effect[] {
-  if (state.quantity <= 0) {
-    return [];
-  }
-
-  const effects: Effect[] = [
-    ...(definition.possessedEffects ?? []),
-  ];
-
-  if (isEquippedItemState(state.state)) {
-    effects.push(
-      ...(definition.equippedEffects ?? []),
-    );
-  }
-
-  return effects;
-}

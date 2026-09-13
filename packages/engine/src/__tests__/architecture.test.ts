@@ -2284,6 +2284,72 @@ describe("equipment establishes the Shū contract without Shū itself", () => {
     expect(/SHU_INTERACTIONS\s*=\s*\[\s*"compatible"\s*,\s*"incompatible"\s*,?\s*\]/.test(source))
       .toBe(true);
   });
+
+  /*
+   * The rule stated positively, and the one the Phase 4 repair added.
+   *
+   * The `channels` check above refuses the shape that was imagined. This
+   * refuses every OTHER shape a per-channel verdict could take, by fixing the
+   * vocabulary instead of listing the ways to break it: there is exactly ONE
+   * Shū-named field in live source, it is called `shuInteraction`, and it is a
+   * property of the whole Item. `shuAttack`, `shuPerChannel`,
+   * `attack: { shu: ... }` and `integrity: { shuInteraction: ... }` all fail
+   * here without anybody having had to think of them first.
+   */
+  it("declares exactly one Shū-named field, and only at whole-Item level", () => {
+    const codeOf = (path: string) =>
+      readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "")
+        .replace(/\/\/.*$/gm, "");
+
+    const fields = new Set<string>();
+
+    /*
+     * Scoped to equipment/, which is where the Item's Shū CONTRACT lives.
+     * `foundation/nen/` legitimately names the principle itself, and an Aura
+     * upkeep `shutdowns` list is an unrelated word that happens to start the
+     * same way; a rule that flagged either would be noise rather than a guard.
+     */
+    for (const path of equipmentFiles) {
+      for (const match of codeOf(path).matchAll(/\b(shu[A-Za-z0-9_]*)\s*[?]?\s*:/gi)) {
+        fields.add(match[1]!);
+      }
+    }
+
+    expect([...fields].sort()).toEqual(["shuInteraction"]);
+  });
+
+  it("declares that one field on the Item and on the resolved envelope, and nowhere else", () => {
+    /*
+     * WHERE it may be declared, as opposed to what it may be called. A Shū
+     * verdict living on an attack contribution, an integrity policy or an
+     * implement resolution would be a per-channel selection wearing the
+     * whole-Item name — which is exactly the thing the rule above cannot see.
+     */
+    const declarers = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) =>
+        /^\s*readonly\s+shuInteraction\s*[?]?\s*:/m.test(readFileSync(path, "utf8")),
+      );
+
+    expect(declarers.map((path) => path.replace(SRC, "")).sort()).toEqual([
+      join("character", "equipment", "envelope.ts"),
+      join("character", "equipment", "types.ts"),
+    ]);
+  });
+
+  it("resolves the verdict from the definition rather than from an argument", () => {
+    /*
+     * The production boundary, checked where it is easiest to lose: the
+     * envelope resolver must reach the verdict through a DEFINITION it looked
+     * up, never through a parameter a caller supplied. A signature taking
+     * `shuInteraction` would put the test-only pattern back.
+     */
+    const source = readFileSync(join(EQUIPMENT, "envelope.ts"), "utf8");
+
+    expect(source).toContain("shuInteraction: definition.shuInteraction");
+    expect(/function\s+\w+\([^)]*shuInteraction[^)]*\)/.test(source)).toBe(false);
+  });
 });
 
 

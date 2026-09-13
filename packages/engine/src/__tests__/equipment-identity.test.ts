@@ -42,7 +42,6 @@ import {
   findInventoryEntryOutcome,
   findItemCatalogIssues,
   findItemValidationIssues,
-  getActiveItemEffects,
   getItemDefinition,
   isCharacterItemShape,
   isConcreteInventoryObject,
@@ -56,6 +55,7 @@ import {
   type CharacterItem,
   type ItemEquipmentState,
 } from "../character/equipment/index";
+import { getActiveItemEffects } from "../character/equipment/effects";
 
 import { meetsRequirement, resolveRequirement } from "../character/rules/resolution";
 import type { RequirementContext } from "../character/rules/resolution";

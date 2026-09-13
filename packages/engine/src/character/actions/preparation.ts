@@ -66,7 +66,8 @@ import {
 } from "../equipment/implements";
 import {
   collectMatchedCheckModifiers,
-  type SourcedImplementConditionalRule,
+  NO_IMPLEMENT_CONDITIONAL_RULES,
+  type AuthorizedImplementConditionalRules,
 } from "../equipment/conditions";
 import type { ItemDefinitionLookup } from "../equipment/validation";
 
@@ -116,14 +117,21 @@ export interface CharacterActionInputs {
     readonly allowSharedEntries?: boolean;
 
     /**
-     * Implement-conditional rules (Ticket 4.7) that may bear on this attempt
-     * — from the character's applicable Traits and Techniques, and from the
-     * Skill being attempted, if any. Caller-supplied: this adapter evaluates
-     * them against the resolved implements and never looks one up itself.
+     * Implement-conditional rules (Ticket 4.7) that may bear on this attempt.
+     *
+     * The ENGINE's own derivation, not the caller's. This used to be a bare
+     * `SourcedImplementConditionalRule[]` a caller assembled, which meant a
+     * host could hand the adapter a rule sourced to a Trait the character has
+     * never had and get a check modifier that stacked and traced exactly like
+     * a real one. The branded collection can only come from
+     * `collectImplementConditionalRules()` — see
+     * `capabilities/implement-rules.ts`.
+     *
      * Only `"check"`-output rules matter here; `"performance"`-output rules
-     * apply within `equipment/contributions.ts` instead.
+     * apply within `equipment/contributions.ts` instead, from the SAME
+     * authorized collection.
      */
-    readonly conditionalRules?: readonly SourcedImplementConditionalRule[];
+    readonly conditionalRules?: AuthorizedImplementConditionalRules;
   };
 }
 
@@ -318,7 +326,7 @@ export function prepareCharacterActionInputs(
   const modifiers = [
     ...collectCharacterCheckModifiers(input.resolved, input.invocation ?? {}),
     ...collectMatchedCheckModifiers(
-      input.implements?.conditionalRules ?? [],
+      input.implements?.conditionalRules ?? NO_IMPLEMENT_CONDITIONAL_RULES,
       implementResolutions,
     ),
   ];

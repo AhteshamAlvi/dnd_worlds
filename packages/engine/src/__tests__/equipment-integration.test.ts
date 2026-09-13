@@ -49,6 +49,7 @@ import {
 import type { CharacterItem } from "../character/equipment/index";
 import type { ImplementRequirement, SelectedImplement } from "../character/equipment/implements";
 import {
+  authorizeImplementConditionalRules,
   collectMatchedCheckModifiers,
   type SourcedImplementConditionalRule,
 } from "../character/equipment/conditions";
@@ -128,7 +129,6 @@ describe("fixture: a reusable tool with an active effect (lantern)", () => {
       operationId: OPERATION.operationId,
       occurredAt: OPERATION.occurredAt,
       resolved,
-      definition: getItemDefinition("lantern")!,
       intent,
       approach: "mechanical",
       getItemDefinition,
@@ -180,7 +180,6 @@ describe("fixture: a reusable tool with an active effect (lantern)", () => {
       operationId: OPERATION.operationId,
       occurredAt: OPERATION.occurredAt,
       resolved,
-      definition: getItemDefinition("lantern")!,
       intent,
       approach: "mechanical",
       getItemDefinition,
@@ -247,7 +246,6 @@ describe("fixture: a stackable, Shū-incompatible potion", () => {
       operationId: OPERATION.operationId,
       occurredAt: OPERATION.occurredAt,
       resolved,
-      definition: getItemDefinition("calming-potion")!,
       intent,
       approach: "mechanical",
       getItemDefinition,
@@ -529,7 +527,7 @@ describe("fixture: an improvised implement affected by a Trait", () => {
       },
     }];
 
-    const modifiers = collectMatchedCheckModifiers(rules, selection.resolutions);
+    const modifiers = collectMatchedCheckModifiers(authorizeImplementConditionalRules(rules), selection.resolutions);
 
     expect(modifiers).toHaveLength(1);
     expect(modifiers[0]!.source).toEqual({ type: "trait", id: "improvised-mastery" });

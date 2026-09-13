@@ -91,13 +91,21 @@ import type { Effect } from "../rules/effects";
 import { resolveEquipmentTransition } from "./transitions";
 import { resolveItemUse } from "./use";
 import {
-  findImplementRequirementListIssues,
+  findImplementRequirementsIssues,
   type ImplementRequirement,
 } from "./implements";
-import type { InventoryItemRef } from "./references";
+import {
+  describeInventoryReferenceIssue,
+  resolveInventoryItemRef,
+  type InventoryItemRef,
+} from "./references";
 import type { ItemEquipmentState } from "./state";
 import type { ItemDefinition } from "./types";
-import type { ItemDefinitionLookup } from "./validation";
+import {
+  findItemStructuralIssues,
+  resolveItemDefinition,
+  type ItemDefinitionLookup,
+} from "./validation";
 import {
   itemOperationCostRequest,
   ITEM_OPERATION_COST,
@@ -136,60 +144,185 @@ export interface ItemUseApplication {
 }
 
 
+/*
+ * A RECORD, and an array is not one.
+ *
+ * `[]` is `typeof "object"` and not null, so the old guard let an array
+ * through as a well-formed object with none of the fields set — which read as
+ * "an attack contribution that declares nothing", a perfectly legal thing to
+ * author, rather than as the malformed value it is.
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+
+function surfaceError(
+  code: string,
+  message: string,
+  required: NonNullable<EngineError["required"]>,
+  actual: unknown,
+): EngineError {
+  return {
+    code,
+    message,
+    audience: "developer",
+    required,
+    actual: typeof actual === "string" ? actual : String(actual),
+  };
+}
+
+
+/**
+ * Everything wrong with one Item's use application.
+ *
+ * Takes `unknown` and proves every compound field before reading it. It used
+ * to take a typed `ItemUseApplication` on nothing but the caller's word, and
+ * a host's `useApplication: 42` reached `application.allowedTimings.length`
+ * and threw — out of the validator whose job was to report it. The same held
+ * one level in: `structuredActionCost` was dereferenced unchecked, and
+ * `targets` went straight to the neutral target validator, which had every
+ * right to assume a specification.
+ */
 export function findItemUseApplicationIssues(
-  application: ItemUseApplication,
+  value: unknown,
 ): readonly EngineError[] {
+  if (!isRecord(value)) {
+    return [surfaceError(
+      "equipment.actions.use-application.invalid",
+      "A use application must be an object.",
+      "an ItemUseApplication object",
+      value,
+    )];
+  }
+
+  const application = value as Partial<Record<keyof ItemUseApplication, unknown>>;
   const errors: EngineError[] = [];
 
-  if (application.allowedTimings.length === 0) {
-    errors.push({
-      code: "equipment.actions.use-application.timings.empty",
-      message: "A use application with no allowed timings can never be attempted in structured time.",
-      audience: "developer",
-      required: "at least one allowed timing",
-      actual: "empty list",
-    });
+  const timings = application.allowedTimings;
+
+  if (!Array.isArray(timings) || timings.length === 0) {
+    errors.push(surfaceError(
+      "equipment.actions.use-application.timings.empty",
+      "A use application with no allowed timings can never be attempted in structured time.",
+      "at least one allowed timing",
+      Array.isArray(timings) ? "empty list" : timings,
+    ));
   }
 
-  if (
-    !Number.isInteger(application.structuredActionCost.actions) ||
-    application.structuredActionCost.actions < 0
+  const cost = application.structuredActionCost;
+
+  if (!isRecord(cost)) {
+    errors.push(surfaceError(
+      "equipment.actions.use-application.action-cost.missing",
+      "A use application must declare a structured Action cost.",
+      "a StructuredActionCost object",
+      cost,
+    ));
+  } else if (
+    !Number.isInteger(cost["actions"]) ||
+    (cost["actions"] as number) < 0
   ) {
-    errors.push({
-      code: "equipment.actions.use-application.action-cost.invalid",
-      message: "A use application's Action cost must be a non-negative whole number.",
-      audience: "developer",
-      required: "integer >= 0",
-      actual: String(application.structuredActionCost.actions),
-    });
+    errors.push(surfaceError(
+      "equipment.actions.use-application.action-cost.invalid",
+      "A use application's Action cost must be a non-negative whole number.",
+      "integer >= 0",
+      cost["actions"],
+    ));
   }
 
-  errors.push(...findTargetSpecificationIssues(application.targets));
+  /*
+   * The neutral validators below are entitled to their own typed inputs — they
+   * are shared with every other consumer of those vocabularies and must not
+   * grow a second guard each. So the SHAPE is proved here and the CONTENT is
+   * proved there, which is the same division the selector boundary settled on.
+   */
+  if (!isRecord(application.targets)) {
+    errors.push(surfaceError(
+      "equipment.actions.use-application.targets.missing",
+      "A use application must declare a target specification.",
+      "a TargetSpecification object",
+      application.targets,
+    ));
+  } else {
+    errors.push(
+      ...findTargetSpecificationIssues(application.targets as unknown as TargetSpecification),
+    );
+  }
+
+  if (application.permittedFocusKinds !== undefined) {
+    const kinds = application.permittedFocusKinds;
+
+    if (!Array.isArray(kinds) || kinds.length === 0) {
+      errors.push(surfaceError(
+        "equipment.actions.use-application.focus-kinds.empty",
+        "A use application's permitted focus kinds must be a non-empty list, or omitted.",
+        "one or more focus kinds, or omit the field",
+        Array.isArray(kinds) ? "empty list" : kinds,
+      ));
+    }
+  }
 
   if (application.range !== undefined) {
-    errors.push(...findDistanceIntervalIssues(application.range));
+    if (!isRecord(application.range)) {
+      errors.push(surfaceError(
+        "equipment.actions.use-application.range.invalid",
+        "A use application's Range must be a distance interval.",
+        "a DistanceInterval object, or omit the field",
+        application.range,
+      ));
+    } else {
+      errors.push(
+        ...findDistanceIntervalIssues(application.range as unknown as DistanceInterval),
+      );
+    }
   }
 
   if (
+    typeof application.executionDuration !== "number" ||
     !Number.isFinite(application.executionDuration) ||
     application.executionDuration < 0
   ) {
-    errors.push({
-      code: "equipment.actions.use-application.execution-duration.invalid",
-      message: "A use application's execution duration must be a finite, non-negative game duration.",
-      audience: "developer",
-      required: "finite milliseconds >= 0",
-      actual: String(application.executionDuration),
-    });
+    errors.push(surfaceError(
+      "equipment.actions.use-application.execution-duration.invalid",
+      "A use application's execution duration must be a finite, non-negative game duration.",
+      "finite milliseconds >= 0",
+      application.executionDuration,
+    ));
   }
 
   if (application.travel !== undefined) {
-    errors.push(...findTravelIssues(application.travel));
+    if (!isRecord(application.travel)) {
+      errors.push(surfaceError(
+        "equipment.actions.use-application.travel.invalid",
+        "A use application's travel must be a spatial travel object.",
+        "a SpatialTravel object, or omit the field",
+        application.travel,
+      ));
+    } else {
+      errors.push(...findTravelIssues(application.travel as unknown as SpatialTravel));
+    }
   }
 
-  if (application.implements !== undefined) {
-    errors.push(...findImplementRequirementListIssues(application.implements));
+  if (application.check !== undefined) {
+    if (!isRecord(application.check)) {
+      errors.push(surfaceError(
+        "equipment.actions.use-application.check.invalid",
+        "A use application's check must be an action check profile.",
+        "an ActionCheckProfile object, or omit the field",
+        application.check,
+      ));
+    } else if (!isValidCheckScope((application.check as unknown as unknown as ActionCheckProfile).scope)) {
+      errors.push(surfaceError(
+        "equipment.actions.use-application.check.scope.invalid",
+        "A use application's check must name a known check scope.",
+        "a valid CheckScope",
+        JSON.stringify((application.check as unknown as unknown as ActionCheckProfile).scope),
+      ));
+    }
   }
+
+  errors.push(...findImplementRequirementsIssues(application.implements));
 
   return errors;
 }
@@ -231,40 +364,177 @@ export interface ItemDefenseContribution {
  * collectRuleBundles() and checked at the registration barrier, through the
  * same structural Effect validator every other source uses. Checking it again
  * here would be a second opinion about the same question, free to drift.
+ *
+ * Everything else is, and from `unknown`. `attack: 42` used to reach
+ * `contribution.check` and read a property off a number — which JavaScript
+ * obligingly returns `undefined` for, so the Item registered and the fault
+ * surfaced later as a contribution that declared nothing.
  */
-export function findItemAttackContributionIssues(
-  contribution: ItemAttackContribution,
+export function findItemAttackIssues(
+  value: unknown,
 ): readonly EngineError[] {
+  if (value === undefined) return [];
+
+  if (!isRecord(value)) {
+    return [surfaceError(
+      "equipment.actions.attack-contribution.invalid",
+      "An Item's attack contribution must be an object.",
+      "an ItemAttackContribution object, or omit the field",
+      value,
+    )];
+  }
+
+  const contribution = value as Partial<Record<keyof ItemAttackContribution, unknown>>;
   const errors: EngineError[] = [];
 
-  if (contribution.check !== undefined && !isValidCheckScope(contribution.check.scope)) {
-    errors.push({
-      code: "equipment.actions.attack-contribution.check.invalid",
-      message: "An attack contribution's check must name a known check scope.",
-      audience: "developer",
-      required: "a valid CheckScope",
-      actual: JSON.stringify(contribution.check.scope),
-    });
+  if (contribution.check !== undefined) {
+    if (!isRecord(contribution.check)) {
+      errors.push(surfaceError(
+        "equipment.actions.attack-contribution.check.malformed",
+        "An attack contribution's check must be an action check profile.",
+        "an ActionCheckProfile object, or omit the field",
+        contribution.check,
+      ));
+    } else if (
+      !isValidCheckScope((contribution.check as unknown as ActionCheckProfile).scope)
+    ) {
+      errors.push(surfaceError(
+        "equipment.actions.attack-contribution.check.invalid",
+        "An attack contribution's check must name a known check scope.",
+        "a valid CheckScope",
+        JSON.stringify((contribution.check as unknown as ActionCheckProfile).scope),
+      ));
+    }
   }
 
   if (contribution.range !== undefined) {
-    errors.push(...findDistanceIntervalIssues(contribution.range));
+    if (!isRecord(contribution.range)) {
+      errors.push(surfaceError(
+        "equipment.actions.attack-contribution.range.malformed",
+        "An attack contribution's Range must be a distance interval.",
+        "a DistanceInterval object, or omit the field",
+        contribution.range,
+      ));
+    } else {
+      errors.push(
+        ...findDistanceIntervalIssues(contribution.range as unknown as DistanceInterval),
+      );
+    }
   }
 
   if (contribution.travel !== undefined) {
-    errors.push(...findTravelIssues(contribution.travel));
+    if (!isRecord(contribution.travel)) {
+      errors.push(surfaceError(
+        "equipment.actions.attack-contribution.travel.malformed",
+        "An attack contribution's travel must be a spatial travel object.",
+        "a SpatialTravel object, or omit the field",
+        contribution.travel,
+      ));
+    } else {
+      errors.push(
+        ...findTravelIssues(contribution.travel as unknown as SpatialTravel),
+      );
+    }
+  }
+
+  if (contribution.effects !== undefined && !Array.isArray(contribution.effects)) {
+    errors.push(surfaceError(
+      "equipment.actions.attack-contribution.effects.invalid",
+      "An attack contribution's effects must be a list.",
+      "array of Effects, or omit the field",
+      contribution.effects,
+    ));
   }
 
   return errors;
 }
 
 
-export function findItemDefenseContributionIssues(
-  contribution: ItemDefenseContribution,
+export function findItemDefenseIssues(
+  value: unknown,
 ): readonly EngineError[] {
-  return contribution.range === undefined
-    ? []
-    : [...findDistanceIntervalIssues(contribution.range)];
+  if (value === undefined) return [];
+
+  if (!isRecord(value)) {
+    return [surfaceError(
+      "equipment.actions.defense-contribution.invalid",
+      "An Item's defense contribution must be an object.",
+      "an ItemDefenseContribution object, or omit the field",
+      value,
+    )];
+  }
+
+  const contribution = value as Partial<Record<keyof ItemDefenseContribution, unknown>>;
+  const errors: EngineError[] = [];
+
+  if (contribution.range !== undefined) {
+    if (!isRecord(contribution.range)) {
+      errors.push(surfaceError(
+        "equipment.actions.defense-contribution.range.malformed",
+        "A defense contribution's Range must be a distance interval.",
+        "a DistanceInterval object, or omit the field",
+        contribution.range,
+      ));
+    } else {
+      errors.push(
+        ...findDistanceIntervalIssues(contribution.range as unknown as DistanceInterval),
+      );
+    }
+  }
+
+  if (contribution.effects !== undefined && !Array.isArray(contribution.effects)) {
+    errors.push(surfaceError(
+      "equipment.actions.defense-contribution.effects.invalid",
+      "A defense contribution's effects must be a list.",
+      "array of Effects, or omit the field",
+      contribution.effects,
+    ));
+  }
+
+  return errors;
+}
+
+
+/*
+ * The previous names, kept as aliases. Same implementations; renaming three
+ * call sites and two barrels would be a diff about spelling.
+ */
+export const findItemAttackContributionIssues = findItemAttackIssues;
+export const findItemDefenseContributionIssues = findItemDefenseIssues;
+
+
+/**
+ * Every structural fault on the Item surfaces that are built from the NEUTRAL
+ * vocabularies — the use application, the attack fact, the defense fact.
+ *
+ * Split from `findItemStructuralIssues()` in validation.ts for one reason, and
+ * it is a layering reason rather than a taste one: these three surfaces
+ * compose `actions/`, `targeting/` and `spatial/`, which only this seam file
+ * may import (architecture.test.ts holds that line), and validation.ts sits
+ * below the seam. `equipment/index.ts` composes both into the one validator
+ * the registry is handed, so registration still checks every surface — see
+ * its `composeStructuralValidators()` call, and the parity sweep in
+ * registration-barrier.test.ts that would fail if either half were dropped.
+ *
+ * Strings rather than typed issues, because the consumer is a registration
+ * refusal a person reads — the same contract `findItemStructuralIssues()` has.
+ */
+export function findItemActionSurfaceIssues(
+  candidate: unknown,
+): readonly string[] {
+  if (!isRecord(candidate)) return [];
+
+  const definition = candidate as Partial<Record<keyof ItemDefinition, unknown>>;
+
+  const issues: EngineError[] = [
+    ...(definition.useApplication === undefined
+      ? []
+      : findItemUseApplicationIssues(definition.useApplication)),
+    ...findItemAttackIssues(definition.attack),
+    ...findItemDefenseIssues(definition.defense),
+  ];
+
+  return issues.map((issue) => `${issue.message} (${issue.code})`);
 }
 
 
@@ -464,6 +734,14 @@ function evaluateItemOperationEligibility(
           summary: "This Item declares nothing to use.",
         }], result.trace);
 
+      case "broken":
+        return engineSuccess([{
+          id: "equipment.use.broken",
+          status: "unsatisfied",
+          decidedBy: "equipment",
+          summary: `This Item is ${resolution.state} and cannot be used.`,
+        }], result.trace);
+
       case "quantity-unavailable":
         return engineSuccess([{
           id: "equipment.use.quantity",
@@ -555,16 +833,26 @@ export interface ItemOperationPreparationInput {
   /** The character as they stand right now. Read, never applied. */
   readonly resolved: ResolvedCharacter;
 
-  readonly definition: ItemDefinition;
   readonly intent: ItemOperationIntentInput;
   readonly approach: ResolutionApproach;
 
   /**
    * How to resolve an itemId to its definition.
    *
-   * The unbound resolvers ask for one rather than assuming a global catalog —
-   * see resolveEquipmentTransition()/resolveItemUse(). A caller with the
-   * engine's own catalog passes `getItemDefinition` from equipment/index.ts.
+   * The ONE path to a definition now, and the reason the `definition` field
+   * that used to sit above this one is gone. A caller supplying both handed
+   * preparation two answers to "what Item is this": the entry said one thing
+   * and the argument said another, and the profile, the source, the Action
+   * cost, the targets, the Range and the settlement request were all built
+   * from the argument. A potion's entry prepared with a grenade's definition
+   * produced a perfectly well-formed proposal to throw a potion, sourced to
+   * the grenade, which settlement would then re-resolve as the potion it
+   * always was.
+   *
+   * So the entry names the definition and this lookup resolves it. A caller
+   * with the engine's own catalog passes `getItemDefinition` from
+   * equipment/index.ts; a host passes its own, exactly as
+   * resolveEquipmentTransition() and resolveItemUse() already ask.
    */
   readonly getItemDefinition: ItemDefinitionLookup;
 
@@ -573,24 +861,125 @@ export interface ItemOperationPreparationInput {
 }
 
 
-/**
- * Prepare one Item operation as a neutral ActionProposal.
- *
- * Validates the reference, the definition, the character as they stand right
- * now, the operation's requirements, and the intent against its profile —
- * and applies none of it. The single mandatory cost request this attaches
- * (`itemOperationCostRequest`) is what settlement re-validates and commits;
- * see runtime.ts.
- */
+function preparationFailure(
+  output: string,
+  error: EngineError,
+): EngineResult<ActionProposal> {
+  return engineFailure(
+    {
+      root: createTraceNode({
+        id: "character.equipment.actions.preparation",
+        label: "Prepare Item operation",
+        inputs: { stage: { value: output } },
+        output,
+      }),
+    },
+    [error] as NonEmptyArray<EngineError>,
+  );
+}
+
+
 export function prepareItemOperation(
   input: ItemOperationPreparationInput,
 ): EngineResult<ActionProposal> {
   const { intent } = input;
+  const character = input.resolved.character;
+
+  /* ---------------------------------------------------------------------- */
+  /* Provenance: the entry, its owner, and the definition it names          */
+  /* ---------------------------------------------------------------------- */
+
+  const found = resolveInventoryItemRef(intent.item, character.id, character.items);
+
+  if (!found.ok) {
+    return preparationFailure(found.issue, {
+      code: `equipment.actions.preparation.${found.issue.replace(/-/g, "_")}`,
+      message: describeInventoryReferenceIssue(found.issue),
+      audience: "developer",
+      required: "a resolvable entry owned by the acting character",
+      actual: found.issue,
+    });
+  }
+
+  const entry = found.entry;
+
+  /*
+   * And whether the ACTOR is the owner.
+   *
+   * `resolveInventoryItemRef` proves the reference names an entry of the
+   * resolved character; it says nothing about who is acting. Preparing Killua's
+   * equip against Gon's resolved sheet used to produce a proposal whose actor
+   * was Killua and whose cost request was addressed to Gon's inventory — an
+   * action one character takes on another character's belongings, with nothing
+   * in the proposal saying so.
+   */
+  if (intent.actor.id !== character.id) {
+    return preparationFailure("actor_mismatch", {
+      code: "equipment.actions.preparation.actor_mismatch",
+      message:
+        `The acting character "${intent.actor.id}" does not own entry "${entry.entryId}".`,
+      audience: "developer",
+      required: `an entry owned by "${intent.actor.id}"`,
+      actual: character.id,
+    });
+  }
+
+  const lookup = resolveItemDefinition(input.getItemDefinition, entry.itemId);
+
+  if (!lookup.ok) {
+    return lookup.issue === "unknown"
+      ? preparationFailure("item_unknown", {
+          code: "equipment.actions.preparation.item_unknown",
+          message: `The entry names Item "${entry.itemId}", which no catalog defines.`,
+          audience: "developer",
+          required: "a known Item id",
+          actual: entry.itemId,
+        })
+      : preparationFailure("definition_invalid", {
+          code: "equipment.actions.preparation.definition_invalid",
+          message:
+            `The catalog answered Item "${entry.itemId}" with something that is not an Item definition.`,
+          audience: "developer",
+          required: "a known Item id",
+          actual: entry.itemId,
+        });
+  }
+
+  const definition = lookup.definition;
+
+  /*
+   * A lookup is a function a host wrote, and nothing obliges it to return the
+   * definition it was asked for. Checked rather than assumed, because every
+   * provenance rule above this line is worth exactly as much as this one.
+   */
+  if (definition.id !== entry.itemId) {
+    return preparationFailure("definition_mismatch", {
+      code: "equipment.actions.preparation.definition_mismatch",
+      message:
+        `The lookup answered Item "${entry.itemId}" with definition "${definition.id}".`,
+      audience: "developer",
+      required: entry.itemId,
+      actual: definition.id,
+    });
+  }
+
+  /* Validated before it is read, with the same rules registration applies. */
+  const definitionIssues = findItemStructuralIssues(definition);
+
+  if (definitionIssues.length > 0) {
+    return preparationFailure("definition_invalid", {
+      code: "equipment.actions.preparation.definition_invalid",
+      message: `Item "${entry.itemId}" ${definitionIssues.join(" ")}`,
+      audience: "developer",
+      required: "a structurally sound Item definition",
+      actual: definitionIssues[0] ?? "malformed",
+    });
+  }
 
   const profileResult = buildItemOperationProfile(
     intent.operation,
-    input.definition,
-    intent.item,
+    definition,
+    { characterId: character.id, entryId: entry.entryId },
   );
 
   if (!profileResult.success) return profileResult;
@@ -605,16 +994,23 @@ export function prepareItemOperation(
 
   if (!eligibilityResult.success) return eligibilityResult;
 
-  const characterId = input.resolved.character.id;
+  const characterId = character.id;
+
+  /*
+   * Built from the ENTRY, not from the caller's reference. They agree by now —
+   * the lookup above proved it — and building from the proven value is what
+   * keeps them agreeing if the reference ever gains a field.
+   */
+  const item: InventoryItemRef = { characterId, entryId: entry.entryId };
 
   const costRequest = itemOperationCostRequest({
-    requestId: `${input.operationId}:${ITEM_OPERATION_COST}:${intent.item.entryId}`,
+    requestId: `${input.operationId}:${ITEM_OPERATION_COST}:${entry.entryId}`,
     operationId: input.operationId,
     occurredAt: input.occurredAt,
     from: { domain: "character", id: characterId },
     to: { domain: "character", id: characterId },
     operation: intent.operation,
-    item: intent.item,
+    item,
     ...(intent.destination === undefined ? {} : { destination: intent.destination }),
   });
 
@@ -622,7 +1018,7 @@ export function prepareItemOperation(
     operationId: input.operationId,
     profile,
     intent: {
-      id: `${input.operationId}:${itemOperationProfileId(intent.operation, intent.item)}`,
+      id: `${input.operationId}:${itemOperationProfileId(intent.operation, item)}`,
       profileId: profile.id,
       actor: intent.actor,
       ...(intent.declaredGoal === undefined ? {} : { declaredGoal: intent.declaredGoal }),
