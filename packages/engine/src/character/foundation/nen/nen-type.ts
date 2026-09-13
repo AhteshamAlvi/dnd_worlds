@@ -29,6 +29,7 @@
  * was, what it became, and why — see the awakening vocabulary.
  */
 
+import { describeDiagnosticValue } from "../../../infrastructure/diagnostics";
 import type { EngineResult } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 
@@ -160,7 +161,7 @@ export function adoptLegacyNenType(
     label: "Adopt a legacy Nen Type",
     formula: "canonical wins when they agree; a disagreement is refused",
     inputs: {
-      legacy: { value: String(legacy ?? "absent") },
+      legacy: { value: describeDiagnosticValue(legacy ?? "absent") },
       canonical: { value: nen.awakening.nenType.status },
     },
   });
@@ -183,7 +184,7 @@ export function adoptLegacyNenType(
         message: "A legacy Nen Type must be one of the six Nen Types.",
         audience: "developer",
         required: NEN_TYPES.join(" | "),
-        actual: String(legacy),
+        actual: describeDiagnosticValue(legacy),
       }],
     };
   }

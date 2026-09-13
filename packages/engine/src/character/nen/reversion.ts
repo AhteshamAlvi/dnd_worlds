@@ -51,7 +51,10 @@
  * really did come back.
  */
 
-import type { EngineError } from "../../infrastructure/diagnostics";
+import {
+  describeDiagnosticValue,
+  type EngineError,
+} from "../../infrastructure/diagnostics";
 import type { ContributionSourceRef } from "../../infrastructure/contribution-source";
 import { createTraceNode } from "../../infrastructure/trace";
 import { transitionOutcome } from "../../runtime/transition";
@@ -80,6 +83,7 @@ import { isNenUncontained } from "./access";
 import {
   emitContextOf,
   failAwakening,
+  findRequestShapeIssues,
   findRoutingMetadataIssues,
 } from "./preflight";
 import {
@@ -124,7 +128,7 @@ function sourceIssues(
       "Reversion is exceptional and must name the source that caused it.",
     audience: "developer",
     required: "{ type, id }",
-    actual: source === undefined ? "absent" : String(source),
+    actual: describeDiagnosticValue(source),
   }];
 }
 
@@ -150,25 +154,24 @@ export function revertNen(
       "reverted + half-open + no normal access; Mastery, history and external Abilities retained",
     inputs: {
       condition: { value: state.condition },
-
-      /*
-       * Read defensively, because a trace input is built before the request has
-       * been judged — and a trace label is never a reason to dereference.
-       */
-      source: { value: String(request?.source?.id ?? "absent") },
-      reason: { value: String(request?.reason ?? "absent") },
     },
   });
 
-  if (request === null || typeof request !== "object" || Array.isArray(request)) {
-    return failAwakening(root, [{
-      code: "nen.reversion.request.invalid",
-      message: "A reversion request must be a record.",
-      audience: "developer",
-      required: "{ source, reason }",
-      actual: String(request),
-    }]);
-  }
+  const shape = findRequestShapeIssues(
+    request,
+    "nen.reversion.request.invalid",
+    "A reversion request must be a record.",
+    "{ source, reason }",
+  );
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.source = {
+    value: describeDiagnosticValue(request.source?.id ?? "absent"),
+  };
+  root.inputs.reason = {
+    value: describeDiagnosticValue(request.reason ?? "absent"),
+  };
 
   const issues: EngineError[] = [
     ...findAwakeningStateIssues(state),
@@ -186,15 +189,15 @@ export function revertNen(
 
   if (routing.length > 0) return failAwakening(root, routing);
 
-  issues.push(...sourceIssues(request?.source));
+  issues.push(...sourceIssues(request.source));
 
-  if (typeof request?.reason !== "string" || request.reason.trim().length === 0) {
+  if (typeof request.reason !== "string" || request.reason.trim().length === 0) {
     issues.push({
       code: "nen.reversion.reason.missing",
       message: "A reversion must record why it happened.",
       audience: "developer",
       required: "non-empty string",
-      actual: String(request.reason),
+      actual: describeDiagnosticValue(request.reason),
     });
   }
 
@@ -213,16 +216,26 @@ export function revertNen(
    * shuffled a character's affinity would be the kind of side effect the
    * field-scoped override contract exists to make impossible.
    */
-  const typeChange = request?.nenTypeChange;
+  const typeChange = request.nenTypeChange;
 
   if (typeChange !== undefined) {
+    if (typeChange === null || typeof typeChange !== "object") {
+      return failAwakening(root, [{
+        code: "nen.reversion.type-change.invalid",
+        message: "A Nen Type change must be a record.",
+        audience: "developer",
+        required: "{ previous, next, cause }",
+        actual: describeDiagnosticValue(typeChange),
+      }]);
+    }
+
     if (!isNenType(typeChange.next)) {
       issues.push({
         code: "nen.reversion.type-change.invalid",
         message: "A Nen Type change must name one of the six Nen Types.",
         audience: "developer",
         required: "a Nen Type",
-        actual: String(typeChange.next),
+        actual: describeDiagnosticValue(typeChange.next),
       });
     }
 
@@ -235,7 +248,7 @@ export function revertNen(
         message: "A Nen Type change must record what caused it.",
         audience: "developer",
         required: "non-empty string",
-        actual: String(typeChange.cause),
+        actual: describeDiagnosticValue(typeChange.cause),
       });
     }
 
@@ -253,8 +266,8 @@ export function revertNen(
         message:
           "A Nen Type change records a previous type this character did not have.",
         audience: "developer",
-        required: String(nenTypeOf(state.nenType)),
-        actual: String(typeChange.previous),
+        required: describeDiagnosticValue(nenTypeOf(state.nenType)),
+        actual: describeDiagnosticValue(typeChange.previous),
       });
     }
   }
@@ -293,7 +306,7 @@ export function revertNen(
         "Targeted external Abilities must be a list of non-empty Ability ids.",
       audience: "developer",
       required: "array of non-empty strings",
-      actual: String(targeted),
+      actual: describeDiagnosticValue(targeted),
     }]);
   }
 

@@ -40,6 +40,7 @@
  * has no business creating. Nothing here writes a runtime flag of any kind.
  */
 
+import { describeDiagnosticValue } from "../../infrastructure/diagnostics";
 import { createTraceNode, type TraceNode } from "../../infrastructure/trace";
 import { findDiceIssues, requireOneDie, rollsFor } from "../../runtime/dice";
 import type {
@@ -73,6 +74,7 @@ import {
   eligibilityIssues,
   emitContextOf,
   failAwakening,
+  findAwakeningRequestIssues,
   findAwakeningRequirementContextIssues,
   findAwakeningRequirementIssues,
   findCommonAwakeningIssues,
@@ -124,6 +126,11 @@ export function awakenNenStandard(
   const state = context.nen.awakening;
   const reawakening = isReawakening(state);
 
+  /*
+   * The trace carries only what the CONTEXT supplies until the request has
+   * been judged. Reading `request.hurdle` to label a trace node is still
+   * reading the request, and it was the first thing this function did.
+   */
   const root = createTraceNode({
     id: "nen.awakening.standard",
     label: "Awaken Nen through standard training",
@@ -132,12 +139,19 @@ export function awakenNenStandard(
     inputs: {
       condition: { value: state.condition },
       reawakening: { value: String(reawakening) },
-      hurdle: { value: request.hurdle ?? "none" },
-      trainingCompleted: { value: String(request.trainingCompleted) },
     },
   });
 
-  const common = findCommonAwakeningIssues(context, request?.hurdle !== undefined);
+  const shape = findAwakeningRequestIssues(request, "standard");
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.hurdle = { value: request.hurdle ?? "none" };
+  root.inputs.trainingCompleted = {
+    value: describeDiagnosticValue(request.trainingCompleted),
+  };
+
+  const common = findCommonAwakeningIssues(context, request.hurdle !== undefined);
 
   if (common.length > 0) return failAwakening(root, common);
 
@@ -147,7 +161,7 @@ export function awakenNenStandard(
       message: "A standard awakening requires the training to be finished.",
       audience: "player",
       required: "completed awakening training",
-      actual: String(request.trainingCompleted),
+      actual: describeDiagnosticValue(request.trainingCompleted),
     }]);
   }
 
@@ -185,7 +199,7 @@ export function awakenNenStandard(
         "A supplied base training duration must be a finite, non-negative number of hours.",
       audience: "developer",
       required: "finite number >= 0",
-      actual: String(request.baseTrainingDurationHours),
+      actual: describeDiagnosticValue(request.baseTrainingDurationHours),
     }]);
   }
 
@@ -342,12 +356,19 @@ export function awakenNenAbrupt(
     inputs: {
       condition: { value: state.condition },
       reawakening: { value: String(reawakening) },
-      hurdle: { value: request.hurdle ?? "none" },
-      actor: { value: request.actor?.ref?.id ?? "absent" },
     },
   });
 
-  const common = findCommonAwakeningIssues(context, request?.hurdle !== undefined);
+  const shape = findAwakeningRequestIssues(request, "abrupt");
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.hurdle = { value: request.hurdle ?? "none" };
+  root.inputs.actor = {
+    value: describeDiagnosticValue(request.actor?.ref?.id ?? "absent"),
+  };
+
+  const common = findCommonAwakeningIssues(context, request.hurdle !== undefined);
 
   if (common.length > 0) return failAwakening(root, common);
 
@@ -378,7 +399,7 @@ export function awakenNenAbrupt(
         "An abrupt awakening requires an external actor, named by their content source.",
       audience: "developer",
       required: "{ type, id }",
-      actual: String(request.actor?.ref),
+      actual: describeDiagnosticValue(request.actor?.ref),
     }]);
   }
 

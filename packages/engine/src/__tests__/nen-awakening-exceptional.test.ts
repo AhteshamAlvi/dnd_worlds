@@ -238,7 +238,7 @@ describe("the ability-through-Zetsu exception is bound, not general", () => {
 
   /*
    * The exemption would TRAVEL if it named only the Ability: the same Ability
-   * would work through a collapse Zetsu it was never granted an exception for.
+   * would work through an involuntary Zetsu it was never granted anything against.
    */
   it("does not carry over to a suppression of another kind", () => {
     const foreign = {

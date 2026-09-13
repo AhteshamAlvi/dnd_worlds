@@ -13,7 +13,10 @@
  * eligibility bundle conclude, and which events does a successful opening owe.
  */
 
-import type { EngineError } from "../../infrastructure/diagnostics";
+import {
+  describeDiagnosticValue,
+  type EngineError,
+} from "../../infrastructure/diagnostics";
 import type { NonEmptyArray } from "../../infrastructure/result";
 import type { TraceNode } from "../../infrastructure/trace";
 import { isRuntimeOwnerRef } from "../../runtime/domains";
@@ -23,6 +26,7 @@ import type { RuntimeEvent } from "../../runtime/events";
 
 import { findAwakeningStateIssues } from "../foundation/nen/awakening/validation";
 import type {
+  NenAwakeningMethod,
   NenAwakeningRecord,
   NenAwakeningState,
 } from "../foundation/nen/awakening/types";
@@ -42,6 +46,73 @@ import {
   sequenceAwakeningEvents,
   type EmitContext,
 } from "./settlement";
+
+
+/*
+ * The REQUEST, judged before a single field of it is read.
+ *
+ * Including by the trace. Every transition built its trace node from request
+ * fields as its first statement — `request.hurdle ?? "none"`, `request.actor
+ * ?.ref?.id` — so a null request threw before any validator ran, out of a
+ * function whose contract is that it returns diagnostics. Optional chaining at
+ * each read site would have papered over it one field at a time; this refuses
+ * the request once, at the top, and the trace is only populated afterwards.
+ *
+ * `expectedMethod` checks the discriminant against the ROUTE that was called.
+ * `awakenNenStandard(context, abruptRequest)` is a caller who has wired up the
+ * wrong function, and honouring the shape while ignoring the label it carries
+ * would resolve it as a standard awakening — silently, and with no roll.
+ */
+export function findAwakeningRequestIssues(
+  request: unknown,
+  expectedMethod: NenAwakeningMethod,
+): readonly EngineError[] {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return [{
+      code: "nen.awakening.request.invalid",
+      message: `A ${expectedMethod} awakening request must be a record.`,
+      audience: "developer",
+      required: `{ method: "${expectedMethod}", ... }`,
+      actual: describeDiagnosticValue(request),
+    }];
+  }
+
+  const method = (request as { method?: unknown }).method;
+
+  if (method !== expectedMethod) {
+    return [{
+      code: "nen.awakening.request.method.mismatch",
+      message:
+        `This route resolves ${expectedMethod} awakenings; the request names a different one.`,
+      audience: "developer",
+      required: expectedMethod,
+      actual: describeDiagnosticValue(method),
+    }];
+  }
+
+  return [];
+}
+
+
+/** The same structural gate for a request that carries no method discriminant. */
+export function findRequestShapeIssues(
+  request: unknown,
+  code: string,
+  message: string,
+  required: string,
+): readonly EngineError[] {
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return [{
+      code,
+      message,
+      audience: "developer",
+      required,
+      actual: describeDiagnosticValue(request),
+    }];
+  }
+
+  return [];
+}
 
 
 /*
@@ -70,7 +141,7 @@ export function findRoutingMetadataIssues(
       message: "A Nen transition must name the owner it belongs to.",
       audience: "developer",
       required: "{ domain, id }",
-      actual: String(context?.owner),
+      actual: describeDiagnosticValue(context?.owner),
     });
   }
 
@@ -83,7 +154,7 @@ export function findRoutingMetadataIssues(
       message: "A Nen transition must belong to a named operation.",
       audience: "developer",
       required: "non-empty string",
-      actual: String(context?.operationId),
+      actual: describeDiagnosticValue(context?.operationId),
     });
   }
 
@@ -93,7 +164,7 @@ export function findRoutingMetadataIssues(
       message: "A Nen transition must happen at a finite game timestamp.",
       audience: "developer",
       required: "finite GameTimestamp",
-      actual: String(context?.occurredAt),
+      actual: describeDiagnosticValue(context?.occurredAt),
     });
   }
 

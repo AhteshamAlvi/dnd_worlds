@@ -22,6 +22,7 @@ import {
   type NenTypeKnowledge,
 } from "../character/foundation/nen/nen-type";
 import { awakenNenExceptional } from "../character/nen/exceptional";
+import { migrateLegacyNenState } from "../character/foundation/nen/awakening/migration";
 import { revertNen } from "../character/nen/reversion";
 import {
   createUnawakenedNenState,
@@ -266,5 +267,278 @@ describe("awakening does not touch affinity unless told to", () => {
 
     expect(restored.awakening.nenType).toEqual(reverted.awakening.nenType);
     expect(restored.awakening.history).toEqual(reverted.awakening.history);
+  });
+});
+
+
+/*
+ * The loading boundary, driven with payloads a real older engine wrote.
+ *
+ * `adoptLegacyNenType` on its own was an exported function with no production
+ * caller — a migration nobody performed. It is now reached through
+ * `migrateLegacyNenState`, which is what a host restoring a character calls,
+ * and which detects which of the three stored shapes it has been handed.
+ */
+describe("migrating a stored Nen state", () => {
+  /*
+   * A genuine pre-Phase-5 character: awakening was one boolean, and the Nen
+   * Type lived on `details` because NenState had nowhere to put it.
+   */
+  const PRE_PHASE_5 = {
+    nen: {
+      awakened: false,
+      mastery: {
+        ten: 0, ren: 0, zetsu: 0, hatsu: 0, shu: 0, en: 0, gyo: 0, ken: 0,
+        chu: 0, in: 0, ko: 0, ryu: 0, yu: 0, ju: 0, fu: 0,
+      },
+    },
+    legacyNenType: "enhancement",
+  };
+
+  it("migrates an unawakened pre-Phase-5 character", () => {
+    const migrated = migrateLegacyNenState(PRE_PHASE_5);
+
+    expect(migrated.success).toBe(true);
+    if (!migrated.success) return;
+
+    const { awakening } = migrated.payload;
+
+    expect(awakening.condition).toBe("unawakened");
+    expect(awakening.nodes).toBe("half-open");
+    expect(awakening.suppression).toEqual([]);
+
+    /*
+     * The affinity crossed over, and `known: false` because the old field said
+     * what the character WAS and never said whether anybody had established it.
+     */
+    expect(awakening.nenType).toEqual(assignedNenType("enhancement", false));
+  });
+
+  /*
+   * An awakened pre-Phase-5 character has no record of HOW, WHEN or because of
+   * what — a boolean cannot carry it. The migration reconstructs an awakening
+   * rather than inventing provenance, and says so in the source.
+   */
+  it("reconstructs an awakened character with visible legacy provenance", () => {
+    const migrated = migrateLegacyNenState({
+      nen: { ...PRE_PHASE_5.nen, awakened: true, mastery: { ...PRE_PHASE_5.nen.mastery, ten: 3 } },
+      legacyNenType: "emission",
+    });
+
+    expect(migrated.success).toBe(true);
+    if (!migrated.success) return;
+
+    const { awakening, mastery } = migrated.payload;
+
+    expect(awakening.condition).toBe("awakened");
+    expect(awakening.nodes).toBe("open");
+    expect(mastery.ten).toBe(3);
+
+    const record = awakening.history[0]!;
+
+    expect(record.kind).toBe("awakening");
+    if (record.kind !== "awakening") return;
+
+    expect(record.source).toEqual({
+      type: "legacy-migration",
+      id: "pre-phase-5-awakened-boolean",
+    });
+
+    /* And the result is a state the ordinary validator accepts. */
+    expect(validateNenState(migrated.payload).success).toBe(true);
+  });
+
+  /*
+   * The intermediate shape: the awakening object as Phase 5.0 first shipped
+   * it, with forced and involuntary Zetsu still conflated under an `origin`.
+   */
+  it("splits a Phase-5.0 collapse state into an involuntary Zetsu", () => {
+    const migrated = migrateLegacyNenState({
+      nen: {
+        mastery: PRE_PHASE_5.nen.mastery,
+        awakening: {
+          condition: "awakened",
+          nodes: "open",
+          currentMethod: "abrupt",
+          currentAwakeningId: "awk-1",
+          history: [{
+            kind: "awakening",
+            id: "awk-1",
+            method: "abrupt",
+            occurredAt: 0,
+            source: { type: "character", id: "teacher" },
+            reawakening: false,
+            eligibilityBypassed: true,
+            appliedOverrides: [],
+          }],
+          naturalAbility: null,
+          externalAbilities: [],
+          forcedStates: [{
+            id: "fz-1",
+            kind: "forced-zetsu",
+            origin: "uncontained-collapse",
+            appliedAt: 10,
+            source: { type: "nen-collapse", id: "uncontained-leakage-exhausted" },
+            exemptions: [],
+            recoveryId: "rec-1",
+          }],
+          nenType: { type: null, known: false },
+          collapseRecovery: {
+            id: "rec-1",
+            beganAt: 10,
+            requiredSleepHours: 8,
+            accumulatedSleepHours: 0,
+            completedAt: null,
+          },
+        },
+      },
+    });
+
+    expect(migrated.success).toBe(true);
+    if (!migrated.success) return;
+
+    const held = migrated.payload.awakening.suppression[0]!;
+
+    expect(held.kind).toBe("involuntary-zetsu");
+    if (held.kind !== "involuntary-zetsu") return;
+
+    expect(held.cause).toBe("uncontained-aura-collapse");
+    expect(held.recoveryId).toBe("rec-1");
+
+    /* A null type becomes the explicit unassigned state, not a null. */
+    expect(migrated.payload.awakening.nenType).toEqual(unassignedNenType());
+  });
+
+  it("rebinds a Phase-5.0 instinctive exemption to its instance and source", () => {
+    const source = { type: "gm", id: "ruling" };
+
+    const migrated = migrateLegacyNenState({
+      nen: {
+        mastery: PRE_PHASE_5.nen.mastery,
+        awakening: {
+          condition: "awakened",
+          nodes: "open",
+          currentMethod: "instinctive",
+          currentAwakeningId: "awk-1",
+          history: [{
+            kind: "awakening",
+            id: "awk-1",
+            method: "instinctive",
+            occurredAt: 0,
+            source,
+            reawakening: false,
+            eligibilityBypassed: true,
+            appliedOverrides: [],
+          }],
+          naturalAbility: {
+            abilityId: "ability-a",
+            grantedAt: 0,
+            grantedByAwakeningId: "awk-1",
+            origin: "instinctive",
+          },
+          externalAbilities: [],
+          forcedStates: [{
+            id: "fz-1",
+            kind: "forced-zetsu",
+            origin: "instinctive-awakening",
+            appliedAt: 0,
+            source,
+            exemptions: [{
+              abilityId: "ability-a",
+              forcedStateId: "fz-1",
+              origin: "instinctive-awakening",
+            }],
+          }],
+          nenType: { type: "specialization", known: true },
+          collapseRecovery: null,
+        },
+      },
+    });
+
+    expect(migrated.success).toBe(true);
+    if (!migrated.success) return;
+
+    const held = migrated.payload.awakening.suppression[0]!;
+
+    expect(held.kind).toBe("forced-zetsu");
+    if (held.kind !== "forced-zetsu") return;
+
+    /* Externally imposed, so it gains the release rule the repair requires. */
+    expect(held.release).toEqual({ rule: "source-authorized", authority: source });
+    expect(held.exemptions).toEqual([{
+      abilityId: "ability-a",
+      suppressionId: "fz-1",
+      source,
+    }]);
+
+    expect(migrated.payload.awakening.nenType)
+      .toEqual(assignedNenType("specialization", true));
+  });
+
+  it("passes a current-shape state straight through the same validator", () => {
+    const current = createUnawakenedNenState(assignedNenType("conjuration", true));
+
+    const migrated = migrateLegacyNenState({
+      nen: JSON.parse(JSON.stringify(current)),
+    });
+
+    expect(migrated.success).toBe(true);
+    if (!migrated.success) return;
+
+    expect(migrated.payload).toEqual(current);
+  });
+
+  /*
+   * A payload carrying BOTH representations is refused rather than resolved by
+   * precedence: the two can disagree, and silently preferring one changes
+   * whether somebody is awakened.
+   */
+  it("refuses a payload that carries two awakening representations", () => {
+    const ambiguous = migrateLegacyNenState({
+      nen: {
+        awakened: true,
+        awakening: createUnawakenedNenState(unassignedNenType()).awakening,
+        mastery: PRE_PHASE_5.nen.mastery,
+      },
+    });
+
+    expect(ambiguous.success).toBe(false);
+    if (ambiguous.success) return;
+
+    expect(ambiguous.errors.map((error) => error.code))
+      .toContain("nen.state.migrate.ambiguous");
+  });
+
+  it("refuses a legacy affinity that contradicts a migrated one", () => {
+    const conflict = migrateLegacyNenState({
+      nen: {
+        mastery: PRE_PHASE_5.nen.mastery,
+        awakening: {
+          ...createUnawakenedNenState(unassignedNenType()).awakening,
+          nenType: { type: "emission", known: true },
+        },
+      },
+      legacyNenType: "enhancement",
+    });
+
+    expect(conflict.success).toBe(false);
+    if (conflict.success) return;
+
+    expect(conflict.errors.map((error) => error.code))
+      .toContain("nen.type.legacy.conflict");
+  });
+
+  it("refuses malformed payloads without throwing", () => {
+    for (const payload of [
+      null, undefined, 3, "nen", [],
+      {}, { nen: null }, { nen: 3 }, { nen: {} },
+      { nen: { mastery: null, awakened: false } },
+      { nen: { mastery: { ten: "three" }, awakened: false } },
+      Object.create(null),
+      { nen: Object.create(null) },
+    ]) {
+      expect(() => migrateLegacyNenState(payload as never)).not.toThrow();
+      expect(migrateLegacyNenState(payload as never).success).toBe(false);
+    }
   });
 });

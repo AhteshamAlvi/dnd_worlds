@@ -41,7 +41,10 @@
  */
 
 import type { ContributionSourceRef } from "../../infrastructure/contribution-source";
-import type { EngineError } from "../../infrastructure/diagnostics";
+import {
+  describeDiagnosticValue,
+  type EngineError,
+} from "../../infrastructure/diagnostics";
 import type {
   NenAppliedOverride,
   NenExceptionalOverrideField,
@@ -283,7 +286,14 @@ export function appliedOverrides(
 ): readonly NenAppliedOverride[] {
   return declaredOverrideFields(overrides).map((field) => ({
     field,
-    summary: String(declaredOverrideSummary(overrides, field) ?? ""),
+    /*
+     * Only reached once findExceptionalSourceIssues has proved every declared
+     * override carries a non-empty string summary, so this is a narrowing
+     * rather than a coercion of untrusted input.
+     */
+    summary: typeof declaredOverrideSummary(overrides, field) === "string"
+      ? declaredOverrideSummary(overrides, field) as string
+      : "",
   }));
 }
 
@@ -311,7 +321,7 @@ function sourceRefIssues(
     message: `${what} must name the content that supplied it.`,
     audience: "developer",
     required: "{ type, id }",
-    actual: ref === undefined ? "absent" : String(ref),
+    actual: describeDiagnosticValue(ref),
   }];
 }
 
@@ -334,7 +344,7 @@ export function findExceptionalSourceIssues(
       message: "An exceptional awakening source must be a record.",
       audience: "developer",
       required: "{ ref, overrides }",
-      actual: String(source),
+      actual: describeDiagnosticValue(source),
     }];
   }
 
@@ -354,7 +364,7 @@ export function findExceptionalSourceIssues(
       message: "An exceptional awakening source must declare its overrides.",
       audience: "developer",
       required: "an overrides object, even an empty one",
-      actual: String(overrides),
+      actual: describeDiagnosticValue(overrides),
     });
 
     return errors;
@@ -390,7 +400,7 @@ export function findExceptionalSourceIssues(
         message: `The "${field}" override must be a record.`,
         audience: "developer",
         required: "object",
-        actual: String(declared),
+        actual: describeDiagnosticValue(declared),
       });
     }
   }
@@ -404,7 +414,7 @@ export function findExceptionalSourceIssues(
         message: "A Nen Type override must name one of the six Nen Types.",
         audience: "developer",
         required: "a Nen Type",
-        actual: String(overrides.nenType.type),
+        actual: describeDiagnosticValue(overrides.nenType.type),
       });
     }
 
@@ -420,7 +430,7 @@ export function findExceptionalSourceIssues(
           "A Nen Type override must say whether the character knows the type.",
         audience: "developer",
         required: "boolean",
-        actual: String(overrides.nenType.known),
+        actual: describeDiagnosticValue(overrides.nenType.known),
       });
     }
   }
@@ -440,7 +450,7 @@ export function findExceptionalSourceIssues(
           "A natural-Ability override must either prohibit or permit development.",
         audience: "developer",
         required: "prohibited | permitted",
-        actual: String(development),
+        actual: describeDiagnosticValue(development),
       });
     }
   }
@@ -471,7 +481,7 @@ export function findExceptionalSourceIssues(
           "A mastery-grant override must supply a grant list, even an empty one.",
         audience: "developer",
         required: "array of { principleId, rank }",
-        actual: String(grants),
+        actual: describeDiagnosticValue(grants),
       });
     } else {
       /*
@@ -485,7 +495,7 @@ export function findExceptionalSourceIssues(
             message: `Mastery grant ${index} must be a record.`,
             audience: "developer",
             required: "{ principleId, rank }",
-            actual: String(grant),
+            actual: describeDiagnosticValue(grant),
           });
 
           return;
@@ -502,7 +512,7 @@ export function findExceptionalSourceIssues(
             message: `Mastery grant ${index} must name a principle.`,
             audience: "developer",
             required: "non-empty string",
-            actual: String(principleId),
+            actual: describeDiagnosticValue(principleId),
           });
         }
 
@@ -512,7 +522,7 @@ export function findExceptionalSourceIssues(
             message: `Mastery grant ${index} must name a finite rank.`,
             audience: "developer",
             required: "finite number",
-            actual: String(rank),
+            actual: describeDiagnosticValue(rank),
           });
         }
       });
@@ -528,7 +538,7 @@ export function findExceptionalSourceIssues(
         message: "A progression override must say what it changes.",
         audience: "developer",
         required: "non-empty summary",
-        actual: String(summary),
+        actual: describeDiagnosticValue(summary),
       });
     }
   }
@@ -547,7 +557,7 @@ export function findExceptionalSourceIssues(
         message: `The "${field}" override must say what it replaces.`,
         audience: "developer",
         required: "non-empty summary",
-        actual: String(summary),
+        actual: describeDiagnosticValue(summary),
       });
     }
   }

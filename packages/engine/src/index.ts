@@ -622,6 +622,25 @@ export {
   awakeningStateToJson,
 } from "./character/foundation/nen/awakening/serialization";
 
+/*
+ * The one loading boundary for a stored Nen state.
+ *
+ * A host restoring a character calls this with whatever their save file holds
+ * and the old `details.nenType`. It detects which of the three shapes it has —
+ * the pre-Phase-5 `awakened` boolean, the Phase-5.0 awakening object, or the
+ * current one — migrates it, folds the legacy affinity in, and validates the
+ * result through the ordinary validator rather than trusting the migration.
+ */
+export {
+  LEGACY_AWAKENING_RECORD_ID,
+  LEGACY_AWAKENING_SOURCE,
+  migrateLegacyNenState,
+} from "./character/foundation/nen/awakening/migration";
+
+export type {
+  LegacyNenPayload,
+} from "./character/foundation/nen/awakening/migration";
+
 export type {
   SerializedNenAwakeningState,
 } from "./character/foundation/nen/awakening/serialization";

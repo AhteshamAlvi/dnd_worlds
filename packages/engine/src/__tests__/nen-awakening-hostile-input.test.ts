@@ -36,6 +36,12 @@ import {
   type NenAwakeningTransitionResult,
 } from "../character/nen";
 import { findExceptionalSourceIssues } from "../character/nen/sources";
+import { describeDiagnosticValue } from "../infrastructure/diagnostics";
+import {
+  adoptLegacyNenType,
+  unassignedNenType,
+} from "../character/foundation/nen/nen-type";
+import { createUnawakenedNenState } from "../character/foundation/nen/nen";
 import { uncontainedCollapse } from "../character/foundation/aura/leakage";
 import { findAwakeningStateIssues } from "../character/foundation/nen/awakening/validation";
 import { awakeningStateFromJson } from "../character/foundation/nen/awakening/serialization";
@@ -44,7 +50,6 @@ import { INSTINCTIVE_AWAKENING_MINIMUM_SPI } from "../character/foundation/nen/a
 import type { NenState } from "../character/foundation/nen/types";
 
 import { AWAKENING_CAPABLE, awakeningContext, requirementContextFor } from "./fixtures/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
 
 
 const GM = { type: "gm", id: "ruling" } as const;
@@ -77,6 +82,7 @@ const GARBAGE: readonly unknown[] = [
   { attributes: { stored: {}, base: {}, resolved: {} } },
   { attributes: { stored: {}, base: {}, resolved: {} }, level: "one" },
   Object.create(null),
+  Object.assign(Object.create(null), { method: "standard" }),
 ];
 
 /*
@@ -577,5 +583,211 @@ describe("instinctive SPI gate still refuses without an authorization", () => {
         ),
       );
     }
+  });
+});
+
+
+/*
+ * The REQUEST argument, swept as thoroughly as the context was.
+ *
+ * The context sweeps above passed while five routes still threw on a null
+ * REQUEST, because each read request fields to build its trace node before any
+ * validator ran. A trace label is not a reason to dereference.
+ */
+describe("every route refuses a malformed request without throwing", () => {
+  function routesWithRequest(
+    request: unknown,
+  ): readonly (readonly [string, () => NenAwakeningTransitionResult])[] {
+    const context = awakeningContext();
+
+    return [
+      ["standard", () => awakenNenStandard(context, request as never)],
+      ["abrupt", () => awakenNenAbrupt(context, request as never)],
+      ["instinctive", () => awakenNenInstinctive(context, request as never)],
+      ["exceptional", () => awakenNenExceptional(context, request as never)],
+      ["reversion", () => revertNen(context, request as never)],
+      ["collapse", () => settleNenCollapse(context, request as never)],
+      ["recovery", () => advanceNenCollapseRecovery(context, request as never)],
+      ["release-involuntary", () =>
+        releaseInvoluntaryZetsu(context, request as never)],
+      ["release-forced", () => releaseForcedZetsu(context, request as never)],
+    ];
+  }
+
+  it("refuses every garbage request on all nine transitions", () => {
+    for (const request of GARBAGE) {
+      for (const [name, run] of routesWithRequest(request)) {
+        refusedCleanly(`${name} / request=${label(request)}`, run);
+      }
+    }
+  });
+
+  it("emits nothing and changes nothing on a refused request", () => {
+    const context = awakeningContext();
+    const before = JSON.stringify(context.nen);
+
+    for (const request of GARBAGE) {
+      for (const [name, run] of routesWithRequest(request)) {
+        const result = run();
+
+        expect([name, result.success]).toEqual([name, false]);
+
+        /* A failure carries no outcome at all, so there is nothing to emit. */
+        expect([name, "payload" in result]).toEqual([name, false]);
+      }
+    }
+
+    expect(JSON.stringify(context.nen)).toBe(before);
+  });
+
+  /*
+   * `awakenNenStandard(context, abruptRequest)` is a caller who has wired up
+   * the wrong function. Honouring the shape while ignoring the label it
+   * carries would resolve an abrupt awakening as a standard one — silently,
+   * and with no roll.
+   */
+  it("refuses a request whose method names a different route", () => {
+    const context = awakeningContext();
+
+    const mismatched: readonly (readonly [string, () => NenAwakeningTransitionResult])[] = [
+      ["standard<-abrupt", () => awakenNenStandard(context, {
+        method: "abrupt", trainingCompleted: true,
+      } as never)],
+      ["abrupt<-standard", () => awakenNenAbrupt(context, {
+        method: "standard",
+        actor: ACTOR,
+        actorContext: requirementContextFor(),
+        rolls: [SUCCESS_ROLL],
+      } as never)],
+      ["instinctive<-exceptional", () => awakenNenInstinctive(context, {
+        method: "exceptional",
+        authorization: { grantedBy: GM, reason: "x" },
+        naturalAbilityId: "a",
+      } as never)],
+      ["exceptional<-instinctive", () => awakenNenExceptional(context, {
+        method: "instinctive",
+        source: { ref: { type: "item", id: "relic" }, overrides: {} },
+      } as never)],
+    ];
+
+    for (const [name, run] of mismatched) {
+      const result = run();
+
+      expect([name, result.success]).toEqual([name, false]);
+      if (result.success) continue;
+
+      expect([name, result.errors.map((error) => error.code)])
+        .toEqual([name, ["nen.awakening.request.method.mismatch"]]);
+    }
+  });
+});
+
+
+/*
+ * A prototype-less object has no `toString`, so `String(value)` on one throws
+ * "Cannot convert object to primitive value" — inside the code that was
+ * building the diagnostic to explain why the value was rejected.
+ *
+ * Not an exotic curiosity: `JSON.parse` with a reviver produces them, which is
+ * exactly the provenance of the data these validators exist to judge.
+ */
+describe("prototype-less values never break diagnostic formatting", () => {
+  const BARE = () => Object.create(null) as never;
+
+  it("describes any hostile value without asking it to describe itself", () => {
+    const values: readonly unknown[] = [
+      Object.create(null),
+      Object.assign(Object.create(null), { domain: "character" }),
+      { toString() { throw new Error("refused"); } },
+      { [Symbol.toPrimitive]() { throw new Error("refused"); } },
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Symbol("s"),
+      () => undefined,
+      10n,
+      [1, 2, 3],
+    ];
+
+    for (const value of values) {
+      expect(() => describeDiagnosticValue(value)).not.toThrow();
+
+      const described = describeDiagnosticValue(value);
+
+      /* Whatever comes out has to survive the serialization boundary. */
+      expect(() => JSON.stringify(described)).not.toThrow();
+    }
+  });
+
+  it("refuses a prototype-less owner rather than throwing", () => {
+    const context = {
+      ...awakeningContext(),
+      owner: BARE(),
+    } as unknown as NenAwakeningContext;
+
+    for (const [name, run] of everyRoute(context)) {
+      refusedCleanly(`${name} / bare owner`, run);
+    }
+  });
+
+  it("refuses a prototype-less operation id and timestamp", () => {
+    for (const field of ["operationId", "occurredAt"] as const) {
+      const context = {
+        ...awakeningContext(),
+        [field]: BARE(),
+      } as unknown as NenAwakeningContext;
+
+      for (const [name, run] of everyRoute(context)) {
+        refusedCleanly(`${name} / bare ${field}`, run);
+      }
+    }
+  });
+
+  it("refuses a prototype-less legacy Nen Type rather than throwing", () => {
+    const nen = createUnawakenedNenState(unassignedNenType());
+
+    expect(() => adoptLegacyNenType(nen, BARE())).not.toThrow();
+    expect(adoptLegacyNenType(nen, BARE()).success).toBe(false);
+  });
+
+  it("refuses prototype-less requests, sources and authorizations", () => {
+    const context = awakeningContext();
+
+    expect(() => findExceptionalSourceIssues(BARE())).not.toThrow();
+    expect(findExceptionalSourceIssues(BARE()).length).toBeGreaterThan(0);
+
+    expect(() => findExceptionalSourceIssues({
+      ref: BARE(),
+      overrides: BARE(),
+    } as never)).not.toThrow();
+
+    refusedCleanly("bare authorization", () => awakenNenInstinctive(context, {
+      method: "instinctive",
+      authorization: BARE(),
+      naturalAbilityId: "a",
+    } as never));
+
+    refusedCleanly("bare source", () => revertNen(context, {
+      source: BARE(),
+      reason: "Severed.",
+    } as never));
+
+    refusedCleanly("bare collapse", () => settleNenCollapse(context, {
+      collapse: BARE(),
+    } as never));
+  });
+
+  it("refuses a prototype-less stored state at the loading boundary", () => {
+    expect(() => awakeningStateFromJson(BARE())).not.toThrow();
+    expect(awakeningStateFromJson(BARE()).success).toBe(false);
+
+    const bareNested = {
+      ...createUnawakenedAwakeningState(unassignedNenType()),
+      externalAbilities: [Object.create(null)],
+      suppression: [Object.create(null)],
+    };
+
+    expect(() => findAwakeningStateIssues(bareNested as never)).not.toThrow();
+    expect(findAwakeningStateIssues(bareNested as never).length)
+      .toBeGreaterThan(0);
   });
 });

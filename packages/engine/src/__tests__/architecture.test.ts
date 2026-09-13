@@ -2571,8 +2571,25 @@ describe("Nen awakening stays inside its own domain", () => {
 
 
 describe("awakening state has exactly one mutation route", () => {
+  /*
+   * The migration module is the ONE place allowed to speak the old vocabulary,
+   * because reading a state written by an older engine is precisely its job:
+   * it names `awakened`, `forcedStates` and the origin strings in order to
+   * translate them, and it is the only file that may. Its test drives it with
+   * real payloads from those versions and is excepted for the same reason.
+   *
+   * The exception is by PATH rather than by pattern, so it cannot quietly
+   * widen: a second file adopting the old shapes still fails.
+   */
+  const LEGACY_VOCABULARY_EXCEPTIONS = [
+    join(SRC, "character", "foundation", "nen", "awakening", "migration.ts"),
+    join(SRC, "__tests__", "nen-type.test.ts"),
+  ];
+
   const engineFiles = sourceFilesUnder(SRC).filter(
-    (path) => !path.includes("__tests__"),
+    (path) =>
+      !path.includes("__tests__") &&
+      !LEGACY_VOCABULARY_EXCEPTIONS.includes(path),
   );
 
   const transitionDomain = join("character", "nen");
@@ -2597,6 +2614,8 @@ describe("awakening state has exactly one mutation route", () => {
    */
   it("leaves no `awakened` boolean on a Nen state, in source or in a fixture", () => {
     const offenders = sourceFilesUnder(SRC).filter((path) => {
+      if (LEGACY_VOCABULARY_EXCEPTIONS.includes(path)) return false;
+
       const source = readFileSync(path, "utf8")
         .replace(/\/\*[\s\S]*?\*\//g, "");
 
@@ -2676,11 +2695,13 @@ describe("awakening state has exactly one mutation route", () => {
      * places: the settlement that opens and closes them, and the constructor
      * for a character who has never awakened.
      */
-    const writers = sourceFilesUnder(join(SRC, "character")).filter((path) =>
-      /nodes:\s*"(open|half-open)"/.test(
-        readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
-      ),
-    );
+    const writers = sourceFilesUnder(join(SRC, "character"))
+      .filter((path) => !LEGACY_VOCABULARY_EXCEPTIONS.includes(path))
+      .filter((path) =>
+        /nodes:\s*"(open|half-open)"/.test(
+          readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
+        )
+      );
 
     expect(writers.map((path) => path.split("/").pop()).sort()).toEqual([
       "settlement.ts",
@@ -2763,7 +2784,11 @@ describe("forced and involuntary Zetsu are separate mechanics", () => {
    * own scans — the same exception the other "declared once" rules here make.
    */
   const scanned = sourceFilesUnder(SRC).filter(
-    (path) => path !== join(SRC, "__tests__", "architecture.test.ts"),
+    (path) =>
+      path !== join(SRC, "__tests__", "architecture.test.ts") &&
+      /* The migration translates the old origins; see the exception above. */
+      path !== join(SRC, "character", "foundation", "nen", "awakening", "migration.ts") &&
+      path !== join(SRC, "__tests__", "nen-type.test.ts"),
   );
 
   it("leaves no forced-state origin vocabulary behind", () => {
@@ -2883,5 +2908,113 @@ describe("requirement contexts are validated by the canonical validator", () => 
 
     expect(preflight).toMatch(/findRequirementContextIssues/);
     expect(preflight).toMatch(/findNamedRequirementsValidationIssues/);
+  });
+});
+
+
+describe("diagnostics never ask a hostile value to describe itself", () => {
+  const nenFiles = [
+    ...sourceFilesUnder(join(SRC, "character", "foundation", "nen")),
+    ...sourceFilesUnder(join(SRC, "character", "nen")),
+  ];
+
+  it("finds the sources it is checking", () => {
+    expect(nenFiles.length).toBeGreaterThanOrEqual(15);
+  });
+
+  /*
+   * `String(value)` calls the value's own toString/Symbol.toPrimitive, and a
+   * prototype-less object — which is what JSON.parse with a reviver hands back
+   * — has neither, so coercing one throws. That turned validators whose whole
+   * contract is "returns diagnostics, never throws" into functions that threw
+   * while BUILDING the diagnostic.
+   *
+   * The rule is narrow on purpose: coercing something already proved to be a
+   * primitive is fine, so what is banned is `String(` applied to a field read
+   * off an untrusted `request`, `context`, `source`, `overrides` or `legacy`.
+   */
+  it("coerces no untrusted field with String()", () => {
+    const offenders = nenFiles.filter((path) =>
+      /String\(\s*(?:request|context|source|overrides|legacy|authorization|held|exemption|grant|value)\b/
+        .test(readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("would catch the coercion coming back", () => {
+    expect(
+      /String\(\s*(?:request|context|source|overrides|legacy|authorization|held|exemption|grant|value)\b/
+        .test("actual: String(request.hurdle),"),
+    ).toBe(true);
+  });
+
+  it("routes the awakening validator through the shared formatter", () => {
+    const validation = readFileSync(
+      join(SRC, "character", "foundation", "nen", "awakening", "validation.ts"),
+      "utf8",
+    );
+
+    expect(validation).toMatch(/describeDiagnosticValue/);
+  });
+});
+
+
+describe("the legacy Nen migration has a production caller", () => {
+  /*
+   * `adoptLegacyNenType` was exported with nothing calling it — a migration
+   * nobody performed, which is indistinguishable from no migration at all.
+   * It is now reached through the loading boundary a host actually calls.
+   */
+  it("calls adoptLegacyNenType from the migration boundary", () => {
+    const migration = readFileSync(
+      join(SRC, "character", "foundation", "nen", "awakening", "migration.ts"),
+      "utf8",
+    );
+
+    expect(migration).toMatch(/adoptLegacyNenType\(/);
+    expect(migration).toMatch(/export function migrateLegacyNenState\(/);
+
+    /* And it validates rather than trusting what it produced. */
+    expect(migration).toMatch(/validateNenState\(/);
+  });
+
+  it("exports the boundary from the public barrel", () => {
+    expect(readFileSync(join(SRC, "index.ts"), "utf8"))
+      .toMatch(/migrateLegacyNenState/);
+  });
+});
+
+
+describe("every public transition validates its request before reading it", () => {
+  const transitionFiles = [
+    join(SRC, "character", "nen", "transitions.ts"),
+    join(SRC, "character", "nen", "exceptional.ts"),
+    join(SRC, "character", "nen", "collapse.ts"),
+    join(SRC, "character", "nen", "reversion.ts"),
+  ];
+
+  /*
+   * The trace node used to be the FIRST statement of every transition, built
+   * from request fields — so a null request threw before any validator ran.
+   * Each route now builds a context-only trace, gates the request, and only
+   * then populates the request-derived inputs.
+   */
+  it("gates the request in every transition file", () => {
+    for (const path of transitionFiles) {
+      const source = readFileSync(path, "utf8");
+
+      expect([path.split("/").pop(), /findAwakeningRequestIssues\(|findRequestShapeIssues\(/.test(source)])
+        .toEqual([path.split("/").pop(), true]);
+    }
+  });
+
+  it("checks the method discriminant against the route", () => {
+    const preflight = readFileSync(
+      join(SRC, "character", "nen", "preflight.ts"),
+      "utf8",
+    );
+
+    expect(preflight).toMatch(/nen\.awakening\.request\.method\.mismatch/);
   });
 });

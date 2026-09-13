@@ -444,7 +444,7 @@ describe("the release trap", () => {
     expect(released.payload.requests).toEqual([]);
   });
 
-  it("refuses to lift a collapse Zetsu before its recovery completes", () => {
+  it("refuses to lift an involuntary Zetsu before its recovery completes", () => {
     expect(codes(releaseInvoluntaryZetsu(
       awakeningContext({ nen: collapsed, operationId: "op-early" }),
       { suppressionId: collapsed.awakening.suppression[0]!.id },

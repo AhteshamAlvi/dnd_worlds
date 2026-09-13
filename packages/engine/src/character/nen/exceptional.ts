@@ -52,6 +52,7 @@
  */
 
 import type { EngineError } from "../../infrastructure/diagnostics";
+import { describeDiagnosticValue } from "../../infrastructure/diagnostics";
 import { createTraceNode } from "../../infrastructure/trace";
 import { transitionOutcome } from "../../runtime/transition";
 
@@ -81,6 +82,7 @@ import {
   eligibilityIssues,
   emitContextOf,
   failAwakening,
+  findAwakeningRequestIssues,
   findCommonAwakeningIssues,
   wasProducingPseudoChu,
 } from "./preflight";
@@ -137,12 +139,19 @@ export function awakenNenInstinctive(
       "SPI >= 20 && explicit authorization && a natural Nen Ability -> awakened inside a forced Zetsu",
     inputs: {
       condition: { value: state.condition },
-      authorizedBy: {
-        value: String(request?.authorization?.grantedBy?.id ?? "absent"),
-      },
-      abilityId: { value: String(request?.naturalAbilityId ?? "absent") },
     },
   });
+
+  const shape = findAwakeningRequestIssues(request, "instinctive");
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.authorizedBy = {
+    value: describeDiagnosticValue(request.authorization?.grantedBy?.id ?? "absent"),
+  };
+  root.inputs.abilityId = {
+    value: describeDiagnosticValue(request.naturalAbilityId ?? "absent"),
+  };
 
   /*
    * Refused for a reverted character BEFORE the shared preflight, because the
@@ -201,7 +210,9 @@ export function awakenNenInstinctive(
         "An instinctive awakening requires an explicit authorization naming who granted it and why.",
       audience: "developer",
       required: "{ grantedBy: { type, id }, reason }",
-      actual: authorization === undefined ? "absent" : "incomplete",
+      actual: authorization === undefined
+        ? "absent"
+        : describeDiagnosticValue(authorization),
     });
   }
 
@@ -219,7 +230,7 @@ export function awakenNenInstinctive(
         "An instinctive awakening must produce the natural Nen Ability it consists of.",
       audience: "developer",
       required: "a non-empty Nen Ability id",
-      actual: String(request.naturalAbilityId),
+      actual: describeDiagnosticValue(request.naturalAbilityId),
     });
   }
 
@@ -394,7 +405,7 @@ function readMasteryGrants(
         message: "A mastery-grant override names a principle that does not exist.",
         audience: "developer",
         required: "a Nen principle id",
-        actual: String(grant.principleId),
+        actual: describeDiagnosticValue(grant.principleId),
       });
 
       continue;
@@ -406,7 +417,7 @@ function readMasteryGrants(
         message: "A mastery-grant override names a rank outside the Mastery range.",
         audience: "developer",
         required: "integer from 0 through 10",
-        actual: String(grant.rank),
+        actual: describeDiagnosticValue(grant.rank),
       });
 
       continue;
@@ -522,10 +533,17 @@ export function awakenNenExceptional(
       "apply only the overrides the source declares; every unmentioned rule stays in force",
     inputs: {
       condition: { value: state.condition },
-      source: { value: request.source?.ref?.id ?? "absent" },
-      hurdle: { value: request.hurdle ?? "none" },
     },
   });
+
+  const shape = findAwakeningRequestIssues(request, "exceptional");
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.source = {
+    value: describeDiagnosticValue(request.source?.ref?.id ?? "absent"),
+  };
+  root.inputs.hurdle = { value: request.hurdle ?? "none" };
 
   const common = findCommonAwakeningIssues(context, request.hurdle !== undefined);
 

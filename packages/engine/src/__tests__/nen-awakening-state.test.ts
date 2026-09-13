@@ -176,7 +176,7 @@ describe("forced states are not Zetsu mastery", () => {
 
   /*
    * The global-exception hole, closed. An exemption naming a different forced
-   * state would travel: the same Ability would work through a collapse Zetsu
+   * state would travel: the same Ability would work through an involuntary Zetsu
    * it was never granted an exception for.
    */
   it("refuses an exemption attached to a different instance", () => {

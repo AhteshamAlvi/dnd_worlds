@@ -14,21 +14,26 @@
  *   0 Aura  →  the body shuts its own nodes, the character blacks out, and an
  *              eight-hour qualifying-sleep recovery begins
  *   8 hours →  the reserve is restored to full, the character wakes, and they
- *              wake INSIDE the collapse-origin forced Zetsu
+ *              wake INSIDE the involuntary Zetsu
  *
- * The forced Zetsu is applied at the collapse rather than at the waking, and
+ * INVOLUNTARY, never forced. Nobody imposes this state: the body does it to
+ * itself when the reserve runs out, which is why there is no source to
+ * authorise lifting it and why the character may lift it themselves once the
+ * eight hours are served. A forced Zetsu is the other mechanic entirely —
+ * imposed from outside, released only on its source's authority — and the two
+ * were one type until the repair separated them.
+ *
+ * The involuntary Zetsu begins at the collapse rather than at the waking, and
  * that is load-bearing rather than a shortcut. Something durable has to stop
  * the leak, and "Current Aura is 0" is not it: the moment sleep restores any
  * Aura at all, an owner who is still uncontained would leak it straight back
  * out and could never accumulate the eight hours. So the state that stops the
  * bleeding has to exist for the whole of the recovery, which means it begins
- * when the bleeding stops — and the engine's own collapse request set has
- * always said so, asking for `end-uncontained-state` and `forced-zetsu`
- * together at the moment of collapse.
+ * when the bleeding stops.
  *
- * The character therefore wakes awakened, full, conscious and in a
- * collapse-origin forced Zetsu, which is the state the rules describe. It is
- * applied ONCE: the recovery's `completedAt` is set once and never cleared, so
+ * The character therefore wakes awakened, full, conscious and in an
+ * involuntary Zetsu, which is the state the rules describe. It is applied
+ * ONCE: the recovery's `completedAt` is set once and never cleared, so
  * advancing past the threshold again completes nothing and emits nothing.
  *
  *
@@ -47,14 +52,17 @@
  * THE RELEASE TRAP
  * ----------------
  *
- * Lifting the forced Zetsu reopens the nodes. If the character still has no
- * usable Ten, that is exactly the state they collapsed from, and the leak
+ * Lifting the involuntary Zetsu reopens the nodes. If the character still has
+ * no usable Ten, that is exactly the state they collapsed from, and the leak
  * starts again — five minutes to the next collapse. If they have since learned
  * Ten, release is safe and the trap is over. The guard is the whole reason the
  * release is a transition rather than an array filter.
  */
 
-import type { EngineError } from "../../infrastructure/diagnostics";
+import {
+  describeDiagnosticValue,
+  type EngineError,
+} from "../../infrastructure/diagnostics";
 import { createTraceNode, type TraceNode } from "../../infrastructure/trace";
 import {
   contributionSourceKey,
@@ -88,6 +96,7 @@ import { isNenUncontained } from "./access";
 import {
   emitContextOf,
   failAwakening,
+  findRequestShapeIssues,
   findRoutingMetadataIssues,
 } from "./preflight";
 import {
@@ -145,17 +154,25 @@ export function settleNenCollapse(
     id: "nen.awakening.collapse",
     label: "Settle an uncontained Aura collapse",
     formula:
-      "0 Aura -> forced Zetsu (leak stops) + unconsciousness + an eight-hour qualifying-sleep recovery",
+      "0 Aura -> involuntary Zetsu (leak stops) + unconsciousness + an eight-hour qualifying-sleep recovery",
     inputs: {
       condition: { value: state.condition },
-      reason: { value: request.collapse?.reason ?? "absent" },
-      at: {
-        value: Number.isFinite(request.collapse?.at)
-          ? request.collapse.at
-          : String(request.collapse?.at),
-      },
     },
   });
+
+  const shape = findRequestShapeIssues(
+    request,
+    "nen.awakening.collapse.request.invalid",
+    "Settling a collapse requires a request record.",
+    "{ collapse }",
+  );
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.reason = {
+    value: describeDiagnosticValue(request.collapse?.reason ?? "absent"),
+  };
+  root.inputs.at = { value: describeDiagnosticValue(request.collapse?.at) };
 
   const issues: EngineError[] = [...findAwakeningStateIssues(state)];
 
@@ -166,7 +183,8 @@ export function settleNenCollapse(
   if (routing.length > 0) return failAwakening(root, routing);
 
   if (
-    request?.collapse === undefined ||
+    request.collapse === null ||
+    typeof request.collapse !== "object" ||
     request.collapse.reason !== "uncontained-leakage-exhausted" ||
     !Number.isFinite(request.collapse.at)
   ) {
@@ -176,7 +194,7 @@ export function settleNenCollapse(
         "Settling a collapse requires the collapse the Aura time solver produced.",
       audience: "developer",
       required: "{ reason: \"uncontained-leakage-exhausted\", at }",
-      actual: String(request.collapse?.reason),
+      actual: describeDiagnosticValue(request.collapse),
     }]);
   }
 
@@ -350,17 +368,25 @@ export function advanceNenCollapseRecovery(
     id: "nen.awakening.collapse-recovery",
     label: "Advance a collapse recovery",
     formula:
-      "accumulated + qualifying sleep >= 8 hours -> reserve restored, awake, still in the collapse Zetsu",
+      "accumulated + qualifying sleep >= 8 hours -> reserve restored, awake, still in the involuntary Zetsu",
     inputs: {
       condition: { value: state.condition },
-      qualifyingSleepHours: {
-        value: Number.isFinite(request.qualifyingSleepHours)
-          ? request.qualifyingSleepHours
-          : String(request.qualifyingSleepHours),
-      },
       accumulated: { value: state.collapseRecovery?.accumulatedSleepHours ?? 0 },
     },
   });
+
+  const shape = findRequestShapeIssues(
+    request,
+    "nen.awakening.collapse-recovery.request.invalid",
+    "Advancing a collapse recovery requires a request record.",
+    "{ qualifyingSleepHours, maximumAura, at }",
+  );
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  root.inputs.qualifyingSleepHours = {
+    value: describeDiagnosticValue(request.qualifyingSleepHours),
+  };
 
   const issues: EngineError[] = [...findAwakeningStateIssues(state)];
 
@@ -393,12 +419,12 @@ export function advanceNenCollapseRecovery(
       message: "This collapse recovery has already completed.",
       audience: "developer",
       required: "an incomplete collapse recovery",
-      actual: String(recovery.completedAt),
+      actual: describeDiagnosticValue(recovery.completedAt),
     }]);
   }
 
   if (
-    !Number.isFinite(request?.qualifyingSleepHours) ||
+    !Number.isFinite(request.qualifyingSleepHours) ||
     request.qualifyingSleepHours < 0
   ) {
     return failAwakening(root, [{
@@ -406,7 +432,7 @@ export function advanceNenCollapseRecovery(
       message: "Qualifying sleep must be a finite, non-negative number of hours.",
       audience: "developer",
       required: "finite number >= 0",
-      actual: String(request.qualifyingSleepHours),
+      actual: describeDiagnosticValue(request.qualifyingSleepHours),
     }]);
   }
 
@@ -416,7 +442,7 @@ export function advanceNenCollapseRecovery(
       message: "Completing a collapse recovery needs the character's Maximum Aura.",
       audience: "developer",
       required: "finite number >= 0",
-      actual: String(request.maximumAura),
+      actual: describeDiagnosticValue(request.maximumAura),
     }]);
   }
 
@@ -426,7 +452,7 @@ export function advanceNenCollapseRecovery(
       message: "A collapse recovery advances at a finite game timestamp.",
       audience: "developer",
       required: "finite GameTimestamp",
-      actual: String(request.at),
+      actual: describeDiagnosticValue(request.at),
     }]);
   }
 
@@ -533,7 +559,7 @@ export function advanceNenCollapseRecovery(
  *
  * There used to be one, `releaseNenForcedState`, and it was wrong in a way the
  * type system could not see: it located a state by id, checked a single guard
- * that applied only to collapse-origin states, and filtered. An instinctive
+ * that applied only to the collapse case, and filtered. An instinctive
  * forced Zetsu — described three files away as something the character "did
  * not choose and cannot lift" — went straight through it.
  *
@@ -660,7 +686,7 @@ function locateSuppression(
       message: "This character is not being held in that suppression state.",
       audience: "developer",
       required: "a suppression state this character is in",
-      actual: String(id),
+      actual: describeDiagnosticValue(id),
     }]);
   }
 
@@ -706,11 +732,22 @@ export function releaseInvoluntaryZetsu(
       "recovery complete -> nodes reopen; uncontained unless usable Ten has been learned since",
     inputs: {
       condition: { value: state.condition },
-      suppressionId: { value: String(request?.suppressionId ?? "absent") },
+      suppressionId: {
+        value: describeDiagnosticValue(request?.suppressionId ?? "absent"),
+      },
     },
   });
 
-  const located = locateSuppression(context, root, request?.suppressionId);
+  const shape = findRequestShapeIssues(
+    request,
+    "nen.suppression.request.invalid",
+    "Releasing a suppression requires a request record.",
+    "{ suppressionId }",
+  );
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  const located = locateSuppression(context, root, request.suppressionId);
 
   if (isTransitionResult(located)) return located;
 
@@ -786,12 +823,25 @@ export function releaseForcedZetsu(
       "the imposing source authorises it -> nodes reopen; uncontained unless Ten is usable",
     inputs: {
       condition: { value: state.condition },
-      suppressionId: { value: String(request?.suppressionId ?? "absent") },
-      authorization: { value: String(request?.authorization?.id ?? "absent") },
+      suppressionId: {
+        value: describeDiagnosticValue(request?.suppressionId ?? "absent"),
+      },
+      authorization: {
+        value: describeDiagnosticValue(request?.authorization?.id ?? "absent"),
+      },
     },
   });
 
-  const located = locateSuppression(context, root, request?.suppressionId);
+  const shape = findRequestShapeIssues(
+    request,
+    "nen.suppression.request.invalid",
+    "Releasing a suppression requires a request record.",
+    "{ suppressionId, authorization }",
+  );
+
+  if (shape.length > 0) return failAwakening(root, shape);
+
+  const located = locateSuppression(context, root, request.suppressionId);
 
   if (isTransitionResult(located)) return located;
 
@@ -801,7 +851,7 @@ export function releaseForcedZetsu(
     ]);
   }
 
-  const authorization = request?.authorization;
+  const authorization = request.authorization;
 
   if (
     authorization === undefined ||
@@ -817,7 +867,7 @@ export function releaseForcedZetsu(
         "Releasing a forced Zetsu requires the source authorising it.",
       audience: "developer",
       required: "{ type, id }",
-      actual: String(authorization),
+      actual: describeDiagnosticValue(authorization),
     }]);
   }
 

@@ -241,7 +241,7 @@ describe("every row of the required transition matrix resolves", () => {
     expect(collapsed.awakening.collapseRecovery).not.toBeNull();
   });
 
-  it("collapsed + recovery completes -> awake, in a collapse Zetsu", () => {
+  it("collapsed + recovery completes -> awake, in an involuntary Zetsu", () => {
     const woken = expectState(advanceNenCollapseRecovery(
       awakeningContext({ nen: collapsed(), operationId: "op-sleep" }),
       { qualifyingSleepHours: 8, maximumAura: 100, at: 1 },

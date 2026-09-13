@@ -24,7 +24,10 @@
  * rules read fields the structural pass has just proved are readable.
  */
 
-import type { EngineError } from "../../../../infrastructure/diagnostics";
+import {
+  describeDiagnosticValue,
+  type EngineError,
+} from "../../../../infrastructure/diagnostics";
 import type { JsonValue } from "../../../../infrastructure/json";
 import {
   contributionSourceKey,
@@ -95,21 +98,13 @@ function isSourceRef(value: unknown): boolean {
   );
 }
 
-function describe(value: unknown): JsonValue {
-  if (value === null) return null;
-
-  switch (typeof value) {
-    case "string":
-    case "boolean":
-      return value;
-
-    case "number":
-      return Number.isFinite(value) ? value : String(value);
-
-    default:
-      return Array.isArray(value) ? `array(${value.length})` : String(value);
-  }
-}
+/*
+ * Delegated to the shared formatter, which never asks the value to describe
+ * itself. The local version ended in `String(value)`, and a prototype-less
+ * object — which is what `JSON.parse` with a reviver hands back — has no
+ * `toString` to call, so formatting the diagnostic threw.
+ */
+const describe = describeDiagnosticValue;
 
 function developerError(
   code: string,
