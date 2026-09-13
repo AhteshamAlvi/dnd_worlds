@@ -572,3 +572,60 @@ describe("the domain pass survives being called on its own", () => {
     }
   });
 });
+
+
+describe("the Nen Type union is enforced, not normalized", () => {
+  /*
+   * `{ status: "unassigned", type: "enhancement", known: true }` contradicts
+   * itself: one half says nobody has decided and the other names a discovered
+   * affinity. The validator accepted it and the migration quietly reduced it
+   * to a bare `unassigned`, discarding whichever half was right at the one
+   * boundary whose job is to notice.
+   *
+   * Both now refuse it, from one shared list of conflicting fields, so direct
+   * validation and migration cannot drift apart.
+   */
+  it("accepts a bare unassigned reading", () => {
+    expect(codes(findAwakeningStateStructuralIssues(
+      awakenedState({ nenType: { status: "unassigned" } }),
+    ))).toEqual([]);
+  });
+
+  it("refuses unassigned carrying type, known, or both", () => {
+    const contradictory: readonly (readonly [string, unknown])[] = [
+      ["type", { status: "unassigned", type: "enhancement" }],
+      ["known", { status: "unassigned", known: false }],
+      ["both", { status: "unassigned", type: "enhancement", known: true }],
+    ];
+
+    for (const [name, nenType] of contradictory) {
+      expect([name, codes(findAwakeningStateStructuralIssues(
+        awakenedState({ nenType: nenType as never }),
+      ))]).toEqual([
+        name,
+        expect.arrayContaining(["nen.awakening.nen-type.unassigned.conflict"]),
+      ]);
+    }
+  });
+
+  it("still accepts every valid assigned reading", () => {
+    for (const known of [true, false]) {
+      expect(codes(findAwakeningStateStructuralIssues(
+        awakenedState({ nenType: assignedNenType("transmutation", known) }),
+      ))).toEqual([]);
+    }
+  });
+
+  /*
+   * An unrelated extension field is somebody else's business. This engine has
+   * no general closed-object policy, and inventing one here would be a wider
+   * rule than the defect calls for.
+   */
+  it("does not police unrelated fields on an unassigned reading", () => {
+    expect(codes(findAwakeningStateStructuralIssues(
+      awakenedState({
+        nenType: { status: "unassigned", noteFromSomeHost: "x" } as never,
+      }),
+    ))).toEqual([]);
+  });
+});

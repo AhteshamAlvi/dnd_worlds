@@ -717,6 +717,16 @@ describe("migrating a stored Nen state", () => {
       { known: true },
       { type: null, known: true },
       { status: "made-up" },
+
+      /*
+       * The discriminated union, enforced. An `unassigned` reading carrying
+       * assigned-branch data contradicts itself, and normalizing it to
+       * `{ status: "unassigned" }` silently discarded whichever half was
+       * right.
+       */
+      { status: "unassigned", type: "enhancement", known: true },
+      { status: "unassigned", type: "enhancement" },
+      { status: "unassigned", known: false },
       { status: "assigned", type: null, known: true },
       { status: "assigned", type: "emission", known: 1 },
     ];
@@ -759,6 +769,125 @@ describe("migrating a stored Nen state", () => {
       expect([JSON.stringify(nenType), migrated.payload.awakening.nenType])
         .toEqual([JSON.stringify(nenType), expected]);
     }
+  });
+
+  /*
+   * The same presence-versus-value confusion as the outer discriminator, one
+   * level in. Detecting the inner representation by value meant a save with
+   * `suppression` simply absent, or present-but-null, migrated "successfully"
+   * into an empty list — the migration manufacturing a fact the record never
+   * carried.
+   */
+  describe("the suppression representation, by presence", () => {
+    const CURRENT = {
+      ...PHASE_5_0_COLLAPSE,
+      forcedStates: undefined,
+      suppression: [{
+        id: "iz-1",
+        kind: "involuntary-zetsu",
+        appliedAt: 10,
+        cause: "uncontained-aura-collapse",
+        recoveryId: "op-collapse:collapse-recovery",
+      }],
+      nenType: { status: "unassigned" },
+    };
+
+    function migrate(awakening: unknown) {
+      return migrateLegacyNenState({
+        nen: { mastery: PRE_PHASE_5.nen.mastery, awakening },
+      });
+    }
+
+    function withoutKeys(source: object, ...drop: readonly string[]): object {
+      return Object.fromEntries(
+        Object.entries(source).filter(([key]) => !drop.includes(key)),
+      );
+    }
+
+    it("refuses an awakening carrying neither representation", () => {
+      const neither = withoutKeys(CURRENT, "forcedStates", "suppression");
+      const result = migrate(neither);
+
+      expect(result.success).toBe(false);
+      if (result.success) return;
+
+      expect(result.errors.map((e) => e.code))
+        .toEqual(["nen.state.migrate.suppression.missing"]);
+    });
+
+    it("refuses both representations present, however either is valued", () => {
+      const dual: readonly (readonly [string, unknown])[] = [
+        ["forcedStates undefined", { ...CURRENT, forcedStates: undefined, suppression: [] }],
+        ["suppression undefined", { ...CURRENT, forcedStates: [], suppression: undefined }],
+        ["both empty", { ...CURRENT, forcedStates: [], suppression: [] }],
+        ["both populated", {
+          ...CURRENT,
+          forcedStates: PHASE_5_0_COLLAPSE.forcedStates,
+          suppression: CURRENT.suppression,
+        }],
+      ];
+
+      for (const [name, awakening] of dual) {
+        const result = migrate(awakening);
+
+        expect([name, result.success]).toEqual([name, false]);
+        if (result.success) continue;
+
+        expect([name, result.errors.map((e) => e.code)])
+          .toEqual([name, ["nen.state.migrate.suppression.ambiguous"]]);
+      }
+    });
+
+    it("refuses a present but malformed suppression rather than defaulting it", () => {
+      for (const suppression of [null, 3, "none", {}]) {
+        const result = migrate({
+          ...withoutKeys(CURRENT, "forcedStates"),
+          suppression,
+        });
+
+        expect([String(suppression), result.success])
+          .toEqual([String(suppression), false]);
+      }
+    });
+
+    it("preserves a valid current suppression, empty or populated", () => {
+      const empty = migrate({
+        ...withoutKeys(CURRENT, "forcedStates"),
+        suppression: [],
+      });
+
+      expect(empty.success).toBe(true);
+      if (!empty.success) return;
+
+      expect(empty.payload.awakening.suppression).toEqual([]);
+
+      const populated = migrate(withoutKeys(CURRENT, "forcedStates"));
+
+      expect(populated.success).toBe(true);
+      if (!populated.success) return;
+
+      expect(populated.payload.awakening.suppression)
+        .toEqual(CURRENT.suppression);
+    });
+
+    it("still migrates a legacy forcedStates list on its own", () => {
+      const legacy = migrate(withoutKeys(PHASE_5_0_COLLAPSE, "suppression"));
+
+      expect(legacy.success).toBe(true);
+      if (!legacy.success) return;
+
+      expect(legacy.payload.awakening.suppression[0]!.kind)
+        .toBe("involuntary-zetsu");
+    });
+
+    it("refuses a legacy forcedStates that is not a list", () => {
+      for (const forcedStates of [null, 3, "none", {}]) {
+        const result = migrate({ ...PHASE_5_0_COLLAPSE, forcedStates });
+
+        expect([String(forcedStates), result.success])
+          .toEqual([String(forcedStates), false]);
+      }
+    });
   });
 
   it("refuses malformed payloads without throwing", () => {

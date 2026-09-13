@@ -90,6 +90,18 @@ export interface NenUnassignedType {
 export type NenTypeKnowledge = NenAssignedType | NenUnassignedType;
 
 
+/*
+ * The fields that belong to the ASSIGNED branch of the union.
+ *
+ * Present alongside `status: "unassigned"`, each one contradicts the
+ * discriminant: one half says nobody has decided, the other names a discovered
+ * affinity. Declared here rather than in either consumer so the awakening-state
+ * validator and the legacy migration cannot drift apart about what a readable
+ * Nen Type is — they are the two places that judge one, and they must agree.
+ */
+export const UNASSIGNED_CONFLICTING_FIELDS = ["type", "known"] as const;
+
+
 export function assignedNenType(
   type: NenType,
   known: boolean,

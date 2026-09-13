@@ -34,7 +34,10 @@ import {
   isSameContributionSource,
 } from "../../../../infrastructure/contribution-source";
 import { AURA_NODE_STATES } from "../../aura/types";
-import { isNenType } from "../nen-type";
+import {
+  isNenType,
+  UNASSIGNED_CONFLICTING_FIELDS,
+} from "../nen-type";
 
 import {
   awakeningRecords,
@@ -771,7 +774,25 @@ export function findAwakeningStateStructuralIssues(
         describe(state.nenType.known),
       ));
     }
-  } else if (state.nenType.status !== "unassigned") {
+  } else if (state.nenType.status === "unassigned") {
+    /*
+     * The union, enforced here as well as in the migration, so the two cannot
+     * disagree about what a readable Nen Type is. An `unassigned` reading
+     * carrying `type` or `known` contradicts its own discriminant — one half
+     * says nobody has decided, the other names a discovered affinity — and a
+     * validator that accepted it would be the reason a migration had to guess.
+     */
+    for (const field of UNASSIGNED_CONFLICTING_FIELDS) {
+      if (!Object.prototype.hasOwnProperty.call(state.nenType, field)) continue;
+
+      errors.push(developerError(
+        "nen.awakening.nen-type.unassigned.conflict",
+        `An unassigned Nen Type cannot also carry "${field}".`,
+        `no ${field} alongside status "unassigned"`,
+        describe((state.nenType as Record<string, unknown>)[field]),
+      ));
+    }
+  } else {
     errors.push(developerError(
       "nen.awakening.nen-type.status.invalid",
       "A Nen Type reading must be assigned or unassigned.",

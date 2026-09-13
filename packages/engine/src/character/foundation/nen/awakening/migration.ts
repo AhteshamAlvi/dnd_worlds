@@ -44,6 +44,7 @@ import {
   assignedNenType,
   isNenType,
   unassignedNenType,
+  UNASSIGNED_CONFLICTING_FIELDS,
   type NenTypeKnowledge,
 } from "../nen-type";
 import { NEN_PRINCIPLE_IDS } from "../nen";
@@ -354,10 +355,20 @@ function migrateBooleanAwakening(awakened: boolean): Migrated {
  * this rewrites two fields rather than rebuilding the object.
  */
 function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
-  const legacyStates = stored["forcedStates"];
-  const current = stored["suppression"];
+  /*
+   * PRESENCE, not value — the same rule the outer awakened/awakening
+   * discriminator uses, applied to the inner one.
+   *
+   * Testing `!== undefined` meant three malformed saves migrated
+   * "successfully": `suppression` simply absent, `suppression: null`, and both
+   * properties present with one of them holding `undefined`. All three came
+   * out as an empty list, which is the migration manufacturing a fact the
+   * record never carried — an awakened character who is holding nothing shut.
+   */
+  const hasLegacy = Object.prototype.hasOwnProperty.call(stored, "forcedStates");
+  const hasCurrent = Object.prototype.hasOwnProperty.call(stored, "suppression");
 
-  if (legacyStates !== undefined && current !== undefined) {
+  if (hasLegacy && hasCurrent) {
     return {
       ok: false,
       errors: [{
@@ -371,17 +382,37 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
     };
   }
 
+  if (!hasLegacy && !hasCurrent) {
+    return {
+      ok: false,
+      errors: [{
+        code: "nen.state.migrate.suppression.missing",
+        message: "A stored awakening must record its suppression.",
+        audience: "developer",
+        required: "`forcedStates` (Phase 5.0) or `suppression`",
+        actual: "neither",
+      }],
+    };
+  }
+
   const nenType = migrateNenTypeField(stored["nenType"]);
 
   if (!nenType.ok) return nenType;
 
-  if (legacyStates === undefined) {
+  /*
+   * Already current: passed through UNCHANGED rather than defaulted, and left
+   * for validateNenState to judge. Two validators disagreeing about what a
+   * suppression list may contain is worse than one of them being strict.
+   */
+  if (hasCurrent) {
     return {
       ok: true,
-      value: { ...stored, suppression: current ?? [], nenType: nenType.value } as
+      value: { ...stored, nenType: nenType.value } as
         unknown as NenAwakeningState,
     };
   }
+
+  const legacyStates = stored["forcedStates"];
 
   if (!Array.isArray(legacyStates)) {
     return {
@@ -618,8 +649,31 @@ function migrateNenTypeField(
 
   const stored = value as Record<string, unknown>;
 
-  /* Already current. */
+  /*
+   * Already current — and the union is ENFORCED rather than normalized.
+   *
+   * `{ status: "unassigned", type: "enhancement", known: true }` contradicts
+   * itself: one half says nobody has decided and the other names a discovered
+   * affinity. Returning a bare `unassigned` discarded whichever half was
+   * right, silently, at the one boundary whose job is to notice.
+   *
+   * Only the CONFLICTING branch's fields are refused. An unrelated extension
+   * field is somebody else's business; this engine has no general
+   * closed-object policy and inventing one here would be a wider rule than the
+   * defect calls for.
+   */
   if (stored["status"] === "unassigned") {
+    const conflicting = UNASSIGNED_CONFLICTING_FIELDS.filter((field) =>
+      Object.prototype.hasOwnProperty.call(stored, field),
+    );
+
+    if (conflicting.length > 0) {
+      return refuse(
+        `no ${conflicting.join(" or ")} alongside status "unassigned"`,
+        conflicting.join(", "),
+      );
+    }
+
     return { ok: true, value: unassignedNenType() };
   }
 
