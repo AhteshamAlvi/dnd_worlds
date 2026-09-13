@@ -19,7 +19,7 @@ import {
   awakenNenInstinctive,
   awakenNenStandard,
   isNenUncontained,
-  releaseNenForcedState,
+  releaseInvoluntaryZetsu,
   revertNen,
   settleNenCollapse,
   ABRUPT_AWAKENING_SUCCESS_PURPOSE,
@@ -55,6 +55,7 @@ import {
   awakeningContext,
   requirementContextFor,
 } from "./fixtures/nen";
+import { unassignedNenType } from "../character/foundation/nen/nen-type";
 
 const OP = "operation-under-test";
 
@@ -135,8 +136,13 @@ describe("every row of the required transition matrix resolves", () => {
     ));
 
     expect(isInForcedZetsu(state.awakening)).toBe(true);
-    expect(state.awakening.forcedStates[0]!.exemptions[0]!.abilityId)
-      .toBe("ability-a");
+
+    const forced = state.awakening.suppression[0]!;
+
+    expect(forced.kind).toBe("forced-zetsu");
+    if (forced.kind !== "forced-zetsu") return;
+
+    expect(forced.exemptions[0]!.abilityId).toBe("ability-a");
   });
 
   it("unawakened + exceptional -> only what the source declared", () => {
@@ -150,7 +156,7 @@ describe("every row of the required transition matrix resolves", () => {
 
     expect(state.awakening.condition).toBe("awakened");
     expect(state.mastery.ten).toBe(0);
-    expect(state.awakening.nenType.type).toBeNull();
+    expect(state.awakening.nenType.status).toBe("unassigned");
   });
 
   it("awakened + reversion -> reverted, half-open, mastery kept, Ability lost", () => {
@@ -242,7 +248,7 @@ describe("every row of the required transition matrix resolves", () => {
     ));
 
     expect(woken.awakening.collapseRecovery?.completedAt).toBe(1);
-    expect(woken.awakening.forcedStates[0]!.origin).toBe("uncontained-collapse");
+    expect(woken.awakening.suppression[0]!.kind).toBe("involuntary-zetsu");
   });
 
   it("forced Zetsu without Ten + release -> ended, leak restarted", () => {
@@ -251,12 +257,12 @@ describe("every row of the required transition matrix resolves", () => {
       { qualifyingSleepHours: 8, maximumAura: 100, at: 1 },
     ));
 
-    const released = expectState(releaseNenForcedState(
+    const released = expectState(releaseInvoluntaryZetsu(
       awakeningContext({ nen: woken, operationId: "op-release" }),
-      { forcedStateId: woken.awakening.forcedStates[0]!.id },
+      { suppressionId: woken.awakening.suppression[0]!.id },
     ));
 
-    expect(released.awakening.forcedStates).toEqual([]);
+    expect(released.awakening.suppression).toEqual([]);
     expect(isNenUncontained(released)).toBe(true);
   });
 });
@@ -295,7 +301,7 @@ function reverted(): NenState {
 
 describe("the required invariants hold across every reachable state", () => {
   const states: readonly (readonly [string, NenState])[] = [
-    ["unawakened", createUnawakenedNenState()],
+    ["unawakened", createUnawakenedNenState(unassignedNenType())],
     ["standard", expectState(awakenNenStandard(awakeningContext(), {
       method: "standard", trainingCompleted: true,
     }))],
@@ -347,12 +353,15 @@ describe("the required invariants hold across every reachable state", () => {
     }
   });
 
-  it("binds every forced-state exemption to its own state and origin", () => {
+  it("binds every exemption to its own instance and source", () => {
     for (const [name, state] of states) {
-      for (const forced of state.awakening.forcedStates) {
-        for (const exemption of forced.exemptions) {
-          expect([name, exemption.forcedStateId, exemption.origin])
-            .toEqual([name, forced.id, forced.origin]);
+      for (const held of state.awakening.suppression) {
+        /* An involuntary Zetsu carries none at all, which is the rule. */
+        if (held.kind !== "forced-zetsu") continue;
+
+        for (const exemption of held.exemptions) {
+          expect([name, exemption.suppressionId, exemption.source])
+            .toEqual([name, held.id, held.source]);
         }
       }
     }
@@ -360,8 +369,8 @@ describe("the required invariants hold across every reachable state", () => {
 
   it("refuses mastery on a character who has never awakened", () => {
     const impossible: NenState = {
-      ...createUnawakenedNenState(),
-      mastery: { ...createUnawakenedNenState().mastery, ten: 1 },
+      ...createUnawakenedNenState(unassignedNenType()),
+      mastery: { ...createUnawakenedNenState(unassignedNenType()).mastery, ten: 1 },
     };
 
     const result = validateNenState(impossible);
@@ -548,8 +557,8 @@ describe("events and requests obey the shared protocol", () => {
 
 describe("every route refuses hostile state rather than building on it", () => {
   const corrupt = {
-    ...createUnawakenedNenState(),
-    awakening: { ...createUnawakenedNenState().awakening, condition: "asleep" },
+    ...createUnawakenedNenState(unassignedNenType()),
+    awakening: { ...createUnawakenedNenState(unassignedNenType()).awakening, condition: "asleep" },
   } as unknown as NenState;
 
   it("refuses a malformed awakening state everywhere", () => {
@@ -581,8 +590,8 @@ describe("every route refuses hostile state rather than building on it", () => {
       advanceNenCollapseRecovery(awakeningContext({ nen: corrupt }), {
         qualifyingSleepHours: 8, maximumAura: 100, at: 0,
       }),
-      releaseNenForcedState(awakeningContext({ nen: corrupt }), {
-        forcedStateId: "anything",
+      releaseInvoluntaryZetsu(awakeningContext({ nen: corrupt }), {
+        suppressionId: "anything",
       }),
     ];
 

@@ -39,23 +39,22 @@ export type Gender =
 
 
 /*
- * A character's natural Nen affinity.
+ * A character's natural Nen affinity is NOT here.
  *
- * Declared in foundation/nen/nen-type.ts and re-exported here, which is what
- * the previous comment on this spot said should happen "once Nen affinity
- * mechanics are implemented". Awakening is the mechanic that needed it: the
- * awakening state tracks the affinity alongside whether anybody has
- * established it, and an exceptional source may change it and must record what
- * it was, what it became and why.
+ * It was, as a plain optional field, and for a while it was here AND on Nen
+ * state — two writable values with nothing keeping them in step, so a
+ * character could be an Enhancer on one and an Emitter on the other and both
+ * would validate.
  *
- * Re-exported rather than moved outright so `details.nenType` and every
- * existing import of `NenType` from here keep working unchanged. There is
- * still exactly one declaration.
+ * The canonical value is `character.nen.awakening.nenType`, which also records
+ * whether anybody has established it. A record written before that was true
+ * migrates through adoptLegacyNenType(), which refuses a legacy value that
+ * contradicts the canonical one rather than silently picking a winner.
+ *
+ * The TYPE is still re-exported from here, because callers import it from this
+ * module and it is still a description of a character.
  */
 export type { NenType } from "./foundation/nen/nen-type";
-
-
-import type { NenType } from "./foundation/nen/nen-type";
 
 
 export interface CharacterDetails {
@@ -70,12 +69,4 @@ export interface CharacterDetails {
   readonly age?: number;
 
   readonly gender?: Gender;
-
-  /**
-   * Natural Nen affinity.
-   *
-   * Absence currently means the value has not been assigned or established.
-   * Nen mechanics do not yet depend on this field.
-   */
-  readonly nenType?: NenType;
 }

@@ -12,7 +12,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   advanceNenCollapseRecovery,
-  releaseNenForcedState,
+  releaseInvoluntaryZetsu,
   settleNenCollapse,
 } from "../character/nen/collapse";
 import {
@@ -178,8 +178,8 @@ describe("settling the collapse", () => {
     const result = settle();
     const state = expectState(result);
 
-    expect(state.awakening.forcedStates).toHaveLength(1);
-    expect(state.awakening.forcedStates[0]!.origin).toBe("uncontained-collapse");
+    expect(state.awakening.suppression).toHaveLength(1);
+    expect(state.awakening.suppression[0]!.kind).toBe("involuntary-zetsu");
     expect(state.awakening.collapseRecovery?.requiredSleepHours)
       .toBe(COLLAPSE_RECOVERY_SLEEP_HOURS);
     expect(state.awakening.collapseRecovery?.accumulatedSleepHours).toBe(0);
@@ -217,7 +217,7 @@ describe("settling the collapse", () => {
     expect(kinds(settle())).toEqual([
       "nen-collapse",
       "nen-leakage-stopped",
-      "nen-forced-zetsu-applied",
+      "nen-involuntary-zetsu-applied",
       "nen-collapse-recovery-started",
     ]);
   });
@@ -322,12 +322,11 @@ describe("the eight hours", () => {
    * nodes shut for the whole eight hours — which is the only reason the sleep
    * restored anything. The character wakes inside it.
    */
-  it("wakes them still inside the collapse-origin forced Zetsu", () => {
+  it("wakes them still inside the involuntary Zetsu", () => {
     const woken = expectState(sleep(collapsed, 8));
 
-    expect(woken.awakening.forcedStates).toHaveLength(1);
-    expect(woken.awakening.forcedStates[0]!.origin)
-      .toBe("uncontained-collapse");
+    expect(woken.awakening.suppression).toHaveLength(1);
+    expect(woken.awakening.suppression[0]!.kind).toBe("involuntary-zetsu");
     expect(isNenUncontained(woken)).toBe(false);
   });
 
@@ -399,23 +398,23 @@ describe("the release trap", () => {
     { qualifyingSleepHours: 8, maximumAura: 100, at: T0 + 1 },
   ));
 
-  const forcedId = woken.awakening.forcedStates[0]!.id;
+  const forcedId = woken.awakening.suppression[0]!.id;
 
   it("reopens the system and restarts the leak without usable Ten", () => {
-    const released = releaseNenForcedState(
+    const released = releaseInvoluntaryZetsu(
       awakeningContext({ nen: woken, operationId: "op-release" }),
-      { forcedStateId: forcedId },
+      { suppressionId: forcedId },
     );
 
     expect(released.success).toBe(true);
     if (!released.success) return;
 
-    expect(released.payload.state.awakening.forcedStates).toEqual([]);
+    expect(released.payload.state.awakening.suppression).toEqual([]);
     expect(released.payload.changes.leakageStarted).toBe(true);
     expect(isNenUncontained(released.payload.state)).toBe(true);
 
     expect(kinds(released))
-      .toEqual(["nen-forced-zetsu-released", "nen-leakage-started"]);
+      .toEqual(["nen-involuntary-zetsu-released", "nen-leakage-started"]);
 
     const applied = released.payload.requests[0] as unknown as {
       conditionId: string;
@@ -431,9 +430,9 @@ describe("the release trap", () => {
   it("does not restart the trap for somebody who has since learned Ten", () => {
     const withTen: NenState = { ...woken, mastery: { ...woken.mastery, ten: 1 } };
 
-    const released = releaseNenForcedState(
+    const released = releaseInvoluntaryZetsu(
       awakeningContext({ nen: withTen, operationId: "op-release-2" }),
-      { forcedStateId: forcedId },
+      { suppressionId: forcedId },
     );
 
     expect(released.success).toBe(true);
@@ -441,29 +440,29 @@ describe("the release trap", () => {
 
     expect(released.payload.changes.leakageStarted).toBe(false);
     expect(isNenUncontained(released.payload.state)).toBe(false);
-    expect(kinds(released)).toEqual(["nen-forced-zetsu-released"]);
+    expect(kinds(released)).toEqual(["nen-involuntary-zetsu-released"]);
     expect(released.payload.requests).toEqual([]);
   });
 
   it("refuses to lift a collapse Zetsu before its recovery completes", () => {
-    expect(codes(releaseNenForcedState(
+    expect(codes(releaseInvoluntaryZetsu(
       awakeningContext({ nen: collapsed, operationId: "op-early" }),
-      { forcedStateId: collapsed.awakening.forcedStates[0]!.id },
-    ))).toContain("nen.awakening.forced-state.recovery-incomplete");
+      { suppressionId: collapsed.awakening.suppression[0]!.id },
+    ))).toContain("nen.suppression.involuntary.recovery-incomplete");
   });
 
   it("refuses a forced state the character is not in", () => {
-    expect(codes(releaseNenForcedState(
+    expect(codes(releaseInvoluntaryZetsu(
       awakeningContext({ nen: woken }),
-      { forcedStateId: "no-such-state" },
-    ))).toContain("nen.awakening.forced-state.not-found");
+      { suppressionId: "no-such-state" },
+    ))).toContain("nen.suppression.not-found");
   });
 
   /* Releasing grants nothing. The character has learned no Zetsu. */
   it("grants no mastery either way", () => {
-    const released = expectState(releaseNenForcedState(
+    const released = expectState(releaseInvoluntaryZetsu(
       awakeningContext({ nen: woken, operationId: "op-release-3" }),
-      { forcedStateId: forcedId },
+      { suppressionId: forcedId },
     ));
 
     for (const rank of Object.values(released.mastery)) expect(rank).toBe(0);

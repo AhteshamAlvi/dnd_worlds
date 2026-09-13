@@ -73,6 +73,8 @@ import {
   eligibilityIssues,
   emitContextOf,
   failAwakening,
+  findAwakeningRequirementContextIssues,
+  findAwakeningRequirementIssues,
   findCommonAwakeningIssues,
   wasProducingPseudoChu,
 } from "./preflight";
@@ -135,7 +137,7 @@ export function awakenNenStandard(
     },
   });
 
-  const common = findCommonAwakeningIssues(context, request.hurdle !== undefined);
+  const common = findCommonAwakeningIssues(context, request?.hurdle !== undefined);
 
   if (common.length > 0) return failAwakening(root, common);
 
@@ -269,7 +271,7 @@ export function awakenNenStandard(
         pseudoChuEnded: changes.pseudoChuEnded,
         masteryGranted: mastery.granted,
         leaking,
-        forcedStateIds: [],
+        suppressionApplied: [],
         naturalAbilityGranted: null,
         nenTypeChanged: false,
       }),
@@ -331,7 +333,6 @@ export function awakenNenAbrupt(
 ): NenAwakeningTransitionResult {
   const state = context.nen.awakening;
   const reawakening = isReawakening(state);
-  const attributes = awakeningAttributes(context.requirements);
 
   const root = createTraceNode({
     id: "nen.awakening.abrupt",
@@ -346,14 +347,26 @@ export function awakenNenAbrupt(
     },
   });
 
-  const common = findCommonAwakeningIssues(context, request.hurdle !== undefined);
+  const common = findCommonAwakeningIssues(context, request?.hurdle !== undefined);
 
   if (common.length > 0) return failAwakening(root, common);
 
+  /*
+   * Read AFTER the preflight, not before it.
+   *
+   * This was the second statement of the function, so a context missing
+   * `attributes` threw before the owner, the operation or the stored state had
+   * been looked at once. The preflight has now proved the context is readable,
+   * and this is the first thing that reads it.
+   */
+  const attributes = awakeningAttributes(context.requirements);
+
   /* The actor has to BE somebody before their capability can be judged. */
   if (
-    request.actor === undefined ||
+    request?.actor === undefined ||
+    request.actor === null ||
     request.actor.ref === undefined ||
+    request.actor.ref === null ||
     typeof request.actor.ref.id !== "string" ||
     request.actor.ref.id.trim().length === 0 ||
     typeof request.actor.ref.type !== "string" ||
@@ -369,28 +382,39 @@ export function awakenNenAbrupt(
     }]);
   }
 
-  if (!Array.isArray(request.actor.capability)) {
-    return failAwakening(root, [{
-      code: "nen.awakening.actor.capability.invalid",
-      message:
-        "An external actor must declare their capability requirements, even an empty list.",
-      audience: "developer",
-      required: "array of named requirements",
-      actual: String(request.actor.capability),
-    }]);
-  }
+  /*
+   * The authored capability list, through the engine's own requirement
+   * validator. It arrives from content, so a null entry or a malformed nested
+   * node is ordinary hostile input rather than a caller's typo.
+   */
+  const capabilityIssues = findAwakeningRequirementIssues(
+    request.actor.capability,
+    "actor.capability",
+    "nen.awakening.actor.capability.invalid",
+    "An external actor must declare well-formed capability requirements.",
+  );
 
-  if (
-    request.actorContext === undefined ||
-    request.actorContext.attributes === undefined
-  ) {
+  if (capabilityIssues.length > 0) return failAwakening(root, capabilityIssues);
+
+  /*
+   * The ACTOR's context, validated as thoroughly as the subject's and kept
+   * separate from it. The old guard checked only whether `attributes` was
+   * `undefined`, which accepts `attributes: null` and throws one call later
+   * inside the requirement evaluator.
+   */
+  const actorContextIssues = findAwakeningRequirementContextIssues(
+    request.actorContext,
+    "request.actorContext",
+  );
+
+  if (actorContextIssues.length > 0) {
     return failAwakening(root, [{
-      code: "nen.awakening.actor.context.missing",
+      code: "nen.awakening.actor.context.invalid",
       message:
-        "An abrupt awakening must be supplied the ACTOR's requirement context, not only the subject's.",
+        "An abrupt awakening must be supplied a readable requirement context for the ACTOR, not only for the subject.",
       audience: "developer",
-      required: "a requirement context for the actor",
-      actual: "absent",
+      required: "a well-formed requirement context for the actor",
+      actual: actorContextIssues[0]!.actual ?? "absent",
     }]);
   }
 
@@ -548,7 +572,7 @@ export function awakenNenAbrupt(
         pseudoChuEnded: changes.pseudoChuEnded,
         masteryGranted: [],
         leaking,
-        forcedStateIds: [],
+        suppressionApplied: [],
         naturalAbilityGranted: null,
         nenTypeChanged: false,
       }),

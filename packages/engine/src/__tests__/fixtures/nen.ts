@@ -30,6 +30,7 @@ import type { RequirementContext } from "../../character/rules/resolution";
 import type { RuntimeOwnerRef } from "../../runtime/domains";
 
 import { TEST_ATTRIBUTES } from "./character";
+import { unassignedNenType } from "../../character/foundation/nen/nen-type";
 
 
 /** Comfortably over every standard threshold, so eligibility is never the subject. */
@@ -70,7 +71,7 @@ export function awakeningContext(overrides: {
     owner: overrides.owner ?? TEST_AWAKENING_OWNER,
     operationId: overrides.operationId ?? "op-1",
     occurredAt: overrides.occurredAt ?? 0,
-    nen: overrides.nen ?? createUnawakenedNenState(),
+    nen: overrides.nen ?? createUnawakenedNenState(unassignedNenType()),
     requirements: requirementContextFor(
       overrides.attributes ?? AWAKENING_CAPABLE,
     ),

@@ -2688,3 +2688,200 @@ describe("awakening state has exactly one mutation route", () => {
     ]);
   });
 });
+
+
+/*
+ * Phase 5 repair — boundaries that only became checkable once the Zetsu
+ * taxonomy, the Nen Type and the Round length each had exactly one home.
+ */
+describe("one canonical Round duration", () => {
+  const engineFiles = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  const canonical = join(SRC, "time", "duration.ts");
+
+  it("finds the sources it is checking", () => {
+    expect(engineFiles.length).toBeGreaterThan(100);
+  });
+
+  /*
+   * Catches the ALIAS, not just the name. `AURA_ROUND_SECONDS = 2` did not
+   * contain "COMBAT" and so would have slipped past a rule keyed on the
+   * canonical spelling; what identifies it is that it is a round duration in
+   * seconds declared somewhere that is not time/duration.ts.
+   */
+  it("declares no second round-duration constant anywhere", () => {
+    const offenders = engineFiles.filter((path) => {
+      if (path === canonical) return false;
+
+      const source = readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "");
+
+      return /(?:const|let|readonly)\s+\w*(?:ROUND_SECONDS|SECONDS_PER_ROUND|ROUND_DURATION_SECONDS|ROUNDS_PER_\w+)\s*(?::\s*\w+\s*)?=/
+        .test(source);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("would catch the constant coming back", () => {
+    /* The exact declaration that was removed, proving the rule is not vacuous. */
+    const reintroduced = "export const AURA_ROUND_SECONDS = 2;";
+
+    expect(
+      /(?:const|let|readonly)\s+\w*(?:ROUND_SECONDS|SECONDS_PER_ROUND|ROUND_DURATION_SECONDS|ROUNDS_PER_\w+)\s*(?::\s*\w+\s*)?=/
+        .test(reintroduced),
+    ).toBe(true);
+  });
+
+  it("keeps the canonical declaration where it belongs", () => {
+    expect(readFileSync(canonical, "utf8"))
+      .toMatch(/export const SECONDS_PER_COMBAT_ROUND = 2;/);
+  });
+});
+
+
+describe("forced and involuntary Zetsu are separate mechanics", () => {
+  const nenFiles = [
+    ...sourceFilesUnder(join(SRC, "character", "foundation", "nen")),
+    ...sourceFilesUnder(join(SRC, "character", "nen")),
+  ];
+
+  it("finds the sources it is checking", () => {
+    expect(nenFiles.length).toBeGreaterThanOrEqual(14);
+  });
+
+  /*
+   * The defect this split repaired: one type discriminated by an `origin`
+   * string, and a single release API whose only origin-sensitive guard
+   * protected the collapse case — so an instinctive forced Zetsu, documented
+   * as unliftable, was removed by an array filter.
+   */
+  /*
+   * This file spells every pattern it hunts for, so it is excluded from its
+   * own scans — the same exception the other "declared once" rules here make.
+   */
+  const scanned = sourceFilesUnder(SRC).filter(
+    (path) => path !== join(SRC, "__tests__", "architecture.test.ts"),
+  );
+
+  it("leaves no forced-state origin vocabulary behind", () => {
+    const offenders = scanned.filter((path) =>
+      /NenForcedStateOrigin|NEN_FORCED_STATE_ORIGINS|"uncontained-collapse"|"instinctive-awakening"/
+        .test(readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("leaves no single release API that could reach either kind", () => {
+    const offenders = scanned.filter((path) =>
+      /releaseNenForcedState|releaseForcedState\b/.test(
+        readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the two release transitions in one file, each kind-checked", () => {
+    const collapse = readFileSync(
+      join(SRC, "character", "nen", "collapse.ts"),
+      "utf8",
+    );
+
+    expect(collapse).toMatch(/export function releaseInvoluntaryZetsu\(/);
+    expect(collapse).toMatch(/export function releaseForcedZetsu\(/);
+
+    /* Each refuses the other's kind before doing anything. */
+    expect(collapse).toMatch(/located\.kind !== "involuntary-zetsu"/);
+    expect(collapse).toMatch(/located\.kind !== "forced-zetsu"/);
+  });
+
+  /*
+   * Aura must be told about suppression of EITHER kind. Asking only about the
+   * forced one left every collapsed character reading as uncontained — still
+   * leaking, while unconscious, through nodes their own body had shut.
+   */
+  it("resolves Aura access over both kinds", () => {
+    const access = readFileSync(
+      join(SRC, "character", "nen", "access.ts"),
+      "utf8",
+    );
+
+    expect(access).toMatch(/isSuppressed\(/);
+    expect(access).not.toMatch(/isInForcedZetsu\(|isInInvoluntaryZetsu\(/);
+  });
+});
+
+
+describe("one canonical Nen Type", () => {
+  it("keeps no writable affinity on CharacterDetails", () => {
+    const details = readFileSync(join(SRC, "character", "details.ts"), "utf8");
+
+    expect(details).not.toMatch(/readonly\s+nenType\s*[?]?\s*:/);
+  });
+
+  /*
+   * A single STORED affinity. Scoped to the stored vocabulary under
+   * foundation/, because the transition layer legitimately passes an affinity
+   * around as an argument — `openNodes` takes one, an exceptional override
+   * declares one. What must not exist twice is a field a sheet writes down,
+   * and two of those with nothing synchronising them let a character be an
+   * Enhancer on one and an Emitter on the other with both validating.
+   */
+  it("stores the affinity in exactly one place", () => {
+    const declarations = sourceFilesUnder(join(SRC, "character"))
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => path.includes(join("character", "foundation")))
+      .filter((path) =>
+        /readonly\s+nenType\s*[?]?\s*:/.test(readFileSync(path, "utf8")),
+      );
+
+    expect(declarations.map((path) => path.split("/").pop())).toEqual([
+      "types.ts",
+    ]);
+  });
+
+  it("models affinity and knowledge without a null type", () => {
+    const nenType = readFileSync(
+      join(SRC, "character", "foundation", "nen", "nen-type.ts"),
+      "utf8",
+    );
+
+    expect(nenType).toMatch(/status: "assigned"/);
+    expect(nenType).toMatch(/status: "unassigned"/);
+    expect(nenType).not.toMatch(/type:\s*NenType\s*\|\s*null/);
+  });
+});
+
+
+describe("requirement contexts are validated by the canonical validator", () => {
+  const nenFiles = sourceFilesUnder(join(SRC, "character", "nen"));
+
+  it("declares no Nen-specific requirement-context validator", () => {
+    /*
+     * The repair had to REUSE findRequirementContextIssues rather than grow a
+     * copy — a second opinion about what a valid context is would drift from
+     * the one every other consumer uses.
+     */
+    const offenders = nenFiles.filter((path) =>
+      /function\s+\w*[Rr]equirementContext\w*Issues\s*\(/.test(
+        readFileSync(path, "utf8"),
+      ) && !readFileSync(path, "utf8").includes("findRequirementContextIssues("),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reaches the canonical validators from the preflight", () => {
+    const preflight = readFileSync(
+      join(SRC, "character", "nen", "preflight.ts"),
+      "utf8",
+    );
+
+    expect(preflight).toMatch(/findRequirementContextIssues/);
+    expect(preflight).toMatch(/findNamedRequirementsValidationIssues/);
+  });
+});

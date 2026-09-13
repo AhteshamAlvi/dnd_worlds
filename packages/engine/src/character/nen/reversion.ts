@@ -73,18 +73,24 @@ import { findAwakeningStateIssues } from "../foundation/nen/awakening/validation
 import { deriveEffectiveNenMastery, validateNenState } from "../foundation/nen/nen";
 import { NEN_PRINCIPLE_IDS } from "../foundation/nen/nen";
 import type { NenMasteryRank, NenPrincipleId, NenState } from "../foundation/nen/types";
-import { isNenType } from "../foundation/nen/nen-type";
+import { isNenType, nenTypeOf } from "../foundation/nen/nen-type";
 import type { Attributes } from "../foundation/attributes/types";
 
 import { isNenUncontained } from "./access";
-import { emitContextOf, failAwakening } from "./preflight";
+import {
+  emitContextOf,
+  failAwakening,
+  findRoutingMetadataIssues,
+} from "./preflight";
 import {
   noAwakeningChanges,
+  suppressionEventKind,
   type NenAwakeningChanges,
   type NenAwakeningContext,
   type NenAwakeningEvent,
   type NenAwakeningTransitionResult,
   type NenReversionRequest,
+  type NenSuppressionRef,
 } from "./protocol";
 import {
   applyNenTypeChange,
@@ -144,10 +150,25 @@ export function revertNen(
       "reverted + half-open + no normal access; Mastery, history and external Abilities retained",
     inputs: {
       condition: { value: state.condition },
-      source: { value: request.source?.id ?? "absent" },
-      reason: { value: request.reason ?? "absent" },
+
+      /*
+       * Read defensively, because a trace input is built before the request has
+       * been judged — and a trace label is never a reason to dereference.
+       */
+      source: { value: String(request?.source?.id ?? "absent") },
+      reason: { value: String(request?.reason ?? "absent") },
     },
   });
+
+  if (request === null || typeof request !== "object" || Array.isArray(request)) {
+    return failAwakening(root, [{
+      code: "nen.reversion.request.invalid",
+      message: "A reversion request must be a record.",
+      audience: "developer",
+      required: "{ source, reason }",
+      actual: String(request),
+    }]);
+  }
 
   const issues: EngineError[] = [
     ...findAwakeningStateIssues(state),
@@ -155,9 +176,19 @@ export function revertNen(
 
   if (issues.length > 0) return failAwakening(root, issues);
 
-  issues.push(...sourceIssues(request.source));
+  /*
+   * Reversion skipped this entirely, and it was the confirmed failure: with
+   * `owner: null` it committed a reverted character and emitted events
+   * addressed to nothing, or threw out of a request builder, depending on
+   * whether the character happened to be leaking.
+   */
+  const routing = findRoutingMetadataIssues(context);
 
-  if (typeof request.reason !== "string" || request.reason.trim().length === 0) {
+  if (routing.length > 0) return failAwakening(root, routing);
+
+  issues.push(...sourceIssues(request?.source));
+
+  if (typeof request?.reason !== "string" || request.reason.trim().length === 0) {
     issues.push({
       code: "nen.reversion.reason.missing",
       message: "A reversion must record why it happened.",
@@ -182,7 +213,7 @@ export function revertNen(
    * shuffled a character's affinity would be the kind of side effect the
    * field-scoped override contract exists to make impossible.
    */
-  const typeChange = request.nenTypeChange;
+  const typeChange = request?.nenTypeChange;
 
   if (typeChange !== undefined) {
     if (!isNenType(typeChange.next)) {
@@ -215,14 +246,14 @@ export function revertNen(
      */
     if (
       typeChange.previous !== undefined &&
-      typeChange.previous !== state.nenType.type
+      typeChange.previous !== nenTypeOf(state.nenType)
     ) {
       issues.push({
         code: "nen.reversion.type-change.previous.mismatch",
         message:
           "A Nen Type change records a previous type this character did not have.",
         audience: "developer",
-        required: String(state.nenType.type),
+        required: String(nenTypeOf(state.nenType)),
         actual: String(typeChange.previous),
       });
     }
@@ -246,6 +277,26 @@ export function revertNen(
    * removing something must not be told it succeeded.
    */
   const targeted = request.targetedExternalAbilityIds ?? [];
+
+  /*
+   * The list has to BE a list of ids before it is filtered against what the
+   * character holds. `targeted.filter` on a string silently iterates nothing
+   * useful, and on a number throws.
+   */
+  if (
+    !Array.isArray(targeted) ||
+    targeted.some((id) => typeof id !== "string" || id.trim().length === 0)
+  ) {
+    return failAwakening(root, [{
+      code: "nen.reversion.targeted-ability.invalid",
+      message:
+        "Targeted external Abilities must be a list of non-empty Ability ids.",
+      audience: "developer",
+      required: "array of non-empty strings",
+      actual: String(targeted),
+    }]);
+  }
+
   const heldExternalIds = state.externalAbilities.map((one) => one.abilityId);
 
   const unknownTargets = targeted.filter((id) => !heldExternalIds.includes(id));
@@ -274,7 +325,12 @@ export function revertNen(
     ...(typeChange === undefined ? {} : { nenTypeChange: typeChange }),
   };
 
-  const releasedForcedStateIds = state.forcedStates.map((forced) => forced.id);
+  /*
+   * Every suppression this character is under, of either kind, with its kind
+   * preserved so the log says which mechanic ended.
+   */
+  const releasedSuppression: readonly NenSuppressionRef[] = state.suppression
+    .map((held) => ({ id: held.id, kind: held.kind }));
 
   const next: NenState = {
     ...context.nen,
@@ -316,7 +372,7 @@ export function revertNen(
     condition: "reverted",
     nodesClosed: true,
     leakageStopped: wasLeaking,
-    forcedStatesReleased: releasedForcedStateIds,
+    suppressionReleased: releasedSuppression,
     naturalAbilityLost: removesNatural ? natural.abilityId : null,
     externalAbilitiesLost: targeted,
     nenTypeChange: typeChange ?? null,
@@ -334,8 +390,10 @@ export function revertNen(
     awakeningEvent(emit, "nen-nodes-closed", record.id),
   ];
 
-  for (const forcedId of releasedForcedStateIds) {
-    events.push(awakeningEvent(emit, "nen-forced-zetsu-released", forcedId));
+  for (const held of releasedSuppression) {
+    events.push(
+      awakeningEvent(emit, suppressionEventKind(held.kind, "released"), held.id),
+    );
   }
 
   if (wasLeaking) {

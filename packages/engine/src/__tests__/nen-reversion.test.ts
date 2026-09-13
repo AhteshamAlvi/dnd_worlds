@@ -43,6 +43,10 @@ import {
   awakeningContext,
   requirementContextFor,
 } from "./fixtures/nen";
+import {
+  assignedNenType,
+  unassignedNenType,
+} from "../character/foundation/nen/nen-type";
 
 function codes(result: NenAwakeningTransitionResult): readonly string[] {
   return result.success ? [] : result.errors.map((error) => error.code);
@@ -210,7 +214,7 @@ describe("reversion", () => {
     const result = revert(leaking);
 
     expect(result.success && result.payload.changes.leakageStopped).toBe(true);
-    expect(expectState(result).awakening.forcedStates).toEqual([]);
+    expect(expectState(result).awakening.suppression).toEqual([]);
     expect(kinds(result)).toContain("nen-leakage-stopped");
   });
 
@@ -236,7 +240,7 @@ describe("reversion", () => {
     const reverted = expectState(result);
 
     expect(reverted.awakening.nenType)
-      .toEqual({ type: "specialization", known: true });
+      .toEqual(assignedNenType("specialization", true));
     expect(kinds(result)).toContain("nen-type-changed");
 
     expect(codes(revert(typed, {

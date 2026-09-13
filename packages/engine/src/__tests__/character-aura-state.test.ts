@@ -32,6 +32,7 @@ import type { AuraAllocation } from "../character/foundation/aura/state";
 
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 import { revertedNen, standardAwakenedNen } from "./fixtures/nen";
+import { unassignedNenType } from "../character/foundation/nen/nen-type";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -108,7 +109,7 @@ describe("what Character stores about Aura", () => {
 
 describe("Nen state as a sibling of Aura", () => {
   it("gives an unawakened character a complete, real Nen state", () => {
-    const nen = createUnawakenedNenState();
+    const nen = createUnawakenedNenState(unassignedNenType());
 
     expect(nen.awakening.condition).toBe("unawakened");
     expect(nen.awakening.nodes).toBe("half-open");
@@ -128,7 +129,7 @@ describe("Nen state as a sibling of Aura", () => {
     const character = createTestCharacter({
       attributes: AURA_CAPABLE,
       aura: { current: 4000, allocations: [] },
-      nen: createUnawakenedNenState(),
+      nen: createUnawakenedNenState(unassignedNenType()),
     });
 
     expect(isNenAwakened(character.nen)).toBe(false);
@@ -144,7 +145,7 @@ describe("Nen state as a sibling of Aura", () => {
   });
 
   it("keeps the Aura pool out of Nen state entirely", () => {
-    const nen = createUnawakenedNenState();
+    const nen = createUnawakenedNenState(unassignedNenType());
 
     for (const auraField of ["current", "aura", "pool", "maximum"]) {
       expect(nen).not.toHaveProperty(auraField);
@@ -175,7 +176,7 @@ describe("Nen state as a sibling of Aura", () => {
     expect(reverted.awakening.nodes).toBe("half-open");
     expect(hasPseudoChu(reverted.awakening)).toBe(false);
 
-    expect(hasPseudoChu(createUnawakenedNenState().awakening)).toBe(true);
+    expect(hasPseudoChu(createUnawakenedNenState(unassignedNenType()).awakening)).toBe(true);
   });
 });
 

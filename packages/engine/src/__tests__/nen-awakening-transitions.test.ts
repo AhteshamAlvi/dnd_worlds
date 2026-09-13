@@ -43,6 +43,7 @@ import {
   awakeningContext,
   requirementContextFor,
 } from "./fixtures/nen";
+import { unassignedNenType } from "../character/foundation/nen/nen-type";
 
 function codes(result: NenAwakeningTransitionResult): readonly string[] {
   return result.success ? [] : result.errors.map((error) => error.code);
@@ -456,10 +457,18 @@ describe("abrupt awakening", () => {
     expect(codes(unsatisfied)).toContain("nen.awakening.actor.incapable");
   });
 
-  it("refuses without the actor's own requirement context", () => {
-    expect(codes(awakenNenAbrupt(awakeningContext(), abruptRequest({
-      actorContext: undefined as never,
-    })))).toContain("nen.awakening.actor.context.missing");
+  /*
+   * The code changed with the repair: the old guard only asked whether
+   * `actorContext.attributes` was undefined, and now the canonical requirement
+   * context validator judges the whole object — so an absent context and a
+   * structurally broken one report the same, correct, failure.
+   */
+  it("refuses without a readable requirement context for the actor", () => {
+    for (const actorContext of [undefined, null, {}, { attributes: null }]) {
+      expect(codes(awakenNenAbrupt(awakeningContext(), abruptRequest({
+        actorContext: actorContext as never,
+      })))).toContain("nen.awakening.actor.context.invalid");
+    }
   });
 
   it("succeeds at the 1% clamp on a 1 and fails on a 2", () => {
@@ -552,7 +561,7 @@ describe("nothing the engine refuses ever half-happened", () => {
    * one at all and by deep equality where it does not.
    */
   it("preserves the original state on every rejected path", () => {
-    const original = createUnawakenedNenState();
+    const original = createUnawakenedNenState(unassignedNenType());
     const snapshot = JSON.stringify(original);
 
     const refusals: readonly NenAwakeningTransitionResult[] = [

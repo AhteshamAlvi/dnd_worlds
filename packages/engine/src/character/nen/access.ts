@@ -13,14 +13,20 @@
  *   reverted         half-open nodes, NO pseudo-Chu — awakening ended it
  *   awakened         open nodes; contained if Ten is usable, leaking if not
  *
- * A forced Zetsu arrives as a SUPPRESSED override rather than as a fourth
- * state, because that is exactly what it does to Aura: it closes the nodes,
- * zeroes Output and stops the leak. Modelling it as its own access state would
- * be a second implementation of suppression living in the Nen domain.
+ * Suppression arrives as a SUPPRESSED override rather than as a fourth state,
+ * because that is exactly what it does to Aura: it closes the nodes, zeroes
+ * Output and stops the leak. Modelling it as its own access state would be a
+ * second implementation of suppression living in the Nen domain.
  *
- * FORCED ZETSU IS NOT ZETSU MASTERY, and nothing here implies it is. The
- * override is built from the FORCED STATE, never from the character's Zetsu
- * rank, and a character holding one has learned nothing.
+ * It asks whether the character is suppressed AT ALL rather than whether they
+ * are in a forced Zetsu specifically, and that distinction is load-bearing:
+ * once involuntary Zetsu became its own kind, a check for the forced one alone
+ * left every collapsed character reading as uncontained — still leaking, while
+ * unconscious, through nodes their own body had shut.
+ *
+ * NEITHER KIND IS ZETSU MASTERY, and nothing here implies otherwise. The
+ * override is built from the suppression instance, never from the character's
+ * Zetsu rank, and a character held in one has learned nothing.
  */
 
 import { NO_MASTERY } from "../capabilities/mastery";
@@ -30,18 +36,18 @@ import {
   hasEverAwakenedNen,
   isNenAwakened,
 } from "../foundation/nen/nen";
-import { isInForcedZetsu } from "../foundation/nen/awakening/state";
+import { isSuppressed } from "../foundation/nen/awakening/state";
 import type { NenState } from "../foundation/nen/types";
 
 
 /*
- * The provenance label a forced-Zetsu suppression carries into Aura.
+ * The provenance label Nen suppression carries into Aura.
  *
  * Deliberately distinguishable from an ordinary Zetsu's, so a trace can say
  * which one shut the nodes and nothing downstream can mistake a body's reflex
  * for a trained principle.
  */
-export const FORCED_ZETSU_ACCESS_SOURCE = "nen-forced-zetsu";
+export const NEN_SUPPRESSION_ACCESS_SOURCE = "nen-suppression";
 
 
 /**
@@ -67,11 +73,11 @@ export function nenAuraAccessInput(nen: NenState): AuraAccessInput {
    * it is what keeps a reverted character's stale forced state (which the
    * reversion already cleared) from ever producing an invalid input.
    */
-  if (!base.awakened || !isInForcedZetsu(nen.awakening)) return base;
+  if (!base.awakened || !isSuppressed(nen.awakening)) return base;
 
   return {
     ...base,
-    override: { kind: "suppressed", source: FORCED_ZETSU_ACCESS_SOURCE },
+    override: { kind: "suppressed", source: NEN_SUPPRESSION_ACCESS_SOURCE },
   };
 }
 
@@ -87,7 +93,7 @@ export function nenAuraAccessInput(nen: NenState): AuraAccessInput {
  */
 export function isNenUncontained(nen: NenState): boolean {
   if (!isNenAwakened(nen)) return false;
-  if (isInForcedZetsu(nen.awakening)) return false;
+  if (isSuppressed(nen.awakening)) return false;
 
   return deriveEffectiveNenMastery(nen, "ten") === NO_MASTERY;
 }

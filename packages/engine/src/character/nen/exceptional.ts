@@ -57,7 +57,7 @@ import { transitionOutcome } from "../../runtime/transition";
 
 import type {
   NenAwakeningRecord,
-  NenForcedState,
+  NenForcedZetsuState,
 } from "../foundation/nen/awakening/types";
 import { findAwakeningStateIssues } from "../foundation/nen/awakening/validation";
 import { validateNenState } from "../foundation/nen/nen";
@@ -68,6 +68,7 @@ import type {
 } from "../foundation/nen/types";
 import { NEN_PRINCIPLE_IDS } from "../foundation/nen/nen";
 import { isMasteryValue } from "../capabilities/mastery";
+import { nenTypeOf } from "../foundation/nen/nen-type";
 
 import { isNenUncontained } from "./access";
 import {
@@ -100,14 +101,14 @@ import {
 import {
   awakeningRecordId,
   conditionRequest,
-  forcedStateId,
   grantNenMastery,
   isReawakening,
   LEAKING_CONDITION_ID,
   naturalAbilityRecord,
   openNodes,
-  applyForcedState,
+  applySuppression,
   applyNenTypeChange,
+  suppressionId,
 } from "./settlement";
 
 
@@ -136,8 +137,10 @@ export function awakenNenInstinctive(
       "SPI >= 20 && explicit authorization && a natural Nen Ability -> awakened inside a forced Zetsu",
     inputs: {
       condition: { value: state.condition },
-      authorizedBy: { value: request.authorization?.grantedBy?.id ?? "absent" },
-      abilityId: { value: request.naturalAbilityId ?? "absent" },
+      authorizedBy: {
+        value: String(request?.authorization?.grantedBy?.id ?? "absent"),
+      },
+      abilityId: { value: String(request?.naturalAbilityId ?? "absent") },
     },
   });
 
@@ -183,6 +186,8 @@ export function awakenNenInstinctive(
 
   if (
     authorization === undefined ||
+    authorization === null ||
+    typeof authorization !== "object" ||
     typeof authorization.grantedBy?.id !== "string" ||
     authorization.grantedBy.id.trim().length === 0 ||
     typeof authorization.grantedBy.type !== "string" ||
@@ -234,7 +239,7 @@ export function awakenNenInstinctive(
 
   const abilityId = request.naturalAbilityId;
   const recordId = awakeningRecordId(context.operationId);
-  const zetsuId = forcedStateId(context.operationId, "instinctive-awakening");
+  const zetsuId = suppressionId(context.operationId, "forced-zetsu");
 
   const record: NenAwakeningRecord = {
     kind: "awakening",
@@ -249,24 +254,30 @@ export function awakenNenInstinctive(
     appliedOverrides: [],
   };
 
-  const forced: NenForcedState = {
+  const forced: NenForcedZetsuState = {
     id: zetsuId,
     kind: "forced-zetsu",
-    origin: "instinctive-awakening",
     appliedAt: context.occurredAt,
     source: authorization.grantedBy,
 
     /*
+     * Externally imposed, so only the source that imposed it may lift it. The
+     * character cannot, and neither can the collapse-recovery route — which is
+     * the whole distinction between this and an involuntary Zetsu.
+     */
+    release: { rule: "source-authorized", authority: authorization.grantedBy },
+
+    /*
      * ONE exemption, naming all three of the facts that bind it: the Ability,
-     * this forced state, and the origin that produced it. An exemption naming
-     * only the Ability would travel — it would be honoured by a collapse Zetsu
-     * the character was never granted an exception for, which is the global
-     * ability-through-Zetsu rule this engine does not have.
+     * this exact instance, and the source that granted it. An exemption naming
+     * only the Ability would travel — it would be honoured by an involuntary
+     * Zetsu the character was never granted anything against, which is the
+     * global ability-through-Zetsu rule this engine does not have.
      */
     exemptions: [{
       abilityId,
-      forcedStateId: zetsuId,
-      origin: "instinctive-awakening",
+      suppressionId: zetsuId,
+      source: authorization.grantedBy,
     }],
   };
 
@@ -287,7 +298,7 @@ export function awakenNenInstinctive(
 
     /* Awakening, Ability and forced Zetsu in one value. No intermediate state
      * exists in which the character is open and unprotected. */
-    awakening: applyForcedState(opened, forced),
+    awakening: applySuppression(opened, forced),
   };
 
   const validated = validateNenState(next);
@@ -313,7 +324,7 @@ export function awakenNenInstinctive(
     pseudoChuEnded: wasProducingPseudoChu(state),
     eligibility,
     leakageStarted: leaking,
-    forcedStatesApplied: [zetsuId],
+    suppressionApplied: [{ id: zetsuId, kind: "forced-zetsu" }],
     naturalAbilityGranted: abilityId,
   };
 
@@ -337,7 +348,7 @@ export function awakenNenInstinctive(
         /* No ordinary Mastery of any kind. The Ability is not Mastery. */
         masteryGranted: [],
         leaking,
-        forcedStateIds: [zetsuId],
+        suppressionApplied: [{ id: zetsuId, kind: "forced-zetsu" }],
         naturalAbilityGranted: abilityId,
         nenTypeChanged: false,
       }),
@@ -585,7 +596,7 @@ export function awakenNenExceptional(
   const nenTypeChange = overrides.nenType === undefined
     ? undefined
     : {
-      previous: state.nenType.type,
+      previous: nenTypeOf(state.nenType),
       next: overrides.nenType.type,
       cause: overrides.nenType.summary,
     };
@@ -624,11 +635,11 @@ export function awakenNenExceptional(
    * No forced state. An exceptional source may replace eligibility, force a
    * Nen Type, prohibit Ability development, grant Mastery, add prerequisites
    * and note a change to later progression — and that is the whole list. It
-   * cannot impose a forced Zetsu, because the two forced states that exist
-   * both mean something specific: one is the Zetsu an instinctive awakening
-   * arrives inside, and one is what a body does to itself after leaking dry.
-   * A third, source-imposed variety would need its own release rule, and
-   * inventing one here would be this file deciding a mechanic nobody wrote.
+   * cannot impose a forced Zetsu. The vocabulary can represent an
+   * Ability-imposed or status-imposed one — a forced Zetsu carries a generic
+   * source and an explicit release rule precisely so it can — but deciding
+   * WHEN content may impose one, and what lifts it, is the Ability and status
+   * runtime's business rather than this file's.
    */
   const draft: NenState = { ...context.nen, awakening: opened };
 
@@ -664,7 +675,7 @@ export function awakenNenExceptional(
       ? eligibility
       : { ...eligibility, applied: true },
     leakageStarted: leaking,
-    forcedStatesApplied: [],
+    suppressionApplied: [],
     naturalAbilityGranted: abilityId ?? null,
     nenTypeChange: nenTypeChange ?? null,
     appliedOverrides: declaredOverrides,
@@ -690,7 +701,7 @@ export function awakenNenExceptional(
         pseudoChuEnded: changes.pseudoChuEnded,
         masteryGranted: granted.granted,
         leaking,
-        forcedStateIds: changes.forcedStatesApplied,
+        suppressionApplied: changes.suppressionApplied,
         naturalAbilityGranted: changes.naturalAbilityGranted,
         nenTypeChanged: nenTypeChange !== undefined,
       }),

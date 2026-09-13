@@ -340,3 +340,86 @@ describe("the thresholds themselves", () => {
     expect(INSTINCTIVE_AWAKENING_MINIMUM_SPI).toBe(20);
   });
 });
+
+
+describe("the probability clamp survives the edge of the doubles", () => {
+  /*
+   * Five Attributes at 1,000 are finite and perfectly legal numbers. Their
+   * ODDS are not: 1.25^987 alone overflows, and `Infinity / (1 + Infinity)` is
+   * NaN — which survives Math.min/Math.max untouched, so the promised 1%-99%
+   * guarantee silently became "or NaN" for every sufficiently extreme
+   * character. Nothing about the input was invalid; only the arithmetic was.
+   */
+  const EXTREME = [200, 1000, 5000, 100_000] as const;
+
+  it("returns a finite clamped probability for huge finite Attributes", () => {
+    for (const score of EXTREME) {
+      const odds = deriveAbruptAwakeningOdds({
+        ...BASE, con: score, vit: score, per: score, wis: score, spi: score,
+      });
+
+      expect([score, Number.isNaN(odds.probability)]).toEqual([score, false]);
+      expect([score, odds.probability]).toEqual([
+        score,
+        ABRUPT_MAXIMUM_PROBABILITY,
+      ]);
+      expect([score, odds.clamped]).toEqual([score, true]);
+    }
+  });
+
+  it("returns a finite clamped probability for huge negative Attributes", () => {
+    for (const score of EXTREME) {
+      const odds = deriveAbruptAwakeningOdds({
+        ...BASE, con: -score, vit: -score, per: -score, wis: -score, spi: -score,
+      });
+
+      expect([score, Number.isNaN(odds.probability)]).toEqual([score, false]);
+      expect([score, odds.probability]).toEqual([
+        score,
+        ABRUPT_MINIMUM_PROBABILITY,
+      ]);
+    }
+  });
+
+  it("keeps a meaningful log-odds where the product has overflowed", () => {
+    const overflowed = deriveAbruptAwakeningOdds({
+      ...BASE, con: 5000, vit: 5000, per: 5000, wis: 5000, spi: 5000,
+    });
+
+    expect(overflowed.odds).toBe(Number.POSITIVE_INFINITY);
+    expect(Number.isFinite(overflowed.logOdds)).toBe(true);
+    expect(overflowed.logOdds).toBeGreaterThan(0);
+
+    const further = deriveAbruptAwakeningOdds({
+      ...BASE, con: 9000, vit: 9000, per: 9000, wis: 9000, spi: 9000,
+    });
+
+    /* Both are Infinity; only the log-odds can still tell them apart. */
+    expect(further.logOdds).toBeGreaterThan(overflowed.logOdds);
+  });
+
+  /*
+   * The exactness the fallback must not cost. These are numbers a player is
+   * quoted and will dispute, and a pure log-space formulation returns
+   * 0.5999999999999999 for the first of them.
+   */
+  it("still returns the published figures exactly", () => {
+    expect(deriveAbruptAwakeningOdds(AT_THRESHOLD).probability).toBe(0.6);
+    expect(deriveAbruptAwakeningOdds(AT_THRESHOLD, 2).probability).toBe(0.75);
+    expect(deriveAbruptReawakeningOdds(AT_THRESHOLD, "ideal").probability)
+      .toBe(0.75);
+    expect(deriveAbruptReawakeningOdds(AT_THRESHOLD, "critical").probability)
+      .toBe(0.6);
+  });
+
+  it("agrees with the log form wherever both are representable", () => {
+    for (const score of [8, 13, 16, 20, 40, 120]) {
+      const derived = deriveAbruptAwakeningOdds({
+        ...BASE, con: score, vit: score, per: score, wis: score, spi: score,
+      });
+
+      expect([score, Math.log(derived.odds)])
+        .toEqual([score, expect.closeTo(derived.logOdds, 6)]);
+    }
+  });
+});

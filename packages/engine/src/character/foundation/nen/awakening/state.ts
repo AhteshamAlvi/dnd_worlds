@@ -13,15 +13,16 @@
  * are the pure readings they and everybody else share.
  */
 
-import { unknownNenType } from "../nen-type";
+import { isSameContributionSource } from "../../../../infrastructure/contribution-source";
+import type { NenTypeKnowledge } from "../nen-type";
 
 import type {
   NenAwakeningHistoryEntry,
   NenAwakeningRecord,
   NenAwakeningState,
-  NenForcedState,
-  NenForcedStateOrigin,
   NenReversionRecord,
+  NenSuppressionKind,
+  NenSuppressionState,
 } from "./types";
 
 
@@ -30,10 +31,17 @@ import type {
  *
  * A complete answer rather than a placeholder, exactly as
  * createUnawakenedNenState() is. An ordinary person HAS this state: half-open
- * nodes, an empty history, no Ability, no forced state, and a Nen Type nobody
- * has established.
+ * nodes, an empty history, no Ability and no suppression.
+ *
+ * The affinity is REQUIRED rather than defaulted. Every character has a Nen
+ * Type from birth, so a constructor that quietly supplied "none" would be
+ * inventing a character who has no affinity — a thing the rules do not
+ * contain. A host with no value to give passes unassignedNenType(), which says
+ * that about the RECORD rather than about the person.
  */
-export function createUnawakenedAwakeningState(): NenAwakeningState {
+export function createUnawakenedAwakeningState(
+  nenType: NenTypeKnowledge,
+): NenAwakeningState {
   return {
     condition: "unawakened",
     nodes: "half-open",
@@ -42,8 +50,8 @@ export function createUnawakenedAwakeningState(): NenAwakeningState {
     history: [],
     naturalAbility: null,
     externalAbilities: [],
-    forcedStates: [],
-    nenType: unknownNenType(),
+    suppression: [],
+    nenType,
     collapseRecovery: null,
   };
 }
@@ -138,67 +146,82 @@ export function wouldBeReawakening(state: NenAwakeningState): boolean {
 }
 
 
-/* ── Forced states ──────────────────────────────────────────────────────── */
+/* ── Suppression ────────────────────────────────────────────────────────── */
 
-export function forcedStatesOfOrigin(
+export function suppressionOfKind(
   state: NenAwakeningState,
-  origin: NenForcedStateOrigin,
-): readonly NenForcedState[] {
-  return state.forcedStates.filter((forced) => forced.origin === origin);
+  kind: NenSuppressionKind,
+): readonly NenSuppressionState[] {
+  return state.suppression.filter((held) => held.kind === kind);
 }
 
 
-/** Whether any forced Zetsu is currently holding the character's nodes shut. */
+/** Whether anything at all is currently holding this character's nodes shut. */
+export function isSuppressed(state: NenAwakeningState): boolean {
+  return state.suppression.length > 0;
+}
+
+
 export function isInForcedZetsu(state: NenAwakeningState): boolean {
-  return state.forcedStates.some((forced) => forced.kind === "forced-zetsu");
+  return state.suppression.some((held) => held.kind === "forced-zetsu");
 }
 
 
-export function findForcedState(
+export function isInInvoluntaryZetsu(state: NenAwakeningState): boolean {
+  return state.suppression.some((held) => held.kind === "involuntary-zetsu");
+}
+
+
+export function findSuppression(
   state: NenAwakeningState,
-  forcedStateId: string,
-): NenForcedState | null {
+  suppressionId: string,
+): NenSuppressionState | null {
   return (
-    state.forcedStates.find((forced) => forced.id === forcedStateId) ?? null
+    state.suppression.find((held) => held.id === suppressionId) ?? null
   );
 }
 
 
 /**
- * Whether one Ability may function through one forced state.
+ * Whether one Ability may function through one suppression instance.
  *
- * All three fields of the exemption must match, and the ability id must match
- * too. Checking only the ability id would be a GLOBAL ability-through-Zetsu
- * exception: the same Ability would work through a collapse Zetsu it was never
- * granted an exception for, and through a forced state applied by something
- * else entirely.
+ * An involuntary Zetsu is always false: it carries no exemptions, because
+ * nothing functions through the state a body puts itself in when it runs dry.
+ *
+ * For a forced Zetsu, all three bindings must match — the Ability, this exact
+ * instance, and the source that granted the exemption. Checking only the
+ * Ability id would be a GLOBAL ability-through-Zetsu exception: the same
+ * Ability would work through any suppression it was never granted anything
+ * against.
  */
-export function abilityFunctionsThroughForcedState(
-  forced: NenForcedState,
+export function abilityFunctionsThroughSuppression(
+  held: NenSuppressionState,
   abilityId: string,
 ): boolean {
-  return forced.exemptions.some(
+  if (held.kind !== "forced-zetsu") return false;
+
+  return held.exemptions.some(
     (exemption) =>
       exemption.abilityId === abilityId &&
-      exemption.forcedStateId === forced.id &&
-      exemption.origin === forced.origin,
+      exemption.suppressionId === held.id &&
+      isSameContributionSource(exemption.source, held.source),
   );
 }
 
 
 /**
- * Whether an Ability functions at all given every forced state in play.
+ * Whether an Ability functions at all given every suppression in play.
  *
- * A character in no forced state is not restricted by this rule and the answer
- * is true. A character in one or more must have a matching exemption on EVERY
+ * A character under no suppression is not restricted by this rule and the
+ * answer is true. One under several must have a matching exemption on EVERY
  * one of them, because two shut states are not less shut than one.
  */
-export function abilityFunctionsDespiteForcedStates(
+export function abilityFunctionsDespiteSuppression(
   state: NenAwakeningState,
   abilityId: string,
 ): boolean {
-  return state.forcedStates.every((forced) =>
-    abilityFunctionsThroughForcedState(forced, abilityId),
+  return state.suppression.every((held) =>
+    abilityFunctionsThroughSuppression(held, abilityId),
   );
 }
 

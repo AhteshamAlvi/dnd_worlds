@@ -23,8 +23,12 @@
  * The other figures follow from that one number:
  *
  *   per second          L_minute / 60
- *   per 2-second Round  L_minute / 30
+ *   per Round           L_minute / (60 / SECONDS_PER_COMBAT_ROUND)
  *   per hour            L_minute x 60
+ *
+ * The Round length is IMPORTED rather than written down. time/duration.ts owns
+ * it — its own comment says a second copy would be a second thing to keep in
+ * step — and an `AURA_ROUND_SECONDS = 2` here was exactly that copy.
  *
  * The ordinary CON 13 / VIT 13 character has 100 Maximum Aura and 20 Output,
  * so they leak 20 a minute and are empty in five. A fresh awakener is in
@@ -70,6 +74,7 @@
 import type { EngineResult } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
 import type { GameTimestamp } from "../../../time/types";
+import { SECONDS_PER_COMBAT_ROUND } from "../../../time/duration";
 
 
 /*
@@ -115,9 +120,6 @@ export const UNCONTAINED_COLLAPSE_REQUESTS: readonly AuraCollapseRequest[] = [
   "clear-usable-output",
 ];
 
-
-/** Seconds in the Round the combat clock uses. */
-export const AURA_ROUND_SECONDS = 2;
 
 const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
@@ -171,7 +173,8 @@ export function deriveUncontainedLeakage(
     physiologicalOutput,
     ratePerMinute,
     ratePerSecond: ratePerMinute / SECONDS_PER_MINUTE,
-    ratePerRound: ratePerMinute / (SECONDS_PER_MINUTE / AURA_ROUND_SECONDS),
+    ratePerRound:
+      ratePerMinute / (SECONDS_PER_MINUTE / SECONDS_PER_COMBAT_ROUND),
     ratePerHour: ratePerMinute * MINUTES_PER_HOUR,
     minutesToExhaustion,
     hoursToExhaustion: minutesToExhaustion / MINUTES_PER_HOUR,

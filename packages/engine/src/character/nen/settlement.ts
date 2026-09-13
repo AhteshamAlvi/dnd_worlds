@@ -46,11 +46,12 @@ import type {
   NenAwakeningRecord,
   NenAwakeningResolution,
   NenAwakeningState,
-  NenForcedState,
-  NenForcedStateOrigin,
   NenNaturalAbilityRecord,
   NenReversionRecord,
+  NenSuppressionKind,
+  NenSuppressionState,
 } from "../foundation/nen/awakening/types";
+import { assignedNenType } from "../foundation/nen/nen-type";
 import type { NenTypeChange, NenTypeKnowledge } from "../foundation/nen/nen-type";
 import type {
   NenMasteryRank,
@@ -84,11 +85,11 @@ export function reversionRecordId(operationId: string): string {
   return `${operationId}:reversion`;
 }
 
-export function forcedStateId(
+export function suppressionId(
   operationId: string,
-  origin: NenForcedStateOrigin,
+  kind: NenSuppressionKind,
 ): string {
-  return `${operationId}:forced-zetsu:${origin}`;
+  return `${operationId}:${kind}`;
 }
 
 export function collapseRecoveryId(operationId: string): string {
@@ -216,33 +217,47 @@ export function closeNodes(input: {
     ),
 
     /*
-     * Awakening-owned forced states stop. A reverted character's nodes are
-     * half-open by the reversion itself, so a forced Zetsu holding them shut
-     * is describing a state that no longer exists — and leaving it would make
-     * the release transition able to "reopen" a character who is not open.
+     * Every suppression stops, of either kind. A reverted character's nodes
+     * are half-open by the reversion itself, so a Zetsu holding them shut is
+     * describing a state that no longer exists — and leaving one would let a
+     * release transition "reopen" a character who is not open.
+     *
+     * Reversion is the one path that lifts a forced Zetsu without its source's
+     * authorisation, and legitimately: the awakening it was attached to is
+     * gone, so there is nothing left for it to hold shut.
      */
-    forcedStates: [],
+    suppression: [],
     collapseRecovery: null,
     nenType: input.nenType,
   };
 }
 
 
-export function applyForcedState(
+export function applySuppression(
   state: NenAwakeningState,
-  forced: NenForcedState,
+  held: NenSuppressionState,
 ): NenAwakeningState {
-  return { ...state, forcedStates: [...state.forcedStates, forced] };
+  return { ...state, suppression: [...state.suppression, held] };
 }
 
 
-export function releaseForcedState(
+/*
+ * Remove one suppression instance by id.
+ *
+ * Deliberately unconditional and deliberately NOT exported beyond this
+ * domain: it is the mechanical half, and WHO may lift WHICH state is decided
+ * by the release transitions that call it. The previous version of this
+ * function was reachable from a single public release API that checked only
+ * the collapse case, which is how an instinctive forced Zetsu became liftable
+ * by anybody who knew its id.
+ */
+export function removeSuppression(
   state: NenAwakeningState,
   id: string,
 ): NenAwakeningState {
   return {
     ...state,
-    forcedStates: state.forcedStates.filter((forced) => forced.id !== id),
+    suppression: state.suppression.filter((held) => held.id !== id),
   };
 }
 
@@ -433,5 +448,5 @@ export function applyNenTypeChange(
 ): NenTypeKnowledge {
   if (change === undefined) return current;
 
-  return { type: change.next, known: true };
+  return assignedNenType(change.next, true);
 }

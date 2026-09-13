@@ -148,87 +148,138 @@ export function isNenReawakeningHurdle(
 }
 
 
-/* ── 7. Forced states ───────────────────────────────────────────────────── */
+/* ── 7. Suppression: two mechanics, not one ─────────────────────────────── */
 
 /*
  * A state the character is HELD in, as opposed to one they are maintaining.
  *
- * Phase 5 creates exactly one kind, because awakening produces exactly one:
- * forced Zetsu. Voluntary Zetsu, active Ten, Ren and every other principle
- * runtime belong to Phase 6 and are emphatically not modelled here.
+ * There are two, and collapsing them into one type discriminated by an
+ * `origin` string was a real bug rather than an untidiness: the release
+ * transition's only origin-sensitive guard protected the collapse case, so an
+ * instinctive forced Zetsu — documented as something the character cannot lift
+ * — fell through it and was removed by an array filter.
  *
- * The distinction the whole shape exists to preserve: FORCED ZETSU IS NOT
- * ZETSU. The character's nodes are shut by their own body or by whatever
- * awakened them; they have learned nothing, they cannot lift it at will, and
- * their Zetsu Mastery is whatever it was before — usually none.
+ *   FORCED ZETSU       imposed from OUTSIDE. Instinctive awakening today;
+ *                      later an Ability, a status or a transformation. The
+ *                      character cannot lift it at all. It ends when the
+ *                      source that imposed it authorises that, which is why it
+ *                      carries both a source and an explicit release rule.
+ *
+ *   INVOLUNTARY ZETSU  the body's OWN safety response after uncontained
+ *                      leakage empties the reserve. Nobody imposed it, so
+ *                      there is nobody to authorise lifting it: the character
+ *                      may lift it themselves once the recovery it belongs to
+ *                      has been served.
+ *
+ * VOLUNTARY Zetsu — a character activating learned Zetsu — is Phase 6 and is
+ * deliberately absent.
+ *
+ * What they share: both suppress ordinary Aura access completely, and NEITHER
+ * grants Zetsu Mastery. A character held shut by their own physiology or by
+ * somebody else's Ability has learned nothing, and their Zetsu rank is
+ * whatever it was, which is almost always none.
  */
-export const NEN_FORCED_STATE_KINDS = ["forced-zetsu"] as const;
-
-export type NenForcedStateKind = typeof NEN_FORCED_STATE_KINDS[number];
-
-/*
- * What put the character in it. Load-bearing, not a label.
- *
- *   instinctive-awakening  the Zetsu an instinctive awakening arrives inside.
- *                          The originating Ability — and only it — functions
- *                          through this one.
- *   uncontained-collapse   the Zetsu a body applies to itself after leaking
- *                          its whole reserve away. Releasing it without usable
- *                          Ten reopens the nodes and restarts the leak.
- *
- * The release rule and the ability exception both key off this field, which is
- * why it is stored rather than derived from whichever transition happened to
- * create the state.
- */
-export const NEN_FORCED_STATE_ORIGINS = [
-  "instinctive-awakening",
-  "uncontained-collapse",
+export const NEN_SUPPRESSION_KINDS = [
+  "forced-zetsu",
+  "involuntary-zetsu",
 ] as const;
 
-export type NenForcedStateOrigin = typeof NEN_FORCED_STATE_ORIGINS[number];
+export type NenSuppressionKind = typeof NEN_SUPPRESSION_KINDS[number];
 
-export function isNenForcedStateOrigin(
+export function isNenSuppressionKind(
   value: unknown,
-): value is NenForcedStateOrigin {
+): value is NenSuppressionKind {
   return (
     typeof value === "string" &&
-    (NEN_FORCED_STATE_ORIGINS as readonly string[]).includes(value)
+    (NEN_SUPPRESSION_KINDS as readonly string[]).includes(value)
   );
 }
 
 
 /*
- * Permission for one Ability to work through one forced state.
+ * How a forced Zetsu can end.
  *
- * Three fields rather than one, and every one of them is checked. A bare
- * `abilityId` would be a GLOBAL ability-through-Zetsu exception wearing a
- * local name: any forced Zetsu from any origin would honour it, including the
- * collapse Zetsu of a character who never awakened instinctively.
+ * A single-variant union today, and a union rather than a boolean because the
+ * variants that follow are already visible: an Ability-imposed Zetsu that
+ * lifts when the Ability ends, a status-imposed one that lifts when the status
+ * is cured. Phase 5 implements only the authorised case and leaves the
+ * orchestration of those to the phases that own them.
  *
- * So an exemption names the ability, the forced state instance it belongs to,
- * and the origin that produced it, and all three must match the state being
- * checked. There is no other route through a forced Zetsu.
+ * `authority` is the source that may lift it — normally the same source that
+ * imposed the state. Release is refused for anybody else, which is what makes
+ * "the character cannot lift this" a rule the engine enforces rather than a
+ * sentence in a comment.
  */
-export interface NenForcedStateExemption {
+export interface NenSourceAuthorizedRelease {
+  readonly rule: "source-authorized";
+  readonly authority: ContributionSourceRef;
+}
+
+export type NenForcedZetsuRelease = NenSourceAuthorizedRelease;
+
+
+/*
+ * Permission for one Ability to work through one suppression instance.
+ *
+ * Three bindings, all checked: the Ability, the INSTANCE it was granted
+ * against, and the SOURCE that granted it. A bare `abilityId` would be a
+ * global ability-through-Zetsu exception wearing a local name — any suppression
+ * from any cause would honour it, including the involuntary Zetsu of a
+ * character who never awakened instinctively.
+ *
+ * Bound to the source ref rather than to an origin enum, so an Ability- or
+ * status-imposed forced Zetsu can carry one without the vocabulary growing a
+ * case per mechanic.
+ */
+export interface NenSuppressionExemption {
   readonly abilityId: string;
-  readonly forcedStateId: string;
-  readonly origin: NenForcedStateOrigin;
+  readonly suppressionId: string;
+  readonly source: ContributionSourceRef;
 }
 
 
-export interface NenForcedState {
+/** Imposed from outside. The character cannot lift it. */
+export interface NenForcedZetsuState {
+  readonly kind: "forced-zetsu";
+
   /** Stable identity. Exemptions and the release transition both name it. */
   readonly id: string;
 
-  readonly kind: NenForcedStateKind;
-  readonly origin: NenForcedStateOrigin;
   readonly appliedAt: GameTimestamp;
 
-  /** What applied it. An awakening record, a collapse, or a content source. */
+  /** What imposed it. */
   readonly source: ContributionSourceRef;
 
-  readonly exemptions: readonly NenForcedStateExemption[];
+  readonly release: NenForcedZetsuRelease;
+
+  readonly exemptions: readonly NenSuppressionExemption[];
 }
+
+
+/*
+ * The body's own response to being emptied. Nobody imposed it.
+ *
+ * It carries NO exemptions, and that is a rule rather than an omission:
+ * nothing functions through an involuntary Zetsu, not even an Ability that
+ * works through an instinctive one, because that exemption names the instance
+ * it was granted against and this is a different instance.
+ *
+ * `recoveryId` ties it to the eight-hour recovery it belongs to. Release is
+ * refused until that recovery completes, and the link is stored rather than
+ * inferred so the guard cannot be fooled by a second recovery starting.
+ */
+export interface NenInvoluntaryZetsuState {
+  readonly kind: "involuntary-zetsu";
+  readonly id: string;
+  readonly appliedAt: GameTimestamp;
+  readonly cause: "uncontained-aura-collapse";
+  readonly recoveryId: string;
+}
+
+
+export type NenSuppressionState =
+  | NenForcedZetsuState
+  | NenInvoluntaryZetsuState;
 
 
 /* ── 4. History and provenance ──────────────────────────────────────────── */
@@ -440,7 +491,14 @@ export interface NenAwakeningState {
   readonly naturalAbility: NenNaturalAbilityRecord | null;
   readonly externalAbilities: readonly NenExternalAbilityRecord[];
 
-  readonly forcedStates: readonly NenForcedState[];
+  /*
+   * Every suppression currently holding this character's nodes shut.
+   *
+   * ONE collection rather than a pair of arrays, so access resolution stays
+   * exhaustive: a resolver asking "is anything suppressing this character"
+   * cannot forget to check the second list.
+   */
+  readonly suppression: readonly NenSuppressionState[];
 
   readonly nenType: NenTypeKnowledge;
 

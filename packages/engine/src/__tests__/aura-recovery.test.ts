@@ -12,7 +12,7 @@
  * exactly as long as they could have stayed awake.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   AURA_RECOVERY_MODE_MULTIPLIERS,
@@ -28,6 +28,7 @@ import {
 } from "../character/foundation/aura/leakage";
 import { createAuraPool, deriveMaximumAura } from "../character/foundation/aura/pool";
 import { deriveAuraOutputLimit } from "../character/foundation/aura/output";
+import { SECONDS_PER_COMBAT_ROUND } from "../time/duration";
 import { resolveAuraAccess } from "../character/foundation/aura/access";
 import { deriveZetsuReplenishmentMultiplier } from "../character/foundation/nen/principles/zetsu";
 import type { AuraSuppression } from "../character/foundation/aura/types";
@@ -411,5 +412,51 @@ describe("which states actually leak", () => {
       ...WITH_TEN,
       override: { kind: "suppressed", source: "zetsu" },
     })).toBe(false);
+  });
+});
+
+
+describe("the Round length is imported, not redeclared", () => {
+  /*
+   * `AURA_ROUND_SECONDS = 2` used to live in leakage.ts, duplicating
+   * time/duration.ts's `SECONDS_PER_COMBAT_ROUND = 2` — whose own comment says
+   * that a second copy would be "a second thing to keep in step".
+   *
+   * A true mutation test rather than an assertion about the current value:
+   * the canonical module is replaced with one that says a Round is FOUR
+   * seconds, and the per-Round leakage rate has to follow. If Aura ever goes
+   * back to writing the number down, this stops changing and fails.
+   */
+  it("follows the canonical constant when it changes", async () => {
+    vi.resetModules();
+
+    vi.doMock("../time/duration", async () => {
+      const actual = await vi.importActual<
+        typeof import("../time/duration")
+      >("../time/duration");
+
+      return { ...actual, SECONDS_PER_COMBAT_ROUND: 4 };
+    });
+
+    const mutated = await import("../character/foundation/aura/leakage");
+
+    /* Twice the seconds in a Round is twice the leakage inside one. */
+    expect(mutated.deriveUncontainedLeakage(20, 100).ratePerRound)
+      .toBeCloseTo(20 / 15, 12);
+
+    vi.doUnmock("../time/duration");
+    vi.resetModules();
+
+    const restored = await import("../character/foundation/aura/leakage");
+
+    expect(restored.deriveUncontainedLeakage(20, 100).ratePerRound)
+      .toBeCloseTo(20 / 30, 12);
+  });
+
+  it("derives the per-Round rate from the per-minute one", () => {
+    const leakage = deriveUncontainedLeakage(20, 100);
+
+    expect(leakage.ratePerRound * (60 / SECONDS_PER_COMBAT_ROUND))
+      .toBeCloseTo(leakage.ratePerMinute, 12);
   });
 });

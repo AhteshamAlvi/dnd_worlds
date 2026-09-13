@@ -103,7 +103,7 @@ export function awakeningStateFromJson(
     condition: candidate.condition,
     nodes: candidate.nodes,
     historyEntries: candidate.history.length,
-    forcedStates: candidate.forcedStates.length,
+    suppression: candidate.suppression.length,
   };
 
   return {

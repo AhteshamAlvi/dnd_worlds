@@ -68,6 +68,7 @@ import {
   STANDARD_MASTERY_MAX,
 } from "../../capabilities/mastery";
 
+import type { NenTypeKnowledge } from "./nen-type";
 import {
   createUnawakenedAwakeningState,
   hasEverAwakened,
@@ -380,14 +381,16 @@ export const NEN_PRINCIPLE_IDS =
  * Note what it does NOT say: nothing about Aura. An unawakened character still
  * has a pool and still loses Current Aura. See foundation/aura/state.ts.
  */
-export function createUnawakenedNenState(): NenState {
+export function createUnawakenedNenState(
+  nenType: NenTypeKnowledge,
+): NenState {
   const mastery = {} as Record<NenPrincipleId, NenMasteryRank>;
 
   for (const principleId of NEN_PRINCIPLE_IDS) {
     mastery[principleId] = NO_MASTERY;
   }
 
-  return { awakening: createUnawakenedAwakeningState(), mastery };
+  return { awakening: createUnawakenedAwakeningState(nenType), mastery };
 }
 
 

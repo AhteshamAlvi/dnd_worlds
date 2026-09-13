@@ -21,8 +21,8 @@ import {
 import type { NenAwakeningTransitionResult } from "../character/nen/protocol";
 import { isNenUncontained } from "../character/nen/access";
 import {
-  abilityFunctionsDespiteForcedStates,
-  abilityFunctionsThroughForcedState,
+  abilityFunctionsDespiteSuppression,
+  abilityFunctionsThroughSuppression,
   isInForcedZetsu,
 } from "../character/foundation/nen/awakening/state";
 import { INSTINCTIVE_AWAKENING_MINIMUM_SPI } from "../character/foundation/nen/awakening/calculations";
@@ -31,6 +31,10 @@ import type { NenExceptionalAwakeningSource } from "../character/nen/sources";
 import type { NenState } from "../character/foundation/nen/types";
 
 import { AWAKENING_CAPABLE, awakeningContext } from "./fixtures/nen";
+import {
+  assignedNenType,
+  unassignedNenType,
+} from "../character/foundation/nen/nen-type";
 
 function codes(result: NenAwakeningTransitionResult): readonly string[] {
   return result.success ? [] : result.errors.map((error) => error.code);
@@ -210,23 +214,25 @@ describe("instinctive awakening", () => {
 
 describe("the ability-through-Zetsu exception is bound, not general", () => {
   const state = expectState(instinctive());
-  const forced = state.awakening.forcedStates[0]!;
+  const forced = state.awakening.suppression[0]!;
 
   it("lets the originating Ability through", () => {
-    expect(abilityFunctionsThroughForcedState(forced, "ability-a")).toBe(true);
-    expect(abilityFunctionsDespiteForcedStates(state.awakening, "ability-a"))
+    expect(abilityFunctionsThroughSuppression(forced, "ability-a")).toBe(true);
+    expect(abilityFunctionsDespiteSuppression(state.awakening, "ability-a"))
       .toBe(true);
   });
 
   it("lets nothing else through the same state", () => {
-    expect(abilityFunctionsThroughForcedState(forced, "ability-b")).toBe(false);
+    expect(abilityFunctionsThroughSuppression(forced, "ability-b")).toBe(false);
   });
 
-  it("names the ability, the state and the origin, all three", () => {
+  it("names the ability, the instance and the source, all three", () => {
+    if (forced.kind !== "forced-zetsu") throw new Error("expected a forced Zetsu");
+
     expect(forced.exemptions).toEqual([{
       abilityId: "ability-a",
-      forcedStateId: forced.id,
-      origin: "instinctive-awakening",
+      suppressionId: forced.id,
+      source: { type: "gm", id: "table-ruling" },
     }]);
   });
 
@@ -234,14 +240,16 @@ describe("the ability-through-Zetsu exception is bound, not general", () => {
    * The exemption would TRAVEL if it named only the Ability: the same Ability
    * would work through a collapse Zetsu it was never granted an exception for.
    */
-  it("does not carry over to a forced state of another origin", () => {
+  it("does not carry over to a suppression of another kind", () => {
     const foreign = {
-      ...forced,
+      kind: "involuntary-zetsu" as const,
       id: "other-state",
-      origin: "uncontained-collapse" as const,
+      appliedAt: 0,
+      cause: "uncontained-aura-collapse" as const,
+      recoveryId: "rec-1",
     };
 
-    expect(abilityFunctionsThroughForcedState(foreign, "ability-a")).toBe(false);
+    expect(abilityFunctionsThroughSuppression(foreign, "ability-a")).toBe(false);
   });
 
   it("creates no global exception anywhere in the engine", () => {
@@ -249,7 +257,7 @@ describe("the ability-through-Zetsu exception is bound, not general", () => {
      * There is exactly one exemption, on exactly one forced state, and it is
      * the one this awakening produced. Nothing is recorded at the state level.
      */
-    expect(state.awakening.forcedStates).toHaveLength(1);
+    expect(state.awakening.suppression).toHaveLength(1);
     expect(Object.keys(state.awakening)).not.toContain("abilityExceptions");
   });
 });
@@ -306,7 +314,7 @@ describe("exceptional awakening", () => {
     ));
 
     expect(state.mastery.ten).toBe(0);
-    expect(state.awakening.nenType).toEqual({ type: null, known: false });
+    expect(state.awakening.nenType).toEqual(unassignedNenType());
     expect(state.awakening.naturalAbility).toBeNull();
 
     /* And, having no Ten, it leaks exactly as an abrupt awakening does. */
@@ -329,7 +337,7 @@ describe("exceptional awakening", () => {
     if (!result.success) return;
 
     expect(result.payload.state.awakening.nenType)
-      .toEqual({ type: "specialization", known: true });
+      .toEqual(assignedNenType("specialization", true));
 
     expect(result.payload.changes.nenTypeChange).toEqual({
       previous: null,
@@ -521,6 +529,6 @@ describe("exceptional awakening", () => {
       source: source({ eligibility: { requirements: [], summary: "Waived." } }),
     }));
 
-    expect(state.awakening.forcedStates).toEqual([]);
+    expect(state.awakening.suppression).toEqual([]);
   });
 });

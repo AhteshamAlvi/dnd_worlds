@@ -55,7 +55,12 @@
  */
 
 import type { EngineError } from "../../infrastructure/diagnostics";
-import { createTraceNode } from "../../infrastructure/trace";
+import { createTraceNode, type TraceNode } from "../../infrastructure/trace";
+import {
+  contributionSourceKey,
+  isSameContributionSource,
+} from "../../infrastructure/contribution-source";
+import type { ContributionSourceRef } from "../../infrastructure/contribution-source";
 import type { RuntimeEvent } from "../../runtime/events";
 import type { RuntimeRequest } from "../../runtime/requests";
 import { transitionOutcome } from "../../runtime/transition";
@@ -63,39 +68,46 @@ import type { GameTimestamp } from "../../time/types";
 
 import type { AuraCollapse } from "../foundation/aura/leakage";
 import {
-  findForcedState,
-  forcedStatesOfOrigin,
+  findSuppression,
   hasEverAwakened,
   isAwakened,
+  suppressionOfKind,
 } from "../foundation/nen/awakening/state";
 import {
   COLLAPSE_RECOVERY_SLEEP_HOURS,
   type NenCollapseRecovery,
-  type NenForcedState,
+  type NenInvoluntaryZetsuState,
+  type NenSuppressionKind,
+  type NenSuppressionState,
 } from "../foundation/nen/awakening/types";
 import { findAwakeningStateIssues } from "../foundation/nen/awakening/validation";
 import { validateNenState } from "../foundation/nen/nen";
 import type { NenState } from "../foundation/nen/types";
 
 import { isNenUncontained } from "./access";
-import { failAwakening, emitContextOf } from "./preflight";
+import {
+  emitContextOf,
+  failAwakening,
+  findRoutingMetadataIssues,
+} from "./preflight";
 import {
   auraRestoreRequest,
   noAwakeningChanges,
+  suppressionEventKind,
   type NenAwakeningChanges,
   type NenAwakeningContext,
   type NenAwakeningEvent,
   type NenAwakeningTransitionResult,
 } from "./protocol";
 import {
-  applyForcedState,
+  applySuppression,
   awakeningEvent,
   collapseRecoveryId,
   conditionRequest,
-  forcedStateId,
   LEAKING_CONDITION_ID,
-  releaseForcedState,
+  removeSuppression,
   sequenceAwakeningEvents,
+  suppressionId,
   UNCONSCIOUS_CONDITION_ID,
 } from "./settlement";
 
@@ -149,8 +161,12 @@ export function settleNenCollapse(
 
   if (issues.length > 0) return failAwakening(root, issues);
 
+  const routing = findRoutingMetadataIssues(context);
+
+  if (routing.length > 0) return failAwakening(root, routing);
+
   if (
-    request.collapse === undefined ||
+    request?.collapse === undefined ||
     request.collapse.reason !== "uncontained-leakage-exhausted" ||
     !Number.isFinite(request.collapse.at)
   ) {
@@ -187,8 +203,8 @@ export function settleNenCollapse(
         "This character is not leaking Aura, so they cannot have collapsed from it.",
       audience: "developer",
       required: "an uncontained character",
-      actual: state.forcedStates.length > 0
-        ? "already in a forced state"
+      actual: state.suppression.length > 0
+        ? "already suppressed"
         : "contained",
     }]);
   }
@@ -204,32 +220,25 @@ export function settleNenCollapse(
   }
 
   const at = request.collapse.at;
-  const zetsuId = forcedStateId(context.operationId, "uncontained-collapse");
+  const zetsuId = suppressionId(context.operationId, "involuntary-zetsu");
+  const recoveryId = collapseRecoveryId(context.operationId);
 
-  const forced: NenForcedState = {
+  /*
+   * INVOLUNTARY, not forced. Nobody imposed this: the body shut its own nodes
+   * because the reserve ran out, so there is no source to authorise lifting it
+   * and no Ability it could ever have exempted. The character lifts it
+   * themselves, once the eight hours are served.
+   */
+  const involuntary: NenInvoluntaryZetsuState = {
     id: zetsuId,
-    kind: "forced-zetsu",
-    origin: "uncontained-collapse",
+    kind: "involuntary-zetsu",
     appliedAt: at,
-
-    /*
-     * The body did this, not a teacher and not a piece of content. Recorded as
-     * provenance so the release guard and a sheet can both say why the nodes
-     * are shut.
-     */
-    source: { type: "nen-collapse", id: "uncontained-leakage-exhausted" },
-
-    /*
-     * No exemptions. Nothing works through a collapse Zetsu — not even an
-     * Ability that works through an instinctive one, because that exception
-     * names the forced state it was granted against and this is a different
-     * one.
-     */
-    exemptions: [],
+    cause: "uncontained-aura-collapse",
+    recoveryId,
   };
 
   const recovery: NenCollapseRecovery = {
-    id: collapseRecoveryId(context.operationId),
+    id: recoveryId,
     beganAt: at,
     requiredSleepHours: COLLAPSE_RECOVERY_SLEEP_HOURS,
     accumulatedSleepHours: 0,
@@ -239,7 +248,7 @@ export function settleNenCollapse(
   const next: NenState = {
     ...context.nen,
     awakening: {
-      ...applyForcedState(state, forced),
+      ...applySuppression(state, involuntary),
       collapseRecovery: recovery,
     },
   };
@@ -256,12 +265,12 @@ export function settleNenCollapse(
     ...noAwakeningChanges(state.condition),
     condition: state.condition,
     leakageStopped: true,
-    forcedStatesApplied: [zetsuId],
+    suppressionApplied: [{ id: zetsuId, kind: "involuntary-zetsu" }],
     collapseRecoveryStarted: true,
   };
 
   root.output = {
-    forcedZetsu: zetsuId,
+    involuntaryZetsu: zetsuId,
     recovery: recovery.id,
     requiredSleepHours: recovery.requiredSleepHours,
   };
@@ -269,7 +278,7 @@ export function settleNenCollapse(
   const events: readonly RuntimeEvent[] = sequenceAwakeningEvents([
     awakeningEvent(emit, "nen-collapse", request.collapse.reason),
     awakeningEvent(emit, "nen-leakage-stopped", zetsuId),
-    awakeningEvent(emit, "nen-forced-zetsu-applied", zetsuId),
+    awakeningEvent(emit, "nen-involuntary-zetsu-applied", zetsuId),
     awakeningEvent(emit, "nen-collapse-recovery-started", recovery.id),
   ]);
 
@@ -357,6 +366,10 @@ export function advanceNenCollapseRecovery(
 
   if (issues.length > 0) return failAwakening(root, issues);
 
+  const routingIssues = findRoutingMetadataIssues(context);
+
+  if (routingIssues.length > 0) return failAwakening(root, routingIssues);
+
   const recovery = state.collapseRecovery;
 
   if (recovery === null) {
@@ -385,7 +398,7 @@ export function advanceNenCollapseRecovery(
   }
 
   if (
-    !Number.isFinite(request.qualifyingSleepHours) ||
+    !Number.isFinite(request?.qualifyingSleepHours) ||
     request.qualifyingSleepHours < 0
   ) {
     return failAwakening(root, [{
@@ -414,6 +427,22 @@ export function advanceNenCollapseRecovery(
       audience: "developer",
       required: "finite GameTimestamp",
       actual: String(request.at),
+    }]);
+  }
+
+  /*
+   * Sleep cannot be served before the collapse that demanded it. A recovery
+   * completing at an instant earlier than it began would record a completedAt
+   * the history could never have produced, and the ordering is checked against
+   * the recovery's own stored start rather than against a second clock.
+   */
+  if (request.at < recovery.beganAt) {
+    return failAwakening(root, [{
+      code: "nen.awakening.collapse-recovery.timestamp.before-start",
+      message: "A collapse recovery cannot advance to before it began.",
+      audience: "developer",
+      required: `>= ${recovery.beganAt}`,
+      actual: request.at,
     }]);
   }
 
@@ -464,9 +493,9 @@ export function advanceNenCollapseRecovery(
   }
 
   /*
-   * The character wakes INSIDE the collapse Zetsu they collapsed into. It is
-   * not re-applied here — it has been holding their nodes shut for the whole
-   * eight hours, which is the only reason the sleep restored anything.
+   * The character wakes INSIDE the involuntary Zetsu they collapsed into. It
+   * is not re-applied here — it has been holding their nodes shut for the
+   * whole eight hours, which is the only reason the sleep restored anything.
    */
   const events = sequenceAwakeningEvents([
     awakeningEvent(emit, "nen-collapse-recovery-completed", recovery.id),
@@ -499,84 +528,56 @@ export function advanceNenCollapseRecovery(
 
 /* ── Release ────────────────────────────────────────────────────────────── */
 
-export interface NenForcedStateReleaseRequest {
-  readonly forcedStateId: string;
+/*
+ * Two release transitions, because there are two mechanics.
+ *
+ * There used to be one, `releaseNenForcedState`, and it was wrong in a way the
+ * type system could not see: it located a state by id, checked a single guard
+ * that applied only to collapse-origin states, and filtered. An instinctive
+ * forced Zetsu — described three files away as something the character "did
+ * not choose and cannot lift" — went straight through it.
+ *
+ * Splitting the API is what makes each rule enforceable. Neither entry point
+ * can act on the other's kind, so a caller cannot reach the wrong guard by
+ * passing the wrong id.
+ */
+
+function suppressionKindMismatch(
+  expected: NenSuppressionKind,
+  actual: NenSuppressionKind,
+): EngineError {
+  return {
+    code: expected === "involuntary-zetsu"
+      ? "nen.suppression.involuntary.wrong-kind"
+      : "nen.suppression.forced.wrong-kind",
+    message: expected === "involuntary-zetsu"
+      ? "This is an externally imposed forced Zetsu; only its source can lift it."
+      : "This is the body's own involuntary Zetsu; it has no source to authorise a release.",
+    audience: "developer",
+    required: expected,
+    actual,
+  };
 }
 
 
-/**
- * Lift a forced state, and let the consequences follow.
+/*
+ * What a release did to the character's containment, and the events it owes.
  *
- * The NARROW transition Phase 5 owes and nothing more. It does not start,
- * stop, switch or price any principle; it removes one forced state and reports
- * what the character's Aura access then is.
- *
- * Releasing a collapse Zetsu from a character who still has no usable Ten
- * reopens exactly the trap they fell into: `leakageStarted` comes back true,
- * the `leaking` Condition is asked for again, and they have five minutes.
- * Releasing it from a character who has since learned Ten is safe, and the
- * difference is read from their effective Ten Mastery rather than from
- * anything stored on the forced state.
+ * Shared because the CONSEQUENCE of lifting a suppression is identical
+ * whichever kind it was — the nodes reopen, and whether that restarts the leak
+ * depends on the Ten the character has NOW. Only the authority to lift it
+ * differs, and that is settled before this runs.
  */
-export function releaseNenForcedState(
+function settleRelease(
   context: NenAwakeningContext,
-  request: NenForcedStateReleaseRequest,
+  root: TraceNode,
+  held: NenSuppressionState,
 ): NenAwakeningTransitionResult {
   const state = context.nen.awakening;
 
-  const root = createTraceNode({
-    id: "nen.awakening.forced-state.release",
-    label: "Release a Nen forced state",
-    formula:
-      "release -> nodes reopen; uncontained unless usable Ten has been learned since",
-    inputs: {
-      condition: { value: state.condition },
-      forcedStateId: { value: request.forcedStateId ?? "absent" },
-    },
-  });
-
-  const issues: EngineError[] = [...findAwakeningStateIssues(state)];
-
-  if (issues.length > 0) return failAwakening(root, issues);
-
-  const forced = typeof request.forcedStateId === "string"
-    ? findForcedState(state, request.forcedStateId)
-    : null;
-
-  if (forced === null) {
-    return failAwakening(root, [{
-      code: "nen.awakening.forced-state.not-found",
-      message: "This character is not being held in that forced state.",
-      audience: "developer",
-      required: "a forced state this character is in",
-      actual: String(request.forcedStateId),
-    }]);
-  }
-
-  /*
-   * A collapse Zetsu cannot be lifted while the recovery it belongs to is
-   * still running. The character is unconscious and owes sleep; releasing it
-   * would reopen the nodes of somebody who cannot do anything about it, and
-   * would restart the leak that put them there in the first place.
-   */
-  if (
-    forced.origin === "uncontained-collapse" &&
-    state.collapseRecovery !== null &&
-    state.collapseRecovery.completedAt === null
-  ) {
-    return failAwakening(root, [{
-      code: "nen.awakening.forced-state.recovery-incomplete",
-      message:
-        "A collapse-origin forced Zetsu cannot be released before its recovery completes.",
-      audience: "player",
-      required: `${state.collapseRecovery.requiredSleepHours} hours of qualifying sleep`,
-      actual: state.collapseRecovery.accumulatedSleepHours,
-    }]);
-  }
-
   const next: NenState = {
     ...context.nen,
-    awakening: releaseForcedState(state, forced.id),
+    awakening: removeSuppression(state, held.id),
   };
 
   const validated = validateNenState(next);
@@ -590,25 +591,29 @@ export function releaseNenForcedState(
   /*
    * Asked of the state AFTER the release, which is the only way to get the
    * answer right: whether the trap reopens depends on the Ten the character
-   * has now, not on anything recorded when the state was applied.
+   * has now, not on anything recorded when the suppression was applied.
    */
   const leaking = isNenUncontained(next);
 
   const changes: NenAwakeningChanges = {
     ...noAwakeningChanges(state.condition),
     condition: state.condition,
-    forcedStatesReleased: [forced.id],
+    suppressionReleased: [{ id: held.id, kind: held.kind }],
     leakageStarted: leaking,
   };
 
-  root.output = { released: forced.id, leaking };
+  root.output = { released: held.id, kind: held.kind, leaking };
 
   const events: NenAwakeningEvent[] = [
-    awakeningEvent(emit, "nen-forced-zetsu-released", forced.id),
+    awakeningEvent(
+      emit,
+      suppressionEventKind(held.kind, "released"),
+      held.id,
+    ),
   ];
 
   if (leaking) {
-    events.push(awakeningEvent(emit, "nen-leakage-started", forced.id));
+    events.push(awakeningEvent(emit, "nen-leakage-started", held.id));
   }
 
   return {
@@ -622,7 +627,7 @@ export function releaseNenForcedState(
           emit,
           true,
           LEAKING_CONDITION_ID,
-          "Released a forced Zetsu with no usable Ten.",
+          "Released a Zetsu with no usable Ten.",
         )]
         : [],
     ),
@@ -632,11 +637,210 @@ export function releaseNenForcedState(
 }
 
 
-/** Every collapse-origin forced state this character is being held in. */
-export function collapseForcedStates(
+function locateSuppression(
+  context: NenAwakeningContext,
+  root: TraceNode,
+  id: unknown,
+): NenSuppressionState | NenAwakeningTransitionResult {
+  const state = context.nen.awakening;
+
+  const issues: EngineError[] = [...findAwakeningStateIssues(state)];
+
+  if (issues.length > 0) return failAwakening(root, issues);
+
+  const routing = findRoutingMetadataIssues(context);
+
+  if (routing.length > 0) return failAwakening(root, routing);
+
+  const held = typeof id === "string" ? findSuppression(state, id) : null;
+
+  if (held === null) {
+    return failAwakening(root, [{
+      code: "nen.suppression.not-found",
+      message: "This character is not being held in that suppression state.",
+      audience: "developer",
+      required: "a suppression state this character is in",
+      actual: String(id),
+    }]);
+  }
+
+  return held;
+}
+
+
+function isTransitionResult(
+  value: NenSuppressionState | NenAwakeningTransitionResult,
+): value is NenAwakeningTransitionResult {
+  return "success" in value;
+}
+
+
+export interface NenSuppressionReleaseRequest {
+  readonly suppressionId: string;
+}
+
+
+/**
+ * Lift the body's own involuntary Zetsu. The character's to lift.
+ *
+ * Refused before the eight hours are served: the character is unconscious and
+ * owes sleep, and reopening the nodes of somebody who can do nothing about it
+ * would restart the leak that put them there.
+ *
+ * Afterwards it is theirs to take. Doing so without usable Ten walks straight
+ * back into the trap — `leakageStarted` comes back true, the leaking Condition
+ * is asked for again, and they have five minutes. With Ten it is safe, and the
+ * difference is read from their effective Ten Mastery rather than from
+ * anything stored on the suppression.
+ */
+export function releaseInvoluntaryZetsu(
+  context: NenAwakeningContext,
+  request: NenSuppressionReleaseRequest,
+): NenAwakeningTransitionResult {
+  const state = context.nen.awakening;
+
+  const root = createTraceNode({
+    id: "nen.suppression.involuntary.release",
+    label: "Release an involuntary Zetsu",
+    formula:
+      "recovery complete -> nodes reopen; uncontained unless usable Ten has been learned since",
+    inputs: {
+      condition: { value: state.condition },
+      suppressionId: { value: String(request?.suppressionId ?? "absent") },
+    },
+  });
+
+  const located = locateSuppression(context, root, request?.suppressionId);
+
+  if (isTransitionResult(located)) return located;
+
+  if (located.kind !== "involuntary-zetsu") {
+    return failAwakening(root, [
+      suppressionKindMismatch("involuntary-zetsu", located.kind),
+    ]);
+  }
+
+  /*
+   * The recovery it NAMES, not whichever recovery happens to be in progress.
+   * Validation keeps the two in step; reading the link is what makes the guard
+   * about this suppression rather than about the character.
+   */
+  const recovery = state.collapseRecovery;
+
+  if (
+    recovery === null ||
+    recovery.id !== located.recoveryId ||
+    recovery.completedAt === null
+  ) {
+    return failAwakening(root, [{
+      code: "nen.suppression.involuntary.recovery-incomplete",
+      message:
+        "An involuntary Zetsu cannot be released before its recovery completes.",
+      audience: "player",
+      required: `${recovery?.requiredSleepHours ?? COLLAPSE_RECOVERY_SLEEP_HOURS} hours of qualifying sleep`,
+      actual: recovery?.accumulatedSleepHours ?? 0,
+    }]);
+  }
+
+  return settleRelease(context, root, located);
+}
+
+
+export interface NenForcedZetsuReleaseRequest {
+  readonly suppressionId: string;
+
+  /*
+   * Who is lifting it.
+   *
+   * Required, and checked against the state's own release authority. A forced
+   * Zetsu is imposed from outside; the character cannot end it, and neither
+   * can a caller who simply knows its id.
+   */
+  readonly authorization: ContributionSourceRef;
+}
+
+
+/**
+ * Lift an externally imposed forced Zetsu, on the authority that imposed it.
+ *
+ * The minimal authorisation contract Phase 5 needs. Today the only forced
+ * Zetsu is the one an instinctive awakening arrives inside, whose authority is
+ * whoever authorised that awakening — so a GM ruling can undo a GM ruling, and
+ * nothing else can. When Abilities and statuses gain the power to impose one,
+ * they supply their own authority and this transition already serves them.
+ *
+ * Reversion is the one other path that lifts a forced Zetsu, and legitimately:
+ * it removes the awakening the Zetsu was attached to, so there is nothing left
+ * to hold shut.
+ */
+export function releaseForcedZetsu(
+  context: NenAwakeningContext,
+  request: NenForcedZetsuReleaseRequest,
+): NenAwakeningTransitionResult {
+  const state = context.nen.awakening;
+
+  const root = createTraceNode({
+    id: "nen.suppression.forced.release",
+    label: "Release a forced Zetsu",
+    formula:
+      "the imposing source authorises it -> nodes reopen; uncontained unless Ten is usable",
+    inputs: {
+      condition: { value: state.condition },
+      suppressionId: { value: String(request?.suppressionId ?? "absent") },
+      authorization: { value: String(request?.authorization?.id ?? "absent") },
+    },
+  });
+
+  const located = locateSuppression(context, root, request?.suppressionId);
+
+  if (isTransitionResult(located)) return located;
+
+  if (located.kind !== "forced-zetsu") {
+    return failAwakening(root, [
+      suppressionKindMismatch("forced-zetsu", located.kind),
+    ]);
+  }
+
+  const authorization = request?.authorization;
+
+  if (
+    authorization === undefined ||
+    authorization === null ||
+    typeof authorization.type !== "string" ||
+    authorization.type.trim().length === 0 ||
+    typeof authorization.id !== "string" ||
+    authorization.id.trim().length === 0
+  ) {
+    return failAwakening(root, [{
+      code: "nen.suppression.forced.authorization.invalid",
+      message:
+        "Releasing a forced Zetsu requires the source authorising it.",
+      audience: "developer",
+      required: "{ type, id }",
+      actual: String(authorization),
+    }]);
+  }
+
+  if (!isSameContributionSource(authorization, located.release.authority)) {
+    return failAwakening(root, [{
+      code: "nen.suppression.forced.unauthorized",
+      message:
+        "Only the source that imposed this forced Zetsu can release it.",
+      audience: "player",
+      required: contributionSourceKey(located.release.authority),
+      actual: contributionSourceKey(authorization),
+    }]);
+  }
+
+  return settleRelease(context, root, located);
+}
+
+
+/** Every involuntary Zetsu this character is being held in. */
+export function involuntaryZetsuStates(
   nen: NenState,
-): readonly NenForcedState[] {
-  return forcedStatesOfOrigin(nen.awakening, "uncontained-collapse");
+): readonly NenSuppressionState[] {
+  return suppressionOfKind(nen.awakening, "involuntary-zetsu");
 }
 
 

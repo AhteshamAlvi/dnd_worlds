@@ -46,7 +46,10 @@ import type {
   NenAppliedOverride,
   NenExceptionalOverrideField,
 } from "../foundation/nen/awakening/types";
-import { isNenExceptionalOverrideField } from "../foundation/nen/awakening/types";
+import {
+  isNenExceptionalOverrideField,
+  NEN_EXCEPTIONAL_OVERRIDE_FIELDS,
+} from "../foundation/nen/awakening/types";
 import { isNenType, type NenType } from "../foundation/nen/nen-type";
 import type { NamedRequirement } from "../rules/requirements";
 import type { RequirementContext, RequirementDisposition } from "../rules/resolution";
@@ -54,6 +57,7 @@ import {
   namedRequirementDisposition,
   resolveNamedRequirements,
 } from "../rules/resolution";
+import { findNamedRequirementsValidationIssues } from "../rules/validation";
 
 
 /* ── The external actor ─────────────────────────────────────────────────── */
@@ -217,39 +221,69 @@ export interface NenExceptionalAwakeningSource {
 export function declaredOverrideFields(
   overrides: NenExceptionalOverrides,
 ): readonly NenExceptionalOverrideField[] {
-  const fields: NenExceptionalOverrideField[] = [];
+  /*
+   * Read off the OBJECT's own keys, in the vocabulary's order.
+   *
+   * This used to test the six statically-typed fields one by one, which meant
+   * an unknown key could never appear in the result — and the validator's
+   * unknown-field check, which iterates this list, was therefore unreachable
+   * dead code. Content declaring `overrides.somethingInvented` was silently
+   * ignored rather than refused.
+   */
+  if (overrides === null || typeof overrides !== "object") return [];
 
-  if (overrides.eligibility !== undefined) fields.push("eligibility");
-  if (overrides.nenType !== undefined) fields.push("nenType");
+  const declared = new Set(Object.keys(overrides));
 
-  if (overrides.naturalAbilityDevelopment !== undefined) {
-    fields.push("naturalAbilityDevelopment");
-  }
+  return NEN_EXCEPTIONAL_OVERRIDE_FIELDS.filter(
+    (field) =>
+      declared.has(field) &&
+      (overrides as Record<string, unknown>)[field] !== undefined,
+  );
+}
 
-  if (overrides.masteryGrant !== undefined) fields.push("masteryGrant");
-  if (overrides.prerequisite !== undefined) fields.push("prerequisite");
-  if (overrides.progression !== undefined) fields.push("progression");
 
-  return fields;
+/** Keys the vocabulary does not recognise at all. */
+export function undeclaredOverrideFields(
+  overrides: NenExceptionalOverrides,
+): readonly string[] {
+  if (overrides === null || typeof overrides !== "object") return [];
+
+  return Object.keys(overrides).filter(
+    (key) => !isNenExceptionalOverrideField(key),
+  );
 }
 
 
 /** The overrides as they are written onto the character's history. */
+/** The authored summary for one declared field, or undefined if there is none. */
+export function declaredOverrideSummary(
+  overrides: NenExceptionalOverrides,
+  field: NenExceptionalOverrideField,
+): unknown {
+  const declared = (overrides as Record<string, unknown>)[field];
+
+  if (declared === null || typeof declared !== "object") return undefined;
+
+  return (declared as { summary?: unknown }).summary;
+}
+
+
+/**
+ * The overrides as they are written onto the character's history.
+ *
+ * Only called once the source has been validated, and it no longer invents a
+ * summary for a field that supplied none. It used to fall back to the FIELD'S
+ * OWN NAME, which had two consequences: a sheet showed "eligibility" as the
+ * reason a rule was waived, and the validator's missing-summary check — which
+ * iterates this list — could never fire, because by the time it looked there
+ * was always a non-empty string there.
+ */
 export function appliedOverrides(
   overrides: NenExceptionalOverrides,
 ): readonly NenAppliedOverride[] {
-  const summaries: Record<NenExceptionalOverrideField, string | undefined> = {
-    eligibility: overrides.eligibility?.summary,
-    nenType: overrides.nenType?.summary,
-    naturalAbilityDevelopment: overrides.naturalAbilityDevelopment?.summary,
-    masteryGrant: overrides.masteryGrant?.summary,
-    prerequisite: overrides.prerequisite?.summary,
-    progression: overrides.progression?.summary,
-  };
-
   return declaredOverrideFields(overrides).map((field) => ({
     field,
-    summary: summaries[field] ?? field,
+    summary: String(declaredOverrideSummary(overrides, field) ?? ""),
   }));
 }
 
@@ -294,97 +328,252 @@ function sourceRefIssues(
 export function findExceptionalSourceIssues(
   source: NenExceptionalAwakeningSource,
 ): readonly EngineError[] {
+  if (source === null || typeof source !== "object" || Array.isArray(source)) {
+    return [{
+      code: "nen.awakening.source.invalid",
+      message: "An exceptional awakening source must be a record.",
+      audience: "developer",
+      required: "{ ref, overrides }",
+      actual: String(source),
+    }];
+  }
+
   const errors: EngineError[] = [
-    ...sourceRefIssues(source?.ref, "An exceptional awakening source"),
+    ...sourceRefIssues(source.ref, "An exceptional awakening source"),
   ];
 
+  const { overrides } = source;
+
   if (
-    source === null ||
-    typeof source !== "object" ||
-    typeof source.overrides !== "object" ||
-    source.overrides === null
+    overrides === null ||
+    typeof overrides !== "object" ||
+    Array.isArray(overrides)
   ) {
     errors.push({
       code: "nen.awakening.overrides.invalid",
       message: "An exceptional awakening source must declare its overrides.",
       audience: "developer",
       required: "an overrides object, even an empty one",
-      actual: String(source?.overrides),
+      actual: String(overrides),
     });
 
     return errors;
   }
 
-  const { overrides } = source;
-
-  for (const field of declaredOverrideFields(overrides)) {
-    if (!isNenExceptionalOverrideField(field)) {
-      errors.push({
-        code: "nen.awakening.override.field.unknown",
-        message: "An exceptional source declared an unknown override field.",
-        audience: "developer",
-        required: "a declared exceptional override field",
-        actual: String(field),
-      });
-    }
-  }
-
-  if (overrides.nenType !== undefined && !isNenType(overrides.nenType.type)) {
+  /*
+   * Unknown keys are REFUSED, not ignored.
+   *
+   * Content that declares an override the vocabulary has never heard of is
+   * content whose author believes a rule is being waived. Dropping it silently
+   * is the worst of the three options: the source ships, the rule still
+   * applies, and nobody finds out until play.
+   */
+  for (const field of undeclaredOverrideFields(overrides)) {
     errors.push({
-      code: "nen.awakening.override.nen-type.invalid",
-      message: "A Nen Type override must name one of the six Nen Types.",
+      code: "nen.awakening.override.field.unknown",
+      message: `"${field}" is not an override this engine recognises.`,
       audience: "developer",
-      required: "a Nen Type",
-      actual: String(overrides.nenType.type),
+      required: NEN_EXCEPTIONAL_OVERRIDE_FIELDS.join(" | "),
+      actual: field,
     });
   }
 
-  if (overrides.eligibility !== undefined) {
-    if (!Array.isArray(overrides.eligibility.requirements)) {
+  /* Each declared override must be a record before any field is read off it. */
+  for (const field of NEN_EXCEPTIONAL_OVERRIDE_FIELDS) {
+    const declared = (overrides as Record<string, unknown>)[field];
+
+    if (declared === undefined) continue;
+
+    if (declared === null || typeof declared !== "object" || Array.isArray(declared)) {
       errors.push({
-        code: "nen.awakening.override.eligibility.invalid",
-        message:
-          "An eligibility override must supply a requirement list, even an empty one.",
+        code: "nen.awakening.override.shape.invalid",
+        message: `The "${field}" override must be a record.`,
         audience: "developer",
-        required: "array of named requirements",
-        actual: String(overrides.eligibility.requirements),
+        required: "object",
+        actual: String(declared),
       });
     }
   }
 
+  if (errors.length > 0) return errors;
+
+  if (overrides.nenType !== undefined) {
+    if (!isNenType(overrides.nenType.type)) {
+      errors.push({
+        code: "nen.awakening.override.nen-type.invalid",
+        message: "A Nen Type override must name one of the six Nen Types.",
+        audience: "developer",
+        required: "a Nen Type",
+        actual: String(overrides.nenType.type),
+      });
+    }
+
+    /*
+     * Whether the character KNOWS the forced type is a separate fact from what
+     * it is, and it was never checked — a `known: "yes"` passed straight
+     * through into stored state that claims to be a boolean.
+     */
+    if (typeof overrides.nenType.known !== "boolean") {
+      errors.push({
+        code: "nen.awakening.override.nen-type.known.invalid",
+        message:
+          "A Nen Type override must say whether the character knows the type.",
+        audience: "developer",
+        required: "boolean",
+        actual: String(overrides.nenType.known),
+      });
+    }
+  }
+
+  /*
+   * Nothing read this field at all. It is compared with `=== "prohibited"`
+   * later, so a garbage value silently behaved as "permitted" — an override
+   * that forbade Ability development would quietly permit it.
+   */
+  if (overrides.naturalAbilityDevelopment !== undefined) {
+    const { development } = overrides.naturalAbilityDevelopment;
+
+    if (development !== "prohibited" && development !== "permitted") {
+      errors.push({
+        code: "nen.awakening.override.ability-development.invalid",
+        message:
+          "A natural-Ability override must either prohibit or permit development.",
+        audience: "developer",
+        required: "prohibited | permitted",
+        actual: String(development),
+      });
+    }
+  }
+
+  errors.push(...requirementListIssues(
+    overrides.eligibility?.requirements,
+    "overrides.eligibility.requirements",
+    "nen.awakening.override.eligibility.invalid",
+    "An eligibility override must supply well-formed requirements.",
+    overrides.eligibility !== undefined,
+  ));
+
+  errors.push(...requirementListIssues(
+    overrides.prerequisite?.requirements,
+    "overrides.prerequisite.requirements",
+    "nen.awakening.override.prerequisite.invalid",
+    "A prerequisite override must supply well-formed requirements.",
+    overrides.prerequisite !== undefined,
+  ));
+
   if (overrides.masteryGrant !== undefined) {
-    if (!Array.isArray(overrides.masteryGrant.grants)) {
+    const { grants } = overrides.masteryGrant;
+
+    if (!Array.isArray(grants)) {
       errors.push({
         code: "nen.awakening.override.mastery.invalid",
         message:
           "A mastery-grant override must supply a grant list, even an empty one.",
         audience: "developer",
         required: "array of { principleId, rank }",
-        actual: String(overrides.masteryGrant.grants),
+        actual: String(grants),
+      });
+    } else {
+      /*
+       * Each grant proved to be a record HERE, before the transition's own
+       * loop reads `principleId` and `rank` off it.
+       */
+      grants.forEach((grant: unknown, index) => {
+        if (grant === null || typeof grant !== "object" || Array.isArray(grant)) {
+          errors.push({
+            code: "nen.awakening.override.mastery.grant.invalid",
+            message: `Mastery grant ${index} must be a record.`,
+            audience: "developer",
+            required: "{ principleId, rank }",
+            actual: String(grant),
+          });
+
+          return;
+        }
+
+        const { principleId, rank } = grant as {
+          principleId?: unknown;
+          rank?: unknown;
+        };
+
+        if (typeof principleId !== "string" || principleId.trim().length === 0) {
+          errors.push({
+            code: "nen.awakening.override.mastery.grant.invalid",
+            message: `Mastery grant ${index} must name a principle.`,
+            audience: "developer",
+            required: "non-empty string",
+            actual: String(principleId),
+          });
+        }
+
+        if (typeof rank !== "number" || !Number.isFinite(rank)) {
+          errors.push({
+            code: "nen.awakening.override.mastery.grant.invalid",
+            message: `Mastery grant ${index} must name a finite rank.`,
+            audience: "developer",
+            required: "finite number",
+            actual: String(rank),
+          });
+        }
+      });
+    }
+  }
+
+  if (overrides.progression !== undefined) {
+    const { summary } = overrides.progression;
+
+    if (typeof summary !== "string" || summary.trim().length === 0) {
+      errors.push({
+        code: "nen.awakening.override.progression.invalid",
+        message: "A progression override must say what it changes.",
+        audience: "developer",
+        required: "non-empty summary",
+        actual: String(summary),
       });
     }
   }
 
   /*
-   * Every declared override has to explain itself. The summary is what a sheet
-   * shows a player when it says which ordinary rule did not apply to them, and
-   * an override nobody can account for afterwards is indistinguishable from a
-   * bug in the engine.
+   * Every declared override has to explain itself, read from what was
+   * AUTHORED rather than from the assembled record — which used to substitute
+   * the field's own name and made this check unreachable.
    */
-  for (const applied of appliedOverrides(overrides)) {
-    if (
-      typeof applied.summary !== "string" ||
-      applied.summary.trim().length === 0
-    ) {
+  for (const field of declaredOverrideFields(overrides)) {
+    const summary = declaredOverrideSummary(overrides, field);
+
+    if (typeof summary !== "string" || summary.trim().length === 0) {
       errors.push({
         code: "nen.awakening.override.summary.missing",
-        message: `The "${applied.field}" override must say what it replaces.`,
+        message: `The "${field}" override must say what it replaces.`,
         audience: "developer",
         required: "non-empty summary",
-        actual: String(applied.summary),
+        actual: String(summary),
       });
     }
   }
 
   return errors;
+}
+
+
+function requirementListIssues(
+  requirements: unknown,
+  path: string,
+  code: string,
+  message: string,
+  declared: boolean,
+): readonly EngineError[] {
+  if (!declared) return [];
+
+  const issues = findNamedRequirementsValidationIssues(requirements, path);
+
+  if (issues.length === 0) return [];
+
+  return [{
+    code,
+    message,
+    audience: "developer",
+    required: "a list of well-formed named requirements",
+    actual: issues.map((issue) => ({ type: issue.type, path: issue.path })),
+  }];
 }

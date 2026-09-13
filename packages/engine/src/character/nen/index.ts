@@ -24,7 +24,7 @@ export {
 export type { NenEligibilityReport } from "./eligibility";
 
 export {
-  FORCED_ZETSU_ACCESS_SOURCE,
+  NEN_SUPPRESSION_ACCESS_SOURCE,
   isNenUncontained,
   nenAuraAccessInput,
 } from "./access";
@@ -61,6 +61,7 @@ export {
   NEN_TRAUMA_REQUEST,
   auraRestoreRequest,
   noAwakeningChanges,
+  suppressionEventKind,
 } from "./protocol";
 
 export type {
@@ -78,6 +79,7 @@ export type {
   NenConditionRequest,
   NenMasteryGrant,
   NenReversionRequest,
+  NenSuppressionRef,
   StandardAwakeningRequest,
 } from "./protocol";
 
@@ -99,16 +101,18 @@ export {
 
 export {
   advanceNenCollapseRecovery,
-  collapseForcedStates,
   hasAwakeningHistory,
-  releaseNenForcedState,
+  involuntaryZetsuStates,
+  releaseForcedZetsu,
+  releaseInvoluntaryZetsu,
   settleNenCollapse,
 } from "./collapse";
 
 export type {
   NenCollapseRecoveryRequest,
   NenCollapseRequest,
-  NenForcedStateReleaseRequest,
+  NenForcedZetsuReleaseRequest,
+  NenSuppressionReleaseRequest,
 } from "./collapse";
 
 export {

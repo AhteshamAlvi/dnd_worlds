@@ -483,15 +483,27 @@ export {
  * "Enhancer, undiscovered" apart from "nobody has decided yet".
  */
 export type {
+  NenAssignedType,
   NenType,
   NenTypeChange,
   NenTypeKnowledge,
+  NenUnassignedType,
 } from "./character/foundation/nen/nen-type";
 
 export {
   NEN_TYPES,
+
+  /*
+   * The canonical affinity lives on Nen state alone. `adoptLegacyNenType` is
+   * the one-time adapter for a record written when it also sat on
+   * CharacterDetails; it refuses a legacy value that contradicts the canonical
+   * one rather than silently picking a winner.
+   */
+  adoptLegacyNenType,
+  assignedNenType,
   isNenType,
-  unknownNenType,
+  nenTypeOf,
+  unassignedNenType,
 } from "./character/foundation/nen/nen-type";
 
 /*
@@ -511,10 +523,13 @@ export type {
   NenCollapseRecovery,
   NenExceptionalOverrideField,
   NenExternalAbilityRecord,
-  NenForcedState,
-  NenForcedStateExemption,
-  NenForcedStateKind,
-  NenForcedStateOrigin,
+  NenForcedZetsuRelease,
+  NenForcedZetsuState,
+  NenInvoluntaryZetsuState,
+  NenSourceAuthorizedRelease,
+  NenSuppressionExemption,
+  NenSuppressionKind,
+  NenSuppressionState,
   NenNaturalAbilityRecord,
   NenReawakeningHurdle,
   NenReversionRecord,
@@ -526,13 +541,12 @@ export {
   NEN_AWAKENING_METHODS,
   NEN_AWAKENING_TRAUMA_SEVERITIES,
   NEN_EXCEPTIONAL_OVERRIDE_FIELDS,
-  NEN_FORCED_STATE_KINDS,
-  NEN_FORCED_STATE_ORIGINS,
+  NEN_SUPPRESSION_KINDS,
   NEN_REAWAKENING_HURDLES,
   isNenAwakeningCondition,
   isNenAwakeningMethod,
   isNenExceptionalOverrideField,
-  isNenForcedStateOrigin,
+  isNenSuppressionKind,
   isNenReawakeningHurdle,
 } from "./character/foundation/nen/awakening/types";
 
@@ -544,12 +558,15 @@ export {
  * literal — the comparison that disagrees about a reverted character.
  */
 export {
-  abilityFunctionsDespiteForcedStates,
-  abilityFunctionsThroughForcedState,
+  abilityFunctionsDespiteSuppression,
+  abilityFunctionsThroughSuppression,
   collapseRecoveryHoursRemaining,
   createUnawakenedAwakeningState,
   currentAwakeningRecord,
-  forcedStatesOfOrigin,
+  findSuppression,
+  isInInvoluntaryZetsu,
+  isSuppressed,
+  suppressionOfKind,
   hasEverAwakened,
   hasPseudoChu,
   isAwakened,

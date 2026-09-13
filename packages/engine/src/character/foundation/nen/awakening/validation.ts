@@ -26,6 +26,10 @@
 
 import type { EngineError } from "../../../../infrastructure/diagnostics";
 import type { JsonValue } from "../../../../infrastructure/json";
+import {
+  contributionSourceKey,
+  isSameContributionSource,
+} from "../../../../infrastructure/contribution-source";
 import { AURA_NODE_STATES } from "../../aura/types";
 import { isNenType } from "../nen-type";
 
@@ -37,13 +41,13 @@ import {
   isNenAwakeningCondition,
   isNenAwakeningMethod,
   isNenExceptionalOverrideField,
-  isNenForcedStateOrigin,
+  isNenSuppressionKind,
   isNenReawakeningHurdle,
-  NEN_FORCED_STATE_KINDS,
+  NEN_SUPPRESSION_KINDS,
   type NenAwakeningHistoryEntry,
   type NenAwakeningState,
   type NenCollapseRecovery,
-  type NenForcedState,
+  type NenSuppressionState,
   type NenAwakeningRecord,
   type NenReversionRecord,
 } from "./types";
@@ -119,96 +123,163 @@ function developerError(
 
 /* ── Structural validation ──────────────────────────────────────────────── */
 
-function findForcedStateStructuralIssues(
-  forced: NenForcedState,
+function findSuppressionStructuralIssues(
+  held: NenSuppressionState,
   index: number,
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
-  const at = `forcedStates[${index}]`;
+  const at = `suppression[${index}]`;
 
-  if (!isIdentifier(forced.id)) {
+  if (!isRecordObject(held)) {
+    return [developerError(
+      "nen.awakening.suppression.invalid",
+      `${at} must be a record.`,
+      "object",
+      describe(held),
+    )];
+  }
+
+  if (!isIdentifier(held.id)) {
     errors.push(developerError(
-      "nen.awakening.forced-state.id.invalid",
+      "nen.awakening.suppression.id.invalid",
       `${at} must carry a non-empty id.`,
       "non-empty string",
-      describe(forced.id),
+      describe(held.id),
     ));
   }
 
-  if (!(NEN_FORCED_STATE_KINDS as readonly string[]).includes(forced.kind)) {
+  if (!isTimestamp(held.appliedAt)) {
     errors.push(developerError(
-      "nen.awakening.forced-state.kind.invalid",
-      `${at} names an unknown forced-state kind.`,
-      NEN_FORCED_STATE_KINDS.join(" | "),
-      describe(forced.kind),
-    ));
-  }
-
-  if (!isNenForcedStateOrigin(forced.origin)) {
-    errors.push(developerError(
-      "nen.awakening.forced-state.origin.invalid",
-      `${at} names an unknown forced-state origin.`,
-      "instinctive-awakening | uncontained-collapse",
-      describe(forced.origin),
-    ));
-  }
-
-  if (!isTimestamp(forced.appliedAt)) {
-    errors.push(developerError(
-      "nen.awakening.forced-state.timestamp.invalid",
+      "nen.awakening.suppression.timestamp.invalid",
       `${at} must have been applied at a finite game timestamp.`,
       "finite GameTimestamp",
-      describe(forced.appliedAt),
+      describe(held.appliedAt),
     ));
   }
 
-  if (!isSourceRef(forced.source)) {
+  /*
+   * The discriminant is checked before either variant is read, so an unknown
+   * kind is one clear error rather than a cascade of missing-field errors from
+   * whichever branch happened to run.
+   */
+  if (!isNenSuppressionKind(held.kind)) {
     errors.push(developerError(
-      "nen.awakening.forced-state.source.invalid",
-      `${at} must name what applied it.`,
-      "{ type, id }",
-      describe(forced.source),
-    ));
-  }
-
-  if (!Array.isArray(forced.exemptions)) {
-    errors.push(developerError(
-      "nen.awakening.forced-state.exemptions.invalid",
-      `${at} must carry a list of exemptions, even when it is empty.`,
-      "array",
-      describe(forced.exemptions),
+      "nen.awakening.suppression.kind.invalid",
+      `${at} names an unknown suppression kind.`,
+      NEN_SUPPRESSION_KINDS.join(" | "),
+      describe((held as { kind?: unknown }).kind),
     ));
 
     return errors;
   }
 
-  forced.exemptions.forEach((exemption, exemptionIndex) => {
+  if (held.kind === "involuntary-zetsu") {
+    if (held.cause !== "uncontained-aura-collapse") {
+      errors.push(developerError(
+        "nen.awakening.suppression.cause.invalid",
+        `${at} names an unknown involuntary-Zetsu cause.`,
+        "uncontained-aura-collapse",
+        describe(held.cause),
+      ));
+    }
+
+    if (!isIdentifier(held.recoveryId)) {
+      errors.push(developerError(
+        "nen.awakening.suppression.recovery.invalid",
+        `${at} must name the collapse recovery it belongs to.`,
+        "non-empty string",
+        describe(held.recoveryId),
+      ));
+    }
+
+    /*
+     * Nothing functions through an involuntary Zetsu, so the field that would
+     * carry such a permission must not be present at all. A caller smuggling
+     * one in would otherwise be relying on a reader that ignores it.
+     */
+    if ((held as { exemptions?: unknown }).exemptions !== undefined) {
+      errors.push(developerError(
+        "nen.awakening.suppression.involuntary.exemptions",
+        `${at} is an involuntary Zetsu and cannot carry exemptions.`,
+        "no exemptions",
+        describe((held as { exemptions?: unknown }).exemptions),
+      ));
+    }
+
+    return errors;
+  }
+
+  if (!isSourceRef(held.source)) {
+    errors.push(developerError(
+      "nen.awakening.suppression.source.invalid",
+      `${at} must name what imposed it.`,
+      "{ type, id }",
+      describe(held.source),
+    ));
+  }
+
+  if (
+    !isRecordObject(held.release) ||
+    held.release["rule"] !== "source-authorized" ||
+    !isSourceRef(held.release["authority"])
+  ) {
+    errors.push(developerError(
+      "nen.awakening.suppression.release.invalid",
+      `${at} must declare how it can be released.`,
+      '{ rule: "source-authorized", authority: { type, id } }',
+      describe(held.release),
+    ));
+  }
+
+  if (!Array.isArray(held.exemptions)) {
+    errors.push(developerError(
+      "nen.awakening.suppression.exemptions.invalid",
+      `${at} must carry a list of exemptions, even when it is empty.`,
+      "array",
+      describe(held.exemptions),
+    ));
+
+    return errors;
+  }
+
+  held.exemptions.forEach((exemption, exemptionIndex) => {
     const where = `${at}.exemptions[${exemptionIndex}]`;
+
+    if (!isRecordObject(exemption)) {
+      errors.push(developerError(
+        "nen.awakening.suppression.exemption.invalid",
+        `${where} must be a record.`,
+        "object",
+        describe(exemption),
+      ));
+
+      return;
+    }
 
     if (!isIdentifier(exemption.abilityId)) {
       errors.push(developerError(
-        "nen.awakening.forced-state.exemption.ability.invalid",
+        "nen.awakening.suppression.exemption.ability.invalid",
         `${where} must name the Ability it exempts.`,
         "non-empty string",
         describe(exemption.abilityId),
       ));
     }
 
-    if (!isIdentifier(exemption.forcedStateId)) {
+    if (!isIdentifier(exemption.suppressionId)) {
       errors.push(developerError(
-        "nen.awakening.forced-state.exemption.state.invalid",
-        `${where} must name the forced state it belongs to.`,
+        "nen.awakening.suppression.exemption.state.invalid",
+        `${where} must name the suppression it belongs to.`,
         "non-empty string",
-        describe(exemption.forcedStateId),
+        describe(exemption.suppressionId),
       ));
     }
 
-    if (!isNenForcedStateOrigin(exemption.origin)) {
+    if (!isSourceRef(exemption.source)) {
       errors.push(developerError(
-        "nen.awakening.forced-state.exemption.origin.invalid",
-        `${where} must name the origin it was granted against.`,
-        "instinctive-awakening | uncontained-collapse",
-        describe(exemption.origin),
+        "nen.awakening.suppression.exemption.source.invalid",
+        `${where} must name the source that granted it.`,
+        "{ type, id }",
+        describe(exemption.source),
       ));
     }
   });
@@ -638,11 +709,25 @@ export function findAwakeningStateStructuralIssues(
     ));
   } else {
     state.externalAbilities.forEach((external, index) => {
-      if (
-        !isRecordObject(external) ||
-        !isIdentifier(external.abilityId) ||
-        !isSourceRef(external.source)
-      ) {
+      /*
+       * The entry proved to be a record BEFORE anything is read off it —
+       * including by the diagnostic. The previous version short-circuited the
+       * condition correctly and then called describe(external.abilityId)
+       * inside the error literal, so `externalAbilities: [null]` threw a
+       * TypeError out of a validator whose entire contract is that it does not.
+       */
+      if (!isRecordObject(external)) {
+        errors.push(developerError(
+          "nen.awakening.external-ability.invalid",
+          `externalAbilities[${index}] must be a record.`,
+          "{ abilityId, source: { type, id } }",
+          describe(external),
+        ));
+
+        return;
+      }
+
+      if (!isIdentifier(external.abilityId) || !isSourceRef(external.source)) {
         errors.push(developerError(
           "nen.awakening.external-ability.invalid",
           `externalAbilities[${index}] must name an Ability and its source.`,
@@ -653,27 +738,16 @@ export function findAwakeningStateStructuralIssues(
     });
   }
 
-  if (!Array.isArray(state.forcedStates)) {
+  if (!Array.isArray(state.suppression)) {
     errors.push(developerError(
-      "nen.awakening.forced-states.invalid",
-      "An awakening state must carry a forced-state list, even when empty.",
+      "nen.awakening.suppression.list.invalid",
+      "An awakening state must carry a suppression list, even when empty.",
       "array",
-      describe(state.forcedStates),
+      describe(state.suppression),
     ));
   } else {
-    state.forcedStates.forEach((forced: NenForcedState, index) => {
-      if (!isRecordObject(forced)) {
-        errors.push(developerError(
-          "nen.awakening.forced-state.invalid",
-          `forcedStates[${index}] must be a record.`,
-          "object",
-          describe(forced),
-        ));
-
-        return;
-      }
-
-      errors.push(...findForcedStateStructuralIssues(forced, index));
+    state.suppression.forEach((held: NenSuppressionState, index) => {
+      errors.push(...findSuppressionStructuralIssues(held, index));
     });
   }
 
@@ -684,12 +758,12 @@ export function findAwakeningStateStructuralIssues(
       "{ type, known }",
       describe(state.nenType),
     ));
-  } else {
-    if (state.nenType.type !== null && !isNenType(state.nenType.type)) {
+  } else if (state.nenType.status === "assigned") {
+    if (!isNenType(state.nenType.type)) {
       errors.push(developerError(
         "nen.awakening.nen-type.value.invalid",
-        "A Nen Type must be one of the six types, or null.",
-        "a Nen Type or null",
+        "An assigned Nen Type must be one of the six types.",
+        "a Nen Type",
         describe(state.nenType.type),
       ));
     }
@@ -702,6 +776,13 @@ export function findAwakeningStateStructuralIssues(
         describe(state.nenType.known),
       ));
     }
+  } else if (state.nenType.status !== "unassigned") {
+    errors.push(developerError(
+      "nen.awakening.nen-type.status.invalid",
+      "A Nen Type reading must be assigned or unassigned.",
+      "assigned | unassigned",
+      describe((state.nenType as { status?: unknown }).status),
+    ));
   }
 
   if (!isNullableObject(state.collapseRecovery)) {
@@ -865,41 +946,72 @@ export function findAwakeningStateDomainIssues(
     }
   }
 
-  const forcedIds = new Set<string>();
+  const suppressionIds = new Set<string>();
 
-  for (const forced of state.forcedStates) {
-    if (forcedIds.has(forced.id)) {
+  for (const held of state.suppression) {
+    if (suppressionIds.has(held.id)) {
       errors.push(developerError(
-        "nen.awakening.forced-state.duplicate",
-        "Two forced states share an id.",
-        "each forced-state id at most once",
-        forced.id,
+        "nen.awakening.suppression.duplicate",
+        "Two suppression states share an id.",
+        "each suppression id at most once",
+        held.id,
       ));
     }
 
-    forcedIds.add(forced.id);
+    suppressionIds.add(held.id);
 
     /*
-     * An exemption naming a DIFFERENT forced state is the global
-     * ability-through-Zetsu exception trying to get in by the back door: it
-     * would be carried by a state it was never granted against.
+     * Only an awakened or reverted character has nodes to hold shut. A
+     * suppression on anybody else is a state with no cause.
      */
-    for (const exemption of forced.exemptions) {
-      if (exemption.forcedStateId !== forced.id) {
+    if (state.condition === "unawakened") {
+      errors.push(developerError(
+        "nen.awakening.suppression.before-awakening",
+        "An unawakened character cannot be held in Nen suppression.",
+        "an awakened or reverted character",
+        state.condition,
+      ));
+    }
+
+    if (held.kind === "involuntary-zetsu") {
+      /*
+       * The recovery it names has to be the one in progress. A stale link
+       * would let the release guard consult a recovery that has since been
+       * replaced, and pass.
+       */
+      if (state.collapseRecovery?.id !== held.recoveryId) {
         errors.push(developerError(
-          "nen.awakening.forced-state.exemption.misattached",
-          "A forced-state exemption names a different forced state.",
-          forced.id,
-          exemption.forcedStateId,
+          "nen.awakening.suppression.recovery.unrecorded",
+          "An involuntary Zetsu names a collapse recovery this character is not in.",
+          state.collapseRecovery?.id ?? "a collapse recovery",
+          held.recoveryId,
         ));
       }
 
-      if (exemption.origin !== forced.origin) {
+      continue;
+    }
+
+    for (const exemption of held.exemptions) {
+      /*
+       * An exemption naming a DIFFERENT instance is the global
+       * ability-through-Zetsu exception trying to get in by the back door: it
+       * would be carried by a state it was never granted against.
+       */
+      if (exemption.suppressionId !== held.id) {
         errors.push(developerError(
-          "nen.awakening.forced-state.exemption.origin.mismatch",
-          "A forced-state exemption was granted against a different origin.",
-          forced.origin,
-          exemption.origin,
+          "nen.awakening.suppression.exemption.misattached",
+          "A suppression exemption names a different suppression state.",
+          held.id,
+          exemption.suppressionId,
+        ));
+      }
+
+      if (!isSameContributionSource(exemption.source, held.source)) {
+        errors.push(developerError(
+          "nen.awakening.suppression.exemption.source.mismatch",
+          "A suppression exemption was granted by a different source.",
+          contributionSourceKey(held.source),
+          contributionSourceKey(exemption.source),
         ));
       }
 
@@ -908,41 +1020,23 @@ export function findAwakeningStateDomainIssues(
        * for an Ability nobody holds is dead data at best and, the moment such
        * an Ability is granted from anywhere, a free pass nobody authorised.
        */
-      const held =
+      const heldAbility =
         state.naturalAbility?.abilityId === exemption.abilityId ||
         state.externalAbilities.some(
           (external) => external.abilityId === exemption.abilityId,
         );
 
-      if (!held) {
+      if (!heldAbility) {
         errors.push(developerError(
-          "nen.awakening.forced-state.exemption.unknown-ability",
-          "A forced-state exemption names an Ability the character does not have.",
+          "nen.awakening.suppression.exemption.unknown-ability",
+          "A suppression exemption names an Ability the character does not have.",
           "an Ability held by this character",
           exemption.abilityId,
         ));
       }
     }
-
-    if (state.condition === "unawakened") {
-      errors.push(developerError(
-        "nen.awakening.forced-state.before-awakening",
-        "An unawakened character cannot be held in a Nen forced state.",
-        "an awakened or reverted character",
-        state.condition,
-      ));
-    }
   }
 
-  /* A type nobody has established cannot be a type the character knows. */
-  if (state.nenType.known && state.nenType.type === null) {
-    errors.push(developerError(
-      "nen.awakening.nen-type.known-without-value",
-      "A known Nen Type must say which type it is.",
-      "a Nen Type",
-      "null",
-    ));
-  }
 
   /*
    * Collapse is something only an awakened character's open nodes can do to

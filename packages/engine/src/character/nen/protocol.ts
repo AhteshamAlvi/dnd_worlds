@@ -55,6 +55,7 @@ import type {
   NenAwakeningResolution,
   NenAwakeningTraumaSeverity,
   NenReawakeningHurdle,
+  NenSuppressionKind,
 } from "../foundation/nen/awakening/types";
 import type { NenTypeChange } from "../foundation/nen/nen-type";
 import type { NenMasteryRank, NenPrincipleId, NenState } from "../foundation/nen/types";
@@ -208,6 +209,13 @@ export interface NenReversionRequest {
 
 /* ── Changes ────────────────────────────────────────────────────────────── */
 
+/** One suppression instance, named by id and kind. */
+export interface NenSuppressionRef {
+  readonly id: string;
+  readonly kind: NenSuppressionKind;
+}
+
+
 export interface NenMasteryGrant {
   readonly principleId: NenPrincipleId;
   readonly rank: NenMasteryRank;
@@ -244,8 +252,16 @@ export interface NenAwakeningChanges {
 
   readonly trauma: NenAwakeningTraumaSeverity;
 
-  readonly forcedStatesApplied: readonly string[];
-  readonly forcedStatesReleased: readonly string[];
+  /*
+   * Which suppression this transition applied or lifted, with its KIND.
+   *
+   * The kind travels with the id because the event a consumer sees depends on
+   * it: an externally imposed forced Zetsu and the body's own involuntary one
+   * are different facts, and a log that reported both as "forced" would say a
+   * character was acted upon when they had merely run out of Aura.
+   */
+  readonly suppressionApplied: readonly NenSuppressionRef[];
+  readonly suppressionReleased: readonly NenSuppressionRef[];
 
   readonly naturalAbilityGranted: string | null;
   readonly naturalAbilityLost: string | null;
@@ -282,8 +298,8 @@ export function noAwakeningChanges(
     eligibility: null,
     resolutions: [],
     trauma: "none",
-    forcedStatesApplied: [],
-    forcedStatesReleased: [],
+    suppressionApplied: [],
+    suppressionReleased: [],
     naturalAbilityGranted: null,
     naturalAbilityLost: null,
     externalAbilitiesLost: [],
@@ -333,12 +349,29 @@ export const NEN_AWAKENING_EVENT_KINDS = [
   "nen-collapse-recovery-completed",
   "nen-forced-zetsu-applied",
   "nen-forced-zetsu-released",
+  "nen-involuntary-zetsu-applied",
+  "nen-involuntary-zetsu-released",
   "nen-natural-ability-granted",
   "nen-natural-ability-lost",
   "nen-type-changed",
 ] as const;
 
 export type NenAwakeningEventKind = typeof NEN_AWAKENING_EVENT_KINDS[number];
+
+
+/** The applied/released event kinds for one suppression kind. */
+export function suppressionEventKind(
+  kind: NenSuppressionKind,
+  action: "applied" | "released",
+): NenAwakeningEventKind {
+  return kind === "forced-zetsu"
+    ? (action === "applied"
+      ? "nen-forced-zetsu-applied"
+      : "nen-forced-zetsu-released")
+    : (action === "applied"
+      ? "nen-involuntary-zetsu-applied"
+      : "nen-involuntary-zetsu-released");
+}
 
 
 /*

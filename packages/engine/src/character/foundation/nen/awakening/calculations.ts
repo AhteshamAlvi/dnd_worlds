@@ -102,6 +102,39 @@ export const ABRUPT_MINIMUM_PROBABILITY = 0.01;
 export const ABRUPT_MAXIMUM_PROBABILITY = 0.99;
 
 
+/*
+ * The same three factors, in log space.
+ *
+ * The product form leaves the representable range on ordinary-looking input:
+ * five Attributes at 1,000 are finite, and their odds are not — 1.25^987 alone
+ * overflows. `Infinity / (1 + Infinity)` is NaN, and NaN survives the clamp,
+ * so the promised 1%-99% guarantee silently became "or NaN" for every
+ * sufficiently extreme character.
+ *
+ * Summing logarithms never overflows, because the exponents are what grow. It
+ * is used as the FALLBACK rather than as the primary formula: see below.
+ */
+const LOG_BASE_ODDS = Math.log(ABRUPT_BASE_ODDS);
+const LOG_PHYSICAL_FACTOR = Math.log(ABRUPT_PHYSICAL_ODDS_FACTOR);
+const LOG_SPIRIT_FACTOR = Math.log(ABRUPT_SPIRIT_ODDS_FACTOR);
+
+
+/*
+ * The logistic function, evaluated on whichever side does not overflow.
+ *
+ * exp(+800) is Infinity and exp(-800) is 0, so a single-branch sigmoid loses
+ * one tail or the other. Branching on the sign keeps the exponent negative in
+ * both cases, which is the standard stable form.
+ */
+function logistic(logOdds: number): number {
+  if (logOdds >= 0) return 1 / (1 + Math.exp(-logOdds));
+
+  const odds = Math.exp(logOdds);
+
+  return odds / (1 + odds);
+}
+
+
 export interface AbruptAwakeningOdds {
   readonly baseOdds: number;
 
@@ -111,8 +144,18 @@ export interface AbruptAwakeningOdds {
   /** The multiplier a reawakening hurdle applied. 1 when there is none. */
   readonly hurdleMultiplier: number;
 
-  /** attributeOdds x hurdleMultiplier, before conversion. */
+  /** attributeOdds x hurdleMultiplier, before conversion. May be Infinity. */
   readonly odds: number;
+
+  /*
+   * The same odds in log space, which never overflows.
+   *
+   * Reported as well as used, because it is the only field that stays
+   * meaningful for a character whose odds have left the representable range —
+   * `odds: Infinity` says nothing about how far past the ceiling they are and
+   * this does.
+   */
+  readonly logOdds: number;
 
   /** odds / (1 + odds), before the clamp. */
   readonly rawProbability: number;
@@ -154,6 +197,15 @@ export function deriveAbruptAwakeningOdds(
   attributes: Attributes,
   hurdleMultiplier = 1,
 ): AbruptAwakeningOdds {
+  const physicalExcess =
+    excessOver(attributes.con, STANDARD_AWAKENING_THRESHOLDS.con) +
+    excessOver(attributes.vit, STANDARD_AWAKENING_THRESHOLDS.vit) +
+    excessOver(attributes.per, STANDARD_AWAKENING_THRESHOLDS.per) +
+    excessOver(attributes.wis, STANDARD_AWAKENING_THRESHOLDS.wis);
+
+  const spiritExcess =
+    excessOver(attributes.spi, STANDARD_AWAKENING_THRESHOLDS.spi);
+
   const attributeOdds =
     ABRUPT_BASE_ODDS *
     ABRUPT_PHYSICAL_ODDS_FACTOR **
@@ -168,7 +220,31 @@ export function deriveAbruptAwakeningOdds(
       excessOver(attributes.spi, STANDARD_AWAKENING_THRESHOLDS.spi);
 
   const odds = attributeOdds * hurdleMultiplier;
-  const rawProbability = odds / (1 + odds);
+
+  const logOdds =
+    LOG_BASE_ODDS +
+    physicalExcess * LOG_PHYSICAL_FACTOR +
+    spiritExcess * LOG_SPIRIT_FACTOR +
+    Math.log(hurdleMultiplier);
+
+  /*
+   * The product where it is representable, logarithms where it is not.
+   *
+   * Two paths rather than one, deliberately. The log form is stable everywhere
+   * but is not EXACT: at the thresholds it returns 0.5999999999999999 rather
+   * than 0.6, because exp(-log(1.5)) is not bit-identical to 2/3. These are
+   * numbers a player is quoted and will dispute, and the published table says
+   * sixty percent — so the ordinary case keeps the exact arithmetic it always
+   * had, and the logarithms rescue only the range where the product has
+   * already left the doubles.
+   *
+   * `odds` is still reported as computed, Infinity included, because that is
+   * what the odds ARE for such a character. What must never escape is a NaN
+   * probability.
+   */
+  const rawProbability = Number.isFinite(odds) && odds > 0
+    ? odds / (1 + odds)
+    : logistic(logOdds);
 
   const probability = Math.min(
     ABRUPT_MAXIMUM_PROBABILITY,
@@ -180,6 +256,7 @@ export function deriveAbruptAwakeningOdds(
     attributeOdds,
     hurdleMultiplier,
     odds,
+    logOdds,
     rawProbability,
     probability,
     clamped: probability !== rawProbability,

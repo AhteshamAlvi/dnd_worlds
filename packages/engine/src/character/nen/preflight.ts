@@ -17,6 +17,8 @@ import type { EngineError } from "../../infrastructure/diagnostics";
 import type { NonEmptyArray } from "../../infrastructure/result";
 import type { TraceNode } from "../../infrastructure/trace";
 import { isRuntimeOwnerRef } from "../../runtime/domains";
+import { findRequirementContextIssues } from "../rules/resolution";
+import { findNamedRequirementsValidationIssues } from "../rules/validation";
 import type { RuntimeEvent } from "../../runtime/events";
 
 import { findAwakeningStateIssues } from "../foundation/nen/awakening/validation";
@@ -26,11 +28,13 @@ import type {
 } from "../foundation/nen/awakening/types";
 
 import { unmetRequirements, type NenEligibilityReport } from "./eligibility";
+import { suppressionEventKind } from "./protocol";
 import type {
   NenAwakeningChanges,
   NenAwakeningContext,
   NenAwakeningEvent,
   NenAwakeningTransitionResult,
+  NenSuppressionRef,
 } from "./protocol";
 import {
   awakeningEvent,
@@ -38,6 +42,134 @@ import {
   sequenceAwakeningEvents,
   type EmitContext,
 } from "./settlement";
+
+
+/*
+ * WHOSE state, which operation, and when.
+ *
+ * The three values every event and request in this domain is built from.
+ * `emitContextOf` copies them straight onto an EmitContext, `awakeningEvent`
+ * puts the owner on the event as its target, and the request builders read
+ * `owner.id` — so a malformed owner either emits an event addressed to nothing
+ * or throws out of a request builder, in both cases AFTER the state has
+ * already changed.
+ *
+ * Extracted from the awakening preflight because it was only ever called
+ * there: reversion, collapse settlement, recovery advancement and suppression
+ * release all skipped it, and `revertNen` with `owner: null` committed a
+ * reverted character and emitted events targeting null without a single error.
+ */
+export function findRoutingMetadataIssues(
+  context: NenAwakeningContext,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  if (!isRuntimeOwnerRef(context?.owner)) {
+    errors.push({
+      code: "nen.awakening.owner.invalid",
+      message: "A Nen transition must name the owner it belongs to.",
+      audience: "developer",
+      required: "{ domain, id }",
+      actual: String(context?.owner),
+    });
+  }
+
+  if (
+    typeof context?.operationId !== "string" ||
+    context.operationId.trim().length === 0
+  ) {
+    errors.push({
+      code: "nen.awakening.operation.invalid",
+      message: "A Nen transition must belong to a named operation.",
+      audience: "developer",
+      required: "non-empty string",
+      actual: String(context?.operationId),
+    });
+  }
+
+  if (!Number.isFinite(context?.occurredAt)) {
+    errors.push({
+      code: "nen.awakening.timestamp.invalid",
+      message: "A Nen transition must happen at a finite game timestamp.",
+      audience: "developer",
+      required: "finite GameTimestamp",
+      actual: String(context?.occurredAt),
+    });
+  }
+
+  return errors;
+}
+
+
+/*
+ * A requirement context, judged by the engine's own validator before anything
+ * reads a field off it.
+ *
+ * Phase 5 skipped this everywhere, and the consequence was not theoretical:
+ * `awakeningAttributes()` is `context.attributes[layer]`, and every eligibility
+ * resolver hands the context to `resolveRequirement`, which reads
+ * `context.attributes.base`. A context of `{}` therefore threw a TypeError out
+ * of a transition whose contract is that it returns diagnostics.
+ *
+ * `findRequirementContextIssues` is the canonical validator — it takes
+ * `unknown`, never throws, and is what every other consumer of the requirement
+ * vocabulary uses. A Nen-specific copy would be a second opinion about what a
+ * valid context is.
+ *
+ * This is a STRUCTURAL gate and nothing more. A well-formed context that
+ * simply has not recorded the Techniques somebody holds is not malformed, and
+ * must still resolve to `unresolved` rather than being refused here — which is
+ * why the three dispositions are untouched below.
+ */
+export function findAwakeningRequirementContextIssues(
+  value: unknown,
+  path: string,
+): readonly EngineError[] {
+  const issues = findRequirementContextIssues(value, path);
+
+  if (issues.length === 0) return [];
+
+  return [{
+    code: "nen.awakening.requirement-context.invalid",
+    message:
+      "A Nen transition was handed a requirement context it cannot read.",
+    audience: "developer",
+    required: "a well-formed requirement context",
+    actual: issues.map((issue) => ({
+      path: issue.path,
+      expected: issue.expected,
+    })),
+  }];
+}
+
+
+/*
+ * Authored requirements, judged before they are evaluated.
+ *
+ * A capability list, an eligibility override or an added prerequisite arrives
+ * from content and from a host's catalog, so a `null` entry or a nested
+ * malformed node is ordinary hostile input rather than a caller's typo.
+ * `findNamedRequirementsValidationIssues` is the existing validator for
+ * exactly this and reports rather than dereferences.
+ */
+export function findAwakeningRequirementIssues(
+  requirements: unknown,
+  path: string,
+  code: string,
+  message: string,
+): readonly EngineError[] {
+  const issues = findNamedRequirementsValidationIssues(requirements, path);
+
+  if (issues.length === 0) return [];
+
+  return [{
+    code,
+    message,
+    audience: "developer",
+    required: "a list of well-formed named requirements",
+    actual: issues.map((issue) => ({ type: issue.type, path: issue.path })),
+  }];
+}
 
 
 /** A refusal: no state changed, and the trace still says how far it got. */
@@ -83,47 +215,11 @@ export function findCommonAwakeningIssues(
 
   if (errors.length > 0) return errors;
 
-  /*
-   * WHOSE awakening, and which operation.
-   *
-   * Checked here rather than left to the coordinator, because every event and
-   * request this transition emits is built from these three values. A
-   * malformed owner produces a malformed request that is refused at dispatch —
-   * after the state has already changed, which is exactly the ordering the
-   * validate-before-mutate rule exists to prevent.
-   */
-  if (!isRuntimeOwnerRef(context.owner)) {
-    errors.push({
-      code: "nen.awakening.owner.invalid",
-      message: "An awakening must name the owner it belongs to.",
-      audience: "developer",
-      required: "{ domain, id }",
-      actual: String(context.owner),
-    });
-  }
-
-  if (
-    typeof context.operationId !== "string" ||
-    context.operationId.trim().length === 0
-  ) {
-    errors.push({
-      code: "nen.awakening.operation.invalid",
-      message: "An awakening must belong to a named operation.",
-      audience: "developer",
-      required: "non-empty string",
-      actual: String(context.operationId),
-    });
-  }
-
-  if (!Number.isFinite(context.occurredAt)) {
-    errors.push({
-      code: "nen.awakening.timestamp.invalid",
-      message: "An awakening must happen at a finite game timestamp.",
-      audience: "developer",
-      required: "finite GameTimestamp",
-      actual: String(context.occurredAt),
-    });
-  }
+  errors.push(...findRoutingMetadataIssues(context));
+  errors.push(...findAwakeningRequirementContextIssues(
+    context.requirements,
+    "context.requirements",
+  ));
 
   if (errors.length > 0) return errors;
 
@@ -231,7 +327,7 @@ export interface AwakenedEventsInput {
   readonly pseudoChuEnded: boolean;
   readonly masteryGranted: NenAwakeningChanges["masteryGranted"];
   readonly leaking: boolean;
-  readonly forcedStateIds: readonly string[];
+  readonly suppressionApplied: readonly NenSuppressionRef[];
   readonly naturalAbilityGranted: string | null;
   readonly nenTypeChanged: boolean;
 }
@@ -284,8 +380,10 @@ export function awakenedEvents(
     events.push(awakeningEvent(emit, "nen-type-changed", record.id));
   }
 
-  for (const forcedId of input.forcedStateIds) {
-    events.push(awakeningEvent(emit, "nen-forced-zetsu-applied", forcedId));
+  for (const held of input.suppressionApplied) {
+    events.push(
+      awakeningEvent(emit, suppressionEventKind(held.kind, "applied"), held.id),
+    );
   }
 
   if (record.reawakening) {

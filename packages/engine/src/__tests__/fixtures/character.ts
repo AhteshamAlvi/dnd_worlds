@@ -16,6 +16,7 @@ import {
   resolveCharacter,
   type ResolvedCharacter,
 } from "../../character/resolution";
+import { unassignedNenType } from "../../character/foundation/nen/nen-type";
 
 export const TEST_ATTRIBUTES: Attributes = {
   agi: 10,
@@ -55,7 +56,7 @@ export function createTestCharacter(
     ],
 
     aura: { current: 0, allocations: [] },
-    nen: createUnawakenedNenState(),
+    nen: createUnawakenedNenState(unassignedNenType()),
     wakefulness: restedWakefulness(),
 
     clans: [],

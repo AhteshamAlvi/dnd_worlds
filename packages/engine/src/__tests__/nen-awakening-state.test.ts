@@ -11,8 +11,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  abilityFunctionsDespiteForcedStates,
-  abilityFunctionsThroughForcedState,
+  abilityFunctionsDespiteSuppression,
+  abilityFunctionsThroughSuppression,
   collapseRecoveryHoursRemaining,
   createUnawakenedAwakeningState,
   currentAwakeningRecord,
@@ -37,11 +37,15 @@ import {
 import type {
   NenAwakeningRecord,
   NenAwakeningState,
-  NenForcedState,
+  NenForcedZetsuState,
 } from "../character/foundation/nen/awakening/types";
 import { createUnawakenedNenState } from "../character/foundation/nen/nen";
 
 import { abruptAwakenedNen, revertedNen, standardAwakenedNen } from "./fixtures/nen";
+import {
+  assignedNenType,
+  unassignedNenType,
+} from "../character/foundation/nen/nen-type";
 
 function codes(issues: readonly { code: string }[]): readonly string[] {
   return issues.map((issue) => issue.code);
@@ -65,7 +69,7 @@ function awakenedState(
   overrides: Partial<NenAwakeningState> = {},
 ): NenAwakeningState {
   return {
-    ...createUnawakenedAwakeningState(),
+    ...createUnawakenedAwakeningState(unassignedNenType()),
     condition: "awakened",
     nodes: "open",
     currentMethod: "standard",
@@ -78,7 +82,7 @@ function awakenedState(
 
 describe("the seven facts a boolean could not carry", () => {
   it("separates never awakened from reverted", () => {
-    const fresh = createUnawakenedNenState().awakening;
+    const fresh = createUnawakenedNenState(unassignedNenType()).awakening;
     const reverted = revertedNen().awakening;
 
     expect(isAwakened(fresh)).toBe(false);
@@ -97,7 +101,7 @@ describe("the seven facts a boolean could not carry", () => {
    * `reverted` is a third condition rather than a return to `unawakened`.
    */
   it("never gives pseudo-Chu back once it has ended", () => {
-    expect(hasPseudoChu(createUnawakenedNenState().awakening)).toBe(true);
+    expect(hasPseudoChu(createUnawakenedNenState(unassignedNenType()).awakening)).toBe(true);
     expect(hasPseudoChu(standardAwakenedNen().awakening)).toBe(false);
     expect(hasPseudoChu(abruptAwakenedNen().awakening)).toBe(false);
     expect(hasPseudoChu(revertedNen().awakening)).toBe(false);
@@ -106,7 +110,7 @@ describe("the seven facts a boolean could not carry", () => {
   it("tracks node state alongside the condition", () => {
     expect(standardAwakenedNen().awakening.nodes).toBe("open");
     expect(revertedNen().awakening.nodes).toBe("half-open");
-    expect(createUnawakenedNenState().awakening.nodes).toBe("half-open");
+    expect(createUnawakenedNenState(unassignedNenType()).awakening.nodes).toBe("half-open");
   });
 
   it("records which awakening the character is currently in", () => {
@@ -118,7 +122,7 @@ describe("the seven facts a boolean could not carry", () => {
   });
 
   it("knows whether the NEXT awakening would be a reawakening", () => {
-    expect(wouldBeReawakening(createUnawakenedNenState().awakening)).toBe(false);
+    expect(wouldBeReawakening(createUnawakenedNenState(unassignedNenType()).awakening)).toBe(false);
     expect(wouldBeReawakening(revertedNen().awakening)).toBe(true);
   });
 
@@ -126,27 +130,27 @@ describe("the seven facts a boolean could not carry", () => {
     const awakened = standardAwakenedNen().awakening;
 
     /* Awakening assigns no affinity and discovers none. */
-    expect(awakened.nenType).toEqual({ type: null, known: false });
+    expect(awakened.nenType).toEqual(unassignedNenType());
   });
 });
 
 
 describe("forced states are not Zetsu mastery", () => {
-  const forced: NenForcedState = {
+  const forced: NenForcedZetsuState = {
     id: "fz-1",
     kind: "forced-zetsu",
-    origin: "instinctive-awakening",
     appliedAt: 100,
     source: SOURCE,
+    release: { rule: "source-authorized", authority: SOURCE },
     exemptions: [{
       abilityId: "ability-a",
-      forcedStateId: "fz-1",
-      origin: "instinctive-awakening",
+      suppressionId: "fz-1",
+      source: SOURCE,
     }],
   };
 
   const held = awakenedState({
-    forcedStates: [forced],
+    suppression: [forced],
     naturalAbility: {
       abilityId: "ability-a",
       grantedAt: 100,
@@ -161,13 +165,13 @@ describe("forced states are not Zetsu mastery", () => {
   });
 
   it("lets the exempt Ability through", () => {
-    expect(abilityFunctionsThroughForcedState(forced, "ability-a")).toBe(true);
-    expect(abilityFunctionsDespiteForcedStates(held, "ability-a")).toBe(true);
+    expect(abilityFunctionsThroughSuppression(forced, "ability-a")).toBe(true);
+    expect(abilityFunctionsDespiteSuppression(held, "ability-a")).toBe(true);
   });
 
   it("lets nothing else through", () => {
-    expect(abilityFunctionsThroughForcedState(forced, "ability-b")).toBe(false);
-    expect(abilityFunctionsDespiteForcedStates(held, "ability-b")).toBe(false);
+    expect(abilityFunctionsThroughSuppression(forced, "ability-b")).toBe(false);
+    expect(abilityFunctionsDespiteSuppression(held, "ability-b")).toBe(false);
   });
 
   /*
@@ -175,38 +179,38 @@ describe("forced states are not Zetsu mastery", () => {
    * state would travel: the same Ability would work through a collapse Zetsu
    * it was never granted an exception for.
    */
-  it("refuses an exemption attached to a different forced state", () => {
+  it("refuses an exemption attached to a different instance", () => {
     const misattached = awakenedState({
-      forcedStates: [{
+      suppression: [{
         ...forced,
         exemptions: [{
           abilityId: "ability-a",
-          forcedStateId: "some-other-state",
-          origin: "instinctive-awakening",
+          suppressionId: "some-other-state",
+          source: SOURCE,
         }],
       }],
       naturalAbility: held.naturalAbility,
     });
 
     expect(codes(findAwakeningStateDomainIssues(misattached)))
-      .toContain("nen.awakening.forced-state.exemption.misattached");
+      .toContain("nen.awakening.suppression.exemption.misattached");
   });
 
-  it("refuses an exemption granted against a different origin", () => {
-    const wrongOrigin = awakenedState({
-      forcedStates: [{
+  it("refuses an exemption granted by a different source", () => {
+    const wrongSource = awakenedState({
+      suppression: [{
         ...forced,
         exemptions: [{
           abilityId: "ability-a",
-          forcedStateId: "fz-1",
-          origin: "uncontained-collapse",
+          suppressionId: "fz-1",
+          source: { type: "item", id: "somebody-else" },
         }],
       }],
       naturalAbility: held.naturalAbility,
     });
 
-    expect(codes(findAwakeningStateDomainIssues(wrongOrigin)))
-      .toContain("nen.awakening.forced-state.exemption.origin.mismatch");
+    expect(codes(findAwakeningStateDomainIssues(wrongSource)))
+      .toContain("nen.awakening.suppression.exemption.source.mismatch");
   });
 
   /*
@@ -214,20 +218,20 @@ describe("forced states are not Zetsu mastery", () => {
    * pass nobody authorised the moment such an Ability is granted from anywhere.
    */
   it("refuses an exemption for an Ability the character does not have", () => {
-    const orphan = awakenedState({ forcedStates: [forced] });
+    const orphan = awakenedState({ suppression: [forced] });
 
     expect(codes(findAwakeningStateDomainIssues(orphan)))
-      .toContain("nen.awakening.forced-state.exemption.unknown-ability");
+      .toContain("nen.awakening.suppression.exemption.unknown-ability");
   });
 
-  it("refuses a forced state on an unawakened character", () => {
+  it("refuses suppression on an unawakened character", () => {
     const impossible: NenAwakeningState = {
-      ...createUnawakenedAwakeningState(),
-      forcedStates: [{ ...forced, exemptions: [] }],
+      ...createUnawakenedAwakeningState(unassignedNenType()),
+      suppression: [{ ...forced, exemptions: [] }],
     };
 
     expect(codes(findAwakeningStateDomainIssues(impossible)))
-      .toContain("nen.awakening.forced-state.before-awakening");
+      .toContain("nen.awakening.suppression.before-awakening");
   });
 });
 
@@ -235,7 +239,7 @@ describe("forced states are not Zetsu mastery", () => {
 describe("structural validation", () => {
   it("accepts what the transitions produce", () => {
     for (const nen of [
-      createUnawakenedNenState(),
+      createUnawakenedNenState(unassignedNenType()),
       standardAwakenedNen(),
       abruptAwakenedNen(),
       revertedNen(),
@@ -249,13 +253,13 @@ describe("structural validation", () => {
     ["a node state outside the vocabulary", { nodes: "ajar" }, "nen.awakening.nodes.invalid"],
     ["a method outside the vocabulary", { currentMethod: "wished" }, "nen.awakening.current-method.invalid"],
     ["a non-array history", { history: "none" }, "nen.awakening.history.invalid"],
-    ["a non-array forced-state list", { forcedStates: 3 }, "nen.awakening.forced-states.invalid"],
+    ["a non-array suppression list", { suppression: 3 }, "nen.awakening.suppression.list.invalid"],
     ["a missing Nen Type reading", { nenType: null }, "nen.awakening.nen-type.invalid"],
   ];
 
   it.each(malformed)("refuses %s without throwing", (_label, patch, code) => {
     const state = {
-      ...createUnawakenedAwakeningState(),
+      ...createUnawakenedAwakeningState(unassignedNenType()),
       ...(patch as object),
     } as NenAwakeningState;
 
@@ -335,7 +339,7 @@ describe("domain validation", () => {
     ))).toContain("nen.awakening.nodes.mismatch");
 
     expect(codes(findAwakeningStateDomainIssues({
-      ...createUnawakenedAwakeningState(),
+      ...createUnawakenedAwakeningState(unassignedNenType()),
       nodes: "open",
     }))).toContain("nen.awakening.nodes.mismatch");
   });
@@ -352,7 +356,7 @@ describe("domain validation", () => {
 
   it("insists a reverted character has something to have reverted from", () => {
     const impossible: NenAwakeningState = {
-      ...createUnawakenedAwakeningState(),
+      ...createUnawakenedAwakeningState(unassignedNenType()),
       condition: "reverted",
     };
 
@@ -362,7 +366,7 @@ describe("domain validation", () => {
 
   it("insists a character with a history is reverted rather than unawakened", () => {
     const impossible: NenAwakeningState = {
-      ...createUnawakenedAwakeningState(),
+      ...createUnawakenedAwakeningState(unassignedNenType()),
       history: [AWAKENING],
     };
 
@@ -408,10 +412,16 @@ describe("domain validation", () => {
       .toContain("nen.awakening.ability.duplicate");
   });
 
-  it("refuses a known Nen Type with no type", () => {
+  /*
+   * A known type must say WHICH type. The old model spelled the impossible
+   * case as `{ type: null, known: true }`; the discriminated one cannot
+   * represent it at all, so what is left to check is an assigned reading whose
+   * type is missing.
+   */
+  it("refuses an assigned Nen Type with no type", () => {
     expect(codes(findAwakeningStateDomainIssues(
-      awakenedState({ nenType: { type: null, known: true } }),
-    ))).toContain("nen.awakening.nen-type.known-without-value");
+      awakenedState({ nenType: { status: "assigned", known: true } as never }),
+    ))).toContain("nen.awakening.nen-type.value.invalid");
   });
 
   it("distinguishes a provenance-linked Ability from one that merely resembles it", () => {
@@ -439,7 +449,7 @@ describe("domain validation", () => {
 describe("serialization", () => {
   it("round-trips every state the transitions produce", () => {
     for (const nen of [
-      createUnawakenedNenState(),
+      createUnawakenedNenState(unassignedNenType()),
       standardAwakenedNen(),
       abruptAwakenedNen(),
       revertedNen(),
@@ -461,7 +471,7 @@ describe("serialization", () => {
    */
   it("refuses a structurally valid but impossible state", () => {
     const impossible = {
-      ...createUnawakenedAwakeningState(),
+      ...createUnawakenedAwakeningState(unassignedNenType()),
       history: [AWAKENING],
     };
 
@@ -483,7 +493,7 @@ describe("serialization", () => {
 
   it("carries the trace through both branches", () => {
     expect(awakeningStateFromJson(
-      awakeningStateToJson(createUnawakenedAwakeningState()),
+      awakeningStateToJson(createUnawakenedAwakeningState(unassignedNenType())),
     ).trace.root.id).toBe("nen.awakening.state.deserialize");
 
     expect(awakeningStateFromJson(null as never).trace.root.id)
@@ -524,7 +534,7 @@ describe("collapse recovery readings", () => {
   });
 
   it("owes nothing when there is no recovery", () => {
-    expect(collapseRecoveryHoursRemaining(createUnawakenedAwakeningState()))
+    expect(collapseRecoveryHoursRemaining(createUnawakenedAwakeningState(unassignedNenType())))
       .toBe(0);
   });
 });
@@ -547,11 +557,11 @@ describe("the domain pass survives being called on its own", () => {
       {},
       { condition: "awakened" },
       { condition: "awakened", nodes: "open", history: [] },
-      { ...createUnawakenedAwakeningState(), naturalAbility: undefined },
-      { ...createUnawakenedAwakeningState(), collapseRecovery: undefined },
-      { ...createUnawakenedAwakeningState(), forcedStates: [null] },
-      { ...createUnawakenedAwakeningState(), history: [null] },
-      { ...createUnawakenedAwakeningState(), externalAbilities: [7] },
+      { ...createUnawakenedAwakeningState(unassignedNenType()), naturalAbility: undefined },
+      { ...createUnawakenedAwakeningState(unassignedNenType()), collapseRecovery: undefined },
+      { ...createUnawakenedAwakeningState(unassignedNenType()), suppression: [null] },
+      { ...createUnawakenedAwakeningState(unassignedNenType()), history: [null] },
+      { ...createUnawakenedAwakeningState(unassignedNenType()), externalAbilities: [7] },
     ];
 
     for (const value of garbage) {
