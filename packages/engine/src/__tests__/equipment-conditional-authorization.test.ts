@@ -800,3 +800,226 @@ describe("every catalog lookup is proved before it is read", () => {
     }
   });
 });
+
+
+/* -------------------------------------------------------------------------- */
+/* A matching id is not a sound definition                                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The identity boundary proves WHICH Skill answered. It proves nothing about
+ * whether the answer is a Skill anyone can use, and
+ * `{ id: "measured-art", application: 42 }` passed it: the id matched, the
+ * branch proceeded, `resolveSkillApplication()` refused the nonsense
+ * application, no rules were collected, and the collector returned an ordinary
+ * EMPTY SUCCESS. A broken catalog read as a character with no bonuses.
+ *
+ * `application: null` was worse. `resolveSkillApplication()` resolves the
+ * effective application as `input.definition ?? getSkillDefinition(skillId)
+ * ?.application`, so a null supplied definition fell back to the ENGINE's own
+ * registry — availability from the global catalog, rules from the caller's,
+ * with nothing saying so.
+ */
+describe("a Skill definition is validated before its application is read", () => {
+  const RULE = {
+    id: "measured-strike",
+    condition: { familyIds: ["blunt-weapon"] },
+    output: { kind: "check", scope: { kind: "attribute", attribute: "dex" }, amount: 2 },
+  } as const;
+
+  /** A sound Skill in the ENGINE's own catalog, with no conditional rules. */
+  function registerSoundSkill(id = "measured-art"): Record<string, unknown> {
+    const skill = validDefinitionFor("skill");
+    const definition = { ...skill, id, requirements: [] };
+
+    register("skill", definition);
+
+    return definition;
+  }
+
+  function holding(id = "measured-art") {
+    return createTestCharacter({ skills: [{ skillId: id, mastery: 1 }] });
+  }
+
+  function collectWith(
+    character: ReturnType<typeof createTestCharacter>,
+    answer: unknown,
+    skillId = "measured-art",
+  ) {
+    return collectImplementConditionalRules(character, skillId, {
+      ...characterContentCatalogs(),
+      getSkillDefinition: (() => answer) as never,
+    });
+  }
+
+  it.each([
+    ["null", null],
+    ["a number", 42],
+    ["an array", []],
+    ["a string", "application"],
+    ["a boolean", true],
+    ["absent", undefined],
+    ["an empty record", {}],
+    ["a record with no action", { role: "offense" }],
+    ["a record whose targets declare no cardinality", { action: { targets: {} } }],
+  ])("refuses a matching-id Skill whose application is %s", (_label, application) => {
+    registerSoundSkill();
+
+    const answer: Record<string, unknown> = { id: "measured-art", name: "Measured Art", description: "A Skill a host registered as unchecked JSON.", application };
+
+    if (application === undefined) delete answer["application"];
+
+    let result: ReturnType<typeof collectImplementConditionalRules> | undefined;
+
+    expect(() => {
+      result = collectWith(holding(), answer);
+    }).not.toThrow();
+
+    expect(result?.success).toBe(false);
+
+    expect(result !== undefined && !result.success && result.errors.map((error) => error.code))
+      .toContain("capabilities.implement-rules.skill.definition_invalid");
+  });
+
+  it("never falls back to the engine's own catalog for availability", () => {
+    /*
+     * The split-authority case, stated as its own claim. The engine's
+     * "measured-art" is perfectly usable, so a fallback would resolve
+     * `available` and then read rules off the caller's broken definition. The
+     * refusal is what proves both halves come from one catalog.
+     */
+    registerSoundSkill();
+
+    const result = collectWith(holding(), {
+      id: "measured-art",
+      name: "Measured Art",
+      description: "A Skill whose application is null.",
+      application: null,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("carries no authorized collection on a failure", () => {
+    registerSoundSkill();
+
+    const result = collectWith(holding(), { id: "measured-art", application: 42 });
+
+    expect(result.success).toBe(false);
+    expect(result).not.toHaveProperty("payload");
+
+    /*
+     * And nothing resembling a collection travels on the failure by another
+     * name — the brand is the only thing the matchers accept, and a refusal
+     * must hand over nothing they could take.
+     */
+    expect(JSON.stringify(result)).not.toContain("rules\":[");
+  });
+
+  it("does not let an unlearned Skill hide a malformed conditional rule", () => {
+    /*
+     * Validation runs BEFORE availability, so a definition broken in a way
+     * only a held Skill would ever have reached is still reported. Reading the
+     * rules first and the definition second would mean a fault that surfaced
+     * the day somebody learned the Skill.
+     */
+    registerSoundSkill();
+
+    const skill = validDefinitionFor("skill");
+
+    const answer = {
+      ...skill,
+      id: "measured-art",
+      requirements: [],
+      application: {
+        ...(skill["application"] as Record<string, unknown>),
+        implementConditionalRules: 42,
+      },
+    };
+
+    /* Not held — and still a failure. */
+    const result = collectWith(createTestCharacter(), answer);
+
+    expect(errorCodesOf(result))
+      .toContain("capabilities.implement-rules.skill.definition_invalid");
+  });
+
+  it("takes BOTH availability and rules from the caller's own definition", () => {
+    /*
+     * The positive form of the split-authority claim. The engine's catalog
+     * holds a usable Skill with no conditional rules; the caller supplies a
+     * sound definition of the same Skill that declares one. The collected rule
+     * has to be the caller's.
+     */
+    registerSoundSkill();
+
+    const skill = validDefinitionFor("skill");
+
+    const collected = payloadOf(collectWith(holding(), {
+      ...skill,
+      id: "measured-art",
+      requirements: [],
+      application: {
+        ...(skill["application"] as Record<string, unknown>),
+        implementConditionalRules: [RULE],
+      },
+    }));
+
+    expect(collected.rules).toHaveLength(1);
+    expect(collected.rules[0]!.rule.id).toBe("measured-strike");
+    expect(collected.rules[0]!.source).toEqual({ type: "skill", id: "measured-art" });
+
+    /* And the engine's own definition really does declare none. */
+    expect(payloadOf(collectImplementConditionalRules(
+      holding(),
+      "measured-art",
+      characterContentCatalogs(),
+    )).rules).toEqual([]);
+  });
+
+  it("reads availability from the caller's definition too", () => {
+    /*
+     * The other half. The caller's definition gates the attempt behind a
+     * Trait nobody has; the engine's does not. If availability came from the
+     * engine's catalog the rule would be collected, which is exactly the
+     * fallback this repair removed.
+     */
+    registerSoundSkill();
+
+    const skill = validDefinitionFor("skill");
+
+    const collected = payloadOf(collectWith(holding(), {
+      ...skill,
+      id: "measured-art",
+      requirements: [],
+      application: {
+        ...(skill["application"] as Record<string, unknown>),
+        implementConditionalRules: [RULE],
+        requirements: [{
+          id: "needs-a-trait",
+          summary: "Requires a Trait nobody has.",
+          requirement: { type: "hasTrait", traitId: "never-registered" },
+        }],
+      },
+    }));
+
+    expect(collected.rules).toEqual([]);
+  });
+
+  it("still leaves a sound, unlearned Skill an empty success", () => {
+    /*
+     * The control that keeps every refusal above meaningful. "The character
+     * has not learned it" is a fact about the character, not a broken catalog.
+     */
+    registerSoundSkill();
+
+    const result = collectImplementConditionalRules(
+      createTestCharacter(),
+      "measured-art",
+      characterContentCatalogs(),
+    );
+
+    expect(result.success).toBe(true);
+    expect(payloadOf(result).rules).toEqual([]);
+  });
+});

@@ -55,6 +55,18 @@
  * the resolved character HAS is a failure rather than a silent absence — see
  * `contentLookupError()`.
  *
+ * Identity is not soundness, and the Skill needs both. A matching id says
+ * WHICH Skill answered and nothing about whether it is one anybody can use:
+ * `{ id: "measured-art", application: 42 }` passed the boundary, had its
+ * nonsense application refused downstream, collected nothing, and returned an
+ * ordinary empty SUCCESS — a broken catalog reading as a character with no
+ * bonuses. So the Skill definition is validated with the same rules
+ * registration applies before its application is read, which also lets the
+ * application be passed explicitly rather than spread conditionally: a `null`
+ * one used to make `resolveSkillApplication()` fall back to the ENGINE's own
+ * registry, so availability came from the global catalog while the rules came
+ * from the caller's.
+ *
  * "Actually" is the resolved reading in each case — held, not merely unlocked,
  * and granted content counts exactly as authored content does. A merely
  * OFFERED Trait contributes nothing, because an offer is permission to acquire
@@ -93,8 +105,15 @@ import { getTraitDefinition, resolvedTraitIds, type TraitDefinition } from "../i
 import { resolveCharacter } from "../resolution";
 import type { Character } from "../types";
 
+import { findContentStructuralIssues } from "../rules/definitions";
+
 import { getResolvedTechniqueIds } from "./resolution";
-import { getSkillDefinition, type SkillDefinition, type SkillId } from "./skills";
+import {
+  findSkillDefinitionStructuralIssues,
+  getSkillDefinition,
+  type SkillDefinition,
+  type SkillId,
+} from "./skills";
 import { getTechniqueDefinition, type TechniqueDefinition } from "./techniques";
 import { resolveSkillApplication } from "./application-resolution";
 
@@ -309,25 +328,61 @@ export function collectImplementConditionalRules(
     if (!lookup.ok) {
       errors.push(contentLookupError("Skill", invokedSkillId, lookup));
     } else {
-      const definition = lookup.definition;
+      /*
+       * The identity check proves WHICH Skill answered. It proves nothing
+       * about whether the answer is a Skill anyone can use, and
+       * `{ id: "measured-art", application: 42 }` passed it: the id matched,
+       * so the branch proceeded, `resolveSkillApplication()` refused the
+       * nonsense application, no rules were collected, and the collector
+       * returned a perfectly ordinary EMPTY SUCCESS. A broken catalog read as
+       * a character who simply had no bonuses.
+       *
+       * `application: null` was worse than useless — it split the authority.
+       * `resolveSkillApplication()` resolves the effective application as
+       * `input.definition ?? getSkillDefinition(skillId)?.application`, so a
+       * null supplied definition FELL BACK to the engine's own registry:
+       * availability came from the global catalog while the rules were read
+       * off the caller's. Two catalogs, one attempt, and nothing said so.
+       *
+       * So the definition is validated with the SAME rules registration
+       * applies, before anything is read off it, and the application is then
+       * passed EXPLICITLY. Validation guarantees it is present — a Skill with
+       * no application is refused by `findSkillDefinitionStructuralIssues()` —
+       * which is what lets the conditional spread go, and with it the fallback
+       * it was hiding.
+       */
+      const definitionIssues = [
+        ...findContentStructuralIssues(lookup.definition),
+        ...findSkillDefinitionStructuralIssues(lookup.definition),
+      ];
 
-      const application = resolveSkillApplication({
-        skillId: invokedSkillId,
-        capabilities: resolved.capabilities,
-        context: resolved.requirementContext,
-        ...(definition.application === undefined
-          ? {}
-          : { definition: definition.application }),
-      });
+      if (definitionIssues.length > 0) {
+        errors.push(...definitionIssues.map((message): EngineError => ({
+          code: "capabilities.implement-rules.skill.definition_invalid",
+          message: `Skill "${invokedSkillId}": ${message}`,
+          audience: "developer",
+          required: "a structurally sound Skill definition",
+          actual: message,
+        })));
+      } else {
+        const definition = lookup.definition;
 
-      if (application.success && application.payload.disposition === "available") {
-        invokedSkill = "available";
+        const application = resolveSkillApplication({
+          skillId: invokedSkillId,
+          capabilities: resolved.capabilities,
+          context: resolved.requirementContext,
+          definition: definition.application,
+        });
 
-        take(
-          `Skill "${invokedSkillId}" application`,
-          { type: "skill", id: invokedSkillId },
-          definition.application?.implementConditionalRules,
-        );
+        if (application.success && application.payload.disposition === "available") {
+          invokedSkill = "available";
+
+          take(
+            `Skill "${invokedSkillId}" application`,
+            { type: "skill", id: invokedSkillId },
+            definition.application.implementConditionalRules,
+          );
+        }
       }
     }
   }

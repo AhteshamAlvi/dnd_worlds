@@ -9,7 +9,7 @@ documents each described the timing and none of them was the one that had to be 
 
 Last verified against the repository: the Phase 4 final boundary repair (definition identity,
 surface validators, content-catalog authorization, integrity request kinds).
-Suite at that point: **110 files, 4,466 tests, green.** `tsc --noEmit` clean for the engine.
+Suite at that point: **110 files, 4,481 tests, green.** `tsc --noEmit` clean for the engine.
 
 ---
 
