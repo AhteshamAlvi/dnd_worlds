@@ -42,6 +42,7 @@ import type { AuraAllocation } from "../character/foundation/aura/state";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 
 import { createTestCharacter } from "./fixtures/character";
+import { standardAwakenedNen } from "./fixtures/nen";
 
 /* CON 20 / VIT 18 derives a Maximum Aura of 20,000. */
 const AURA_CAPABLE = { con: 20, vit: 18 } as const;
@@ -289,10 +290,14 @@ describe("Nen state in Character validation", () => {
 
   it("rejects a mastery outside the rank range", () => {
     const result = validateCharacter(createTestCharacter({
+      /*
+       * Awakened through the real transition, then corrupted in exactly one
+       * place. Hand-building the whole state would test the fixture; this
+       * tests what validation does with a rank no transition could produce.
+       */
       nen: {
-        ...createUnawakenedNenState(),
-        awakened: true,
-        mastery: { ...createUnawakenedNenState().mastery, ten: 99 as never },
+        ...standardAwakenedNen(),
+        mastery: { ...standardAwakenedNen().mastery, ten: 99 as never },
       },
     }));
 

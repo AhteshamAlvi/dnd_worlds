@@ -477,8 +477,18 @@ export function advanceAuraTime(
    */
   const uncontainedByDefault = access.uncontained;
 
+  /*
+   * From the Output Capacity the budget already derived, not from Maximum
+   * Aura. Uncontained nodes bleed at the rate they can pass, and the budget is
+   * the one place that capacity is computed — re-deriving it here would be a
+   * second producer of a figure that also caps every deliberate expenditure.
+   *
+   * Constant across the interval, so interval invariance is unaffected: the
+   * rate does not depend on the reserve, only on the body.
+   */
   const leakageRatePerHour = uncontainedByDefault
-    ? deriveUncontainedLeakage(maximumAura, pool.current).ratePerHour
+    ? deriveUncontainedLeakage(budget.payload.physiologicalOutput, pool.current)
+      .ratePerHour
     : 0;
 
   const commitments = timeline.payload.upkeep;

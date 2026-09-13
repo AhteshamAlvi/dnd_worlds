@@ -246,6 +246,7 @@ export function resolveAuraAccess(
       "unawakened | awakened without Ten | awakened with Ten, unless an explicit override replaces it",
     inputs: {
       awakened: { value: String(input.awakened) },
+      previouslyAwakened: { value: String(input.previouslyAwakened ?? false) },
       effectiveTenMastery: {
         value: Number.isFinite(input.effectiveTenMastery)
           ? input.effectiveTenMastery
@@ -264,6 +265,36 @@ export function resolveAuraAccess(
       audience: "developer",
       required: "boolean",
       actual: String(input.awakened),
+    });
+  }
+
+  if (
+    input.previouslyAwakened !== undefined &&
+    typeof input.previouslyAwakened !== "boolean"
+  ) {
+    errors.push({
+      code: "aura.access.previously-awakened.invalid",
+      message:
+        "Whether a character has previously awakened must be a boolean when supplied.",
+      audience: "developer",
+      required: "boolean",
+      actual: String(input.previouslyAwakened),
+    });
+  }
+
+  /*
+   * Currently awakened and never awakened is not a state. It would resolve to
+   * open nodes on a body that has never been opened, which is a caller that
+   * has mixed up two characters rather than an exotic one.
+   */
+  if (input.awakened === true && input.previouslyAwakened === false) {
+    errors.push({
+      code: "aura.access.awakening-history.contradictory",
+      message:
+        "An awakened character has, by definition, previously awakened.",
+      audience: "developer",
+      required: "previouslyAwakened to be true or omitted when awakened",
+      actual: "false",
     });
   }
 
@@ -336,9 +367,23 @@ export function resolveAuraAccess(
     }
 
     if (!input.awakened) {
+      /*
+       * Two half-open states, and the difference is the pseudo-Chu.
+       *
+       * A body that has never been opened produces passive internal
+       * reinforcement from 20% of its reserve. Opening it ends that
+       * PERMANENTLY: it does not return during a Zetsu, it does not return
+       * after a collapse, and it does not return when an exceptional source
+       * undoes the awakening itself. So a reverted character is back to
+       * half-open nodes and no deliberate access, with nothing reinforcing
+       * them — which is strictly worse than never having awakened, and is
+       * meant to be.
+       */
+      const reverted = input.previouslyAwakened === true;
+
       return {
-        state: "unawakened",
-        source: "unawakened",
+        state: reverted ? "reverted" : "unawakened",
+        source: reverted ? "reverted" : "unawakened",
         awakened: false,
         nodeState: "half-open",
 
@@ -350,12 +395,13 @@ export function resolveAuraAccess(
         deliberateInternalAccess: false,
         deliberateExternalAccess: false,
         automaticSurfaceCoating: null,
-        passiveInternalReinforcement: PSEUDO_CHU,
+        passiveInternalReinforcement: reverted ? null : PSEUDO_CHU,
 
         /*
          * Half-open nodes leak, but that leakage is what the pseudo-Chu is
          * made of rather than a loss. An ordinary person does not bleed out
-         * over two days.
+         * over two days — and neither does a reverted one, whose nodes are
+         * just as shut even though nothing is being made of what escapes.
          */
         uncontained: false,
       };

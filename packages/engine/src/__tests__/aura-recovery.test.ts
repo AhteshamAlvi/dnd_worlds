@@ -27,9 +27,9 @@ import {
   uncontainedCollapse,
 } from "../character/foundation/aura/leakage";
 import { createAuraPool, deriveMaximumAura } from "../character/foundation/aura/pool";
+import { deriveAuraOutputLimit } from "../character/foundation/aura/output";
 import { resolveAuraAccess } from "../character/foundation/aura/access";
 import { deriveZetsuReplenishmentMultiplier } from "../character/foundation/nen/principles/zetsu";
-import { deriveMaximumWakefulHours } from "../character/foundation/body/endurance";
 import type { AuraSuppression } from "../character/foundation/aura/types";
 
 import { auraTestAttributes, UNAWAKENED, UNCONTAINED, WITH_TEN } from "./fixtures/aura";
@@ -252,57 +252,100 @@ describe("recovery contexts", () => {
 
 describe("uncontained leakage", () => {
   /*
-   * Scaled by the character's own wakefulness limit rather than by a flat
-   * fraction, which is what makes the number mean something: an uncontained
-   * character empties in exactly as long as they could have stayed awake.
+   * Scaled by what the body can force OUT rather than by how long it could
+   * have stayed awake.
+   *
+   * This test used to assert 48 hours, from the old `A_max / H_wake` rule. It
+   * now asserts five minutes, and the change is deliberate: open nodes with
+   * nothing holding them shut bleed at the rate those nodes can pass, and how
+   * long somebody can stay awake has nothing to do with node containment.
+   * Wakefulness is untouched as a Body and Fatigue concern — it simply no
+   * longer decides this.
    */
-  it("drains a standard full reserve in exactly 48 hours", () => {
-    const standard = deriveMaximumAura(auraTestAttributes());
+  const THRESHOLD = auraTestAttributes({ con: 13, vit: 13 });
 
-    expect(standard).toBe(10);
+  it("drains a standard full reserve in five minutes", () => {
+    const maximumAura = deriveMaximumAura(THRESHOLD);
+    const output = deriveAuraOutputLimit(THRESHOLD).maximum;
 
-    const leakage = deriveUncontainedLeakage(standard, standard);
+    /* The worked example the rule is stated against. */
+    expect(maximumAura).toBe(100);
+    expect(output).toBe(20);
 
-    expect(leakage.maximumWakefulHours).toBe(48);
-    expect(leakage.ratePerHour).toBeCloseTo(10 / 48, 12);
-    expect(leakage.ratePerHour).toBeCloseTo(0.2083, 4);
-    expect(leakage.hoursToExhaustion).toBe(48);
-  });
+    const leakage = deriveUncontainedLeakage(output, maximumAura);
 
-  it("gives a partially depleted character proportionally less time", () => {
-    expect(deriveUncontainedLeakage(10, 5).hoursToExhaustion).toBe(24);
-    expect(deriveUncontainedLeakage(10, 2.5).hoursToExhaustion).toBe(12);
+    expect(leakage.ratePerMinute).toBe(20);
+    expect(leakage.minutesToExhaustion).toBe(5);
+    expect(leakage.hoursToExhaustion).toBeCloseTo(5 / 60, 12);
   });
 
   /*
-   * A bigger reserve does not buy proportionally more time, because the
-   * wakefulness limit it is divided by grew too.
+   * Every rate derived from the one per-minute figure, so an hour of leakage
+   * is exactly sixty minutes of it. Computing each from the Output Capacity
+   * separately would leave them agreeing only to within rounding, and the
+   * interval-invariance guarantee would fail on the difference.
    */
-  it("lasts a larger pool exactly its own wakefulness limit", () => {
-    const big = deriveMaximumAura(auraTestAttributes({ con: 20, vit: 20 }));
+  it("keeps its per-second, per-Round and per-hour rates exactly consistent", () => {
+    const leakage = deriveUncontainedLeakage(20, 100);
 
-    expect(big).toBe(50_000);
+    expect(leakage.ratePerSecond).toBe(20 / 60);
+    expect(leakage.ratePerRound).toBe(20 / 30);
+    expect(leakage.ratePerHour).toBe(1200);
 
-    const leakage = deriveUncontainedLeakage(big, big);
+    expect(leakage.ratePerSecond * 60).toBeCloseTo(leakage.ratePerMinute, 12);
+    expect(leakage.ratePerRound * 30).toBeCloseTo(leakage.ratePerMinute, 12);
+    expect(leakage.ratePerMinute * 60).toBeCloseTo(leakage.ratePerHour, 12);
+  });
 
-    expect(leakage.maximumWakefulHours).toBe(deriveMaximumWakefulHours(big));
-    expect(leakage.hoursToExhaustion).toBe(120);
+  it("gives a partially depleted character proportionally less time", () => {
+    expect(deriveUncontainedLeakage(20, 50).minutesToExhaustion).toBe(2.5);
+    expect(deriveUncontainedLeakage(20, 25).minutesToExhaustion).toBe(1.25);
+  });
+
+  /*
+   * A bigger reserve does NOT buy proportionally more time, and for a new
+   * reason: Output Capacity grows with CON on its own curve, so a far more
+   * powerful character leaks far faster too.
+   */
+  it("scales the rate with Output rather than with the reserve", () => {
+    const big = auraTestAttributes({ con: 20, vit: 20 });
+
+    const leakage = deriveUncontainedLeakage(
+      deriveAuraOutputLimit(big).maximum,
+      deriveMaximumAura(big),
+    );
+
+    expect(leakage.ratePerMinute).toBe(deriveAuraOutputLimit(big).maximum);
+    expect(leakage.minutesToExhaustion).toBeLessThan(60);
+  });
+
+  it("does not consult wakefulness at all", () => {
+    /*
+     * Two characters with the same Output Capacity leak identically, whatever
+     * their reserves and therefore whatever their wakefulness limits.
+     */
+    const left = deriveUncontainedLeakage(20, 100);
+    const right = deriveUncontainedLeakage(20, 50_000);
+
+    expect(right.ratePerMinute).toBe(left.ratePerMinute);
+    expect(right.ratePerHour).toBe(left.ratePerHour);
   });
 
   it("caps what it takes at what is there", () => {
-    const result = resolveUncontainedLeakage(10, 3, 48);
+    /* 20/minute for six minutes is 120, and there are only 3 to take. */
+    const result = resolveUncontainedLeakage(20, 3, 0.1);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    expect(result.payload.uncappedAmount).toBe(10);
+    expect(result.payload.uncappedAmount).toBe(120);
     expect(result.payload.amount).toBe(3);
   });
 
   it("rejects an invalid pool or duration", () => {
-    expect(errorCodes(resolveUncontainedLeakage(10, -1, 1)))
+    expect(errorCodes(resolveUncontainedLeakage(20, -1, 1)))
       .toContain("aura.leakage.pool.invalid");
-    expect(errorCodes(resolveUncontainedLeakage(10, 5, -1)))
+    expect(errorCodes(resolveUncontainedLeakage(20, 5, -1)))
       .toContain("aura.leakage.duration.invalid");
   });
 

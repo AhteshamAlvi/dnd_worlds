@@ -38,21 +38,24 @@ export type Gender =
   | "unspecified";
 
 
-/**
+/*
  * A character's natural Nen affinity.
  *
- * This is stored here as character data for now.
+ * Declared in foundation/nen/nen-type.ts and re-exported here, which is what
+ * the previous comment on this spot said should happen "once Nen affinity
+ * mechanics are implemented". Awakening is the mechanic that needed it: the
+ * awakening state tracks the affinity alongside whether anybody has
+ * established it, and an exceptional source may change it and must record what
+ * it was, what it became and why.
  *
- * Once Nen affinity mechanics are implemented, this type can move into
- * foundation/nen/types.ts and be imported here instead.
+ * Re-exported rather than moved outright so `details.nenType` and every
+ * existing import of `NenType` from here keep working unchanged. There is
+ * still exactly one declaration.
  */
-export type NenType =
-  | "enhancement"
-  | "transmutation"
-  | "emission"
-  | "conjuration"
-  | "manipulation"
-  | "specialization";
+export type { NenType } from "./foundation/nen/nen-type";
+
+
+import type { NenType } from "./foundation/nen/nen-type";
 
 
 export interface CharacterDetails {

@@ -49,6 +49,7 @@ import {
   type AuraContextOptions,
 } from "./fixtures/aura";
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
+import { standardAwakenedNen } from "./fixtures/nen";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -394,13 +395,8 @@ describe("baseline Ten", () => {
     const character = createTestCharacter({
       attributes: { con: 20, vit: 20 },
       aura: { current: 20_000, allocations: [] },
-      nen: {
-        awakened: true,
-        mastery: {
-          ten: 1, ren: 0, zetsu: 0, hatsu: 0, shu: 0, en: 0, gyo: 0,
-          ken: 0, chu: 0, in: 0, ko: 0, ryu: 0, yu: 0, ju: 0, fu: 0,
-        },
-      },
+      /* Standard training: awakened, holding Ten I, contained. */
+      nen: standardAwakenedNen(),
     });
 
     const resolvedCharacter = resolveTestCharacter(character);

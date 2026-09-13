@@ -2385,3 +2385,306 @@ describe("neutral actions/ never reaches down into character/", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+
+/*
+ * Phase 5 — the boundaries awakening had to respect to exist at all.
+ *
+ * Awakening touches more domains than anything before it: it reads Attributes,
+ * asks Body for trauma, asks Character status for Conditions, hands Aura an
+ * access input and is settled by Aura's own time solver. Every one of those is
+ * a place where the easy implementation is the wrong one — compute the leak
+ * here, pick the Injury here, start the active Ten here — and the type system
+ * would not object to any of them.
+ */
+describe("Nen awakening stays inside its own domain", () => {
+  const awakeningFiles = sourceFilesUnder(
+    join(SRC, "character", "foundation", "nen", "awakening"),
+  );
+
+  const transitionFiles = sourceFilesUnder(join(SRC, "character", "nen"));
+
+  const nenFiles = [...awakeningFiles, ...transitionFiles];
+
+  it("finds the sources it is checking", () => {
+    expect(awakeningFiles.length).toBeGreaterThanOrEqual(5);
+    expect(transitionFiles.length).toBeGreaterThanOrEqual(8);
+  });
+
+  /*
+   * An abrupt awakening resolves identically in a fight and in a monastery.
+   * A Combat import would make that untrue the first time somebody reached for
+   * a Round counter.
+   */
+  it("never imports Combat", () => {
+    const offenders = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("gameplay", "combat")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * Body chooses what a failed awakening actually breaks. Awakening emits a
+   * severity and stops — an Injury built here would put anatomical selection
+   * in the Nen domain.
+   */
+  it("never reaches into Body's Injuries or Body Points", () => {
+    const offenders = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("body", "injuries")) ||
+        resolvesInto(path, specifier, join("body", "body-points")) ||
+        resolvesInto(path, specifier, join("body", "anatomy")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * The leak is integrated by the EXISTING Aura time solver. Nothing here may
+   * import it, advance it, or settle an Aura transition of its own — a second
+   * integrator would be a second clock, free to disagree about when a reserve
+   * reached zero.
+   */
+  it("creates no second clock or Aura settlement", () => {
+    const forbidden = [
+      join("foundation", "aura", "time"),
+      join("foundation", "aura", "transitions"),
+      join("foundation", "aura", "budget"),
+      join("character", "time"),
+      join("src", "time", "interval"),
+    ];
+
+    const offenders = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        forbidden.some((segment) => resolvesInto(path, specifier, segment)),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * It reads the Aura VOCABULARY — node state, the access input shape, the
+   * collapse it is handed — and none of the machinery. The edge is real, which
+   * is what makes the rule above meaningful rather than vacuous.
+   */
+  it("does reach the Aura vocabulary, so the exclusion above is real", () => {
+    const reaching = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("foundation", "aura")),
+      ),
+    );
+
+    expect(reaching.length).toBeGreaterThan(0);
+  });
+
+  /*
+   * Phase 6 owns active principle runtime. Phase 5 may create the forced-Zetsu
+   * state and its release guard, and nothing else — so it must not import the
+   * principle resolvers, whose job is what a character is DOING.
+   */
+  it("imports no active-principle resolver", () => {
+    const offenders = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * Events and requests EXTEND the shared runtime shapes. A Nen-only event
+   * framework could not be interleaved with anybody else's stream, and
+   * merging the two afterwards would need a translation layer free to disagree
+   * with both.
+   */
+  it("declares no event or request base of its own", () => {
+    /*
+     * The fields a parallel framework would have to re-declare to exist. A
+     * Nen file spelling `requestId` or `sequence` as its own field is a Nen
+     * file that has stopped extending the shared shapes — which is the one
+     * thing that would make its events unmergeable with everybody else's.
+     *
+     * Checked by FIELD rather than by interface name, because the routes'
+     * INPUT types are legitimately called `...Request` — StandardAwakeningRequest
+     * is what a caller hands in, not a RuntimeRequest — and a name-based rule
+     * would either ban those or be trivially dodged by renaming.
+     */
+    const offenders = nenFiles.filter((path) => {
+      const source = readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "");
+
+      return /readonly\s+(requestId|sequence)\s*:/.test(source);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("builds its events and requests on the runtime protocol", () => {
+    const protocol = join(SRC, "character", "nen", "protocol.ts");
+    const source = readFileSync(protocol, "utf8");
+
+    expect(source).toMatch(/extends Omit<RuntimeEvent, "sequence">/);
+    expect(source).toMatch(/extends RuntimeRequest/);
+    expect(source).toMatch(/extends QuantitativeRequest/);
+  });
+
+  /*
+   * The stored vocabulary sits under foundation/ and therefore may not reach
+   * up for Requirements. That is already an absolute rule; this names the
+   * specific temptation, because "eligibility" reads like something that
+   * belongs beside the thresholds and does not.
+   */
+  it("keeps Requirements out of the stored awakening vocabulary", () => {
+    const offenders = awakeningFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("character", "rules")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("resolves eligibility above Foundation, where Requirements live", () => {
+    const eligibility = readFileSync(
+      join(SRC, "character", "nen", "eligibility.ts"),
+      "utf8",
+    );
+
+    expect(eligibility).toMatch(/from "\.\.\/rules\/(requirements|resolution)"/);
+  });
+
+  /* Nothing rolls. Dice arrive from the caller, as they do everywhere else. */
+  it("generates no randomness anywhere", () => {
+    const offenders = nenFiles.filter((path) =>
+      /Math\.random/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+});
+
+
+describe("awakening state has exactly one mutation route", () => {
+  const engineFiles = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  const transitionDomain = join("character", "nen");
+  const awakeningDomain = join("nen", "awakening");
+
+  it("finds the sources it is checking", () => {
+    expect(engineFiles.length).toBeGreaterThan(100);
+  });
+
+  /*
+   * The obsolete route this phase removed: `awakened: true` written straight
+   * onto a Nen state. It bypassed every threshold, every roll, every history
+   * entry and the whole mastery grant, and it was how a test could produce a
+   * character the engine itself could never make.
+   *
+   * NOT a ban on the identifier. AuraAccessInput legitimately carries an
+   * `awakened` boolean — it is the flat fact Nen hands DOWN to Aura, and
+   * banning the word would either break that contract or force it to be
+   * spelled some other way for the sake of a grep. What is banned is the
+   * boolean sitting on a NEN state, which is what the `mastery` field beside
+   * it identifies.
+   */
+  it("leaves no `awakened` boolean on a Nen state, in source or in a fixture", () => {
+    const offenders = sourceFilesUnder(SRC).filter((path) => {
+      const source = readFileSync(path, "utf8")
+        .replace(/\/\*[\s\S]*?\*\//g, "");
+
+      return (
+        /awakened\s*:\s*(true|false)[\s\S]{0,160}\bmastery\s*:/.test(source) ||
+        /\bmastery\s*:[\s\S]{0,160}awakened\s*:\s*(true|false)/.test(source)
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * NenType was parked in character/details.ts as descriptive sheet data,
+   * with a comment saying it should move "once Nen affinity mechanics are
+   * implemented". Awakening is that mechanic, so it moved — and details.ts
+   * re-exports it rather than keeping a second copy, because two structural
+   * definitions of one type is how the two end up disagreeing about which six
+   * values exist.
+   */
+  it("declares the Nen Type vocabulary exactly once", () => {
+    const declarations = sourceFilesUnder(SRC)
+      /* This file spells the pattern it is looking for, and is not a declaration. */
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) =>
+        /export (type|const) NEN_TYPES|export type NenType =/.test(
+          readFileSync(path, "utf8"),
+        )
+      );
+
+    expect(declarations.map((path) => path.split("/").pop())).toEqual([
+      "nen-type.ts",
+    ]);
+  });
+
+  it("removed the field from NenState itself", () => {
+    const types = readFileSync(
+      join(SRC, "character", "foundation", "nen", "types.ts"),
+      "utf8",
+    );
+
+    expect(types).not.toMatch(/readonly\s+awakened\s*:/);
+    expect(types).toMatch(/readonly\s+awakening:\s*NenAwakeningState/);
+  });
+
+  /*
+   * Only the transition layer and the domain's own constructors may write a
+   * condition. Anywhere else is a second route with none of the validation.
+   */
+  it("writes an awakening condition only inside the awakening domain", () => {
+    const offenders = engineFiles.filter((path) => {
+      if (path.includes(transitionDomain) || path.includes(awakeningDomain)) {
+        return false;
+      }
+
+      return /condition:\s*"(unawakened|awakened|reverted)"/.test(
+        readFileSync(path, "utf8"),
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * And the transitions all settle through the shared helpers rather than
+   * assembling a condition each. Four spellings of "open the nodes" is four
+   * chances to forget the history entry.
+   */
+  it("opens and closes nodes through the one settlement", () => {
+    /*
+     * Keyed on the NODE STATE rather than on the condition, because the
+     * condition appears legitimately in every route's `changes` — reporting
+     * what a transition did is not doing it, and a rule that could not tell
+     * the two apart would have banned the reports instead.
+     *
+     * `nodes: "open"` and `nodes: "half-open"` are written in exactly two
+     * places: the settlement that opens and closes them, and the constructor
+     * for a character who has never awakened.
+     */
+    const writers = sourceFilesUnder(join(SRC, "character")).filter((path) =>
+      /nodes:\s*"(open|half-open)"/.test(
+        readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, ""),
+      ),
+    );
+
+    expect(writers.map((path) => path.split("/").pop()).sort()).toEqual([
+      "settlement.ts",
+      "state.ts",
+    ]);
+  });
+});

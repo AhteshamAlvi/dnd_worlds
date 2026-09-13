@@ -141,7 +141,7 @@ import type { AuraTransitionContext } from "./foundation/aura/budget";
 import type { NenState } from "./foundation/nen/types";
 import { deriveFatigue } from "./foundation/body/endurance";
 import type { ResolvedFatigue } from "./foundation/body/endurance";
-import { deriveEffectiveNenMastery } from "./foundation/nen/nen";
+import { nenAuraAccessInput } from "./nen/access";
 import { resolveBody } from "./foundation/body/resolution";
 import { resolveAge } from "./foundation/body/age/resolution";
 import { NEUTRAL_MORPHOLOGY } from "./foundation/body/types";
@@ -210,16 +210,13 @@ export function auraTransitionContext(
     attributes: stats,
     anatomy: body.anatomy,
     bodyMeasurements: body.measurements.present,
-    access: {
-      awakened: nen.awakened,
-
-      /*
-       * Effective mastery, after seals. Nen owns that derivation, which is why
-       * it is computed here and handed down rather than the Aura domain
-       * reaching into Nen state.
-       */
-      effectiveTenMastery: deriveEffectiveNenMastery(nen, "ten"),
-    },
+    /*
+     * Assembled by the Nen domain rather than field by field here. The two
+     * awakening readings, the seal-aware Ten rank and any forced-state
+     * override have to agree with each other, and a hand-built literal at this
+     * call site was a fourth place they could be made to disagree.
+     */
+    access: nenAuraAccessInput(nen),
   };
 }
 

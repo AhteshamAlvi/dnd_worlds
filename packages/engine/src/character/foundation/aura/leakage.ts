@@ -12,21 +12,47 @@
  * THE RATE
  * --------
  *
- *   L = A_max / H_wake
+ *   L_minute = Physiological Aura Output Capacity
  *
- * Scaled by the character's own maximum WAKEFULNESS rather than by a flat
- * fraction, which is what makes the number mean something: an uncontained
- * character empties in exactly as long as they could have stayed awake. The
- * ordinary CON 10 / VIT 10 character has 10 Aura and 48 waking hours, so they
- * leak 10/48 ≈ 0.2083 per hour and hit zero at hour 48 exactly. A far more
- * powerful character has both a bigger reserve and a longer wakefulness limit,
- * and gets proportionally longer — not proportionally to their Aura, which
- * would be centuries.
+ * Per MINUTE, and scaled by what the body can force OUT rather than by how
+ * long it could have stayed awake. Open nodes with nothing holding them shut
+ * bleed at the rate those nodes can pass, which is the Output Capacity — the
+ * character is, involuntarily, doing the one thing their body is physically
+ * capable of doing with Aura, continuously and with no benefit at all.
  *
- * A partially depleted character lasts proportionally less. Half full is
- * twenty-four hours, not forty-eight.
+ * The other figures follow from that one number:
+ *
+ *   per second          L_minute / 60
+ *   per 2-second Round  L_minute / 30
+ *   per hour            L_minute x 60
+ *
+ * The ordinary CON 13 / VIT 13 character has 100 Maximum Aura and 20 Output,
+ * so they leak 20 a minute and are empty in five. A fresh awakener is in
+ * immediate, serious trouble, which is the point of the state.
+ *
+ *
+ * WHAT THIS REPLACED, AND WHY
+ * ---------------------------
+ *
+ * This used to be `A_max / H_wake` — the character emptied in exactly as long
+ * as they could have stayed awake, which for the same character was 48 hours.
+ * That made uncontained leakage a slow background condition rather than an
+ * emergency, and it tied an Aura rate to a Body clock with nothing to do with
+ * node containment: wakefulness measures physiological strain over time, and
+ * how long somebody can stay awake does not decide how fast Aura escapes an
+ * open node.
+ *
+ * Wakefulness is entirely intact as a Body and Fatigue concern. It simply no
+ * longer decides this.
+ *
+ * A partially depleted character lasts proportionally less: half full is two
+ * and a half minutes, not twenty-four hours.
  *
  * Control does not apply. Leakage is not something the character is doing.
+ *
+ * The UNAWAKENED case is not this. Half-open nodes leak too, and what escapes
+ * becomes passive pseudo-Chu rather than being lost — see aura/passive.ts. An
+ * ordinary person does not bleed out, and nothing here applies to them.
  *
  *
  * COLLAPSE IS A BOUNDARY RESULT
@@ -43,7 +69,6 @@
 
 import type { EngineResult } from "../../../infrastructure/result";
 import { createTraceNode } from "../../../infrastructure/trace";
-import { deriveMaximumWakefulHours } from "../body/endurance";
 import type { GameTimestamp } from "../../../time/types";
 
 
@@ -91,12 +116,28 @@ export const UNCONTAINED_COLLAPSE_REQUESTS: readonly AuraCollapseRequest[] = [
 ];
 
 
+/** Seconds in the Round the combat clock uses. */
+export const AURA_ROUND_SECONDS = 2;
+
+const MINUTES_PER_HOUR = 60;
+const SECONDS_PER_MINUTE = 60;
+
+
 export interface UncontainedLeakage {
-  readonly maximumAura: number;
-  readonly maximumWakefulHours: number;
+  /** The Physiological Aura Output Capacity the rate IS. */
+  readonly physiologicalOutput: number;
+
+  readonly ratePerMinute: number;
+  readonly ratePerSecond: number;
+
+  /** Per 2-second Round, so a combat consumer needs no conversion of its own. */
+  readonly ratePerRound: number;
+
+  /** The one the time solver integrates. */
   readonly ratePerHour: number;
 
   /** From the supplied Current Aura, at this rate and nothing else. */
+  readonly minutesToExhaustion: number;
   readonly hoursToExhaustion: number;
 }
 
@@ -104,25 +145,36 @@ export interface UncontainedLeakage {
 /**
  * The rate an uncontained character loses Aura, and how long they have.
  *
+ * Every rate is derived from the ONE per-minute figure rather than computed
+ * independently, which is what makes them exactly consistent: an hour of
+ * leakage is sixty minutes of leakage and 1,800 Rounds of leakage, to the last
+ * bit. Deriving each from the Output Capacity separately would leave them
+ * agreeing only to within rounding, and interval invariance would fail on the
+ * difference.
+ *
  * `hoursToExhaustion` assumes nothing else is happening — no recovery, no
  * expenditure. It is the projection a GM wants ("how long has this person
  * got"), not a prediction of the next transition, which composes leakage with
  * everything else.
  */
 export function deriveUncontainedLeakage(
-  maximumAura: number,
+  physiologicalOutput: number,
   currentAura: number,
 ): UncontainedLeakage {
-  const maximumWakefulHours = deriveMaximumWakefulHours(maximumAura);
-  const ratePerHour = maximumAura / maximumWakefulHours;
+  const ratePerMinute = physiologicalOutput;
+
+  const minutesToExhaustion = ratePerMinute > 0
+    ? currentAura / ratePerMinute
+    : Number.POSITIVE_INFINITY;
 
   return {
-    maximumAura,
-    maximumWakefulHours,
-    ratePerHour,
-    hoursToExhaustion: ratePerHour > 0
-      ? currentAura / ratePerHour
-      : Number.POSITIVE_INFINITY,
+    physiologicalOutput,
+    ratePerMinute,
+    ratePerSecond: ratePerMinute / SECONDS_PER_MINUTE,
+    ratePerRound: ratePerMinute / (SECONDS_PER_MINUTE / AURA_ROUND_SECONDS),
+    ratePerHour: ratePerMinute * MINUTES_PER_HOUR,
+    minutesToExhaustion,
+    hoursToExhaustion: minutesToExhaustion / MINUTES_PER_HOUR,
   };
 }
 
@@ -147,17 +199,19 @@ export interface UncontainedLeakageResult {
  * only thing that knows whether recovery was also running.
  */
 export function resolveUncontainedLeakage(
-  maximumAura: number,
+  physiologicalOutput: number,
   currentAura: number,
   hours: number,
 ): EngineResult<UncontainedLeakageResult> {
   const traceNode = createTraceNode({
     id: "aura.leakage.uncontained",
     label: "Resolve uncontained Aura leakage",
-    formula: "leaked = (maximumAura / maximumWakefulHours) * hours",
+    formula: "leaked = physiologicalOutput * 60 * hours",
     inputs: {
-      maximumAura: {
-        value: Number.isFinite(maximumAura) ? maximumAura : String(maximumAura),
+      physiologicalOutput: {
+        value: Number.isFinite(physiologicalOutput)
+          ? physiologicalOutput
+          : String(physiologicalOutput),
       },
       currentAura: {
         value: Number.isFinite(currentAura) ? currentAura : String(currentAura),
@@ -167,8 +221,8 @@ export function resolveUncontainedLeakage(
   });
 
   if (
-    !Number.isFinite(maximumAura) ||
-    maximumAura < 0 ||
+    !Number.isFinite(physiologicalOutput) ||
+    physiologicalOutput < 0 ||
     !Number.isFinite(currentAura) ||
     currentAura < 0
   ) {
@@ -181,12 +235,14 @@ export function resolveUncontainedLeakage(
       errors: [{
         code: "aura.leakage.pool.invalid",
         message:
-          "Uncontained leakage requires a finite non-negative Aura pool.",
+          "Uncontained leakage requires a finite non-negative Output Capacity and reserve.",
         audience: "developer",
         required: "finite numbers >= 0",
         actual: {
           current: Number.isFinite(currentAura) ? currentAura : String(currentAura),
-          maximum: Number.isFinite(maximumAura) ? maximumAura : String(maximumAura),
+          physiologicalOutput: Number.isFinite(physiologicalOutput)
+            ? physiologicalOutput
+            : String(physiologicalOutput),
         },
       }],
     };
@@ -209,12 +265,13 @@ export function resolveUncontainedLeakage(
     };
   }
 
-  const leakage = deriveUncontainedLeakage(maximumAura, currentAura);
+  const leakage = deriveUncontainedLeakage(physiologicalOutput, currentAura);
   const uncappedAmount = leakage.ratePerHour * hours;
 
   traceNode.output = {
-    maximumWakefulHours: leakage.maximumWakefulHours,
+    ratePerMinute: leakage.ratePerMinute,
     ratePerHour: leakage.ratePerHour,
+    minutesToExhaustion: leakage.minutesToExhaustion,
     hoursToExhaustion: leakage.hoursToExhaustion,
     uncappedAmount,
   };

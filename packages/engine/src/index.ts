@@ -460,7 +460,161 @@ export {
    * which would ignore every temporary seal.
    */
   deriveEffectiveNenMastery,
+
+  /*
+   * The two awakening readings that replaced `NenState.awakened`.
+   *
+   * They are NOT interchangeable and a caller has to pick. `isNenAwakened` is
+   * "can this character use Nen right now" and is false for a reverted one;
+   * `hasEverAwakenedNen` is "may they legitimately hold Mastery" and is true
+   * for a reverted one, who keeps every rank they trained.
+   */
+  hasEverAwakenedNen,
+  isNenAwakened,
 } from "./character/foundation/nen/nen";
+
+/* ── Character: Nen awakening ───────────────────────────────────────────── */
+
+/*
+ * A character's Nen Type, and whether anybody has established what it is.
+ *
+ * Two facts, not one. A character HAS an affinity from birth; whether it has
+ * been discovered is separate, and an optional single field could not say
+ * "Enhancer, undiscovered" apart from "nobody has decided yet".
+ */
+export type {
+  NenType,
+  NenTypeChange,
+  NenTypeKnowledge,
+} from "./character/foundation/nen/nen-type";
+
+export {
+  NEN_TYPES,
+  isNenType,
+  unknownNenType,
+} from "./character/foundation/nen/nen-type";
+
+/*
+ * The stored awakening state — the seven independent facts a boolean used to
+ * carry between them. Exported because NenState.awakening is required and a
+ * caller deserializing a character cannot judge one otherwise.
+ */
+export type {
+  NenAppliedOverride,
+  NenAwakeningCondition,
+  NenAwakeningHistoryEntry,
+  NenAwakeningMethod,
+  NenAwakeningRecord,
+  NenAwakeningResolution,
+  NenAwakeningState,
+  NenAwakeningTraumaSeverity,
+  NenCollapseRecovery,
+  NenExceptionalOverrideField,
+  NenExternalAbilityRecord,
+  NenForcedState,
+  NenForcedStateExemption,
+  NenForcedStateKind,
+  NenForcedStateOrigin,
+  NenNaturalAbilityRecord,
+  NenReawakeningHurdle,
+  NenReversionRecord,
+} from "./character/foundation/nen/awakening/types";
+
+export {
+  COLLAPSE_RECOVERY_SLEEP_HOURS,
+  NEN_AWAKENING_CONDITIONS,
+  NEN_AWAKENING_METHODS,
+  NEN_AWAKENING_TRAUMA_SEVERITIES,
+  NEN_EXCEPTIONAL_OVERRIDE_FIELDS,
+  NEN_FORCED_STATE_KINDS,
+  NEN_FORCED_STATE_ORIGINS,
+  NEN_REAWAKENING_HURDLES,
+  isNenAwakeningCondition,
+  isNenAwakeningMethod,
+  isNenExceptionalOverrideField,
+  isNenForcedStateOrigin,
+  isNenReawakeningHurdle,
+} from "./character/foundation/nen/awakening/types";
+
+/*
+ * Readings over the stored state.
+ *
+ * Exported so a consumer asks "is this character awakened" through the one
+ * function that decides it rather than by comparing a condition against a
+ * literal — the comparison that disagrees about a reverted character.
+ */
+export {
+  abilityFunctionsDespiteForcedStates,
+  abilityFunctionsThroughForcedState,
+  collapseRecoveryHoursRemaining,
+  createUnawakenedAwakeningState,
+  currentAwakeningRecord,
+  forcedStatesOfOrigin,
+  hasEverAwakened,
+  hasPseudoChu,
+  isAwakened,
+  isAwakeningRecord,
+  isCollapseRecoveryComplete,
+  isInForcedZetsu,
+  isProvenanceLinkedNaturalAbility,
+  isReverted,
+  isReversionRecord,
+  wouldBeReawakening,
+} from "./character/foundation/nen/awakening/state";
+
+/*
+ * The pure awakening arithmetic. Deterministic, combat-independent, and none
+ * of it rolls — a die arrives from the caller through the runtime dice
+ * contract, exactly as every other random outcome in this engine does.
+ */
+export {
+  ABRUPT_BASE_ODDS,
+  ABRUPT_MAXIMUM_PROBABILITY,
+  ABRUPT_MINIMUM_PROBABILITY,
+  AWAKENING_DEATH_BANDS,
+  DANGER_WEIGHTS,
+  INSTINCTIVE_AWAKENING_MINIMUM_SPI,
+  REAWAKENING_HURDLE_MULTIPLIERS,
+  STANDARD_AWAKENING_ATTRIBUTES,
+  STANDARD_AWAKENING_THRESHOLDS,
+  deriveAbruptAwakeningOdds,
+  deriveAbruptReawakeningOdds,
+  deriveAwakeningDangerScore,
+  deriveAwakeningDeathChance,
+  deriveAwakeningFailureSeverity,
+  reawakeningAbruptOddsMultiplier,
+  reawakeningStandardDuration,
+  reawakeningStandardDurationMultiplier,
+} from "./character/foundation/nen/awakening/calculations";
+
+export type {
+  AbruptAwakeningOdds,
+  AwakeningFailureSeverity,
+  StandardAwakeningAttribute,
+} from "./character/foundation/nen/awakening/calculations";
+
+/* Hostile persisted state, judged before anything reads a field. */
+export {
+  findAwakeningStateDomainIssues,
+  findAwakeningStateIssues,
+  findAwakeningStateStructuralIssues,
+} from "./character/foundation/nen/awakening/validation";
+
+export {
+  awakeningStateFromJson,
+  awakeningStateToJson,
+} from "./character/foundation/nen/awakening/serialization";
+
+export type {
+  SerializedNenAwakeningState,
+} from "./character/foundation/nen/awakening/serialization";
+
+/*
+ * The transitions. Every legitimate change to an awakening state goes through
+ * one of these — there is no other route, which is what makes the invariants
+ * above enforceable rather than merely documented.
+ */
+export * from "./character/nen";
 
 /* ── Character: rules ───────────────────────────────────────────────────── */
 

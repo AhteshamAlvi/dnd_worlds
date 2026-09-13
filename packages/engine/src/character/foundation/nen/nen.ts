@@ -68,6 +68,15 @@ import {
   STANDARD_MASTERY_MAX,
 } from "../../capabilities/mastery";
 
+import {
+  createUnawakenedAwakeningState,
+  hasEverAwakened,
+  isAwakened,
+} from "./awakening/state";
+import {
+  findAwakeningStateIssues,
+} from "./awakening/validation";
+
 import type {
   NenAdvancementEvaluation,
   NenMasteryRank,
@@ -361,7 +370,8 @@ export const NEN_PRINCIPLE_IDS =
  * The Nen state of somebody who has never awakened.
  *
  * Required rather than optional on Character, and this is what makes that
- * cheap. Every principle at NO_MASTERY and `awakened: false` is a real,
+ * cheap. Every principle at NO_MASTERY and an unawakened awakening state is a
+ * real,
  * complete answer — an ordinary person HAS this Nen state, they do not lack
  * one. Leaving the field absent would have made "no Nen data recorded" and
  * "definitely unawakened" the same value, and only one of those is a fact
@@ -377,7 +387,35 @@ export function createUnawakenedNenState(): NenState {
     mastery[principleId] = NO_MASTERY;
   }
 
-  return { awakened: false, mastery };
+  return { awakening: createUnawakenedAwakeningState(), mastery };
+}
+
+
+/**
+ * Whether the character can use Nen RIGHT NOW.
+ *
+ * The reading that replaced `state.awakened`, and the one almost every caller
+ * wants. It is false for a reverted character, who keeps everything they
+ * learned and can reach none of it.
+ *
+ * A wrapper over the awakening domain's own reading rather than a second
+ * comparison, so there is exactly one place that decides what "awakened" means
+ * and NenState consumers do not reach past the field to answer it.
+ */
+export function isNenAwakened(state: NenState): boolean {
+  return isAwakened(state.awakening);
+}
+
+
+/**
+ * Whether the character has EVER awakened.
+ *
+ * The reading that governs PERMANENT mastery. These two are not
+ * interchangeable and the difference is the entire reversion rule: a reverted
+ * character is not awakened and has legitimately trained Ten V.
+ */
+export function hasEverAwakenedNen(state: NenState): boolean {
+  return hasEverAwakened(state.awakening);
 }
 
 
@@ -508,7 +546,16 @@ export function deriveMaximumNenMastery(
   state: NenState,
   principleId: NenPrincipleId,
 ): NenMasteryRank {
-  if (!state.awakened) {
+  /*
+   * EVER awakened, not currently awakened.
+   *
+   * This is the PERMANENT ceiling, and a reverted character permanently knows
+   * what they trained — reversion disables access and keeps every rank. Gating
+   * it on the current condition would make validateNenState refuse the exact
+   * state reversion is defined to produce, and would silently erase a
+   * character's Mastery the moment anything re-validated their sheet.
+   */
+  if (!hasEverAwakenedNen(state)) {
     return NO_MASTERY;
   }
 
@@ -591,7 +638,13 @@ export function deriveEffectiveNenMastery(
   state: NenState,
   principleId: NenPrincipleId,
 ): NenMasteryRank {
-  if (!state.awakened) {
+  /*
+   * CURRENTLY awakened, which is the half of the pair reversion turns off. A
+   * reverted character retains Ten V permanently and can use none of it, and
+   * this function is the one that has to say so — it is what Aura is handed to
+   * decide whether Ten is available.
+   */
+  if (!isNenAwakened(state)) {
     return NO_MASTERY;
   }
 
@@ -711,7 +764,8 @@ export function isNenPrincipleUnlocked(
   state: NenState,
   principleId: NenPrincipleId,
 ): boolean {
-  if (!state.awakened) {
+  /* Learning needs open nodes now, not a memory of having had them. */
+  if (!isNenAwakened(state)) {
     return false;
   }
 
@@ -781,7 +835,12 @@ export function validateNenAdvancement(
   });
 
 
-  if (!state.awakened) {
+  /*
+   * Advancing needs access NOW. A reverted character keeps every rank they
+   * trained and can train no further until they reawaken, which is a different
+   * refusal from an unawakened character's and says so.
+   */
+  if (!isNenAwakened(state)) {
     return {
       success: false,
 
@@ -795,10 +854,12 @@ export function validateNenAdvancement(
         {
           code: "nen.not_awakened",
           message:
-            "Nen mastery cannot be advanced before Nen is awakened.",
+            state.awakening.condition === "reverted"
+              ? "Nen mastery cannot be advanced while Nen access is reverted."
+              : "Nen mastery cannot be advanced before Nen is awakened.",
           audience: "player",
           required: "awakened Nen",
-          actual: "Nen not awakened",
+          actual: state.awakening.condition,
         },
       ],
     };
@@ -984,14 +1045,43 @@ export function validateNenState(
       "stored mastery must satisfy awakening and Nen graph prerequisites",
 
     inputs: {
-      awakened: {
-        value: state.awakened,
+      condition: {
+        value: state.awakening?.condition ?? String(state.awakening),
       },
     },
   });
 
 
   const errors: EngineError[] = [];
+
+
+  /*
+   * The awakening state is judged FIRST, and its issues stop the pass.
+   *
+   * Every mastery rule below reads the condition and the history, so a
+   * malformed awakening state would have those rules answering from a shape
+   * nobody has checked — which is how "reverted with no history" became a
+   * character who could hold Mastery they never trained.
+   */
+  const awakeningIssues = findAwakeningStateIssues(state.awakening);
+
+  if (awakeningIssues.length > 0) {
+    traceNode.output = { valid: false };
+
+    return {
+      success: false,
+
+      trace: {
+        root: traceNode,
+      },
+
+      warnings: [],
+
+      errors:
+        awakeningIssues as readonly EngineError[] as
+          NonEmptyArray<EngineError>,
+    };
+  }
 
 
   for (
@@ -1038,8 +1128,17 @@ export function validateNenState(
   }
 
 
+  /*
+   * EVER awakened, which is the whole of the change reversion forced here.
+   *
+   * The old rule read a boolean and refused any Mastery on a character who was
+   * not awakened RIGHT NOW — which is exactly the state reversion produces, so
+   * a reverted character with the Ten V they trained failed their own sheet's
+   * validation. What is actually forbidden is Mastery on a character who has
+   * never awakened at all, and that is what this asks.
+   */
   if (
-    !state.awakened &&
+    !hasEverAwakenedNen(state) &&
     NEN_PRINCIPLE_IDS.some(
       principleId =>
         state.mastery[principleId] >
@@ -1052,7 +1151,7 @@ export function validateNenState(
         "A character cannot possess controlled Nen mastery before Nen is awakened.",
       audience: "developer" as const,
       required:
-        `all mastery ranks equal ${NO_MASTERY} while Nen is unawakened`,
+        `all mastery ranks equal ${NO_MASTERY} while Nen has never been awakened`,
 
       // Copied rather than passed through: a readonly record is not a
       // JsonObject, and a diagnostic has to be serialisable.
@@ -1061,7 +1160,7 @@ export function validateNenState(
   }
 
 
-  if (state.awakened) {
+  if (hasEverAwakenedNen(state)) {
     for (
       const principleId
       of NEN_PRINCIPLE_IDS

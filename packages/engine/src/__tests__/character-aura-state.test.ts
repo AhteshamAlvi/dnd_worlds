@@ -17,8 +17,11 @@
 import { describe, expect, it } from "vitest";
 
 import { emptyAuraState } from "../character/foundation/aura/state";
+import { hasPseudoChu } from "../character/foundation/nen/awakening/state";
 import {
   createUnawakenedNenState,
+  hasEverAwakenedNen,
+  isNenAwakened,
   NEN_PRINCIPLE_IDS,
 } from "../character/foundation/nen/nen";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
@@ -28,6 +31,7 @@ import type { Character } from "../character/types";
 import type { AuraAllocation } from "../character/foundation/aura/state";
 
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
+import { revertedNen, standardAwakenedNen } from "./fixtures/nen";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -106,7 +110,9 @@ describe("Nen state as a sibling of Aura", () => {
   it("gives an unawakened character a complete, real Nen state", () => {
     const nen = createUnawakenedNenState();
 
-    expect(nen.awakened).toBe(false);
+    expect(nen.awakening.condition).toBe("unawakened");
+    expect(nen.awakening.nodes).toBe("half-open");
+    expect(nen.awakening.history).toEqual([]);
     expect(Object.keys(nen.mastery)).toHaveLength(NEN_PRINCIPLE_IDS.length);
 
     for (const principleId of NEN_PRINCIPLE_IDS) {
@@ -125,7 +131,7 @@ describe("Nen state as a sibling of Aura", () => {
       nen: createUnawakenedNenState(),
     });
 
-    expect(character.nen.awakened).toBe(false);
+    expect(isNenAwakened(character.nen)).toBe(false);
     expect(character.aura.current).toBe(4000);
 
     const drained = {
@@ -133,7 +139,7 @@ describe("Nen state as a sibling of Aura", () => {
       aura: { ...character.aura, current: 1200 },
     };
 
-    expect(drained.nen.awakened).toBe(false);
+    expect(isNenAwakened(drained.nen)).toBe(false);
     expect(drained.aura.current).toBe(1200);
   });
 
@@ -148,11 +154,28 @@ describe("Nen state as a sibling of Aura", () => {
   it("records awakening independently of how much Aura is held", () => {
     const awakened = createTestCharacter({
       aura: { current: 0, allocations: [] },
-      nen: { ...createUnawakenedNenState(), awakened: true },
+      nen: standardAwakenedNen(),
     });
 
-    expect(awakened.nen.awakened).toBe(true);
+    expect(isNenAwakened(awakened.nen)).toBe(true);
     expect(awakened.aura.current).toBe(0);
+  });
+
+  /*
+   * The distinction the boolean could not carry. A reverted character is not
+   * awakened and is not unawakened: their nodes are half-open again, they keep
+   * every rank they trained, and they do NOT get their pseudo-Chu back.
+   */
+  it("tells a reverted character apart from one who never awakened", () => {
+    const reverted = revertedNen();
+
+    expect(isNenAwakened(reverted)).toBe(false);
+    expect(hasEverAwakenedNen(reverted)).toBe(true);
+    expect(reverted.awakening.condition).toBe("reverted");
+    expect(reverted.awakening.nodes).toBe("half-open");
+    expect(hasPseudoChu(reverted.awakening)).toBe(false);
+
+    expect(hasPseudoChu(createUnawakenedNenState().awakening)).toBe(true);
   });
 });
 
@@ -161,7 +184,7 @@ describe("serialization", () => {
   const character = createTestCharacter({
     attributes: AURA_CAPABLE,
     aura: { current: 5000, allocations: ALLOCATIONS },
-    nen: { ...createUnawakenedNenState(), awakened: true },
+    nen: standardAwakenedNen(),
   });
 
   it("round-trips Aura state through JSON unchanged", () => {

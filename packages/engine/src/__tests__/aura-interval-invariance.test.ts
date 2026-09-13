@@ -40,6 +40,9 @@ import { auraContext, UNCONTAINED, WITH_TEN } from "./fixtures/aura";
 
 const T0 = 1_000_000_000;
 
+/* The two-second Round, in hours. Uncontained leakage is fast enough to need it. */
+const ROUND_HOURS = 2 / 3600;
+
 const REN_III: AuraAccessInput = {
   ...WITH_TEN,
   override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
@@ -364,21 +367,30 @@ describe("one advance equals many", () => {
     },
 
     /* Leakage running, interrupted, and running again. */
+    /*
+     * In ROUNDS, not hours.
+     *
+     * Uncontained leakage is the Physiological Output Capacity per minute, so
+     * this character empties in five minutes. Run over ten HOURS the scenario
+     * would be five minutes of leakage and nine and a half hours of an empty
+     * pool clamping to zero — which is invariant, and tests nothing about the
+     * rate. Ten Rounds keeps the whole interval inside the leak.
+     */
     "leakage interrupted by suppression": {
-      hours: 10,
+      hours: 10 * ROUND_HOURS,
       current: 50_000,
       access: UNCONTAINED,
       activity: { mode: "ordinary-waking" },
       activityChanges: [
         {
-          at: T0 + hoursToDuration(2),
+          at: T0 + hoursToDuration(2 * ROUND_HOURS),
           activity: {
             mode: "ordinary-waking",
             suppression: { source: "zetsu", multiplier: 1, forced: true },
           },
         },
         {
-          at: T0 + hoursToDuration(6),
+          at: T0 + hoursToDuration(6 * ROUND_HOURS),
           activity: { mode: "ordinary-waking" },
         },
       ],

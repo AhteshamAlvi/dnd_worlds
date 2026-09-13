@@ -45,8 +45,19 @@ const T0 = 1_000_000_000;
 /* CON 20 / VIT 20: Maximum Aura 50,000, regeneration 5,000/hour. */
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;
 
-/* Maximum wakefulness 120 hours, so uncontained leakage is 416.67/hour. */
-const LEAK_RATE = 50_000 / 120;
+/*
+ * Uncontained leakage is the Physiological Output Capacity PER MINUTE, and
+ * CON 20 gives 10,000 of it — so this character bleeds 10,000 Aura a minute
+ * and empties their 50,000 reserve in five.
+ *
+ * These tests therefore run in ROUNDS rather than hours. They used to run in
+ * hours against the old `A_max / H_wake` rate, which gave the same character
+ * 416.67/hour and 120 hours to live; at the real rate an hour-long interval
+ * would be five minutes of leakage and 115 hours of an empty pool, and every
+ * assertion about a rate would be an assertion about a clamp.
+ */
+const ROUND_HOURS = 2 / 3600;
+const LEAK_PER_ROUND = 10_000 / 30;
 
 const REN_III: AuraAccessInput = {
   ...WITH_TEN,
@@ -120,8 +131,8 @@ function at(
 
 describe("suppression controls leakage", () => {
   it("leaks normally while awakened and uncontained", () => {
-    expect(succeed({ hours: 2 }).balance.leakage)
-      .toBeCloseTo(LEAK_RATE * 2, 8);
+    expect(succeed({ hours: 2 * ROUND_HOURS }).balance.leakage)
+      .toBeCloseTo(LEAK_PER_ROUND * 2, 8);
   });
 
   /*
@@ -131,33 +142,33 @@ describe("suppression controls leakage", () => {
    */
   it("stops the instant suppression begins", () => {
     const result = succeed({
-      hours: 4,
+      hours: 4 * ROUND_HOURS,
       activityChanges: [{
-        at: T0 + hoursToDuration(1),
+        at: T0 + hoursToDuration(1 * ROUND_HOURS),
         activity: { mode: "intentional-rest", suppression: ZETSU },
       }],
     });
 
-    expect(result.balance.leakage).toBeCloseTo(LEAK_RATE * 1, 8);
+    expect(result.balance.leakage).toBeCloseTo(LEAK_PER_ROUND * 1, 8);
   });
 
   it("resumes when suppression lifts and the character is still uncontained", () => {
     const result = succeed({
-      hours: 4,
+      hours: 4 * ROUND_HOURS,
       activityChanges: [
         {
-          at: T0 + hoursToDuration(1),
+          at: T0 + hoursToDuration(1 * ROUND_HOURS),
           activity: { mode: "intentional-rest", suppression: ZETSU },
         },
         {
-          at: T0 + hoursToDuration(3),
+          at: T0 + hoursToDuration(3 * ROUND_HOURS),
           activity: { mode: "ordinary-waking" },
         },
       ],
     });
 
-    /* One hour before, one hour after, and nothing in the two between. */
-    expect(result.balance.leakage).toBeCloseTo(LEAK_RATE * 2, 8);
+    /* One Round before, one Round after, and nothing in the two between. */
+    expect(result.balance.leakage).toBeCloseTo(LEAK_PER_ROUND * 2, 8);
   });
 
   it("prevents leakage from the first instant when already suppressed", () => {
@@ -198,17 +209,17 @@ describe("suppression controls leakage", () => {
    */
   it("does not clear the underlying uncontained state", () => {
     const suppressed = succeed({
-      hours: 2,
+      hours: 2 * ROUND_HOURS,
       activity: { mode: "intentional-rest", suppression: ZETSU },
     });
 
     const after = succeed({
       current: suppressed.current,
-      startedAt: T0 + hoursToDuration(2),
-      hours: 2,
+      startedAt: T0 + hoursToDuration(2 * ROUND_HOURS),
+      hours: 2 * ROUND_HOURS,
     });
 
-    expect(after.balance.leakage).toBeCloseTo(LEAK_RATE * 2, 8);
+    expect(after.balance.leakage).toBeCloseTo(LEAK_PER_ROUND * 2, 8);
   });
 });
 
@@ -357,15 +368,15 @@ describe("half-open interval ownership", () => {
   /* A solver OUTCOME may land on the endpoint; it is a consequence, not an input. */
   it("still reports the pool emptying exactly at the closing instant", () => {
     const result = succeed({
-      current: LEAK_RATE * 2,
-      hours: 2,
+      current: LEAK_PER_ROUND * 2,
+      hours: 2 * ROUND_HOURS,
     });
 
     expect(result.current).toBe(0);
     expect(result.events.map((event) => event.kind)).toContain("aura-empty");
     expect(result.collapse).not.toBeNull();
     expect(result.collapse!.at)
-      .toBeCloseTo(T0 + hoursToDuration(2), 6);
+      .toBeCloseTo(T0 + hoursToDuration(2 * ROUND_HOURS), 6);
   });
 });
 

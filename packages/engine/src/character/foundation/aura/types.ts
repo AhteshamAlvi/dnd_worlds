@@ -193,12 +193,19 @@ export type AuraNodeState = typeof AURA_NODE_STATES[number];
  * wants to say WHICH state produced them.
  *
  *   unawakened   half-open nodes; no deliberate access; passive pseudo-Chu
+ *   reverted     half-open nodes again, and NO pseudo-Chu. The one state the
+ *                unawakened/awakened pair could not express: awakening ends
+ *                passive reinforcement permanently, so a character whose
+ *                awakening was undone does not get it back. Folding this into
+ *                "unawakened" would hand them 20% of their reserve as free
+ *                internal Density on the strength of an awakening they had.
  *   uncontained  awakened with no Ten; nodes open, nothing contained
  *   ten          awakened with Ten; the default state once Ten is learned
  *   override     an explicit typed override from a later principle resolver
  */
 export const AURA_ACCESS_STATES = [
   "unawakened",
+  "reverted",
   "uncontained",
   "ten",
   "override",
@@ -303,6 +310,22 @@ export type AuraAccessOverride =
  */
 export interface AuraAccessInput {
   readonly awakened: boolean;
+
+  /*
+   * Whether this character HAS awakened, whatever they are now.
+   *
+   * Separate from `awakened` because the pair answers a question neither
+   * answers alone: passive pseudo-Chu is produced by a body that has never
+   * been opened, and awakening ends it for good. `awakened: false` with this
+   * true is a reverted character — half-open nodes, no deliberate access, and
+   * no pseudo-Chu either.
+   *
+   * Optional, and false by default, so every existing caller describing an
+   * ordinary unawakened character keeps the state and the reinforcement they
+   * already had. Aura does not read Nen state to work this out; Nen derives it
+   * and hands it down, the same way effective Ten Mastery arrives.
+   */
+  readonly previouslyAwakened?: boolean;
 
   /** 0 for not learned; I-X once it is. Seals already applied. */
   readonly effectiveTenMastery: number;

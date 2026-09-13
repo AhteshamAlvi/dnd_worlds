@@ -536,27 +536,40 @@ describe("upkeep across an interval", () => {
 describe("uncontained leakage over time", () => {
   const STANDARD = { con: 10, vit: 10, dex: 10 } as const;
 
-  it("empties a standard full reserve in exactly 48 hours", () => {
+  /*
+   * Minutes, not days.
+   *
+   * These tests used to assert 48 hours, from the old `A_max / H_wake` rule.
+   * The rate is now the Physiological Output Capacity per minute — open nodes
+   * bleed at the rate those nodes can pass — and a fresh awakener is in
+   * immediate trouble rather than slowly declining.
+   *
+   * The CON 10 / VIT 10 character has 10 Maximum Aura and 2 Output, so they
+   * leak 2 a minute and are empty in five.
+   */
+  const MINUTE = 1 / 60;
+
+  it("empties a standard full reserve in exactly five minutes", () => {
     const result = succeed({
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: deriveMaximumAura(auraTestAttributes(STANDARD)), allocations: [] },
-      hours: 48,
+      hours: 5 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
     expect(result.balance.leakage).toBeCloseTo(10, 10);
     expect(result.current).toBe(0);
     expect(result.collapse).not.toBeNull();
-    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(48), 6);
+    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(5 * MINUTE), 6);
   });
 
-  it("leaves something at 47 hours", () => {
+  it("leaves something at four minutes", () => {
     const result = succeed({
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: 10, allocations: [] },
-      hours: 47,
+      hours: 4 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
@@ -569,24 +582,33 @@ describe("uncontained leakage over time", () => {
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: 5, allocations: [] },
-      hours: 48,
+      hours: 5 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
     expect(result.collapse).not.toBeNull();
-    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(24), 6);
+    expect(result.collapse!.at)
+      .toBeCloseTo(T0 + hoursToDuration(2.5 * MINUTE), 6);
   });
 
-  it("gives a larger pool its own wakefulness limit rather than more", () => {
+  /*
+   * A larger pool buys NO more time, and for a sharper reason than before:
+   * Output Capacity grows with CON on its own curve, and the ratio of reserve
+   * to Output is the same five minutes at every power level. A CON 20 / VIT 20
+   * character has 50,000 Aura and 10,000 Output — five minutes, exactly like
+   * the ordinary one.
+   */
+  it("gives a far larger pool exactly the same five minutes", () => {
     const result = succeed({
       access: UNCONTAINED,
       state: { current: 50_000, allocations: [] },
-      hours: 120,
+      hours: 5 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
     expect(result.current).toBe(0);
-    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(120), 6);
+    expect(result.collapse!.at)
+      .toBeCloseTo(T0 + hoursToDuration(5 * MINUTE), 6);
   });
 
   /* Leakage is not something the character is doing. */
@@ -595,7 +617,7 @@ describe("uncontained leakage over time", () => {
       attributes: { ...STANDARD, dex },
       access: UNCONTAINED,
       state: { current: 10, allocations: [] },
-      hours: 10,
+      hours: MINUTE,
       activity: { mode: "ordinary-waking" },
     }).balance.leakage);
 
@@ -608,7 +630,7 @@ describe("uncontained leakage over time", () => {
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: 10, allocations: [] },
-      hours: 48,
+      hours: 5 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
@@ -637,6 +659,11 @@ describe("uncontained leakage over time", () => {
     expect(result.collapse).toBeNull();
   });
 
+  /*
+   * The unawakened case is emphatically not this. Half-open nodes leak too,
+   * and what escapes becomes pseudo-Chu rather than being lost — so an
+   * ordinary person is still there two days later.
+   */
   it("leaves a contained character alone", () => {
     for (const access of [WITH_TEN, UNAWAKENED]) {
       const result = succeed({

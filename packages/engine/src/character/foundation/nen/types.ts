@@ -18,6 +18,8 @@
 
 import type { MasteryValue } from "../../capabilities/mastery";
 
+import type { NenAwakeningState } from "./awakening/types";
+
 
 /**
  * A Nen principle's Mastery, 0-X.
@@ -94,11 +96,19 @@ export type NenMasterySeals = Readonly<
  * shape and would have to be migrated out again — active Ren is an output
  * level, not an on/off flag.
  *
- * Awakening eligibility and the process of awakening will also be defined
- * later. For now, awakening is represented only as a boolean.
+ * `awakening` WAS a boolean, and the boolean was wrong in the way a single
+ * field carrying several facts is always wrong. It could not say that a
+ * reverted character keeps the Mastery they trained, that a fresh awakener has
+ * open nodes and no Ten, or that a forced Zetsu is not Zetsu — and the
+ * validator that read it refused a reverted character outright. See
+ * awakening/types.ts for the seven facts it now separates.
+ *
+ * Read it through the helpers rather than by comparing the condition against a
+ * literal: isNenAwakened for "can use Nen now", hasEverAwakenedNen for "may
+ * legitimately hold Mastery".
  */
 export interface NenState {
-  readonly awakened: boolean;
+  readonly awakening: NenAwakeningState;
 
   readonly mastery: NenMasteryState;
 

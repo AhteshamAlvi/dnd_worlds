@@ -39,6 +39,7 @@ import { restedWakefulness } from "../character/foundation/body/endurance";
 import type { Character } from "../character/types";
 
 import { createTestCharacter } from "./fixtures/character";
+import { standardAwakenedNen } from "./fixtures/nen";
 
 const T0 = 1_000_000_000;
 
@@ -384,7 +385,7 @@ describe("combat time uses the same model", () => {
    * has to cost the same whether it is charged per Round or as one span.
    */
   it("charges a per-Round upkeep the same across ten Rounds as one span", () => {
-    const subject = character({ nen: { ...character().nen, awakened: true } });
+    const subject = character({ nen: standardAwakenedNen() });
 
     const perSpan = advanceCharacterTime({
       character: subject,
