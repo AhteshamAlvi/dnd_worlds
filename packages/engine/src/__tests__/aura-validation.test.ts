@@ -39,6 +39,9 @@ import { NEUTRAL_MORPHOLOGY } from "../character/foundation/body/types";
 import { validateCharacter } from "../character/validation";
 import type { Attributes } from "../character/foundation/attributes/types";
 import type { AuraAllocation } from "../character/foundation/aura/state";
+import { AURA_COVERAGES } from "../character/foundation/aura/types";
+
+import { AURA_TEST_OWNER, auraOnOnePart } from "./fixtures/aura";
 import type { BodyPartDefinition } from "../character/foundation/body/anatomy/types";
 
 import { createTestCharacter } from "./fixtures/character";
@@ -242,19 +245,45 @@ describe("allocations in Character validation", () => {
     expect(errorCodes(result)).toContain("aura.allocation.coverage.invalid");
   });
 
-  it("rejects a localized allocation with no continuity identity", () => {
+  it("rejects a concentration whose weight names no identity", () => {
+    /*
+     * A weight aimed at nothing is not "concentrated nowhere", it is unusable:
+     * distribution has nothing to look up, and the allocation would be
+     * silently dropped as unmanifested every single time.
+     */
     const result = validateCharacter(characterWith({
       current: 8000,
-      allocations: [{
+      allocations: [auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: continuityKey("  "),
         aura: 200,
-      }],
+      })],
     }));
 
-    expect(errorCodes(result)).toContain("aura.allocation.continuity.missing");
+    expect(errorCodes(result)).toContain("aura.allocation.weights.invalid");
+  });
+
+  it("rejects a concentration carrying no authorization", () => {
+    /*
+     * The rule the retired `localized` coverage bypassed entirely. Selecting
+     * one Body Part is the most concentrated placement there is, and it now
+     * needs the same grant as any other.
+     */
+    const { authorization: _granted, ...unauthorized } = auraOnOnePart({
+      id: "ko",
+      placement: "internal",
+      continuityKey: RIGHT_ARM,
+      aura: 200,
+    });
+
+    const result = validateCharacter(characterWith({
+      current: 8000,
+      allocations: [unauthorized as unknown as AuraAllocation],
+    }));
+
+    expect(errorCodes(result))
+      .toContain("aura.allocation.authorization.missing");
   });
 
   /*
@@ -434,13 +463,12 @@ describe("distribution refuses what it cannot place", () => {
    * Current Aura is untouched.
    */
   it("still succeeds while dropping unmanifested anatomy", () => {
-    const result = distribute([{
+    const result = distribute([auraOnOnePart({
       id: "ko",
-      coverage: "localized",
       placement: "internal",
       continuityKey: continuityKey("wing:left"),
       aura: 500,
-    }], 2000);
+    })], 2000);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
@@ -455,13 +483,12 @@ describe("distribution refuses what it cannot place", () => {
   it("does not count dropped Aura against the Output ceiling", () => {
     const result = distribute([
       { ...TEN, id: "ten", aura: 900 },
-      {
+      auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: continuityKey("wing:left"),
         aura: 5000,
-      },
+      }),
     ], 1000);
 
     expect(result.success).toBe(true);
@@ -603,4 +630,115 @@ describe("general Aura Output carries no Ren-specific naming", () => {
     expect(serialized).toContain("accessFraction");
     expect(serialized).not.toMatch(/renAccess/i);
   });
+});
+
+
+/*
+ * The coverage vocabulary itself, and the route that used to bypass it.
+ *
+ * `localized` named one continuity identity and required no authorization, so
+ * a public transition could put a character's entire Output into one fist —
+ * which is exactly what the gated applications do. Selecting a single Part is
+ * not a milder case of uneven distribution; it is the extreme of it.
+ *
+ * These assertions are about the SHAPE rather than about any behaviour,
+ * because the behaviour was never the problem: the resolver did precisely what
+ * it was asked. What was missing was anything forcing the caller to ask for
+ * permission first.
+ */
+describe("there is no unguarded route to one-part Aura", () => {
+  it("offers exactly two coverages, neither of them localized", () => {
+    expect([...AURA_COVERAGES]).toEqual(["whole-body", "differential"]);
+    expect(AURA_COVERAGES).not.toContain("localized");
+  });
+
+  it("exports no localized allocation type or predicate", async () => {
+    /*
+     * Through the PUBLIC package, because an unexported shape nobody can name
+     * is not a hole. This fails if either comes back by any route — the Aura
+     * barrel, the engine root, or a re-export somebody adds later.
+     */
+    const engine = await import("@nenworld/engine") as Record<string, unknown>;
+
+    expect(engine["isLocalizedAllocation"]).toBeUndefined();
+    expect(Object.keys(engine)).not.toContain("LocalizedAuraAllocation");
+  });
+
+  it("rejects a one-part placement carrying no authorization", () => {
+    const { authorization: _granted, ...unauthorized } = auraOnOnePart({
+      id: "ko",
+      placement: "surface",
+      continuityKey: RIGHT_ARM,
+      aura: 100,
+    });
+
+    expect(
+      findAuraAllocationIssues([unauthorized as unknown as AuraAllocation])
+        .map((one) => one.code),
+    ).toContain("aura.allocation.authorization.missing");
+  });
+
+  it("accepts a one-part placement whose authorization is bound correctly", () => {
+    expect(
+      findAuraAllocationIssues(
+        [auraOnOnePart({
+          id: "ko",
+          placement: "surface",
+          continuityKey: RIGHT_ARM,
+          aura: 100,
+          owner: AURA_TEST_OWNER,
+        })],
+        { owner: AURA_TEST_OWNER },
+      ),
+    ).toEqual([]);
+  });
+
+  it.each([
+    ["allocation", { allocationId: "some-other-allocation" }],
+    ["source", { source: "some-other-source" }],
+    ["owner", { owner: "aura:someone-else" }],
+  ])("rejects a one-part grant bound to a different %s", (_field, override) => {
+    const base = auraOnOnePart({
+      id: "ko",
+      placement: "surface",
+      continuityKey: RIGHT_ARM,
+      aura: 100,
+      owner: AURA_TEST_OWNER,
+    });
+
+    const forged: AuraAllocation = {
+      ...base,
+      authorization: { ...base.authorization, ...override },
+    };
+
+    expect(
+      findAuraAllocationIssues([forged], { owner: AURA_TEST_OWNER })
+        .map((one) => one.code),
+    ).toContain("aura.allocation.authorization.mismatched");
+  });
+
+  it.each(["weights", "continuityKey", "excluding"])(
+    "refuses a uniform allocation that carries %s",
+    (field) => {
+      /*
+       * Reintroducing the hole in the shape a caller would actually reach for:
+       * a whole-body allocation that quietly narrows itself. `continuityKey` is
+       * the retired coverage's own field, so a stale save — or a caller who
+       * remembers the old shape — fails here rather than resolving as uniform
+       * while looking selective.
+       */
+      const smuggled = {
+        id: "sneaky",
+        coverage: "whole-body",
+        placement: "surface",
+        aura: 100,
+        [field]: field === "continuityKey"
+          ? RIGHT_ARM
+          : [{ continuityKey: RIGHT_ARM, weight: 1 }],
+      } as unknown as AuraAllocation;
+
+      expect(findAuraAllocationIssues([smuggled]).map((one) => one.code))
+        .toContain("aura.allocation.uniform.weighted");
+    },
+  );
 });

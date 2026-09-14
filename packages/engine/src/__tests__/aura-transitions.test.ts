@@ -39,7 +39,12 @@ import type {
 } from "../character/foundation/aura/state";
 import type { AuraAccessInput } from "../character/foundation/aura/types";
 
-import { auraContext, UNAWAKENED, WITH_TEN } from "./fixtures/aura";
+import {
+  auraContext,
+  auraOnOnePart,
+  UNAWAKENED,
+  WITH_TEN,
+} from "./fixtures/aura";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -81,13 +86,17 @@ const WHOLE_BODY_KEN: AuraAllocation = {
   aura: 2000,
 };
 
-const ARM_KEN: AuraAllocation = {
-  id: "ken-arm",
-  coverage: "localized",
+/*
+ * A concentration on one identity, which is the only way to place Aura on one
+ * Part — and therefore authorized. The tests that use it are about continuity
+ * behaviour across transformation and amputation, not about the grant.
+ */
+const ARM_CONCENTRATION: AuraAllocation = auraOnOnePart({
+  id: "ko-arm",
   placement: "surface",
   continuityKey: RIGHT_ARM,
   aura: 500,
-};
+});
 
 function errorCodes(
   result: { success: boolean; errors?: readonly { code: string }[] },
@@ -147,7 +156,7 @@ describe("deliberate expenditure", () => {
    * perform a weaker version of it by default.
    */
   it("refuses an expenditure above Current Aura, atomically", () => {
-    const before = state(100, [ARM_KEN]);
+    const before = state(100, [ARM_CONCENTRATION]);
     const taken = snapshot(before);
 
     const result = spendAura(before, context(), 500);
@@ -290,52 +299,52 @@ describe("allocation transitions", () => {
     const result = replaceAuraAllocations(
       state(4000, [WHOLE_BODY_KEN]),
       context(),
-      [ARM_KEN],
+      [ARM_CONCENTRATION],
     );
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    expect(result.payload.state.allocations).toEqual([ARM_KEN]);
+    expect(result.payload.state.allocations).toEqual([ARM_CONCENTRATION]);
     expect(result.payload.allocationChanges).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ kind: "added", allocationId: "ken-arm" }),
+        expect.objectContaining({ kind: "added", allocationId: "ko-arm" }),
         expect.objectContaining({ kind: "removed", allocationId: "ken" }),
       ]),
     );
   });
 
   it("adds through upsert and replaces the one sharing an id", () => {
-    const added = upsertAuraAllocation(state(4000), context(), ARM_KEN);
+    const added = upsertAuraAllocation(state(4000), context(), ARM_CONCENTRATION);
 
-    expect(added.success && added.payload.state.allocations).toEqual([ARM_KEN]);
+    expect(added.success && added.payload.state.allocations).toEqual([ARM_CONCENTRATION]);
     expect(added.success && added.payload.allocationChanges)
       .toEqual([expect.objectContaining({ kind: "added" })]);
 
     const changed = upsertAuraAllocation(
-      state(4000, [ARM_KEN]),
+      state(4000, [ARM_CONCENTRATION]),
       context(),
-      { ...ARM_KEN, aura: 900 },
+      { ...ARM_CONCENTRATION, aura: 900 },
     );
 
     expect(changed.success && changed.payload.state.allocations)
-      .toEqual([{ ...ARM_KEN, aura: 900 }]);
+      .toEqual([{ ...ARM_CONCENTRATION, aura: 900 }]);
     expect(changed.success && changed.payload.allocationChanges)
       .toEqual([expect.objectContaining({ kind: "replaced" })]);
   });
 
   it("removes one by id and clears them all", () => {
     const removed = removeAuraAllocation(
-      state(4000, [WHOLE_BODY_KEN, ARM_KEN]),
+      state(4000, [WHOLE_BODY_KEN, ARM_CONCENTRATION]),
       context(),
       "ken",
     );
 
     expect(removed.success && removed.payload.state.allocations)
-      .toEqual([ARM_KEN]);
+      .toEqual([ARM_CONCENTRATION]);
 
     const cleared = clearAuraAllocations(
-      state(4000, [WHOLE_BODY_KEN, ARM_KEN]),
+      state(4000, [WHOLE_BODY_KEN, ARM_CONCENTRATION]),
       context(),
     );
 
@@ -383,10 +392,9 @@ describe("allocation transitions", () => {
 
   it("refuses internal placement the access state does not permit", () => {
     const result = replaceAuraAllocations(state(4000), context(), [{
-      id: "chu-fist",
-      coverage: "localized",
+      id: "internal",
+      coverage: "whole-body",
       placement: "internal",
-      continuityKey: RIGHT_ARM,
       aura: 200,
     }]);
 
@@ -408,10 +416,9 @@ describe("allocation transitions", () => {
         },
       }),
       [{
-        id: "chu-fist",
-        coverage: "localized",
+        id: "internal",
+        coverage: "whole-body",
         placement: "internal",
-        continuityKey: RIGHT_ARM,
         aura: 200,
       }],
     );
@@ -424,7 +431,7 @@ describe("allocation transitions", () => {
    * anatomy that disappears afterwards is merely reconciled. The difference is
    * who asked.
    */
-  it("refuses a localized allocation on anatomy that is not manifested", () => {
+  it("refuses a concentration on anatomy that is not manifested", () => {
     const result = replaceAuraAllocations(
       state(4000),
       context({
@@ -434,7 +441,7 @@ describe("allocation transitions", () => {
           "archived-removed",
         ),
       }),
-      [ARM_KEN],
+      [ARM_CONCENTRATION],
     );
 
     expect(errorCodes(result))
@@ -442,7 +449,7 @@ describe("allocation transitions", () => {
   });
 
   it("preserves fractional allocations exactly", () => {
-    const fractional: AuraAllocation = { ...ARM_KEN, aura: 118.3 };
+    const fractional: AuraAllocation = { ...ARM_CONCENTRATION, aura: 118.3 };
 
     const result = replaceAuraAllocations(state(4000), context(), [fractional]);
 
@@ -455,7 +462,7 @@ describe("allocation transitions", () => {
 describe("reconciliation", () => {
   it("removes an allocation whose anatomy is no longer manifested", () => {
     const result = reconcileAuraState(
-      state(4000, [ARM_KEN]),
+      state(4000, [ARM_CONCENTRATION]),
       context({
         anatomy: setBodyPartState(
           STANDARD_HUMANOID_ANATOMY,
@@ -472,7 +479,7 @@ describe("reconciliation", () => {
     expect(result.payload.allocationChanges).toEqual([
       expect.objectContaining({
         kind: "removed-not-manifested",
-        allocationId: "ken-arm",
+        allocationId: "ko-arm",
         reason: "identity-not-manifested",
       }),
     ]);
@@ -484,7 +491,7 @@ describe("reconciliation", () => {
    */
   it("never deducts Current Aura because anatomy disappeared", () => {
     const result = reconcileAuraState(
-      state(4000, [ARM_KEN]),
+      state(4000, [ARM_CONCENTRATION]),
       context({
         anatomy: setBodyPartState(
           STANDARD_HUMANOID_ANATOMY,
@@ -509,11 +516,11 @@ describe("reconciliation", () => {
       "active",
     );
 
-    const result = reconcileAuraState(state(4000, [ARM_KEN]), context({
+    const result = reconcileAuraState(state(4000, [ARM_CONCENTRATION]), context({
       anatomy: regrown,
     }));
 
-    expect(result.success && result.payload.state.allocations).toEqual([ARM_KEN]);
+    expect(result.success && result.payload.state.allocations).toEqual([ARM_CONCENTRATION]);
     expect(result.success && result.payload.allocationChanges)
       .toEqual([expect.objectContaining({ kind: "unchanged" })]);
   });
@@ -801,7 +808,7 @@ describe("reconciliation", () => {
    */
   it("refuses a structurally malformed state rather than repairing it", () => {
     expect(errorCodes(reconcileAuraState(
-      state(4000, [WHOLE_BODY_KEN, { ...ARM_KEN, id: "ken" }]),
+      state(4000, [WHOLE_BODY_KEN, { ...ARM_CONCENTRATION, id: "ken" }]),
       context(),
     ))).toContain("aura.allocation.id.duplicate");
   });
@@ -829,7 +836,7 @@ describe("reconciliation", () => {
 
 
 describe("immutability", () => {
-  const before = state(4000, [WHOLE_BODY_KEN, ARM_KEN]);
+  const before = state(4000, [WHOLE_BODY_KEN, ARM_CONCENTRATION]);
 
   const operations: readonly (readonly [
     string,
@@ -839,14 +846,14 @@ describe("immutability", () => {
     ["spend refused", () => spendAura(before, context(), 999_999)],
     ["drain", () => drainAura(before, context(), 100)],
     ["drain refused", () => drainAura(before, context(), 999_999)],
-    ["replace", () => replaceAuraAllocations(before, context(), [ARM_KEN])],
+    ["replace", () => replaceAuraAllocations(before, context(), [ARM_CONCENTRATION])],
     [
       "replace refused",
       () => replaceAuraAllocations(before, context(), [
         { ...WHOLE_BODY_KEN, aura: 999_999 },
       ]),
     ],
-    ["upsert", () => upsertAuraAllocation(before, context(), { ...ARM_KEN, aura: 1 })],
+    ["upsert", () => upsertAuraAllocation(before, context(), { ...ARM_CONCENTRATION, aura: 1 })],
     ["remove", () => removeAuraAllocation(before, context(), "ken")],
     ["remove refused", () => removeAuraAllocation(before, context(), "ghost")],
     ["clear", () => clearAuraAllocations(before, context())],
@@ -908,7 +915,7 @@ describe("what a transition explains", () => {
     const result = replaceAuraAllocations(
       state(4000, [WHOLE_BODY_KEN]),
       context(),
-      [{ ...WHOLE_BODY_KEN, aura: 100 }, ARM_KEN],
+      [{ ...WHOLE_BODY_KEN, aura: 100 }, ARM_CONCENTRATION],
     );
 
     expect(result.success).toBe(true);
@@ -918,6 +925,6 @@ describe("what a transition explains", () => {
       result.payload.allocationChanges
         .map((change) => change.allocationId)
         .sort(),
-    ).toEqual(["ken", "ken-arm"]);
+    ).toEqual(["ken", "ko-arm"]);
   });
 });

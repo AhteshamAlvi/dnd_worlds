@@ -30,6 +30,9 @@ import type {
 import type { BodyMorphology } from "../../character/foundation/body/types";
 import type { AuraAccessInput } from "../../character/foundation/aura/types";
 import type { AuraTransitionContext } from "../../character/foundation/aura/budget";
+import type { DifferentialAuraAllocation } from "../../character/foundation/aura/state";
+import type { AuraPlacement } from "../../character/foundation/aura/types";
+import type { ContinuityKey } from "../../character/foundation/body/anatomy/types";
 
 export const AURA_BODY_DEFINITIONS = Object.values(
   BODY_PART_DEFINITIONS,
@@ -122,4 +125,69 @@ export function auraContext(
     ),
     access: options.access ?? UNAWAKENED,
   };
+}
+
+
+/*
+ * An AUTHORIZED concentration, which is the only route to uneven Aura.
+ *
+ * A helper rather than a literal in five suites, because the authorization is
+ * three bindings that must each match the allocation they are attached to —
+ * and a test that got one wrong would be testing the refusal path while
+ * appearing to test the success path. Building it from the allocation's own id
+ * and source makes the matching case the easy one to write, and leaves the
+ * mismatched cases to be written deliberately.
+ *
+ * `localized` coverage used to make a one-part placement free of all this.
+ * Selecting a single identity is the most concentrated placement there is, so
+ * it now comes through here like every other one.
+ */
+export const AURA_TEST_OWNER = "aura:test-subject";
+
+export function concentratedAura(input: {
+  readonly id: string;
+  readonly placement: AuraPlacement;
+  readonly aura: number;
+
+  /** One entry is a single-part placement; several are a weighted spread. */
+  readonly weights: readonly { readonly continuityKey: ContinuityKey; readonly weight: number }[];
+
+  readonly source?: string;
+  readonly owner?: string;
+  readonly grantedBy?: string;
+  readonly priority?: number;
+}): DifferentialAuraAllocation {
+  const source = input.source ?? `test:${input.id}`;
+
+  return {
+    id: input.id,
+    coverage: "differential",
+    placement: input.placement,
+    aura: input.aura,
+    weights: input.weights,
+    source,
+    ...(input.priority === undefined ? {} : { priority: input.priority }),
+    authorization: {
+      allocationId: input.id,
+      source,
+      owner: input.owner ?? AURA_TEST_OWNER,
+      grantedBy: input.grantedBy ?? "test:granting-mechanic",
+    },
+  };
+}
+
+
+/** The commonest case: everything on one identity. */
+export function auraOnOnePart(input: {
+  readonly id: string;
+  readonly placement: AuraPlacement;
+  readonly continuityKey: ContinuityKey;
+  readonly aura: number;
+  readonly source?: string;
+  readonly owner?: string;
+  readonly priority?: number;
+}): DifferentialAuraAllocation {
+  const { continuityKey: key, ...rest } = input;
+
+  return concentratedAura({ ...rest, weights: [{ continuityKey: key, weight: 1 }] });
 }

@@ -49,28 +49,36 @@ export type AuraPlacement = typeof AURA_PLACEMENTS[number];
  * How much of the body one allocation covers.
  *
  *   whole-body    every eligible present part, at EQUAL DENSITY
- *   localized     one continuity identity
- *   differential  several identities at stated, unequal weights
+ *   differential  stated identities at stated weights, AUTHORIZED
  *
- * The third is separated from the first two because it is the only one whose
- * shape a caller can use to say something the rules do not otherwise permit.
- * `whole-body` means equal density over the complete eligible domain — that is
- * what the word means, and it is why the shape carries no weights and no
- * exclusions: a "whole-body" allocation that skipped the left arm, or put
- * twice the density on the fists, would be a differential placement wearing a
- * uniform name, and nothing downstream could tell.
+ * Two, and the count is the rule. Aura is either spread evenly over the whole
+ * eligible domain or it is concentrated, and concentrating it is the thing the
+ * advanced applications are made of — so the second case has to be asked for
+ * and granted rather than merely described.
  *
- * `differential` says so openly, and has to be AUTHORIZED. Uneven Aura is what
- * the advanced applications are made of, and a generic allocation path that
- * accepted arbitrary weights would hand every caller those applications for
- * free, without the mastery, the cost or the gate that is supposed to grant
- * them. The authorization is not a permission bit: it names the allocation,
- * the source and the owner it was granted for, so one cannot be reused on
- * another allocation, another character, or by another mechanic.
+ * `whole-body` means equal density over the COMPLETE eligible domain. That is
+ * what the word means, and it is why the shape carries no weights, no
+ * exclusions and no selected part: a "whole-body" allocation that skipped the
+ * left arm, or put twice the density on the fists, would be a concentration
+ * wearing a uniform name, and nothing downstream could tell.
+ *
+ * THERE WAS A THIRD, AND IT WAS THE HOLE. `localized` named one continuity
+ * identity and required no authorization at all, which made it a complete
+ * bypass: putting every point of a character's Aura into one fist is exactly
+ * what the gated applications do, and `coverage: "localized"` did it through a
+ * public transition with nothing to ask. Selecting one part IS uneven
+ * distribution — it is the most uneven distribution there is — so a one-part
+ * placement is now a differential allocation with a single weight, carrying
+ * the same grant every other concentration needs.
+ *
+ * The authorization is not a permission bit: it names the allocation, the
+ * source and the owner it was granted for, so one cannot be reused on another
+ * allocation, another character, or by another mechanic. WHICH mechanics may
+ * issue one is not decided here — this layer checks a grant and never asks
+ * what produced it, which is what keeps it principle-neutral.
  */
 export const AURA_COVERAGES = [
   "whole-body",
-  "localized",
   "differential",
 ] as const;
 
@@ -625,7 +633,7 @@ export interface ResolvedPassiveInternalAura {
  * Every contribution to one Body Part in one placement, and their total.
  *
  * Contributions are PRESERVED rather than summed away. Baseline Ten and a
- * localized reinforcement on the same forearm are one aggregate Density to
+ * concentrated reinforcement on the same forearm are one aggregate Density to
  * anything asking how protected that forearm is, and two separate facts to
  * anything asking why — a Gyo observer reading the difference, a trace
  * explaining it, a transition removing one of them.

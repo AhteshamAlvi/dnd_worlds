@@ -30,6 +30,7 @@ import { validateCharacter } from "../character/validation";
 import type { Character } from "../character/types";
 import type { AuraAllocation } from "../character/foundation/aura/state";
 
+import { auraOnOnePart } from "./fixtures/aura";
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 import { revertedNen, standardAwakenedNen } from "./fixtures/nen";
 import { unassignedNenType } from "../character/foundation/nen/nen-type";
@@ -45,14 +46,20 @@ const RIGHT_ARM = continuityKey("upper-limb:right");
 const AURA_CAPABLE = { con: 20, vit: 18 } as const;
 
 const ALLOCATIONS: readonly AuraAllocation[] = [
-  { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
-  {
-    id: "chu",
-    coverage: "localized",
+  { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
+
+  /*
+   * A concentration, which is where a ContinuityKey now lives. The key is the
+   * reason this allocation is here at all: it is a branded string whose brand
+   * is compile-time only, so it has to survive JSON as a plain string and
+   * still address the same identity.
+   */
+  auraOnOnePart({
+    id: "ko",
     placement: "internal",
     continuityKey: RIGHT_ARM,
     aura: 237,
-  },
+  }),
 ];
 
 function roundTrip(character: Character): Character {
@@ -202,13 +209,15 @@ describe("serialization", () => {
    */
   it("keeps a branded ContinuityKey addressable after a round trip", () => {
     const restored = roundTrip(character);
-    const localized = restored.aura.allocations.find(
-      (allocation) => allocation.coverage === "localized",
+    const concentration = restored.aura.allocations.find(
+      (allocation) => allocation.coverage === "differential",
     );
 
-    expect(localized).toBeDefined();
-    expect(localized!.coverage === "localized" && localized!.continuityKey)
-      .toBe(RIGHT_ARM);
+    expect(concentration).toBeDefined();
+    expect(
+      concentration!.coverage === "differential" &&
+        concentration!.weights[0]!.continuityKey,
+    ).toBe(RIGHT_ARM);
   });
 
   it("produces no undefined or function values anywhere in the Aura state", () => {

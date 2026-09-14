@@ -42,7 +42,7 @@ import {
   resolveInternalAuraDensity,
   resolveSurfaceAuraDensity,
 } from "./density";
-import { isDifferentialAllocation, isLocalizedAllocation } from "./state";
+import { isDifferentialAllocation } from "./state";
 import type { AuraAllocation } from "./state";
 import {
   auraAllocationIssueToEngineError,
@@ -272,7 +272,7 @@ export function resolveAuraDistribution(
     id: "aura.distribution.resolve",
     label: "Place Aura allocations on the body",
     formula:
-      "whole-body shares split by covered measure; localized resolve by continuity identity",
+      "whole-body shares split by covered measure; differential shares split by stated weight",
     inputs: {
       allocations: { value: input.allocations.length },
       automatic: { value: automatic.length },
@@ -359,55 +359,6 @@ export function resolveAuraDistribution(
   };
 
   for (const { allocation, source } of allocations) {
-    if (isLocalizedAllocation(allocation)) {
-      const partId = partByContinuityKey.get(allocation.continuityKey);
-
-      /*
-       * A nonexistent part cannot hold active Aura. The allocation is removed
-       * rather than zeroed, and its Aura falls back to unallocated Output.
-       */
-      if (partId === undefined) {
-        dropped.push({
-          allocationId: allocation.id,
-          reason: "identity-not-manifested",
-          aura: allocation.aura,
-        });
-        continue;
-      }
-
-      const part = input.measurements.byPartId[partId]!;
-      const measure = coveredMeasure(allocation.placement, part);
-
-      /*
-       * Zero covered measure is not a failure here: an internal organ with no
-       * exposed skin genuinely cannot carry surface Aura, which is a fact
-       * about the anatomy rather than about the request.
-       */
-      if (!Number.isFinite(measure) || measure <= 0) {
-        dropped.push({
-          allocationId: allocation.id,
-          reason: "no-measurable-body",
-          aura: allocation.aura,
-        });
-        continue;
-      }
-
-      const errors = placeOne({
-        allocationId: allocation.id,
-        source,
-        placement: allocation.placement,
-        coverage: "localized",
-        continuityKey: allocation.continuityKey,
-        partId,
-        aura: allocation.aura,
-        measure,
-      });
-
-      if (errors.length > 0) return fail(errors as NonEmptyArray<EngineError>);
-
-      continue;
-    }
-
     if (isDifferentialAllocation(allocation)) {
       /*
        * Weighted placement. The weights have already been validated — shape,
@@ -428,14 +379,33 @@ export function resolveAuraDistribution(
 
       let totalWeight = 0;
 
+      /*
+       * Why nothing landed, tracked as it happens rather than inferred after.
+       *
+       * "The arm is gone" and "the arm is there but carries no skin" are
+       * different facts with the same symptom, and the count of what landed
+       * cannot tell them apart — both are zero. A single-weight placement is
+       * the case that makes this visible: reporting a present-but-unmeasurable
+       * part as `identity-not-manifested` would tell a player their arm does
+       * not exist.
+       */
+      let anyIdentityPresent = false;
+
       for (const entry of allocation.weights) {
         const partId = partByContinuityKey.get(entry.continuityKey);
 
         if (partId === undefined) continue;
 
+        anyIdentityPresent = true;
+
         const measured = input.measurements.byPartId[partId]!;
         const measure = coveredMeasure(allocation.placement, measured);
 
+        /*
+         * Zero covered measure is not a failure: an internal organ with no
+         * exposed skin genuinely cannot carry surface Aura, which is a fact
+         * about the anatomy rather than about the request.
+         */
         if (!Number.isFinite(measure) || measure <= 0) continue;
         if (entry.weight <= 0) continue;
 
@@ -449,12 +419,17 @@ export function resolveAuraDistribution(
         totalWeight += entry.weight;
       }
 
+      /*
+       * A nonexistent part cannot hold active Aura. The allocation is removed
+       * rather than zeroed, and its Aura falls back to unallocated Output —
+       * losing a limb does not drain a character.
+       */
       if (totalWeight <= 0) {
         dropped.push({
           allocationId: allocation.id,
-          reason: landed.length === 0
-            ? "identity-not-manifested"
-            : "no-measurable-body",
+          reason: anyIdentityPresent
+            ? "no-measurable-body"
+            : "identity-not-manifested",
           aura: allocation.aura,
         });
 

@@ -40,7 +40,10 @@ import {
 import { runCoordinatedOperation, type SettledCosts } from "../runtime";
 import {
   activateNenActivity,
+  adjustNenActivity,
   advanceNenActivities,
+  resumeNenActivity,
+  stopNenActivity,
 } from "../character/nen/runtime";
 import {
   committedNenOutput,
@@ -67,6 +70,7 @@ import {
   characterTemporalState,
 } from "../character/time";
 import { gameTimeIntervalOf, hoursToDuration } from "../time/interval";
+import { AURA_PLACEMENT_CHANNELS } from "@nenworld/engine";
 import type { AuraPlacementChannel } from "@nenworld/engine";
 import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
@@ -492,149 +496,138 @@ describe("owner isolation across the whole pipeline", () => {
 
 
 /*
- * The fifteen principles, as STRUCTURAL CATEGORIES.
+ * The fifteen principles, as LIFECYCLE categories.
  *
- * The deliverable of the whole phase, and deliberately not fifteen
- * implementations. What is proved here is that the generic contract can carry
- * every shape the fifteen need — surface and internal placement, access
- * change, suppression, an item target, a projection, a concealment
- * placeholder, composition, and authorized differential Aura — without any of
- * them needing a rule of their own and without importing a line of the legacy
- * implementations under foundation/nen/principles/.
+ * Split from placement, and the split is the correction. One table used to
+ * assign every principle a lifecycle shape AND an Aura channel, which quietly
+ * asserted two very different things at once:
  *
- * The mastery values, costs, durations and intensity curves are NOT here.
- * Those are the authored mechanics this phase explicitly does not write; a
- * table of them would be this file quietly becoming the principle catalog.
+ *   the generic runtime can represent this principle structurally
+ *   this principle necessarily produces that Aura placement
+ *
+ * The first is what this phase set out to prove. The second is a claim about
+ * mechanics nobody has designed yet — Zetsu and Hatsu have no settled
+ * placement at all — and pairing them meant a speculative channel had to be
+ * invented for each principle just to get it through `resolveAuraPlacement`.
+ * Jū was the visible cost: it was handed the shared differential channel, which
+ * contradicts its canonical complete, even distribution.
+ *
+ * So this block proves the LIFECYCLE only, for all fifteen, and never places
+ * any Aura. Placement is proved separately below, against opaque mechanic ids,
+ * because a placement category is a property of the channel rather than of any
+ * principle that might one day use it.
  */
-describe("all fifteen principles fit the generic contract", () => {
-  interface Category {
+describe("all fifteen principles fit the generic lifecycle", () => {
+  /*
+   * Which principles distribute evenly and which may concentrate.
+   *
+   * Canon, recorded here as TEST DATA and nowhere in production. The generic
+   * runtime validates an authorization and never asks which principle issued
+   * it; a list like this inside the engine would be the principle catalog
+   * arriving through the back door.
+   */
+  const UNIFORM_PRINCIPLES = ["ten", "ren", "ken", "chu", "ju", "shu"] as const;
+
+  const DIFFERENTIAL_PRINCIPLES = ["gyo", "ko", "ryu", "yu"] as const;
+
+  /*
+   * The generic lifecycle capabilities, and the principle standing in for each.
+   *
+   * No `channel` field exists on this shape, which is what makes "the
+   * lifecycle test cannot manufacture a placement" structural rather than a
+   * convention somebody has to remember.
+   */
+  type LifecycleCapability =
+    | "activation"
+    | "requirements"
+    | "relations"
+    | "composition"
+    | "replacement"
+    | "suppression"
+    | "component-loss"
+    | "adjustment"
+    | "stop-resume";
+
+  interface LifecycleCase {
     readonly principle: string;
-    readonly channel: AuraPlacementChannel;
-    readonly constraints?: readonly NenActivityConstraint[];
+    readonly capability: LifecycleCapability;
     readonly relations?: NenActivityDefinition["relations"];
     readonly components?: readonly string[];
+    readonly constraints?: readonly NenActivityConstraint[];
   }
 
-  const RIGHT_ARM = continuityKey("upper-limb:right");
+  const CASES: readonly LifecycleCase[] = [
+    { principle: "ten", capability: "activation" },
+    { principle: "ren", capability: "adjustment" },
 
-  const authorization = {
-    allocationId: "place:0",
-    source: "activity:differential",
-    owner: "aura:gon",
-    grantedBy: "mastery:differential",
-  } as const;
-
-  const DIFFERENTIAL: AuraPlacementChannel = {
-    kind: "differential-surface",
-    weights: [{ continuityKey: RIGHT_ARM, weight: 1 }],
-    authorization,
-  };
-
-  const CATEGORIES: readonly Category[] = [
-    /* Whole-body surface, held. */
-    { principle: "ten", channel: { kind: "uniform-body-surface" } },
-
-    /* Whole-body surface at raised output — an access change, not a shape. */
-    {
-      principle: "ren",
-      channel: { kind: "uniform-body-surface" },
-      constraints: [{ kind: "deliberate-access" }],
-    },
-
-    /* Suppression: an activity that stops every other one. */
     {
       principle: "zetsu",
-      channel: { kind: "uniform-body-surface" },
+      capability: "suppression",
       relations: [{ relation: "suppresses", other: "principle:ten" }],
     },
 
-    /* Internal placement. */
-    { principle: "chu", channel: { kind: "uniform-body-internal" } },
+    { principle: "chu", capability: "activation" },
 
-    /* Authored action: needs the foundation active, carries no shape here. */
     {
       principle: "hatsu",
-      channel: { kind: "uniform-body-surface" },
+      capability: "requirements",
       relations: [{ relation: "requires", other: "principle:ren" }],
     },
 
-    /* Aura extended onto an object the engine does not measure. */
-    {
-      principle: "shu",
-      channel: {
-        kind: "item-surface",
-        measure: {
-          unit: "square-metre",
-          amount: 0.3,
-          derivation: "host",
-          provenance: "host:item-catalog",
-        },
-      },
-    },
+    { principle: "shu", capability: "stop-resume" },
 
-    /* Uneven concentration. Authorized, by construction. */
-    { principle: "gyo", channel: DIFFERENTIAL },
-
-    /* Concealment: a placeholder category, structurally a modifier. */
     {
-      principle: "in",
-      channel: { kind: "uniform-body-surface" },
+      principle: "gyo",
+      capability: "relations",
       relations: [{ relation: "modifies", other: "principle:ten" }],
     },
 
-    /* Composite: built from two others, and collapses with them. */
+    {
+      principle: "in",
+      capability: "relations",
+      relations: [{ relation: "modifies", other: "principle:ten" }],
+    },
+
     {
       principle: "ken",
-      channel: { kind: "uniform-body-surface" },
-      relations: [
-        { relation: "composite", other: "principle:ten" },
-        { relation: "component-loss", other: "principle:ren" },
-      ],
+      capability: "composition",
+      relations: [{ relation: "composite", other: "principle:ten" }],
       components: ["principle:ten", "principle:ren"],
+    },
+
+    { principle: "en", capability: "stop-resume" },
+    { principle: "ko", capability: "adjustment" },
+
+    {
+      principle: "ryu",
+      capability: "component-loss",
+      relations: [{ relation: "component-loss", other: "principle:ten" }],
       constraints: [{ kind: "component", activityId: "guard" }],
     },
 
-    /* Projection into space. */
-    {
-      principle: "en",
-      channel: {
-        kind: "projected-spatial",
-        measure: {
-          unit: "litre",
-          amount: 1000,
-          derivation: "host",
-          provenance: "host:scene-volume",
-        },
-      },
-    },
+    { principle: "yu", capability: "activation" },
 
-    /* Concentration into one identity. */
-    { principle: "ko", channel: DIFFERENTIAL },
-
-    /* Shifting concentration — the same category, re-authorized per change. */
-    { principle: "ryu", channel: DIFFERENTIAL },
-
-    /* Differential internal placement. */
-    {
-      principle: "yu",
-      channel: {
-        kind: "differential-internal",
-        weights: [{ continuityKey: RIGHT_ARM, weight: 1 }],
-        authorization,
-      },
-    },
-
-    /* All-in: a replacement for whatever was held. */
+    /*
+     * Jū replaces what was held. It is COMPLETE and EVEN when it lands, so it
+     * appears here for its replacement relationship and carries no
+     * differential anything — which is what it was wrongly given before.
+     */
     {
       principle: "ju",
-      channel: DIFFERENTIAL,
-      relations: [{ relation: "replaces", other: "principle:ten" }],
+      capability: "replacement",
+
+      /*
+       * Points at the BASE activity's definition, which is the opaque stand-in
+       * for whatever was being held. What is proved is that the runtime reads
+       * a `replaces` declaration and stops the named activity; which
+       * definition that turns out to be is the principle layer's business.
+       */
+      relations: [{ relation: "replaces", other: "definition:guard" }],
     },
 
-    /* Conditional compatibility. */
     {
       principle: "fu",
-      channel: { kind: "uniform-body-surface" },
+      capability: "relations",
       relations: [{
         relation: "conditional",
         other: "principle:ten",
@@ -643,14 +636,49 @@ describe("all fifteen principles fit the generic contract", () => {
     },
   ];
 
-  it("covers all fifteen", () => {
-    expect(CATEGORIES).toHaveLength(15);
-    expect(new Set(CATEGORIES.map((one) => one.principle)).size).toBe(15);
+  it("covers all fifteen, once each", () => {
+    expect(CASES).toHaveLength(15);
+    expect(new Set(CASES.map((one) => one.principle)).size).toBe(15);
   });
 
-  it.each(CATEGORIES.map((one) => [one.principle, one] as const))(
-    "carries %s as a category, with no rule of its own",
-    (principle, category) => {
+  it("exercises every generic lifecycle capability", () => {
+    /*
+     * Guards the table against drifting into fifteen rows that all test
+     * activation. Each capability has to be represented by at least one.
+     */
+    const CAPABILITIES: readonly LifecycleCapability[] = [
+      "activation",
+      "requirements",
+      "relations",
+      "composition",
+      "replacement",
+      "suppression",
+      "component-loss",
+      "adjustment",
+      "stop-resume",
+    ];
+
+    const covered = new Set(CASES.map((one) => one.capability));
+
+    expect([...covered].sort()).toEqual([...CAPABILITIES].sort());
+  });
+
+  it("never asks a principle to manufacture an Aura placement", () => {
+    /*
+     * Structural, not a convention. `LifecycleCase` has no channel field, so
+     * there is nothing here a placement could be built from — and a future
+     * edit that added one would have to add it to the type first.
+     */
+    for (const one of CASES) {
+      expect(one).not.toHaveProperty("channel");
+      expect(one).not.toHaveProperty("weights");
+      expect(one).not.toHaveProperty("authorization");
+    }
+  });
+
+  it.each(CASES.map((one) => [one.principle, one] as const))(
+    "carries %s through the generic lifecycle with no rule of its own",
+    (principle, testCase) => {
       const detail = fund({ current: 50_000, baseAuraCost: 100 });
 
       const definitionId = `principle:${principle}`;
@@ -659,18 +687,18 @@ describe("all fifteen principles fit the generic contract", () => {
         definitionId,
         {
           id: definitionId,
-          relations: category.relations ?? [],
-          ...(category.components === undefined
+          relations: testCase.relations ?? [],
+          ...(testCase.components === undefined
             ? {}
-            : { components: category.components }),
+            : { components: testCase.components }),
         },
       ]]);
 
       /*
-       * `requires` and `component` need something already running, and
-       * `replaces` needs something to replace. A base activity stands in for
-       * whatever the real principle would depend on — under an opaque id,
-       * because the point is that the runtime does not know or care.
+       * A base activity under an opaque id stands in for whatever the real
+       * principle would depend on or replace. `requires`, `component` and
+       * `replaces` all need something already running, and the runtime does
+       * not know or care what that something is.
        */
       const base = runtimeWith(detail.funding);
 
@@ -682,17 +710,18 @@ describe("all fifteen principles fit the generic contract", () => {
         requested: { aura: detail.funding.funded },
         priority: 5,
         funding: detail.funding,
-        ...(category.constraints === undefined
+        ...(testCase.constraints === undefined
           ? {}
-          : { constraints: category.constraints }),
+          : { constraints: testCase.constraints }),
       }, definitions);
 
       /*
-       * `requires` names a definition nothing is running, so that one category
-       * legitimately refuses — and refusing for the RIGHT reason is the proof
-       * the declaration was read rather than ignored.
+       * `requires` names a definition nothing is running, so that one case
+       * legitimately refuses — and refusing for the RIGHT reason proves the
+       * declaration was read rather than ignored.
        */
       if (!started.success) {
+        expect(testCase.capability).toBe("requirements");
         expect(started.errors.map((one) => one.code))
           .toContain("nen.activity.requirement.absent");
 
@@ -704,12 +733,255 @@ describe("all fifteen principles fit the generic contract", () => {
       expect(activity.definitionId).toBe(definitionId);
       expect(activity.condition).toBe("active");
 
+      /* Replacement is a consequence of activating, and is visible as one. */
+      if (testCase.capability === "replacement") {
+        expect(started.payload.consequences.map((one) => one.id))
+          .toContain("guard");
+        expect(started.payload.consequences[0]!.stop!.cause).toBe("replaced");
+      }
+
+      /* Composition and component loss both end with the component. */
+      if (testCase.capability === "component-loss") {
+        const lost = stopNenActivity(started.payload.runtime, {
+          activityId: "guard",
+          cause: "interrupted",
+          at: 10,
+          by: HOSTILE,
+        });
+
+        expect(lost.success).toBe(true);
+        if (!lost.success) return;
+
+        expect(
+          lost.payload.consequences.find(
+            (one) => one.id === `activity:${principle}`,
+          )!.stop!.cause,
+        ).toBe("collapsed");
+
+        return;
+      }
+
+      if (testCase.capability === "adjustment") {
+        const adjusted = adjustNenActivity(started.payload.runtime, {
+          activityId: `activity:${principle}`,
+          at: 5,
+          by: ACTOR,
+          requested: { aura: 50 },
+          funding: { ...detail.funding, funded: 50, requested: 50 },
+        });
+
+        expect(adjusted.success).toBe(true);
+        if (!adjusted.success) return;
+
+        expect(adjusted.payload.after!.funding.committed).toBe(50);
+
+        return;
+      }
+
+      /* Everything else stops, and the cause it stopped for is recorded. */
+      const cause = testCase.capability === "suppression"
+        ? "suppressed" as const
+        : "interrupted" as const;
+
+      const stopped = stopNenActivity(started.payload.runtime, {
+        activityId: `activity:${principle}`,
+        cause,
+        at: 10,
+        by: HOSTILE,
+        ...(testCase.capability === "stop-resume"
+          ? { resume: { authority: HOSTILE } }
+          : {}),
+      });
+
+      expect(stopped.success).toBe(true);
+      if (!stopped.success) return;
+
+      expect(stopped.payload.after!.stop!.cause).toBe(cause);
+
+      if (testCase.capability !== "stop-resume") return;
+
+      const resumed = resumeNenActivity(stopped.payload.runtime, {
+        activityId: `activity:${principle}`,
+        at: 20,
+        by: HOSTILE,
+        funding: detail.funding,
+      });
+
+      expect(resumed.success).toBe(true);
+      if (!resumed.success) return;
+
+      expect(resumed.payload.after!.condition).toBe("active");
+    },
+  );
+
+  it("treats Jū as uniform, never as differential", () => {
+    /*
+     * The specific correction. Jū's distribution is complete and even, and it
+     * appeared in the old table holding the shared differential channel —
+     * which authorized an uneven placement for a principle whose canon forbids
+     * one.
+     */
+    expect(UNIFORM_PRINCIPLES).toContain("ju");
+    expect(DIFFERENTIAL_PRINCIPLES).not.toContain("ju");
+
+    const ju = CASES.find((one) => one.principle === "ju")!;
+
+    expect(ju.capability).toBe("replacement");
+    expect(JSON.stringify(ju)).not.toMatch(/differential|weights|authorization/);
+  });
+
+  it("names only Gyō, Kō, Ryū and Yū as principles that may concentrate", () => {
+    expect([...DIFFERENTIAL_PRINCIPLES].sort())
+      .toEqual(["gyo", "ko", "ryu", "yu"]);
+
+    /* The two lists never overlap: a principle is even or it concentrates. */
+    for (const principle of DIFFERENTIAL_PRINCIPLES) {
+      expect(UNIFORM_PRINCIPLES).not.toContain(principle);
+    }
+  });
+
+  it("imports no legacy principle implementation anywhere in this suite", () => {
+    const source = readFileSync(
+      join(SRC, "__tests__", "nen-aura-runtime-integration.test.ts"),
+      "utf8",
+    );
+
+    expect(source).not.toMatch(/principles\/(ten|ren|zetsu|hatsu)/);
+  });
+});
+
+
+/*
+ * The placement categories, against OPAQUE mechanic ids.
+ *
+ * Deliberately not indexed by principle. A channel is a property of how Aura
+ * is arranged — over a whole body by volume, over an item's surface, through a
+ * projected volume — and which principle eventually uses which is a decision
+ * the principle layer owns and has not made. Naming principles here would
+ * turn every row into a guess that later has to be unpicked.
+ *
+ * Seven rows, one per category the contract carries.
+ */
+describe("every Aura placement category resolves", () => {
+  const RIGHT_ARM = continuityKey("upper-limb:right");
+  const LEFT_ARM = continuityKey("upper-limb:left");
+
+  const MECHANIC = "mechanic:opaque";
+
+  function authorization(allocationId: string) {
+    return {
+      allocationId,
+      source: MECHANIC,
+      owner: "aura:gon",
+      grantedBy: "test:granting-mechanic",
+    } as const;
+  }
+
+  interface PlacementCase {
+    readonly category: string;
+    readonly channel: AuraPlacementChannel;
+    readonly target?: TargetRef;
+  }
+
+  const CASES: readonly PlacementCase[] = [
+    {
+      category: "uniform body surface",
+      channel: { kind: "uniform-body-surface" },
+    },
+    {
+      category: "uniform body internal",
+      channel: { kind: "uniform-body-internal" },
+    },
+    {
+      category: "authorized differential surface",
+      channel: {
+        kind: "differential-surface",
+        weights: [
+          { continuityKey: RIGHT_ARM, weight: 3 },
+          { continuityKey: LEFT_ARM, weight: 1 },
+        ],
+        authorization: authorization("place:0"),
+      },
+    },
+    {
+      category: "authorized differential internal",
+      channel: {
+        kind: "differential-internal",
+        weights: [{ continuityKey: RIGHT_ARM, weight: 1 }],
+        authorization: authorization("place:0"),
+      },
+    },
+    {
+      category: "item surface",
+      target: { kind: "object", objectId: "sword-1" },
+      channel: {
+        kind: "item-surface",
+        measure: {
+          unit: "square-metre",
+          amount: 0.3,
+          derivation: "host",
+          provenance: "host:item-catalog",
+        },
+      },
+    },
+    {
+      category: "projected spatial",
+      target: {
+        kind: "area",
+        area: {
+          kind: "sphere",
+          centre: {
+            kind: "metric",
+            contextId: "scene-1",
+            xMetres: 0,
+            yMetres: 0,
+            zMetres: 0,
+          },
+          radiusMetres: 2,
+        },
+      },
+      channel: { kind: "projected-spatial" },
+    },
+  ];
+
+  it("covers every declared channel", () => {
+    const covered = new Set(CASES.map((one) => one.channel.kind));
+
+    expect([...covered].sort())
+      .toEqual([...AURA_PLACEMENT_CHANNELS].sort());
+  });
+
+  it("names no principle", () => {
+    /*
+     * The rule this block exists to keep. A principle id here would be a guess
+     * about mechanics the principle layer has not designed.
+     */
+    const PRINCIPLES = [
+      "ten", "ren", "zetsu", "hatsu", "shu", "en", "gyo",
+      "ken", "chu", "in", "ko", "ryu", "yu", "ju", "fu",
+    ];
+
+    const written = JSON.stringify(CASES).toLowerCase();
+
+    for (const principle of PRINCIPLES) {
+      expect(written).not.toMatch(new RegExp(`["':]${principle}["':]`));
+    }
+  });
+
+  it.each(CASES.map((one) => [one.category, one] as const))(
+    "resolves %s",
+    (_category, placementCase) => {
+      const detail = fund({ current: 50_000, baseAuraCost: 100 });
+
       const placed = resolveAuraPlacement({
         requestId: "place",
         owner: "aura:gon",
-        source: "activity:differential",
-        aura: activity.funding.committed,
-        targets: [{ target: SELF, channel: category.channel }],
+        source: MECHANIC,
+        aura: detail.funding.funded,
+        targets: [{
+          target: placementCase.target ?? SELF,
+          channel: placementCase.channel,
+        }],
       }, body());
 
       expect(placed.success).toBe(true);
@@ -723,17 +995,83 @@ describe("all fifteen principles fit the generic contract", () => {
       }
 
       expect(placed.payload.placedAura)
-        .toBeCloseTo(activity.funding.committed, 6);
+        .toBeCloseTo(detail.funding.funded, 6);
     },
   );
 
-  it("imports no legacy principle implementation anywhere in this suite", () => {
-    const source = readFileSync(
-      join(SRC, "__tests__", "nen-aura-runtime-integration.test.ts"),
-      "utf8",
-    );
+  it("resolves a multi-target placement at one density", () => {
+    const detail = fund({ current: 50_000, baseAuraCost: 300 });
 
-    expect(source).not.toMatch(/principles\/(ten|ren|zetsu|hatsu)/);
+    const placed = resolveAuraPlacement({
+      requestId: "place",
+      owner: "aura:gon",
+      source: MECHANIC,
+      aura: detail.funding.funded,
+      targets: [
+        {
+          target: { kind: "object", objectId: "sword-1" },
+          channel: {
+            kind: "item-surface",
+            measure: {
+              unit: "square-metre",
+              amount: 1,
+              derivation: "host",
+              provenance: "host:item-catalog",
+            },
+          },
+        },
+        {
+          target: { kind: "object", objectId: "shield-1" },
+          channel: {
+            kind: "item-surface",
+            measure: {
+              unit: "square-metre",
+              amount: 2,
+              derivation: "host",
+              provenance: "host:item-catalog",
+            },
+          },
+        },
+      ],
+    });
+
+    expect(placed.success).toBe(true);
+    if (!placed.success) return;
+
+    const [sword, shield] = placed.payload.sites;
+
+    expect(sword!.aura).toBeCloseTo(100, 6);
+    expect(shield!.aura).toBeCloseTo(200, 6);
+    expect(sword!.density).toEqual(shield!.density);
+  });
+
+  it("refuses an unauthorized one-part placement", () => {
+    /*
+     * The hole this repair closed, checked at the placement boundary. One Body
+     * Part is the most concentrated placement there is; before `localized` was
+     * removed it needed no grant at all.
+     */
+    const placed = resolveAuraPlacement({
+      requestId: "place",
+      owner: "aura:gon",
+      source: MECHANIC,
+      aura: 100,
+      targets: [{
+        target: SELF,
+        channel: {
+          kind: "differential-surface",
+          weights: [{ continuityKey: RIGHT_ARM, weight: 1 }],
+          authorization: {
+            allocationId: "place:0",
+            source: MECHANIC,
+            owner: "aura:someone-else",
+            grantedBy: "test:granting-mechanic",
+          },
+        },
+      }],
+    }, body());
+
+    expect(placed.success).toBe(false);
   });
 });
 

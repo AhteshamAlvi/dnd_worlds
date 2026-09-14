@@ -468,11 +468,11 @@ describe("paying for an action", () => {
     const result = spendActionAura(
       {
         current: 50_000,
+        /* Any standing commitment will do; what matters is that 500 is held. */
         allocations: [{
-          id: "ken-arm",
-          coverage: "localized",
+          id: "coating",
+          coverage: "whole-body",
           placement: "surface",
-          continuityKey: RIGHT_ARM,
           aura: 500,
         }],
       },

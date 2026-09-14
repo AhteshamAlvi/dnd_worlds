@@ -83,7 +83,7 @@ import {
   type AuraShortfallPolicy,
 } from "./funding";
 import {
-  isLocalizedAllocation,
+  isDifferentialAllocation,
   totalAllocatedAura,
   type AuraAllocation,
   type CharacterAuraState,
@@ -782,11 +782,16 @@ function findAllocationRejections(
   ];
 
   /*
-   * A localized allocation aimed at anatomy that is not there is REFUSED here,
-   * where reconciliation would merely remove it. The difference is who asked:
-   * a caller deliberately reinforcing an arm that does not exist has made a
+   * A concentration aimed at anatomy that is not there is REFUSED here, where
+   * reconciliation would merely remove it. The difference is who asked: a
+   * caller deliberately reinforcing an arm that does not exist has made a
    * mistake and should be told, whereas an arm that was severed after the fact
    * is the world changing under a decision that was sound when it was made.
+   *
+   * EVERY weight must land, not merely one of them. A placement that named
+   * four identities and silently resolved against the two still attached would
+   * concentrate twice the intended density onto them — which is a different
+   * placement from the one that was authorized.
    */
   const manifested = new Set<ContinuityKey>();
 
@@ -798,19 +803,22 @@ function findAllocationRejections(
   }
 
   for (const allocation of allocations) {
-    if (!isLocalizedAllocation(allocation)) continue;
-    if (manifested.has(allocation.continuityKey)) continue;
+    if (!isDifferentialAllocation(allocation)) continue;
 
-    errors.push({
-      code: "aura.allocation.identity.not_manifested",
-      message:
-        "No present Body Part stands in the anatomical identity this allocation targets.",
-      audience: "player",
-      required: "a manifested continuity identity",
-      actual: allocation.continuityKey,
-      resolution:
-        "Target an identity the current form expresses, or use whole-body coverage.",
-    });
+    for (const weight of allocation.weights) {
+      if (manifested.has(weight.continuityKey)) continue;
+
+      errors.push({
+        code: "aura.allocation.identity.not_manifested",
+        message:
+          "No present Body Part stands in the anatomical identity this allocation targets.",
+        audience: "player",
+        required: "a manifested continuity identity",
+        actual: weight.continuityKey,
+        resolution:
+          "Target an identity the current form expresses, or use whole-body coverage.",
+      });
+    }
   }
 
   const total = totalAllocatedAura(allocations);
@@ -830,6 +838,36 @@ function findAllocationRejections(
   }
 
   return errors;
+}
+
+
+/*
+ * Whether two allocations concentrate on the same identities, in the same
+ * proportions.
+ *
+ * Only differential allocations have targets to compare; two uniform ones
+ * cover the same complete domain by definition. Order-insensitive, because
+ * re-listing the same weights in a different order is not a change the
+ * character made — and reporting it as `replaced` would show a redistribution
+ * that never happened.
+ */
+function sameTargets(
+  before: AuraAllocation,
+  after: AuraAllocation,
+): boolean {
+  if (!isDifferentialAllocation(before) || !isDifferentialAllocation(after)) {
+    return true;
+  }
+
+  if (before.weights.length !== after.weights.length) return false;
+
+  const byKey = new Map(
+    before.weights.map((one) => [one.continuityKey, one.weight]),
+  );
+
+  return after.weights.every(
+    (one) => byKey.get(one.continuityKey) === one.weight,
+  );
 }
 
 
@@ -870,9 +908,7 @@ function diffAllocations(
       before.aura === allocation.aura &&
       before.coverage === allocation.coverage &&
       before.placement === allocation.placement &&
-      (!isLocalizedAllocation(before) ||
-        !isLocalizedAllocation(allocation) ||
-        before.continuityKey === allocation.continuityKey)
+      sameTargets(before, allocation)
     ) {
       changes.push({
         kind: "unchanged",

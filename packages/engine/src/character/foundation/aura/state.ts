@@ -24,7 +24,6 @@
  * than "has Nen" and the reason the two are separate fields on Character.
  */
 
-import type { ContinuityKey } from "../body/anatomy/types";
 import type {
   AuraCommitmentShortfall,
   AuraCoverage,
@@ -84,41 +83,33 @@ export interface WholeBodyAuraAllocation extends AuraAllocationMetadata {
 }
 
 /*
- * Aura placed on one anatomical identity.
+ * Aura CONCENTRATED on stated anatomical identities.
  *
- * Targets a ContinuityKey, never a BodyPartId. A BodyPartId names the instance
- * standing in that position right now, so a transformation or a regeneration
- * would silently orphan every allocation aimed at one. The identity is what
- * the character was reinforcing — "my right arm" — and it survives the arm
- * being a Dragon's foreleg for the next three rounds.
+ * The shape that says out loud what an uneven placement is, and the only route
+ * to one. `whole-body` cannot express it — that coverage means equal density
+ * over the complete eligible domain, and a version of it carrying weights or
+ * gaps would be this allocation wearing a name that hides it.
  *
+ * It replaced a `localized` coverage that named ONE identity and required no
+ * authorization, which was a bypass rather than a convenience: putting a
+ * character's whole Output into one fist is precisely what the gated
+ * applications do, and selecting a single part is not a lesser case of uneven
+ * distribution but the extreme of it. A one-part placement is now a single
+ * weight here, and brings the same grant every other concentration needs.
+ *
+ * Weights target ContinuityKeys, never BodyPartIds. A BodyPartId names the
+ * instance standing in that position right now, so a transformation or a
+ * regeneration would silently orphan every allocation aimed at one. The
+ * identity is what the character was reinforcing — "my right arm" — and it
+ * survives the arm being a Dragon's foreleg for the next three rounds.
  * Enlarging or shrinking that part keeps the Aura and changes the density,
- * which is the physically honest outcome: the same Aura spread over more body.
- */
-export interface LocalizedAuraAllocation extends AuraAllocationMetadata {
-  readonly id: string;
-  readonly coverage: "localized";
-  readonly placement: AuraPlacement;
-  readonly continuityKey: ContinuityKey;
-  readonly aura: number;
-}
-
-/*
- * Aura placed UNEVENLY across several identities.
- *
- * The shape that says out loud what a weighted placement is. `whole-body`
- * cannot express it — that coverage means equal density over the complete
- * eligible domain, and a version of it carrying weights or gaps would be this
- * allocation wearing a name that hides it.
+ * which is the physically honest outcome: the same Aura over more body.
  *
  * The authorization is mandatory and is checked against THIS allocation, this
- * source and this owner. Uneven Aura is the raw material of the advanced
- * applications, so a generic path that took weights on trust would hand every
- * caller those applications without the mastery or gate meant to grant them.
- *
- * What it is NOT is any particular application. Aura resolves weights into
- * placed Aura and density and stops; which mastery earns a grant, and what an
- * uneven distribution then DOES, belong to the mechanics that own those rules.
+ * source and this owner. What it is NOT is any particular application: Aura
+ * resolves weights into placed Aura and density and stops. Which mastery earns
+ * a grant, and what an uneven distribution then DOES, belong to the mechanics
+ * that own those rules — this file names none of them.
  */
 export interface DifferentialAuraAllocation extends AuraAllocationMetadata {
   readonly id: string;
@@ -137,14 +128,13 @@ export interface DifferentialAuraAllocation extends AuraAllocationMetadata {
 /*
  * Records rather than one mutually exclusive distribution mode.
  *
- * Whole-body surface Ten and a localized internal Chū in one fist are
+ * A whole-body surface coating and an authorized concentration in one fist are
  * simultaneously true of the same character, and a single "current
  * distribution" field cannot say so. Multiple allocations may target the same
  * part, including one in each placement.
  */
 export type AuraAllocation =
   | WholeBodyAuraAllocation
-  | LocalizedAuraAllocation
   | DifferentialAuraAllocation;
 
 /*
@@ -168,12 +158,6 @@ export function isWholeBodyAllocation(
   allocation: AuraAllocation,
 ): allocation is WholeBodyAuraAllocation {
   return allocation.coverage === "whole-body";
-}
-
-export function isLocalizedAllocation(
-  allocation: AuraAllocation,
-): allocation is LocalizedAuraAllocation {
-  return allocation.coverage === "localized";
 }
 
 export function isDifferentialAllocation(

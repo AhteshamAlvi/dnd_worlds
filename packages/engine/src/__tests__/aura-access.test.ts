@@ -285,11 +285,16 @@ describe("access inputs that cannot be true", () => {
 
 
 describe("placement permission", () => {
+  /*
+   * Uniform internal, not a concentration. What is under test is whether the
+   * access state PERMITS internal placement at all, which has nothing to do
+   * with how the Aura is spread — and ordinary internal Aura is complete and
+   * even, so a one-part version would have misdescribed it.
+   */
   const INTERNAL: AuraAllocation = {
-    id: "chu-fist",
-    coverage: "localized",
+    id: "internal",
+    coverage: "whole-body",
     placement: "internal",
-    continuityKey: RIGHT_ARM,
     aura: 100,
   };
 

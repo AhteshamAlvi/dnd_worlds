@@ -28,7 +28,7 @@ export type {
   AuraAllocation,
   AuraAllocationMetadata,
   CharacterAuraState,
-  LocalizedAuraAllocation,
+  DifferentialAuraAllocation,
   WholeBodyAuraAllocation,
 } from "./state";
 
@@ -37,7 +37,7 @@ export {
   allocationsForPlacement,
   allocationsWithCoverage,
   emptyAuraState,
-  isLocalizedAllocation,
+  isDifferentialAllocation,
   isWholeBodyAllocation,
   totalAllocatedAura,
 } from "./state";

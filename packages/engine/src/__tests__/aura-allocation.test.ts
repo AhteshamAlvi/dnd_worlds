@@ -8,9 +8,14 @@
  * would give a Giant a human's density, which is exactly what the retired
  * Surface Units constant did.
  *
- * The second property is that a localized allocation targets a CONTINUITY
+ * The second property is that a CONCENTRATED allocation targets a CONTINUITY
  * IDENTITY rather than a BodyPart instance. "My right arm" has to survive that
  * arm being regenerated, enlarged, or temporarily a Dragon's foreleg.
+ *
+ * Concentration is also the only uneven placement there is, and it requires an
+ * authorization bound to the allocation, its source and its owner. A coverage
+ * that selected one part without one — the retired `localized` — was a public
+ * route to exactly what the gated applications do.
  *
  * Working numbers, standard human at Scale 1:
  *
@@ -38,7 +43,7 @@ import {
 import { resolveAuraDistribution } from "../character/foundation/aura/distribution";
 import {
   emptyAuraState,
-  isLocalizedAllocation,
+  isDifferentialAllocation,
   isWholeBodyAllocation,
   totalAllocatedAura,
 } from "../character/foundation/aura/state";
@@ -55,6 +60,8 @@ import type {
   BodyPartId,
 } from "../character/foundation/body/anatomy/types";
 import type { BodyPartCreationSpec } from "../character/foundation/body/anatomy/creation";
+
+import { auraOnOnePart, concentratedAura } from "./fixtures/aura";
 
 const DEFINITIONS = Object.values(
   BODY_PART_DEFINITIONS,
@@ -250,7 +257,7 @@ describe("surface Aura density", () => {
 describe("whole-body allocation", () => {
   it("distributes internal Aura proportionally to present Volume", () => {
     const { distribution } = place([
-      { id: "ryu", coverage: "whole-body", placement: "internal", aura: 600 },
+      { id: "internal", coverage: "whole-body", placement: "internal", aura: 600 },
     ]);
 
     expect(distribution.allocations).toHaveLength(12);
@@ -264,9 +271,31 @@ describe("whole-body allocation", () => {
     expect(arm.aura).toBeCloseTo(600 * (2.37 / 60), 10);
   });
 
+  it("covers EVERY eligible present part, leaving none out", () => {
+    /*
+     * Completeness, asserted against the anatomy rather than against a count.
+     * "Uniform" means the whole eligible domain, and a placement that reached
+     * eleven of twelve parts at the right density would pass every density
+     * assertion in this block while being a concentration wearing a uniform
+     * name — which is the shape the retired `localized` coverage made easy.
+     */
+    const eligible = STANDARD_HUMANOID_ANATOMY.parts
+      .filter((part) => part.state === "active")
+      .map((part) => part.id);
+
+    for (const placement of ["internal", "surface"] as const) {
+      const { distribution } = place([
+        { id: "uniform", coverage: "whole-body", placement, aura: 600 },
+      ]);
+
+      expect(distribution.allocations.map((one) => one.partId).sort())
+        .toEqual([...eligible].sort());
+    }
+  });
+
   it("produces equal internal density across every covered part", () => {
     const { distribution } = place([
-      { id: "ryu", coverage: "whole-body", placement: "internal", aura: 600 },
+      { id: "internal", coverage: "whole-body", placement: "internal", aura: 600 },
     ]);
 
     for (const allocation of distribution.allocations) {
@@ -276,7 +305,7 @@ describe("whole-body allocation", () => {
 
   it("distributes surface Aura proportionally to present Surface Area", () => {
     const { distribution } = place([
-      { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
+      { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
     ]);
 
     const arm = surface(
@@ -289,7 +318,7 @@ describe("whole-body allocation", () => {
 
   it("produces equal surface density across every covered part", () => {
     const { distribution } = place([
-      { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
+      { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
     ]);
 
     for (const allocation of distribution.allocations) {
@@ -330,7 +359,7 @@ describe("whole-body allocation", () => {
     );
 
     const { distribution } = place(
-      [{ id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 }],
+      [{ id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 }],
       { anatomy: oneArmed },
     );
 
@@ -347,16 +376,15 @@ describe("whole-body allocation", () => {
 });
 
 
-describe("localized allocation", () => {
+describe("concentrated allocation", () => {
   it("targets a continuity identity and resolves to the part standing in it", () => {
     const { distribution } = place([
-      {
+      auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 237,
-      },
+      }),
     ]);
 
     expect(distribution.allocations).toHaveLength(1);
@@ -371,13 +399,12 @@ describe("localized allocation", () => {
 
   it("measures surface placement against that part's own area", () => {
     const { distribution } = place([
-      {
-        id: "ken-arm",
-        coverage: "localized",
+      auraOnOnePart({
+        id: "ko-arm",
         placement: "surface",
         continuityKey: RIGHT_ARM,
         aura: 118.3,
-      },
+      }),
     ]);
 
     expect(surface(distribution.allocations[0]!).density.auraPerSquareMeter)
@@ -401,13 +428,12 @@ describe("localized allocation", () => {
     ] as readonly BodyPartCreationSpec[]);
 
     const { distribution, dropped } = place(
-      [{
+      [auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 237,
-      }],
+      })],
       { anatomy: draconic },
     );
 
@@ -429,13 +455,12 @@ describe("localized allocation", () => {
    */
   it("preserves allocated Aura and changes density when the part grows", () => {
     const enlarged = place(
-      [{
+      [auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 237,
-      }],
+      })],
       { overrides: { [RIGHT_ARM]: { bulk: 2 } } },
     ).distribution;
 
@@ -448,13 +473,12 @@ describe("localized allocation", () => {
 
   it("raises density when the part shrinks", () => {
     const shrunk = place(
-      [{
+      [auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 237,
-      }],
+      })],
       { overrides: { [RIGHT_ARM]: { bulk: 0.5 } } },
     ).distribution;
 
@@ -465,19 +489,20 @@ describe("localized allocation", () => {
 
 
 describe("allocations whose target is not there", () => {
-  const KO_ON_RIGHT_ARM: AuraAllocation = {
+  const KO_ON_RIGHT_ARM: AuraAllocation = auraOnOnePart({
     id: "ko",
-    coverage: "localized",
     placement: "internal",
     continuityKey: RIGHT_ARM,
     aura: 500,
-  };
+  });
 
   it("drops an allocation on an identity the body does not manifest", () => {
-    const { distribution, dropped } = place([{
-      ...KO_ON_RIGHT_ARM,
+    const { distribution, dropped } = place([auraOnOnePart({
+      id: "ko",
+      placement: "internal",
       continuityKey: continuityKey("wing:left"),
-    }]);
+      aura: 500,
+    })]);
 
     expect(distribution.allocations).toEqual([]);
     expect(dropped).toEqual([
@@ -534,13 +559,12 @@ describe("allocations whose target is not there", () => {
     const { distribution, dropped } = place(
       [
         KO_ON_RIGHT_ARM,
-        {
+        auraOnOnePart({
           id: "ko-left",
-          coverage: "localized",
           placement: "internal",
           continuityKey: LEFT_ARM,
           aura: 237,
-        },
+        }),
       ],
       {
         anatomy: setBodyPartState(
@@ -560,7 +584,7 @@ describe("allocations whose target is not there", () => {
     const nothing: Anatomy = { ...STANDARD_HUMANOID_ANATOMY, parts: [] };
 
     const { distribution, dropped } = place(
-      [{ id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 }],
+      [{ id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 }],
       { anatomy: nothing },
     );
 
@@ -572,23 +596,25 @@ describe("allocations whose target is not there", () => {
 
 describe("simultaneous allocations", () => {
   /*
-   * The case that rules out a single "current distribution" field: whole-body
-   * Ten and a localized internal Chū are both true of this character at once.
+   * The case that rules out a single "current distribution" field: a whole-body
+   * surface coating and whole-body internal Aura are both true of this
+   * character at once.
+   *
+   * BOTH uniform, and that is the correction rather than an incidental choice.
+   * This case used to pair the coating with a single-part internal allocation
+   * labelled Chū, which described Chū as a concentration — it is complete and
+   * even, like the coating, and the two differ in their MEASUREMENT rather than
+   * in their extent.
    */
-  it("holds whole-body surface and localized internal Aura together", () => {
+  it("holds whole-body surface and whole-body internal Aura together", () => {
     const { distribution } = place([
-      { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
-      {
-        id: "chu",
-        coverage: "localized",
-        placement: "internal",
-        continuityKey: RIGHT_ARM,
-        aura: 237,
-      },
+      { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
+      { id: "internal", coverage: "whole-body", placement: "internal", aura: 6000 },
     ]);
 
-    expect(distribution.allocations).toHaveLength(13);
-    expect(distribution.activeAura).toBeCloseTo(1690 + 237, 10);
+    /* Twelve parts, each carrying both placements. */
+    expect(distribution.allocations).toHaveLength(24);
+    expect(distribution.activeAura).toBeCloseTo(1690 + 6000, 10);
 
     const onRightArm = distribution.allocations
       .filter((allocation) => allocation.partId === "arm-2");
@@ -599,15 +625,14 @@ describe("simultaneous allocations", () => {
   });
 
   it("keeps each placement measured against its own denominator", () => {
+    /*
+     * 1,690 over 1.69 m2 of skin and 6,000 over 60 L of body both come out at
+     * round numbers on every part, which is the point: equal density
+     * everywhere, in two different units that must not be compared.
+     */
     const { distribution } = place([
-      { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
-      {
-        id: "chu",
-        coverage: "localized",
-        placement: "internal",
-        continuityKey: RIGHT_ARM,
-        aura: 237,
-      },
+      { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
+      { id: "internal", coverage: "whole-body", placement: "internal", aura: 6000 },
     ]);
 
     const onRightArm = distribution.allocations
@@ -621,20 +646,18 @@ describe("simultaneous allocations", () => {
 
   it("allows two allocations of the same placement on the same part", () => {
     const { distribution } = place([
-      {
+      auraOnOnePart({
         id: "ko-a",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 100,
-      },
-      {
+      }),
+      auraOnOnePart({
         id: "ko-b",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 137,
-      },
+      }),
     ]);
 
     expect(distribution.allocations).toHaveLength(2);
@@ -645,13 +668,12 @@ describe("simultaneous allocations", () => {
 
   it("reports Output the character has not placed anywhere", () => {
     const { distribution } = place(
-      [{
+      [auraOnOnePart({
         id: "ko",
-        coverage: "localized",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 300,
-      }],
+      })],
       { availableOutput: 2000 },
     );
 
@@ -703,8 +725,8 @@ describe("Scale", () => {
    */
   it("dilutes internal density as the cube and surface density as the square", () => {
     const allocations: readonly AuraAllocation[] = [
-      { id: "ryu", coverage: "whole-body", placement: "internal", aura: 600 },
-      { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
+      { id: "internal", coverage: "whole-body", placement: "internal", aura: 600 },
+      { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
     ];
 
     const human = place(allocations).distribution;
@@ -731,19 +753,18 @@ describe("stored Aura state", () => {
 
   it("sums what the character has committed", () => {
     const allocations: readonly AuraAllocation[] = [
-      { id: "ten", coverage: "whole-body", placement: "surface", aura: 1690 },
-      {
-        id: "chu",
-        coverage: "localized",
+      { id: "coating", coverage: "whole-body", placement: "surface", aura: 1690 },
+      auraOnOnePart({
+        id: "ko",
         placement: "internal",
         continuityKey: RIGHT_ARM,
         aura: 237,
-      },
+      }),
     ];
 
     expect(totalAllocatedAura(allocations)).toBeCloseTo(1927, 10);
     expect(allocations.filter(isWholeBodyAllocation)).toHaveLength(1);
-    expect(allocations.filter(isLocalizedAllocation)).toHaveLength(1);
+    expect(allocations.filter(isDifferentialAllocation)).toHaveLength(1);
   });
 
   /*
@@ -754,13 +775,12 @@ describe("stored Aura state", () => {
     const state = {
       current: 5000,
       allocations: [
-        {
+        auraOnOnePart({
           id: "ko",
-          coverage: "localized" as const,
-          placement: "internal" as const,
+          placement: "internal",
           continuityKey: RIGHT_ARM,
           aura: 300,
-        },
+        }),
       ],
     };
 

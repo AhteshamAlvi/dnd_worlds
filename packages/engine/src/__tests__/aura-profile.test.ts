@@ -42,6 +42,7 @@ import type { Anatomy } from "../character/foundation/body/anatomy/types";
 
 import {
   auraContext,
+  auraOnOnePart,
   auraTestAttributes,
   UNAWAKENED,
   UNCONTAINED,
@@ -326,18 +327,24 @@ describe("awakening", () => {
       attributes: { con: 20, vit: 20 },
       current: 20_000,
       access: CHU,
+      /*
+       * Uniform internal. The subject is whether the access state PERMITS
+       * internal placement, which says nothing about how the Aura is spread —
+       * and ordinary internal Aura is complete and even. 1,200 over 60 L is
+       * 20 per litre on every part, the right Arm included, and fits inside
+       * the 2,500 of deliberate budget this access leaves.
+       */
       allocations: [{
-        id: "chu-fist",
-        coverage: "localized",
+        id: "internal",
+        coverage: "whole-body",
         placement: "internal",
-        continuityKey: RIGHT_ARM,
-        aura: 237,
+        aura: 1200,
       }],
     });
 
     expect(chu.adjustments).toEqual([]);
     expect(internalOn(chu, "arm-2")!.density.auraPerLiter)
-      .toBeCloseTo(237 / 2.37, 10);
+      .toBeCloseTo(20, 10);
   });
 });
 
@@ -446,19 +453,23 @@ describe("baseline Ten", () => {
 
 
 describe("aggregating contributions on one Body Part", () => {
-  const LOCAL_ARM_COAT: AuraAllocation = {
-    id: "ken-arm",
-    coverage: "localized",
+  /*
+   * A genuine concentration, and therefore authorized. What is under test is
+   * that two contributions land on one Part and stay separable, which needs
+   * one of them to cover less than the whole body.
+   */
+  const ARM_CONCENTRATION: AuraAllocation = auraOnOnePart({
+    id: "ko-arm",
     placement: "surface",
     continuityKey: RIGHT_ARM,
     aura: 118.3,
-  };
+  });
 
   const resolved = profile({
     attributes: { con: 20, vit: 20 },
     current: 50_000,
     access: REN_III,
-    allocations: [LOCAL_ARM_COAT],
+    allocations: [ARM_CONCENTRATION],
   });
 
   /* Baseline Ten's share of the right Arm: 500 x (1183 / 16,900). */
@@ -494,7 +505,7 @@ describe("aggregating contributions on one Body Part", () => {
       .toBeCloseTo(1000 + 500 / 1.69, 8);
   });
 
-  it("leaves the parts the localized allocation does not cover alone", () => {
+  it("leaves the parts the concentration does not cover alone", () => {
     expect(surfaceOn(resolved, "arm-1")!.contributions).toHaveLength(1);
     expect(surfaceOn(resolved, "arm-1")!.density.auraPerSquareMeter)
       .toBeCloseTo(500 / 1.69, 10);
@@ -510,22 +521,22 @@ describe("aggregating contributions on one Body Part", () => {
       current: 50_000,
       access: CHU,
       allocations: [
+        /* 1,200 over 60 L puts 47.4 and 20 per litre on the right Arm. */
         {
-          id: "chu-fist",
-          coverage: "localized",
+          id: "internal",
+          coverage: "whole-body",
           placement: "internal",
-          continuityKey: RIGHT_ARM,
-          aura: 237,
+          aura: 1200,
         },
-        LOCAL_ARM_COAT,
+        ARM_CONCENTRATION,
       ],
     });
 
     const arm = both.byBodyPart.find((part) => part.partId === "arm-2")!;
 
-    expect(arm.internal!.density.auraPerLiter).toBeCloseTo(100, 10);
+    expect(arm.internal!.density.auraPerLiter).toBeCloseTo(20, 10);
     expect(arm.surface!.density.auraPerSquareMeter).toBeCloseTo(1000, 10);
-    expect(arm.internal!.aura).toBeCloseTo(237, 10);
+    expect(arm.internal!.aura).toBeCloseTo(47.4, 10);
     expect(arm.surface!.aura).toBeCloseTo(118.3, 10);
   });
 });
@@ -634,7 +645,7 @@ describe("one shared Output budget", () => {
     expect(resolved.distribution.allocations).toEqual([]);
   });
 
-  it("reports a localized allocation whose anatomy is gone", () => {
+  it("reports a concentration whose anatomy is gone", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
@@ -644,19 +655,18 @@ describe("one shared Output budget", () => {
         "arm-2",
         "archived-removed",
       ),
-      allocations: [{
-        id: "ken-arm",
-        coverage: "localized",
+      allocations: [auraOnOnePart({
+        id: "ko-arm",
         placement: "surface",
         continuityKey: RIGHT_ARM,
         aura: 118.3,
-      }],
+      })],
     });
 
     expect(resolved.adjustments).toEqual([
       expect.objectContaining({
         kind: "removed-not-manifested",
-        allocationId: "ken-arm",
+        allocationId: "ko-arm",
         reason: "identity-not-manifested",
       }),
     ]);

@@ -34,7 +34,6 @@ export type AuraAllocationIssueCode =
   | "aura.allocation.amount.invalid"
   | "aura.allocation.coverage.invalid"
   | "aura.allocation.placement.invalid"
-  | "aura.allocation.continuity.missing"
   | "aura.allocation.uniform.weighted"
   | "aura.allocation.weights.invalid"
   | "aura.allocation.authorization.missing"
@@ -285,51 +284,40 @@ export function findAuraAllocationIssues(
     }
 
     /*
-     * A localized allocation with no identity to target is not "localized to
-     * nowhere", it is unusable: distribution has nothing to look up, and the
-     * allocation would be silently dropped as unmanifested every time.
+     * A UNIFORM allocation that narrows itself in any way.
+     *
+     * The case the coverage union cannot catch on its own. TypeScript's
+     * excess-property check only fires on object literals, and stored state
+     * arrives from a host as a plain parsed object — so a caller who wants
+     * uneven Aura without asking for it can label a narrowed placement
+     * "whole-body" and hope somebody reads the field. Nobody would:
+     * distribution ignores what it does not know about, and the allocation
+     * would resolve as uniform while LOOKING authorized to a reader.
+     *
+     * All three narrowing fields are refused, not just weights. `continuityKey`
+     * in particular is how the removed `localized` coverage selected one part,
+     * and leaving it unchecked would let a stale save — or a caller who
+     * remembered the old shape — keep the bypass alive under the new name.
      */
-    if (allocation.coverage === "localized") {
-      const key: unknown = allocation.continuityKey;
+    if (allocation.coverage === "whole-body") {
+      const narrowing = (["weights", "continuityKey", "excluding"] as const)
+        .filter((field) =>
+          (allocation as unknown as Readonly<Record<string, unknown>>)[field] !==
+            undefined
+        );
 
-      if (typeof key !== "string" || key.trim().length === 0) {
+      if (narrowing.length > 0) {
         issues.push({
-          code: "aura.allocation.continuity.missing",
+          code: "aura.allocation.uniform.weighted",
           message:
-            "A localized Aura allocation must name the continuity identity it covers.",
+            "A whole-body Aura allocation covers every eligible part at equal " +
+            "density and cannot select, weight or exclude any of them. Use " +
+            "differential coverage, which requires authorization.",
           index,
           ...(typeof id === "string" ? { allocationId: id } : {}),
-          actual: key,
+          actual: narrowing.join(", "),
         });
       }
-    }
-
-    /*
-     * A UNIFORM allocation carrying weights is the case the coverage union
-     * cannot catch on its own.
-     *
-     * TypeScript's excess-property check only fires on object literals, and
-     * stored state arrives from a host as a plain parsed object — so a caller
-     * who wants uneven Aura without asking for it can simply label a weighted
-     * placement "whole-body" and hope somebody reads the field. Nobody would:
-     * distribution ignores what it does not know about, and the allocation
-     * would resolve as uniform while LOOKING authorized to a reader. Refusing
-     * it here is what keeps "uniform" a claim the shape actually makes.
-     */
-    if (
-      allocation.coverage === "whole-body" &&
-      (allocation as { readonly weights?: unknown }).weights !== undefined
-    ) {
-      issues.push({
-        code: "aura.allocation.uniform.weighted",
-        message:
-          "A whole-body Aura allocation covers every eligible part at equal " +
-          "density and cannot carry weights. Use differential coverage, which " +
-          "requires authorization.",
-        index,
-        ...(typeof id === "string" ? { allocationId: id } : {}),
-        actual: "weights present",
-      });
     }
 
     if (allocation.coverage === "differential") {
