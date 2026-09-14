@@ -50,13 +50,24 @@ import {
   type NenActivityDefinition,
   type NenActivityRuntime,
 } from "../character/foundation/nen/runtime";
-import { resolveAuraPlacement } from "../gameplay/aura";
+/*
+ * Through the PACKAGE, not the module.
+ *
+ * Three other suites reach the public surface as `../index`, and that checks
+ * the barrel. This one goes through the package name because the claim being
+ * made is stronger: placement has no production caller yet — it is waiting on
+ * the reinforcement and principle layers — so the only thing standing between
+ * it and being unreachable is the export. A self-reference exercises
+ * package.json's `exports` map as well as the barrel, which a relative path
+ * bypasses entirely, and it fails the moment either one stops naming it.
+ */
+import { resolveAuraPlacement } from "@nenworld/engine";
 import {
   advanceCharacterTime,
   characterTemporalState,
 } from "../character/time";
 import { gameTimeIntervalOf, hoursToDuration } from "../time/interval";
-import type { AuraPlacementChannel } from "../gameplay/aura";
+import type { AuraPlacementChannel } from "@nenworld/engine";
 import { STANDARD_HUMANOID_ANATOMY } from "../character/foundation/body/anatomy/standard-humanoid";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { CharacterAuraState } from "../character/foundation/aura/state";
@@ -822,24 +833,14 @@ describe("the new modules keep their layers", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps Aura foundation out of targeting/ and spatial/", () => {
-    /*
-     * The composition this phase needed lives in gameplay/aura precisely so
-     * that this stays true. A shortcut import here is the thing the extra
-     * layer was built to avoid.
-     */
-    const auraFiles = sourceFilesUnder(
-      join(SRC, "character", "foundation", "aura"),
-    );
-
-    const offenders = auraFiles.filter((path) =>
-      importsOf(path).some((one) =>
-        one.includes("../../../targeting") || one.includes("../../../spatial")
-      ),
-    );
-
-    expect(offenders).toEqual([]);
-  });
+  /*
+   * Aura's independence from Targeting and Spatial, and the placement layer's
+   * own boundary, now live in architecture.test.ts — see "Aura placement is a
+   * layer above Character, not inside it". They were checked here while
+   * gameplay/aura was new and a rule in the general suite would have passed
+   * vacuously; the files exist now, and the version there is stronger, so one
+   * authoritative rule is better than two that can drift apart.
+   */
 
   it("creates no Body injury from Aura or the Nen runtime", () => {
     const offenders = [

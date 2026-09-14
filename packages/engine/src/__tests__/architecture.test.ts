@@ -3028,3 +3028,180 @@ describe("every public transition validates its request before reading it", () =
     expect(preflight).toMatch(/nen\.awakening\.request\.method\.mismatch/);
   });
 });
+
+
+/*
+ * Aura placement composes upward; nothing composes back down into it.
+ *
+ * `gameplay/aura` exists because of a rule it could not otherwise obey.
+ * Placing Aura on a sword or into a projected sphere needs Aura, Targeting and
+ * Spatial in one place, and Character may not reach up into the last two —
+ * that rule is what keeps "Range" from quietly becoming "Range for a
+ * Character". So the composition sits ABOVE all three, exactly as
+ * gameplay/combat sits above neutral actions.
+ *
+ * A layer defined by what it is allowed to see is only real if both directions
+ * are checked, so all three rules below are load-bearing:
+ *
+ *   DOWNWARD   Character must not import gameplay/aura. One such import and
+ *              the layer is a detour rather than a boundary: the edge
+ *              Character was forbidden exists again, with a module in the
+ *              middle making it look deliberate.
+ *
+ *   UPWARD     gameplay/aura may compose Aura, Body measurements, Targeting,
+ *              Spatial and Equipment, and nothing else. Stated as an allowlist
+ *              rather than a denylist because a new edge should have to argue
+ *              for itself — a denylist silently permits whatever nobody
+ *              thought of, which is always the interesting case.
+ *
+ *   INDEPENDENCE  Foundation, Aura included, still knows nothing of Targeting,
+ *              Spatial or Gameplay. That is the rule the extra layer was built
+ *              to preserve, and it is the one a shortcut would break first.
+ *
+ * `resolveAuraPlacement` has no production caller yet and is waiting on the
+ * reinforcement and principle layers, which makes these rules more important
+ * rather than less: nothing else is currently exercising the boundary.
+ */
+describe("Aura placement is a layer above Character, not inside it", () => {
+  const PLACEMENT = join(SRC, "gameplay", "aura");
+
+  const placementFiles = sourceFilesUnder(PLACEMENT);
+  const characterFiles = sourceFilesUnder(join(SRC, "character"));
+  const foundationFiles = sourceFilesUnder(join(SRC, "character", "foundation"));
+  const auraFiles = sourceFilesUnder(
+    join(SRC, "character", "foundation", "aura"),
+  );
+
+  /*
+   * Guards against every rule below passing vacuously. A walk that matched
+   * nothing would report a perfectly clean boundary for a layer that had been
+   * deleted.
+   */
+  it("finds the sources it is checking", () => {
+    expect(placementFiles.length).toBeGreaterThan(1);
+    expect(characterFiles.length).toBeGreaterThan(50);
+    expect(foundationFiles.length).toBeGreaterThan(50);
+    expect(auraFiles.length).toBeGreaterThan(5);
+  });
+
+  it("never lets Character or Foundation import gameplay/aura/", () => {
+    const offenders = [...characterFiles, ...foundationFiles].filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, join("gameplay", "aura")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never lets Character import gameplay/ at all", () => {
+    /*
+     * The wider rule the one above is a special case of. Reaching for
+     * gameplay/combat instead would be the same inversion by a different door,
+     * and a rule naming only gameplay/aura would hold that door open.
+     */
+    const offenders = [...characterFiles, ...foundationFiles].filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, "gameplay"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("lets placement compose Aura, Body, Targeting, Spatial and Equipment", () => {
+    /*
+     * The allowlist, as PREFIXES of a resolved path. Anything outside it — a
+     * Skill catalog, Combat, character/rules, character/status — has to be
+     * argued for here before it can be imported, which is the point of writing
+     * the permission down rather than the prohibition.
+     */
+    const PERMITTED = [
+      join(SRC, "infrastructure"),
+      join(SRC, "targeting"),
+      join(SRC, "spatial"),
+      join(SRC, "character", "foundation", "aura"),
+      join(SRC, "character", "foundation", "body"),
+      join(SRC, "character", "equipment"),
+      PLACEMENT,
+    ];
+
+    const offenders = placementFiles.flatMap((path) =>
+      moduleSpecifiers(path)
+        .filter((specifier) => specifier.startsWith("."))
+        .map((specifier) => join(path, "..", specifier))
+        .filter((resolved) =>
+          !PERMITTED.some((allowed) =>
+            resolved === allowed || resolved.startsWith(allowed + "/")
+          )
+        )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("imports no package into placement either", () => {
+    /*
+     * The same check spatial/ and targeting/ carry. These layers have no
+     * package dependencies at all, so a bare specifier is either a host
+     * library or something that has no business in the engine.
+     */
+    const offenders = placementFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) => !specifier.startsWith(".")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps Foundation independent of Targeting, Spatial and Gameplay", () => {
+    /*
+     * The independence the extra layer exists to preserve, checked across the
+     * WHOLE of Foundation rather than only Aura — Aura is where the pressure
+     * currently is, but Body, Senses and Nen would each find the same shortcut
+     * convenient for the same reason.
+     */
+    const offenders = foundationFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesIntoDomain(path, specifier, "targeting") ||
+        resolvesIntoDomain(path, specifier, "spatial") ||
+        resolvesIntoDomain(path, specifier, "gameplay")
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("would catch the import coming back", () => {
+    /*
+     * A guard on the guards. Every rule above is a filter that returns an
+     * empty array, and a filter whose predicate stopped matching would report
+     * the same empty array forever — so the predicate is exercised against a
+     * path that must match.
+     */
+    const auraFile = join(SRC, "character", "foundation", "aura", "types.ts");
+
+    expect(resolvesIntoDomain(auraFile, "../../../targeting", "targeting"))
+      .toBe(true);
+    expect(
+      resolvesIntoDomain(auraFile, "../../../gameplay/aura", join("gameplay", "aura")),
+    ).toBe(true);
+
+    /* And does NOT match the sibling it must not be confused with. */
+    expect(
+      resolvesIntoDomain(auraFile, "../../../gameplay/combat", join("gameplay", "aura")),
+    ).toBe(false);
+  });
+
+  function resolvesIntoDomain(
+    fromPath: string,
+    specifier: string,
+    domain: string,
+  ): boolean {
+    if (!specifier.startsWith(".")) return false;
+
+    const resolved = join(fromPath, "..", specifier);
+
+    return resolved === join(SRC, domain) ||
+      resolved.startsWith(join(SRC, domain) + "/");
+  }
+});
