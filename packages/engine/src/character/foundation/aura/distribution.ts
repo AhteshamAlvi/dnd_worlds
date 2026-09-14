@@ -42,7 +42,7 @@ import {
   resolveInternalAuraDensity,
   resolveSurfaceAuraDensity,
 } from "./density";
-import { isLocalizedAllocation } from "./state";
+import { isDifferentialAllocation, isLocalizedAllocation } from "./state";
 import type { AuraAllocation } from "./state";
 import {
   auraAllocationIssueToEngineError,
@@ -50,6 +50,7 @@ import {
 } from "./validation";
 import type {
   AuraAllocationSource,
+  AuraCoverage,
   AuraPlacement,
   DroppedAuraAllocation,
   ResolvedAuraAllocation,
@@ -105,6 +106,16 @@ export interface ResolveAuraDistributionInput {
 
   /** Output the character has available to place. */
   readonly availableOutput: number;
+
+  /**
+   * Whose Aura this is, when the caller knows.
+   *
+   * Only differential authorization reads it, and only to refuse a grant
+   * issued for somebody else. Absent means the caller cannot say — which is
+   * honest for a sheet being validated in isolation, and is why an absent
+   * owner relaxes that one binding rather than failing every allocation.
+   */
+  readonly owner?: string;
 }
 
 export interface ResolveAuraDistributionResult {
@@ -164,7 +175,7 @@ function resolvedAllocation(
     readonly allocationId: string;
     readonly source: AuraAllocationSource;
     readonly placement: AuraPlacement;
-    readonly coverage: "whole-body" | "localized";
+    readonly coverage: AuraCoverage;
     readonly continuityKey: ResolvedAuraAllocation["continuityKey"];
     readonly partId: BodyPartId;
     readonly aura: number;
@@ -302,6 +313,7 @@ export function resolveAuraDistribution(
    */
   const allocationIssues = findAuraAllocationIssues(
     allocations.map((entry) => entry.allocation),
+    input.owner === undefined ? {} : { owner: input.owner },
   );
 
   if (allocationIssues.length > 0) {
@@ -392,6 +404,77 @@ export function resolveAuraDistribution(
       });
 
       if (errors.length > 0) return fail(errors as NonEmptyArray<EngineError>);
+
+      continue;
+    }
+
+    if (isDifferentialAllocation(allocation)) {
+      /*
+       * Weighted placement. The weights have already been validated — shape,
+       * finiteness, a positive total and an authorization bound to this
+       * allocation, source and owner — so what is left here is arithmetic.
+       *
+       * Normalizing against the total of the weights that actually LANDED,
+       * rather than against every weight asked for, is what conserves the
+       * Aura. A weight aimed at an arm that is no longer there would otherwise
+       * take its share to nowhere and quietly shrink the placement.
+       */
+      const landed: {
+        partId: BodyPartId;
+        continuityKey: ResolvedAuraAllocation["continuityKey"];
+        measure: number;
+        weight: number;
+      }[] = [];
+
+      let totalWeight = 0;
+
+      for (const entry of allocation.weights) {
+        const partId = partByContinuityKey.get(entry.continuityKey);
+
+        if (partId === undefined) continue;
+
+        const measured = input.measurements.byPartId[partId]!;
+        const measure = coveredMeasure(allocation.placement, measured);
+
+        if (!Number.isFinite(measure) || measure <= 0) continue;
+        if (entry.weight <= 0) continue;
+
+        landed.push({
+          partId,
+          continuityKey: entry.continuityKey,
+          measure,
+          weight: entry.weight,
+        });
+
+        totalWeight += entry.weight;
+      }
+
+      if (totalWeight <= 0) {
+        dropped.push({
+          allocationId: allocation.id,
+          reason: landed.length === 0
+            ? "identity-not-manifested"
+            : "no-measurable-body",
+          aura: allocation.aura,
+        });
+
+        continue;
+      }
+
+      for (const entry of landed) {
+        const errors = placeOne({
+          allocationId: allocation.id,
+          source,
+          placement: allocation.placement,
+          coverage: "differential",
+          continuityKey: entry.continuityKey,
+          partId: entry.partId,
+          aura: allocation.aura * (entry.weight / totalWeight),
+          measure: entry.measure,
+        });
+
+        if (errors.length > 0) return fail(errors as NonEmptyArray<EngineError>);
+      }
 
       continue;
     }

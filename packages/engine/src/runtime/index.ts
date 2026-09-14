@@ -20,6 +20,7 @@ export {
   RUNTIME_DOMAINS,
   isRuntimeDomain,
   isRuntimeOwnerRef,
+  ownerIdFromKey,
   ownerKey,
   sameOwner,
 } from "./domains";
@@ -33,12 +34,16 @@ export {
 export type { RuntimeEvent, RuntimeValueChange } from "./events";
 
 export {
+  DEFAULT_COST_PRIORITY,
   RUNTIME_REQUEST_PHASES,
+  compareCostRequests,
   compareRuntimeRequests,
+  costPriorityOf,
   effectiveTimeOf,
   findRequestIssues,
   groupSimultaneousRequests,
   isQuantitativeRequest,
+  orderCostRequests,
   orderRuntimeRequests,
 } from "./requests";
 export type {
@@ -85,4 +90,5 @@ export type {
   EffectBatchResult,
   EffectHandler,
   PreparedCost,
+  SettledCosts,
 } from "./coordinator";

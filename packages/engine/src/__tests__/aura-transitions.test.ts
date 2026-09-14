@@ -518,7 +518,7 @@ describe("reconciliation", () => {
       .toEqual([expect.objectContaining({ kind: "unchanged" })]);
   });
 
-  it("scales the survivors proportionally when the budget has shrunk", () => {
+  it("leaves every commitment alone while they all still fit", () => {
     const result = reconcileAuraState(
       state(1500, [
         { id: "a", coverage: "whole-body", placement: "surface", aura: 800 },
@@ -530,31 +530,241 @@ describe("reconciliation", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 1,500 usable, 500 to Ten, 1,000 left for a 4:1 split of 1,000. */
+    /* 1,500 usable, 500 to Ten, 1,000 left — which is exactly 800 + 200. */
     const byId = new Map(
       result.payload.state.allocations.map((one) => [one.id, one.aura]),
     );
 
     expect(byId.get("a")!).toBeCloseTo(800, 8);
     expect(byId.get("b")!).toBeCloseTo(200, 8);
+  });
 
-    const tighter = reconcileAuraState(
+  /*
+   * The defect this replaced: proportional reduction.
+   *
+   * Both commitments used to be scaled by budget/total, which is the right
+   * answer to "spread one allocation over a body at equal density" and the
+   * wrong answer to "the budget shrank". A character holding a heavy guard and
+   * a light technique got a degraded version of both instead of keeping the
+   * one that mattered, and nothing they had stated could change that — the
+   * split was decided by the amounts alone.
+   */
+  it("preserves the higher priority and cuts only the lowest necessary", () => {
+    const result = reconcileAuraState(
       state(1000, [
-        { id: "a", coverage: "whole-body", placement: "surface", aura: 800 },
-        { id: "b", coverage: "whole-body", placement: "surface", aura: 200 },
+        {
+          id: "guard",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 400,
+          priority: 10,
+        },
+        {
+          id: "technique",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 400,
+          priority: 1,
+        },
       ]),
       context(),
     );
 
-    expect(tighter.success).toBe(true);
-    if (!tighter.success) return;
+    expect(result.success).toBe(true);
+    if (!result.success) return;
 
-    const scaled = new Map(
-      tighter.payload.state.allocations.map((one) => [one.id, one.aura]),
+    /* 1,000 usable, 500 to Ten, 500 left for 800 of commitments. */
+    const byId = new Map(
+      result.payload.state.allocations.map((one) => [one.id, one.aura]),
     );
 
-    expect(scaled.get("a")! + scaled.get("b")!).toBeCloseTo(500, 8);
-    expect(scaled.get("a")! / scaled.get("b")!).toBeCloseTo(4, 8);
+    expect(byId.get("guard")!).toBeCloseTo(400, 8);
+    expect(byId.get("technique")!).toBeCloseTo(100, 8);
+
+    expect(result.payload.allocationChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "unchanged", allocationId: "guard" }),
+        expect.objectContaining({
+          kind: "reduced",
+          allocationId: "technique",
+          factor: 0.25,
+        }),
+      ]),
+    );
+  });
+
+  it("releases the commitments below the one that exhausted the budget", () => {
+    const result = reconcileAuraState(
+      state(1000, [
+        {
+          id: "guard",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 800,
+          priority: 10,
+        },
+        {
+          id: "technique",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 400,
+          priority: 1,
+        },
+      ]),
+      context(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    expect(result.payload.state.allocations.map((one) => one.id))
+      .toEqual(["guard"]);
+
+    expect(result.payload.allocationChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "reduced",
+          allocationId: "guard",
+          factor: 0.625,
+        }),
+        expect.objectContaining({
+          kind: "removed-budget-exhausted",
+          allocationId: "technique",
+          available: 0,
+          reason: "no-capacity",
+        }),
+      ]),
+    );
+  });
+
+  it("releases an indivisible commitment whole and passes the room down", () => {
+    const result = reconcileAuraState(
+      state(1000, [
+        {
+          id: "ken",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 600,
+          priority: 10,
+          shortfall: { kind: "remove" },
+        },
+        {
+          id: "technique",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 400,
+          priority: 1,
+        },
+      ]),
+      context(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    /*
+     * 500 of budget. Ken needs 600 and cannot be held at 500, so it is
+     * released WHOLE — and the 500 it did not take is genuinely free, so the
+     * technique below it is funded in full rather than punished for a shortage
+     * that no longer exists.
+     */
+    const byId = new Map(
+      result.payload.state.allocations.map((one) => [one.id, one.aura]),
+    );
+
+    expect(byId.has("ken")).toBe(false);
+    expect(byId.get("technique")!).toBeCloseTo(400, 8);
+
+    expect(result.payload.allocationChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "removed-budget-exhausted",
+          allocationId: "ken",
+          reason: "indivisible",
+        }),
+        expect.objectContaining({ kind: "unchanged", allocationId: "technique" }),
+      ]),
+    );
+  });
+
+  it("drops a commitment that cannot keep the floor it declared", () => {
+    const result = reconcileAuraState(
+      state(1000, [
+        {
+          id: "guard",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 400,
+          priority: 10,
+        },
+        {
+          id: "technique",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 400,
+          priority: 1,
+          shortfall: { kind: "reduce", minimum: 250 },
+        },
+      ]),
+      context(),
+    );
+
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    /* 100 left for a technique that is worthless below 250. */
+    expect(result.payload.state.allocations.map((one) => one.id))
+      .toEqual(["guard"]);
+
+    expect(result.payload.allocationChanges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "removed-budget-exhausted",
+          allocationId: "technique",
+          reason: "below-minimum",
+          available: 100,
+        }),
+      ]),
+    );
+  });
+
+  it("settles identically however the caller ordered the array", () => {
+    const guard: AuraAllocation = {
+      id: "zzz-guard",
+      coverage: "whole-body",
+      placement: "surface",
+      aura: 400,
+      priority: 10,
+    };
+
+    const technique: AuraAllocation = {
+      id: "aaa-technique",
+      coverage: "whole-body",
+      placement: "surface",
+      aura: 400,
+      priority: 1,
+    };
+
+    /*
+     * The ids are chosen to sort the OPPOSITE way from the priorities. A
+     * settlement that fell back on identity — or on array order — would fund
+     * the technique first and cut the guard; only an explicit priority
+     * produces the same answer from both arrangements.
+     */
+    const forward = reconcileAuraState(state(1000, [guard, technique]), context());
+    const reversed = reconcileAuraState(state(1000, [technique, guard]), context());
+
+    expect(forward.success && reversed.success).toBe(true);
+    if (!forward.success || !reversed.success) return;
+
+    const auraById = (result: typeof forward) =>
+      Object.fromEntries(
+        result.payload.state.allocations.map((one) => [one.id, one.aura]),
+      );
+
+    expect(auraById(forward)).toEqual(auraById(reversed));
+    expect(auraById(forward)["zzz-guard"]).toBeCloseTo(400, 8);
+    expect(auraById(forward)["aaa-technique"]).toBeCloseTo(100, 8);
   });
 
   it("reports the factor it reduced by", () => {

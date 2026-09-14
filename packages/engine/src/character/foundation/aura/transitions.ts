@@ -40,8 +40,9 @@
  *
  * Reduce and remove, never restore. It removes allocations whose anatomy is
  * not manifested or whose placement the character's access no longer permits,
- * and scales the rest down proportionally when the budget no longer covers
- * them. It never grows an allocation back when Aura returns, because the
+ * and fits the rest into the budget in PRIORITY order when it no longer covers
+ * them — cutting the lowest commitment that has to be cut rather than shrinking
+ * all of them. It never grows an allocation back when Aura returns, because the
  * character did not ask it to — re-committing Output is a decision, and
  * decisions come from the caller. budget.ts owns the whole of it, shared with
  * the central resolver so the two cannot disagree.
@@ -71,8 +72,16 @@ import {
 import { applyAuraControl, deriveAuraControl } from "./control";
 import {
   resolveActionAuraCostFor,
+  type AuraActionCost,
   type AuraActionCostRequest,
 } from "./expenditure";
+import {
+  findAuraShortfallPolicyIssues,
+  settleAuraFunding,
+  DEFAULT_AURA_SHORTFALL,
+  type AuraFundingSettlement,
+  type AuraShortfallPolicy,
+} from "./funding";
 import {
   isLocalizedAllocation,
   totalAllocatedAura,
@@ -132,7 +141,57 @@ export interface AuraStateTransition {
   /** Present only for deliberate expenditure. */
   readonly expenditure?: AuraExpenditure;
 
+  /**
+   * Present only when a SHORTFALL POLICY was applied.
+   *
+   * Absent on every transition that paid in full or refused atomically, which
+   * keeps the ordinary operations exactly the shape they were. A consumer that
+   * finds it has to read `settlement.status` before believing the attempt
+   * happened: a `consumed-below-minimum` transition really did move Aura and
+   * really did fail.
+   */
+  readonly funding?: AuraActionFunding;
+
   readonly allocationChanges: readonly AuraAllocationChange[];
+}
+
+
+/*
+ * What a partially-funded action cost actually settled at.
+ *
+ * The authoritative cost is preserved beside the settlement because they
+ * routinely disagree and both matter: a ledger that stored only what was paid
+ * cannot report unmet demand, and one that stored only what was priced cannot
+ * report what left the pool.
+ */
+export interface AuraActionFunding {
+  /** What the rules priced, before the reserve had a say. */
+  readonly cost: AuraActionCost;
+
+  /** The usable Output the cost was judged against. */
+  readonly accessibleCapacity: number;
+
+  readonly settlement: AuraFundingSettlement;
+
+  /**
+   * The Aura Control wasted, or saved, on the DELIBERATE amount funded.
+   *
+   * Signed: positive is waste at DEX below the pivot, negative is a saving
+   * above it. Never effect strength — it describes the efficiency of the
+   * projection, not what the projection accomplished.
+   */
+  readonly controlDelta: number;
+
+  /**
+   * The base-cost equivalent that actually reached the technique.
+   *
+   * `null` when there is no deliberate component. Aura genuinely owns this
+   * figure — it is funded Aura divided back through the Control multiplier —
+   * but it owns nothing beyond it: what a 4-Aura strike DOES belongs to
+   * Combat, and a guess made here would be the authoritative-looking wrong
+   * number every downstream system quoted.
+   */
+  readonly usefulAura: number | null;
 }
 
 
@@ -191,6 +250,7 @@ export function settleAuraTransition(
   priorChanges: readonly AuraAllocationChange[],
   balance: AuraBalance,
   expenditure?: AuraExpenditure,
+  funding?: AuraActionFunding,
 ): EngineResult<AuraStateTransition> {
   const budget = resolveAuraBudget(current, context);
 
@@ -244,6 +304,7 @@ export function settleAuraTransition(
       currentChange: current - previous.current,
       balance,
       ...(expenditure === undefined ? {} : { expenditure }),
+      ...(funding === undefined ? {} : { funding }),
       allocationChanges: [...merged.values()],
     },
     trace: { root },
@@ -264,9 +325,11 @@ export function settleAuraTransition(
  * rounded — fractional Aura has to survive continuous-time upkeep — and it is
  * deducted whole or not at all.
  *
- * There is no partial spend. A character who cannot afford an application does
- * not perform a weaker version of it by default; a mechanic that wants that
- * has to ask for a smaller Base Cost.
+ * There is no partial spend HERE, and that is this operation's contract rather
+ * than the domain's rule. A character who cannot afford an application does not
+ * perform a weaker version of it by default. A mechanic that wants one asks
+ * through `fundActionAura` with a shortfall policy, which is where scaling and
+ * consume-on-failure live; this function stays the atomic one.
  */
 export function spendAura(
   state: CharacterAuraState,
@@ -432,6 +495,174 @@ export function spendActionAura(
       net: -total,
     },
     deliberate ?? undefined,
+  );
+}
+
+
+/**
+ * Pay for an action under a SHORTFALL POLICY, funding what the reserve allows.
+ *
+ * The generalization of `spendActionAura`, which is this function under
+ * `require-full`. The order is fixed and each step is a different kind of no:
+ *
+ *   1. the policy itself must be well formed    structural failure
+ *   2. the cost is derived by the ordinary rules  structural failure
+ *   3. the PHYSICAL component is paid in full or the action is refused
+ *   4. the DELIBERATE component meets the policy against what is left
+ *
+ * Step 3 is not a shortfall case and deliberately has no policy. The physical
+ * half is metabolic — the body either made the effort or it did not — and
+ * there is no such thing as three-quarters of a swing. What scales is the Nen
+ * put into it, which is exactly the component Control governs and the only one
+ * the policy is allowed to touch. That keeps the two costs as separate here as
+ * they are everywhere else in the domain, rather than inventing a rule for
+ * splitting one shortage across two mechanics with different efficiency terms.
+ *
+ * A LEGAL SHORTFALL IS NOT AN ERROR. `consume-and-fail` below its minimum
+ * returns a SUCCESSFUL transition whose status says the attempt failed, with
+ * the Aura gone — because that is the mechanic. Only malformed input fails,
+ * and a failure still leaves the caller's state untouched.
+ */
+export function fundActionAura(
+  state: CharacterAuraState,
+  context: AuraTransitionContext,
+  request: AuraActionCostRequest,
+  policy: AuraShortfallPolicy = DEFAULT_AURA_SHORTFALL,
+): EngineResult<AuraStateTransition> {
+  const root = transitionTrace(
+    "aura.transition.fund",
+    "Fund an action's Aura cost",
+    {
+      exertionLoad: { value: request.exertionLoad ?? 0 },
+      baseAuraCost: { value: request.baseAuraCost ?? 0 },
+      requiredOutput: { value: request.requiredOutput ?? 0 },
+      shortfallPolicy: { value: policy?.kind ?? String(policy) },
+      currentAura: {
+        value: Number.isFinite(state.current)
+          ? state.current
+          : String(state.current),
+      },
+    },
+  );
+
+  const policyIssues = findAuraShortfallPolicyIssues(policy);
+
+  if (policyIssues.length > 0) return failed(root, policyIssues);
+
+  /*
+   * The budget, for the capacity figure the ledger records.
+   *
+   * Resolved here rather than dug out of the cost result because
+   * `resolveActionAuraCostFor` reports the cost, not the ceiling it was judged
+   * against — and a ledger entry that cannot say how much Output was reachable
+   * cannot explain why a request was cut.
+   */
+  const budget = resolveAuraBudget(state.current, context);
+
+  if (!budget.success) return failed(root, budget.errors);
+
+  const cost = resolveActionAuraCostFor(state, context, request);
+
+  root.children.push(cost.trace.root);
+
+  if (!cost.success) return failed(root, cost.errors);
+
+  const { physical, deliberate } = cost.payload;
+
+  /*
+   * The physical half first, and atomically. Refusing here rather than
+   * scaling is what keeps "the character could not make the effort" distinct
+   * from "the character made the effort with less Nen behind it".
+   */
+  if (physical.cost > state.current) {
+    return failed(root, [{
+      code: "aura.expenditure.insufficient",
+      message:
+        "The character does not have enough Aura for the physical effort " +
+        "this action requires.",
+      audience: "player",
+      required: physical.cost,
+      actual: state.current,
+      resolution:
+        "Act with less exertion, or recover before attempting this.",
+    }]);
+  }
+
+  const deliberateCost = deliberate?.finalCost ?? 0;
+
+  const settlement = settleAuraFunding(
+    state.current - physical.cost,
+    deliberateCost,
+    policy,
+  );
+
+  /*
+   * `require-full` keeps its atomic refusal. A caller that declared it is
+   * saying a half-paid version of this does not exist, and reporting a
+   * successful transition that did nothing would make them check a status they
+   * explicitly opted out of having.
+   */
+  if (settlement.status === "refused") {
+    return failed(root, [{
+      code: "aura.expenditure.insufficient",
+      message: "The character does not have enough Aura for this action.",
+      audience: "player",
+      required: physical.cost + deliberateCost,
+      actual: state.current,
+      resolution:
+        "Act with less exertion, drop the Aura enhancement, or recover first.",
+    }]);
+  }
+
+  const multiplier = deliberate?.controlMultiplier ?? 1;
+
+  const usefulAura = deliberate === null || settlement.funded <= 0
+    ? null
+    : settlement.funded / multiplier;
+
+  const funding: AuraActionFunding = {
+    cost: cost.payload,
+    accessibleCapacity: budget.payload.usableOutput,
+    settlement,
+    controlDelta: usefulAura === null ? 0 : settlement.funded - usefulAura,
+    usefulAura,
+  };
+
+  const spent = physical.cost + settlement.funded;
+
+  root.output = {
+    physicalCost: physical.cost,
+    deliberateCost,
+    funded: settlement.funded,
+    unmet: settlement.unmet,
+    status: settlement.status,
+    spent,
+  };
+
+  return settleAuraTransition(
+    state,
+    state.current - spent,
+    state.allocations,
+    context,
+    root,
+    [],
+    {
+      ...emptyAuraBalance(),
+      physical: physical.cost,
+      deliberate: settlement.funded,
+      net: -spent,
+    },
+    /*
+     * The expenditure reports what was ACTUALLY charged, not what was priced.
+     * Handing back the full figure beside a partial deduction is how a sheet
+     * ends up showing a character paying 10 while their pool fell by 4.
+     */
+    deliberate === null ? undefined : {
+      baseCost: usefulAura ?? 0,
+      controlMultiplier: multiplier,
+      finalCost: settlement.funded,
+    },
+    funding,
   );
 }
 

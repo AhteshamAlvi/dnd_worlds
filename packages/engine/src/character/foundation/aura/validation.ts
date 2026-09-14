@@ -34,7 +34,11 @@ export type AuraAllocationIssueCode =
   | "aura.allocation.amount.invalid"
   | "aura.allocation.coverage.invalid"
   | "aura.allocation.placement.invalid"
-  | "aura.allocation.continuity.missing";
+  | "aura.allocation.continuity.missing"
+  | "aura.allocation.uniform.weighted"
+  | "aura.allocation.weights.invalid"
+  | "aura.allocation.authorization.missing"
+  | "aura.allocation.authorization.mismatched";
 
 export interface AuraAllocationIssue {
   readonly code: AuraAllocationIssueCode;
@@ -58,6 +62,152 @@ function isValidPlacement(value: unknown): boolean {
 
 
 /*
+ * Who the allocations being validated belong to, when that is known.
+ *
+ * Optional because most validation is of a sheet in isolation, where there is
+ * no second party to bind an authorization to. When an owner IS supplied — the
+ * resolution path always supplies one — a differential grant issued for
+ * somebody else is refused, which is the difference between an authorization
+ * and a token anybody can carry.
+ */
+export interface AuraAllocationValidationContext {
+  readonly owner?: string;
+}
+
+
+/*
+ * The differential rules, split out so they read as one block rather than as
+ * four more branches in an already long loop.
+ */
+function findDifferentialIssues(
+  allocation: AuraAllocation,
+  index: number,
+  owner: string | undefined,
+): readonly AuraAllocationIssue[] {
+  const issues: AuraAllocationIssue[] = [];
+  const id = allocation.id;
+  const at = typeof id === "string" ? { allocationId: id } : {};
+
+  const weights: unknown = (allocation as { readonly weights?: unknown }).weights;
+
+  if (!Array.isArray(weights) || weights.length === 0) {
+    issues.push({
+      code: "aura.allocation.weights.invalid",
+      message:
+        "A differential Aura allocation must name at least one weighted identity.",
+      index,
+      ...at,
+      actual: weights,
+    });
+  } else {
+    let total = 0;
+    let malformed = false;
+
+    for (const entry of weights as readonly unknown[]) {
+      const weight = (entry as { readonly weight?: unknown })?.weight;
+      const key = (entry as { readonly continuityKey?: unknown })?.continuityKey;
+
+      if (
+        typeof key !== "string" || key.trim().length === 0 ||
+        typeof weight !== "number" || !Number.isFinite(weight) || weight < 0
+      ) {
+        malformed = true;
+        break;
+      }
+
+      total += weight;
+    }
+
+    /*
+     * A total of zero is refused rather than normalized. Dividing by it gives
+     * NaN shares, and treating it as "no Aura anywhere" would silently accept
+     * a request that placed the character's Output nowhere at all.
+     */
+    if (malformed || total <= 0) {
+      issues.push({
+        code: "aura.allocation.weights.invalid",
+        message:
+          "Differential weights must each name an identity and a finite " +
+          "non-negative weight, and must total more than zero.",
+        index,
+        ...at,
+        actual: malformed ? "malformed entry" : total,
+      });
+    }
+  }
+
+  const authorization = (allocation as {
+    readonly authorization?: {
+      readonly allocationId?: unknown;
+      readonly source?: unknown;
+      readonly owner?: unknown;
+      readonly grantedBy?: unknown;
+    };
+  }).authorization;
+
+  if (
+    authorization === null || typeof authorization !== "object" ||
+    typeof authorization.allocationId !== "string" ||
+    typeof authorization.owner !== "string" ||
+    typeof authorization.grantedBy !== "string" ||
+    authorization.grantedBy.trim().length === 0
+  ) {
+    issues.push({
+      code: "aura.allocation.authorization.missing",
+      message:
+        "A differential Aura allocation must carry an authorization naming " +
+        "the allocation, its source, its owner and what granted it.",
+      index,
+      ...at,
+      actual: authorization === undefined ? "absent" : "malformed",
+    });
+
+    return issues;
+  }
+
+  /*
+   * The bindings, which are the whole mechanism.
+   *
+   * A grant that only had to EXIST would be a token: copied onto another
+   * allocation or handed to another character it would still pass, and the
+   * mastery gate it stands for would be gone. Each of these three is a way
+   * that copy is caught.
+   */
+  const mismatches: string[] = [];
+
+  if (authorization.allocationId !== id) {
+    mismatches.push(
+      `allocation ${String(authorization.allocationId)} != ${String(id)}`,
+    );
+  }
+
+  if (authorization.source !== (allocation.source ?? undefined)) {
+    mismatches.push(
+      `source ${String(authorization.source)} != ${String(allocation.source)}`,
+    );
+  }
+
+  if (owner !== undefined && authorization.owner !== owner) {
+    mismatches.push(`owner ${authorization.owner} != ${owner}`);
+  }
+
+  if (mismatches.length > 0) {
+    issues.push({
+      code: "aura.allocation.authorization.mismatched",
+      message:
+        "A differential Aura authorization was granted for something other " +
+        "than the allocation it is attached to.",
+      index,
+      ...at,
+      actual: mismatches.join("; "),
+    });
+  }
+
+  return issues;
+}
+
+
+/*
  * Every way one list of allocations can be malformed.
  *
  * Shared by validateAuraState and resolveAuraDistribution rather than written
@@ -73,6 +223,7 @@ function isValidPlacement(value: unknown): boolean {
  */
 export function findAuraAllocationIssues(
   allocations: readonly AuraAllocation[],
+  context: AuraAllocationValidationContext = {},
 ): readonly AuraAllocationIssue[] {
   const issues: AuraAllocationIssue[] = [];
   const seen = new Set<string>();
@@ -151,6 +302,40 @@ export function findAuraAllocationIssues(
           actual: key,
         });
       }
+    }
+
+    /*
+     * A UNIFORM allocation carrying weights is the case the coverage union
+     * cannot catch on its own.
+     *
+     * TypeScript's excess-property check only fires on object literals, and
+     * stored state arrives from a host as a plain parsed object — so a caller
+     * who wants uneven Aura without asking for it can simply label a weighted
+     * placement "whole-body" and hope somebody reads the field. Nobody would:
+     * distribution ignores what it does not know about, and the allocation
+     * would resolve as uniform while LOOKING authorized to a reader. Refusing
+     * it here is what keeps "uniform" a claim the shape actually makes.
+     */
+    if (
+      allocation.coverage === "whole-body" &&
+      (allocation as { readonly weights?: unknown }).weights !== undefined
+    ) {
+      issues.push({
+        code: "aura.allocation.uniform.weighted",
+        message:
+          "A whole-body Aura allocation covers every eligible part at equal " +
+          "density and cannot carry weights. Use differential coverage, which " +
+          "requires authorization.",
+        index,
+        ...(typeof id === "string" ? { allocationId: id } : {}),
+        actual: "weights present",
+      });
+    }
+
+    if (allocation.coverage === "differential") {
+      issues.push(
+        ...findDifferentialIssues(allocation, index, context.owner),
+      );
     }
   });
 

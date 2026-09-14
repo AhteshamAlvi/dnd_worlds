@@ -21,6 +21,8 @@ import type {
   ScheduledAuraEvent,
 } from "../foundation/aura/time";
 import type { AuraUpkeepCommitment } from "../foundation/aura/upkeep";
+import type { NenActivityRuntime } from "../foundation/nen/runtime";
+import type { NenActivityTransition } from "../nen/runtime";
 import type {
   CharacterWakefulnessState,
   ResolvedFatigue,
@@ -79,6 +81,16 @@ export interface CharacterActiveEffects {
 
   /** Actions resolved at their own instants inside the interval. */
   readonly instantaneous?: readonly ScheduledAuraEvent[];
+
+  /**
+   * What the character is actively DOING with their Nen.
+   *
+   * Beside the character rather than on it, for the same reason the rest of
+   * this shape is: a sheet that persisted "Ren is active" could be loaded into
+   * a world where it is not. The advance carries it forward and returns the
+   * new runtime, which the caller holds exactly as it holds this one.
+   */
+  readonly nenActivities?: NenActivityRuntime;
 }
 
 
@@ -126,6 +138,16 @@ export interface CharacterTimeTransition {
   readonly aura: AuraTimeTransition;
   readonly wakefulness: CharacterWakefulnessState;
   readonly fatigue: ResolvedFatigue;
+
+  /**
+   * The active-Nen runtime, carried to the same instant.
+   *
+   * Absent when the caller supplied none — an advance of a character doing
+   * nothing with their Nen should not have to invent an empty runtime, and a
+   * caller who gets one back that they never passed in cannot tell it from
+   * state they had forgotten about.
+   */
+  readonly nenActivities?: NenActivityTransition;
 }
 
 

@@ -95,6 +95,38 @@ export interface RuntimeRequest {
    */
   readonly from: RuntimeOwnerRef;
   readonly to: RuntimeOwnerRef;
+
+  /**
+   * Which COSTS the owner funds first when they cannot fund all of them.
+   *
+   * Higher resolves first, and absent means `DEFAULT_COST_PRIORITY`. This is a
+   * GAMEPLAY decision and has to be stated as one: before it existed, cost
+   * order fell out of `compareRuntimeRequests`, which ends on `kind` and then
+   * `requestId` — so whether a character paid for their skill or their sword
+   * was decided by the alphabet, and renaming a request kind silently
+   * rebalanced which of two costs survived a shortage.
+   *
+   * EFFECTS ignore it entirely. Effects landing on one owner at one instant
+   * are settled together from one pre-batch state precisely so that no
+   * ordering can change the answer, and a priority that reordered them would
+   * reintroduce the dependency that batching exists to remove.
+   */
+  readonly costPriority?: number;
+}
+
+
+/**
+ * What a cost that does not state a priority is treated as.
+ *
+ * Zero rather than one so that a caller can push something BELOW the ordinary
+ * run of costs without having to raise everything else.
+ */
+export const DEFAULT_COST_PRIORITY = 0;
+
+
+/** The priority a cost settles at, stated or defaulted. */
+export function costPriorityOf(request: RuntimeRequest): number {
+  return request.costPriority ?? DEFAULT_COST_PRIORITY;
 }
 
 
@@ -255,6 +287,25 @@ export function findRequestIssues(
     });
   }
 
+  /*
+   * A priority that is not a finite number cannot order anything. NaN in
+   * particular is the dangerous one: every comparison against it is false, so
+   * a sort silently leaves the array in whatever order it arrived in — which
+   * is exactly the caller-order dependence explicit priority exists to remove.
+   */
+  if (
+    request.costPriority !== undefined &&
+    !Number.isFinite(request.costPriority)
+  ) {
+    errors.push({
+      code: "runtime.request.priority.invalid",
+      message: "A cost priority must be a finite number.",
+      audience: "developer",
+      required: "finite number",
+      actual: String(request.costPriority),
+    });
+  }
+
   if (isQuantitativeRequest(request)) {
     const { requested } = request;
 
@@ -309,6 +360,64 @@ export function compareRuntimeRequests(
   if (left.kind !== right.kind) return left.kind.localeCompare(right.kind);
 
   return left.requestId.localeCompare(right.requestId);
+}
+
+
+/*
+ * The order COSTS are funded in.
+ *
+ * A different comparison from `compareRuntimeRequests`, and deliberately so:
+ * that one fixes the order of a log and must not decide a mechanical result,
+ * while this one decides which cost gets the last of a character's Aura. Two
+ * differences carry that distinction:
+ *
+ *   KIND IS NOT CONSULTED. It is metadata about which mechanic is asking, and
+ *   letting it break ties made "aura.action-cost" outrank a hypothetical
+ *   "nen.upkeep" for no reason anybody chose. A mechanic that wants to be
+ *   funded first says so with a priority.
+ *
+ *   PRIORITY IS DESCENDING. Higher resolves first, per the resource rules,
+ *   which is the opposite direction from every other term here and is why it
+ *   is written as `right - left`.
+ *
+ * Ends on `requestId`, which is unique within an operation, so the comparison
+ * is TOTAL: two callers who assembled the same costs in different array orders
+ * fund them identically. Nothing below priority is a gameplay decision — it is
+ * only there to make ties deterministic rather than accidental.
+ */
+export function compareCostRequests(
+  left: RuntimeRequest,
+  right: RuntimeRequest,
+): number {
+  const leftTime = effectiveTimeOf(left);
+  const rightTime = effectiveTimeOf(right);
+
+  if (leftTime !== rightTime) return leftTime - rightTime;
+
+  /*
+   * Owner before priority. Two characters' costs never compete for the same
+   * reserve, so interleaving them by priority would only make one owner's
+   * funding order depend on who else happened to be in the operation.
+   */
+  const leftOwner = ownerKey(left.to);
+  const rightOwner = ownerKey(right.to);
+
+  if (leftOwner !== rightOwner) return leftOwner.localeCompare(rightOwner);
+
+  const leftPriority = costPriorityOf(left);
+  const rightPriority = costPriorityOf(right);
+
+  if (leftPriority !== rightPriority) return rightPriority - leftPriority;
+
+  return left.requestId.localeCompare(right.requestId);
+}
+
+
+/** A copy in funding order, leaving the caller's array untouched. */
+export function orderCostRequests(
+  requests: readonly RuntimeRequest[],
+): readonly RuntimeRequest[] {
+  return [...requests].sort(compareCostRequests);
 }
 
 

@@ -55,11 +55,19 @@ import type {
   QuantitativeRequest,
   RuntimeRequest,
 } from "../../../runtime/requests";
+import { costPriorityOf } from "../../../runtime/requests";
 import type { GameTimestamp } from "../../../time/types";
 
 import type { AuraTransitionContext } from "./budget";
+import {
+  auraFundingSucceeded,
+  DEFAULT_AURA_SHORTFALL,
+  permitsPartialAuraFunding,
+  type AuraFundingOutcome,
+  type AuraShortfallPolicy,
+} from "./funding";
 import type { CharacterAuraState } from "./state";
-import { spendActionAura, type AuraStateTransition } from "./transitions";
+import { fundActionAura, type AuraStateTransition } from "./transitions";
 
 
 /** The one cost kind Aura currently answers. */
@@ -81,12 +89,131 @@ export interface AuraCostRequest extends QuantitativeRequest {
   readonly exertionLoad?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
+
+  /**
+   * What to do when the reserve cannot meet the authoritative cost.
+   *
+   * Absent means `require-full`, which is what every cost did before policies
+   * existed — so a caller that says nothing keeps the atomic refusal they
+   * already relied on. `allowPartial` on the base request is DERIVED from this
+   * rather than set beside it: two fields that can disagree about whether
+   * partial payment is permitted is one field too many, and the coordinator
+   * reads the base one.
+   */
+  readonly shortfall?: AuraShortfallPolicy;
+}
+
+
+/**
+ * Where a cost came from, and what actually happened to it.
+ *
+ * Published through `CostCommitResult.detail`, so an operation's `resolve` can
+ * read what the pool was really charged instead of subtracting two Aura states
+ * and re-deriving Control — which is this domain's arithmetic being done
+ * badly by somebody who does not own it.
+ */
+export interface AuraCostDetail {
+  readonly funding: AuraFundingOutcome;
+
+  /** Whether the mechanic that asked for this may proceed. */
+  readonly succeeded: boolean;
 }
 
 
 export interface AuraSpentEvent extends Omit<RuntimeEvent, "sequence"> {
   readonly kind: "aura-spent";
   readonly domain: "aura";
+
+  /** The complete funding record, so the log can be read without the state. */
+  readonly ledger: AuraFundingOutcome;
+}
+
+
+/*
+ * Assemble the ledger entry from the request and what the transition did.
+ *
+ * Kept out of `commit` so that the figures are derived in ONE place from the
+ * transition's own result rather than reconstructed beside the event and again
+ * beside the outcome. Every number here is read off the transition; none is
+ * recomputed.
+ *
+ * A transition with no `funding` record paid in full through the ordinary
+ * path — there was no shortfall to settle — so the entry is filled in from the
+ * balance, with unmet demand at zero because there genuinely was none.
+ */
+/*
+ * What actually left the reserve.
+ *
+ * Read off the settlement rather than recovered as `-currentChange`. The two
+ * agree mathematically and NOT in binary floating point: the state's new
+ * current is `old - spent`, so subtracting it back out at a reserve of 10,000
+ * returns `spent` wrong in the twelfth decimal place — which was enough to
+ * make a fully-funded cost look like an underpayment and fail an operation
+ * that had done nothing wrong. The figure the settlement produced is the
+ * figure, and it is bit-identical to the price when nothing was short.
+ */
+function auraChargedAmount(transition: AuraStateTransition): number {
+  const funding = transition.funding;
+
+  if (funding === undefined) return -transition.currentChange;
+
+  return funding.cost.physical.cost + funding.settlement.funded;
+}
+
+
+/*
+ * What the rules priced, as opposed to what the reserve met.
+ *
+ * Read off the transition's own funding record so that the handler and the
+ * ledger quote one figure. A transition with no funding record had no
+ * shortfall to settle and paid exactly what it was priced, so the amount that
+ * left the pool IS the price.
+ */
+function authoritativeAuraCost(transition: AuraStateTransition): number {
+  const funding = transition.funding;
+
+  if (funding === undefined) return -transition.currentChange;
+
+  return funding.cost.physical.cost + (funding.cost.deliberate?.finalCost ?? 0);
+}
+
+
+function auraFundingOutcome(
+  request: AuraCostRequest,
+  transition: AuraStateTransition,
+): AuraFundingOutcome {
+  const spent = auraChargedAmount(transition);
+  const funding = transition.funding;
+
+  const authoritativeCost = authoritativeAuraCost(transition);
+
+  return {
+    requestId: request.requestId,
+    owner: ownerKey(request.to),
+    /* Who asked. Provenance, so the ledger can say which mechanic spent this. */
+    source: ownerKey(request.from),
+    priority: costPriorityOf(request),
+    policy: request.shortfall ?? DEFAULT_AURA_SHORTFALL,
+
+    requested: request.requested,
+    authoritativeCost,
+    accessibleCapacity: funding?.accessibleCapacity ?? 0,
+
+    funded: spent,
+
+    /*
+     * Zero, and not a guess. An action cost is Aura LEAVING the reserve;
+     * Output commitment is a separate operation on the allocations, and
+     * reporting a commitment here that no allocation records would put a
+     * number in the ledger that nothing in the state agrees with.
+     */
+    committed: 0,
+
+    controlDelta: funding?.controlDelta ?? 0,
+    unmet: funding?.settlement.unmet ?? 0,
+    usefulAura: funding?.usefulAura ?? null,
+    status: funding?.settlement.status ?? "funded",
+  };
 }
 
 
@@ -175,18 +302,27 @@ export function createAuraCostHandler(
        * The existing transition IS the validation. Re-deriving affordability
        * here would be a second opinion about the same question, free to drift
        * from the one that actually charges.
+       *
+       * `fundActionAura` under `require-full` is the behaviour this handler
+       * had before shortfall policies existed, so a request that declares
+       * nothing is charged exactly as it always was.
        */
-      const attempt = spendActionAura(current, context, {
-        ...(auraRequest.exertionLoad === undefined
-          ? {}
-          : { exertionLoad: auraRequest.exertionLoad }),
-        ...(auraRequest.baseAuraCost === undefined
-          ? {}
-          : { baseAuraCost: auraRequest.baseAuraCost }),
-        ...(auraRequest.requiredOutput === undefined
-          ? {}
-          : { requiredOutput: auraRequest.requiredOutput }),
-      });
+      const attempt = fundActionAura(
+        current,
+        context,
+        {
+          ...(auraRequest.exertionLoad === undefined
+            ? {}
+            : { exertionLoad: auraRequest.exertionLoad }),
+          ...(auraRequest.baseAuraCost === undefined
+            ? {}
+            : { baseAuraCost: auraRequest.baseAuraCost }),
+          ...(auraRequest.requiredOutput === undefined
+            ? {}
+            : { requiredOutput: auraRequest.requiredOutput }),
+        },
+        auraRequest.shortfall ?? DEFAULT_AURA_SHORTFALL,
+      );
 
       if (!attempt.success) {
         return {
@@ -208,7 +344,16 @@ export function createAuraCostHandler(
           requestId: request.requestId,
           owner: request.to,
           nextState: attempt.payload.state,
-          actual: -attempt.payload.currentChange,
+          actual: auraChargedAmount(attempt.payload),
+
+          /*
+           * What the EXPENDITURE RULES priced, which is the figure full
+           * payment is judged against. The requester's estimate is not
+           * binding: a dexterous character asking to spend 10 is charged 0.6,
+           * and that is a cost paid in full rather than an underpayment.
+           */
+          authoritative: authoritativeAuraCost(attempt.payload),
+
           prepared,
         },
         trace: attempt.trace,
@@ -219,8 +364,16 @@ export function createAuraCostHandler(
     commit(cost: PreparedCost): CostCommitResult {
       const { transition, request } = cost.prepared as PreparedAuraCost;
 
-      const actual = -transition.currentChange;
+      const actual = auraChargedAmount(transition);
+      const funding = auraFundingOutcome(request, transition);
 
+      /*
+       * The event carries the whole ledger entry, not just the two figures the
+       * generic outcome has room for. "Spent 4" and "asked for 10, priced at
+       * 10, funded 4, 6 unmet, attempt failed below its minimum of 10" are the
+       * same transaction, and only the second one can be read back later
+       * without guessing.
+       */
       const event: AuraSpentEvent = {
         kind: "aura-spent",
         domain: "aura",
@@ -229,6 +382,7 @@ export function createAuraCostHandler(
         source: request.from,
         target: request.to,
         change: { requested: request.requested, actual },
+        ledger: funding,
       };
 
       return {
@@ -238,6 +392,10 @@ export function createAuraCostHandler(
           actual,
         },
         events: [event],
+        detail: {
+          funding,
+          succeeded: auraFundingSucceeded(funding.status),
+        } satisfies AuraCostDetail,
       };
     },
   };
@@ -264,7 +422,15 @@ export function auraCostRequest(input: {
   readonly exertionLoad?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
+
+  /** Which costs this owner funds first. Higher resolves first. */
+  readonly costPriority?: number;
+
+  /** What to do on a shortage. Absent is the atomic `require-full`. */
+  readonly shortfall?: AuraShortfallPolicy;
 }): AuraCostRequest {
+  const shortfall = input.shortfall ?? DEFAULT_AURA_SHORTFALL;
+
   return {
     requestId: input.requestId,
     kind: AURA_ACTION_COST,
@@ -274,7 +440,19 @@ export function auraCostRequest(input: {
     from: input.from,
     to: input.to,
     requested: input.requested,
-    allowPartial: false,
+    shortfall,
+
+    /*
+     * DERIVED, never supplied. The coordinator enforces full payment from
+     * `allowPartial`, and the policy is what actually decides whether a
+     * partial payment is legal — so setting them independently would let a
+     * request declare `scale` and still be refused for underpaying.
+     */
+    allowPartial: permitsPartialAuraFunding(shortfall),
+
+    ...(input.costPriority === undefined
+      ? {}
+      : { costPriority: input.costPriority }),
     ...(input.exertionLoad === undefined
       ? {}
       : { exertionLoad: input.exertionLoad }),

@@ -1986,3 +1986,22 @@ export {
 } from "./character/progression/growth";
 
 
+
+
+/* ── Active Nen runtime, and target-aware Aura placement ────────────────── */
+
+/*
+ * The two surfaces this phase adds, and the layer each belongs to.
+ *
+ * `foundation/nen/runtime` is the SHAPE of what a character is doing with
+ * their Nen; `character/nen/runtime` is what may happen to it. They are
+ * exported separately for the same reason they are written separately — a
+ * caller reading scene state needs the first and not the second.
+ *
+ * `gameplay/aura` is above all of Character, Targeting and Spatial, because
+ * joining an Aura commitment to a Target and a Spatial area is exactly the
+ * composition none of those three is allowed to make on its own.
+ */
+export * from "./character/foundation/nen/runtime";
+export * from "./character/nen/runtime";
+export * from "./gameplay/aura";

@@ -698,11 +698,24 @@ describe("reconciliation and Fatigue across an interval", () => {
       activity: { mode: "ordinary-waking", activity: "extreme" },
     });
 
-    /* Extreme: 50,000 x 0.001 x 100 x 0.5 = 2,500, capped by the reserve. */
+    /*
+     * Extreme: 50,000 x 0.001 x 100 x 0.5 = 2,500, capped by the reserve.
+     *
+     * An empty reserve is zero usable Output, so the commitment is RELEASED
+     * rather than held at zero. Proportional reduction used to leave it in
+     * place at 0 Aura, which was a commitment of nothing that could never come
+     * back on its own — reconciliation reduces and removes but never restores,
+     * so re-committing is the caller's decision and has to be visible as one.
+     */
     expect(result.current).toBe(0);
-    expect(result.state.allocations[0]!.aura).toBe(0);
-    expect(result.allocationChanges)
-      .toEqual([expect.objectContaining({ kind: "reduced" })]);
+    expect(result.state.allocations).toEqual([]);
+    expect(result.allocationChanges).toEqual([
+      expect.objectContaining({
+        kind: "removed-budget-exhausted",
+        allocationId: "ken",
+        reason: "no-capacity",
+      }),
+    ]);
   });
 
   it("reports Fatigue before and after", () => {

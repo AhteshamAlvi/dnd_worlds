@@ -78,7 +78,7 @@ import {
   findRequestIssues,
   groupSimultaneousRequests,
   isQuantitativeRequest,
-  orderRuntimeRequests,
+  orderCostRequests,
   type RuntimeRequest,
   type RuntimeRequestOutcome,
 } from "./requests";
@@ -131,6 +131,21 @@ export interface PreparedCost {
   /** What will be paid. Absent for a cost with no magnitude. */
   readonly actual?: number;
 
+  /**
+   * What the owning domain PRICED this at, when that is not what was asked.
+   *
+   * A requester's `requested` is an estimate and is not binding — Aura applies
+   * Control, Stamina and its own rules and arrives at its own figure, which
+   * may be far below the estimate. Without this the full-payment check read
+   * every such case as underpayment and refused it: a dexterous character
+   * asking to spend 10 was priced at 0.6, and the operation failed because the
+   * pool had not been charged enough.
+   *
+   * Absent means "the request's own figure is the price", which is what a
+   * domain that does not re-price its costs should say.
+   */
+  readonly authoritative?: number;
+
   /** The domain's own business, handed back to `commit` untouched. */
   readonly prepared: unknown;
 }
@@ -139,6 +154,17 @@ export interface PreparedCost {
 export interface CostCommitResult {
   readonly outcome: RuntimeRequestOutcome;
   readonly events: readonly Omit<RuntimeEvent, "sequence">[];
+
+  /**
+   * The domain's own record of what it did, published to `resolve`.
+   *
+   * Optional and opaque. `outcome` carries the two numbers every domain has —
+   * requested and actual — and that is not enough for a mechanic deciding
+   * whether a partly-funded attempt happened at all: Aura publishes its
+   * funding ledger entry here, with the authoritative cost, the Control delta,
+   * the unmet demand and the status. The coordinator only carries it.
+   */
+  readonly detail?: unknown;
 }
 
 
@@ -222,11 +248,61 @@ export interface CoordinatedOperation<TResult> {
   resolve(
     dice: readonly RuntimeRollSet[],
     states: OwnerStates,
+    costs: SettledCosts,
   ): {
     readonly result: TResult;
     readonly events?: readonly Omit<RuntimeEvent, "sequence">[];
     readonly requests?: readonly RuntimeRequest[];
   };
+}
+
+
+/**
+ * What each cost ACTUALLY paid, addressable by request id.
+ *
+ * The third argument to `resolve` exists because the second one cannot answer
+ * the question. A mechanic that asked for 10 Aura and got 4 has to know it got
+ * 4 — and reading that off the post-cost draft means subtracting two Aura
+ * states and re-deriving Control, which is the domain's own arithmetic done
+ * badly by somebody who does not own it. The figure the pool was actually
+ * charged is already known here; this hands it over rather than making the
+ * caller reconstruct it.
+ *
+ * `detail` is the owning domain's own outcome record — Aura puts its funding
+ * ledger entry there — and is `unknown` on purpose so the coordinator stays
+ * ignorant of every domain it serves.
+ */
+export interface SettledCosts {
+  /** Every committed cost, in funding order. */
+  readonly all: readonly RuntimeRequestOutcome[];
+
+  /** One cost by request id, or `undefined` if no such cost was committed. */
+  outcome(requestId: string): RuntimeRequestOutcome | undefined;
+
+  /** The owning domain's own record for that cost, if it published one. */
+  detail(requestId: string): unknown;
+}
+
+
+/*
+ * An immutable view over the committed costs.
+ *
+ * Frozen, and over COPIES, because `resolve` is caller code running in the
+ * middle of a transaction: an operation that could push onto `all` or rewrite
+ * an outcome would be editing the ledger that the events were already built
+ * from, and the trace would then describe a payment nobody made.
+ */
+function settledCosts(
+  outcomes: readonly RuntimeRequestOutcome[],
+  details: ReadonlyMap<string, unknown>,
+): SettledCosts {
+  const byId = new Map(outcomes.map((one) => [one.requestId, one]));
+
+  return Object.freeze({
+    all: Object.freeze([...outcomes]) as readonly RuntimeRequestOutcome[],
+    outcome: (requestId: string) => byId.get(requestId),
+    detail: (requestId: string) => details.get(requestId),
+  });
 }
 
 
@@ -587,7 +663,13 @@ export function runCoordinatedOperation<TResult>(
 
   /* ── 4. Requests, at the boundary ─────────────────────────────────── */
 
-  const orderedCosts = orderRuntimeRequests(operation.costs);
+  /*
+   * Funding order, not reporting order. `orderRuntimeRequests` ends on kind,
+   * which would let a request's NAME decide which of two costs got the last of
+   * a character's Aura; `orderCostRequests` puts explicit priority there
+   * instead. See compareCostRequests.
+   */
+  const orderedCosts = orderCostRequests(operation.costs);
   const seenRequestIds = new Set<string>();
   const requestIssues: EngineError[] = [];
 
@@ -725,7 +807,31 @@ export function runCoordinatedOperation<TResult>(
         }]);
       }
 
-      if (cost.actual < request.requested && request.allowPartial !== true) {
+      if (
+        cost.authoritative !== undefined &&
+        (!Number.isFinite(cost.authoritative) || cost.authoritative < 0)
+      ) {
+        prepareNode.output = false;
+
+        return fail(root, [{
+          code: "runtime.cost.authoritative.invalid",
+          message: `A ${request.kind} cost was priced at an impossible amount.`,
+          audience: "developer",
+          required: "finite number >= 0",
+          actual: String(cost.authoritative),
+        }]);
+      }
+
+      /*
+       * FULL PAYMENT IS MEASURED AGAINST THE PRICE, NOT THE ESTIMATE.
+       *
+       * Comparing against `requested` conflated two unrelated things: a
+       * requester who over-estimated, and a reserve that came up short. Only
+       * the second is a partial payment, and only the second is refusable.
+       */
+      const owed = cost.authoritative ?? request.requested;
+
+      if (cost.actual < owed && request.allowPartial !== true) {
         prepareNode.output = false;
 
         return fail(root, [{
@@ -734,7 +840,7 @@ export function runCoordinatedOperation<TResult>(
             `A ${request.kind} cost could not be paid in full, and this ` +
             "operation does not permit partial payment.",
           audience: "developer",
-          required: String(request.requested),
+          required: String(owed),
           actual: String(cost.actual),
         }]);
       }
@@ -750,6 +856,7 @@ export function runCoordinatedOperation<TResult>(
 
   const events: RuntimeEvent[] = [];
   const costOutcomes: RuntimeRequestOutcome[] = [];
+  const costDetails = new Map<string, unknown>();
 
   const costsByRequestId = new Map(
     orderedCosts.map((one) => [one.requestId, one]),
@@ -788,12 +895,21 @@ export function runCoordinatedOperation<TResult>(
     if (outcomeIssue !== null) return fail(root, [outcomeIssue]);
 
     costOutcomes.push(committed.outcome);
+
+    if (committed.detail !== undefined) {
+      costDetails.set(cost.requestId, committed.detail);
+    }
+
     record(committed.events);
   }
 
   /* ── 7. The operation's own rules, on the post-cost draft. ────────── */
 
-  const resolved = operation.resolve(dice, draft);
+  const resolved = operation.resolve(
+    dice,
+    draft,
+    settledCosts(costOutcomes, costDetails),
+  );
 
   record(resolved.events ?? []);
 

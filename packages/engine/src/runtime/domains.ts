@@ -96,6 +96,28 @@ export function ownerKey(owner: RuntimeOwnerRef): string {
 }
 
 
+/**
+ * The SUBJECT an owner key names, with the domain stripped off.
+ *
+ * The documented inverse of `ownerKey`, and it exists because the comment
+ * above is load-bearing: two domains legitimately use the same id for their
+ * own view of one character, so `aura:gon` and `nen:gon` are two states
+ * belonging to ONE person. Anything that has to ask "is this the same
+ * character" across domains needs that id, and comparing the whole keys
+ * answers a different question — one that is always false for two different
+ * domains and therefore useless as a guard.
+ *
+ * Splits on the FIRST colon only. A domain name never contains one, and an id
+ * may: `object:sword-1` is a perfectly good id for something a host addresses
+ * by a compound name, and splitting on every colon would truncate it.
+ */
+export function ownerIdFromKey(key: string): string {
+  const separator = key.indexOf(":");
+
+  return separator === -1 ? key : key.slice(separator + 1);
+}
+
+
 export function sameOwner(
   left: RuntimeOwnerRef,
   right: RuntimeOwnerRef,

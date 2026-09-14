@@ -556,30 +556,53 @@ describe("one shared Output budget", () => {
     expect(resolved.adjustments).toEqual([]);
   });
 
-  it("reduces stored allocations that no longer fit, proportionally", () => {
+  it("fits stored allocations that no longer fit, highest priority first", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
       access: REN_III,
       allocations: [
-        { id: "a", coverage: "whole-body", placement: "surface", aura: 4000 },
-        { id: "b", coverage: "whole-body", placement: "surface", aura: 1000 },
+        {
+          id: "a",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 4000,
+          priority: 5,
+        },
+        {
+          id: "b",
+          coverage: "whole-body",
+          placement: "surface",
+          aura: 1000,
+          priority: 1,
+        },
       ],
     });
 
-    /* 2500 of budget left after Ten's 500, shared 4:1. */
-    expect(resolved.adjustments).toHaveLength(2);
-    expect(resolved.adjustments.every((one) => one.kind === "reduced"))
-      .toBe(true);
-    expect(resolved.distribution.activeAura).toBeCloseTo(3000, 8);
-
-    const byId = new Map(
-      resolved.distribution.allocations
-        .filter((one) => one.partId === "arm-1")
-        .map((one) => [one.allocationId, one.aura]),
+    /*
+     * 2,500 of budget left after Ten's 500. The higher priority takes all of
+     * it and the lower one is released — NOT the 2,000/500 the old
+     * proportional rule produced, which left the character with two
+     * commitments that had both been quietly halved.
+     */
+    expect(resolved.adjustments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "reduced", allocationId: "a" }),
+        expect.objectContaining({
+          kind: "removed-budget-exhausted",
+          allocationId: "b",
+        }),
+      ]),
     );
 
-    expect(byId.get("a")! / byId.get("b")!).toBeCloseTo(4, 8);
+    expect(resolved.distribution.activeAura).toBeCloseTo(3000, 8);
+
+    const placed = resolved.distribution.allocations
+      .filter((one) => one.partId === "arm-1")
+      .map((one) => one.allocationId);
+
+    expect(placed).toContain("a");
+    expect(placed).not.toContain("b");
   });
 
   /*

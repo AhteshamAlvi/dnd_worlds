@@ -36,9 +36,19 @@
  *   the placement is not         removed; an awakened character's internal
  *   permitted                    Density is zero until something grants it
  *
- *   the budget shrank            scaled down proportionally, so a character
- *                                reinforcing their legs twice as hard as their
- *                                arms still is
+ *   the budget shrank            settled by PRIORITY, highest first. Each
+ *                                commitment is kept whole while there is room;
+ *                                the first that does not fit takes what is
+ *                                left — or is released if it declared itself
+ *                                indivisible — and those below it are released
+ *
+ * That last rule used to scale every survivor by budget/total, and it was the
+ * right arithmetic in the wrong place. Spreading ONE allocation over a body at
+ * equal density is proportional and still is; see distribution.ts. Spreading a
+ * SHORTAGE across unrelated commitments is not. It left a character whose
+ * reserve dipped holding a degraded version of everything instead of an intact
+ * version of what mattered, and nothing they could state changed that, because
+ * the split was decided by the amounts alone.
  *
  * It never grows an allocation back when Aura returns. Re-committing Output is
  * a decision, and decisions come from the caller.
@@ -57,7 +67,12 @@ import {
 } from "./distribution";
 import { deriveAuraOutput } from "./output";
 import { validateAuraPool } from "./pool";
-import { totalAllocatedAura, type AuraAllocation } from "./state";
+import {
+  allocationPriority,
+  totalAllocatedAura,
+  type AuraAllocation,
+} from "./state";
+import { DEFAULT_AURA_COMMITMENT_SHORTFALL } from "./types";
 import type {
   AuraAccessInput,
   AuraAllocationChange,
@@ -220,40 +235,123 @@ export function resolveAuraBudget(
 
 
 /*
- * Scale a set of amounts down to fit a budget, keeping their proportions.
+ * Floating-point slack for "this commitment still fits".
  *
- *   A_i' = A_i x (budget / total)
- *
- * The trailing correction is not cosmetic. Multiplying each amount by a factor
- * and adding the results back up does not reliably reproduce the budget in
- * binary floating point, and stored state that overshoots by one part in 10^13
- * is stored state that is over its ceiling. The excess comes off the largest
- * amount, where it is proportionally smallest and cannot drive anything
- * negative.
+ * Upkeep and interval arithmetic produce budgets like 999.9999999999999, and
+ * an exact comparison would cut a 1,000-Aura Ken down by a ten-trillionth and
+ * report it to the player as a reduction.
  */
-export function proportionallyReduce(
-  amounts: readonly number[],
+const BUDGET_EPSILON = 1e-9;
+
+
+/** One commitment's fate under the budget, before it is turned into a change. */
+type SettledCommitment =
+  | { readonly kind: "kept"; readonly allocation: AuraAllocation }
+  | {
+    readonly kind: "reduced";
+    readonly allocation: AuraAllocation;
+    readonly aura: number;
+    readonly factor: number;
+  }
+  | {
+    readonly kind: "released";
+    readonly allocation: AuraAllocation;
+    readonly available: number;
+    readonly reason: "indivisible" | "below-minimum" | "no-capacity";
+  };
+
+
+/*
+ * Fit a set of commitments into a budget, HIGHEST PRIORITY FIRST.
+ *
+ * This replaced proportional reduction, and the difference is the whole point.
+ * Scaling everything by budget/total is the correct answer to a different
+ * question — how to spread one allocation's Aura over a body at equal density,
+ * which distribution.ts still does — and the wrong answer to this one. A
+ * character holding 200 in Ten and 20 in a technique, whose reserve drops to
+ * 200, should lose the technique and keep Ten intact; proportional reduction
+ * gave them 181.8 and 18.2, which is a Ten that no longer stops anything and a
+ * technique that no longer works. Shortage is supposed to cost you your least
+ * important commitment, not degrade all of them at once.
+ *
+ * The order is priority descending, then allocation ID ascending. The id is a
+ * TIE-BREAK and nothing more: it exists so that two callers holding the same
+ * commitments in different array orders settle them identically, and it is
+ * never allowed to outrank a stated priority. Array order is consulted at no
+ * point.
+ *
+ * A commitment that does not fit takes whatever is left and the remainder
+ * drops to zero — so everything below it is released. An INDIVISIBLE one is
+ * released instead, and the scan CONTINUES: the capacity it was not given is
+ * genuinely free, and handing it to the next commitment down wastes nothing
+ * while still preserving every priority above.
+ */
+export function settleAuraCommitments(
+  allocations: readonly AuraAllocation[],
   budget: number,
-): { readonly amounts: readonly number[]; readonly factor: number } {
-  const total = amounts.reduce((sum, amount) => sum + amount, 0);
+): readonly SettledCommitment[] {
+  const order = [...allocations].sort((left, right) => {
+    const byPriority = allocationPriority(right) - allocationPriority(left);
 
-  if (total <= budget) return { amounts, factor: 1 };
+    return byPriority !== 0 ? byPriority : left.id.localeCompare(right.id);
+  });
 
-  const factor = total > 0 ? budget / total : 0;
-  const scaled = amounts.map((amount) => amount * factor);
-  const excess = scaled.reduce((sum, amount) => sum + amount, 0) - budget;
+  const settled = new Map<string, SettledCommitment>();
 
-  if (excess > 0) {
-    let largest = 0;
+  let remaining = Math.max(0, budget);
 
-    scaled.forEach((amount, index) => {
-      if (amount > scaled[largest]!) largest = index;
+  for (const allocation of order) {
+    if (allocation.aura <= remaining + BUDGET_EPSILON) {
+      settled.set(allocation.id, { kind: "kept", allocation });
+      remaining = Math.max(0, remaining - allocation.aura);
+
+      continue;
+    }
+
+    const shortfall = allocation.shortfall ?? DEFAULT_AURA_COMMITMENT_SHORTFALL;
+
+    if (shortfall.kind === "remove") {
+      settled.set(allocation.id, {
+        kind: "released",
+        allocation,
+        available: remaining,
+        reason: "indivisible",
+      });
+
+      continue;
+    }
+
+    const minimum = shortfall.minimum ?? 0;
+
+    if (remaining <= 0 || remaining + BUDGET_EPSILON < minimum) {
+      settled.set(allocation.id, {
+        kind: "released",
+        allocation,
+        available: remaining,
+        reason: remaining <= 0 ? "no-capacity" : "below-minimum",
+      });
+
+      continue;
+    }
+
+    settled.set(allocation.id, {
+      kind: "reduced",
+      allocation,
+      aura: remaining,
+      /*
+       * Zero Aura cannot have been scaled by anything, so a factor of 0 is
+       * reported rather than a division by zero. It is unreachable in practice
+       * — a zero-Aura commitment always fits — and is here so that the shape
+       * has no undefined case.
+       */
+      factor: allocation.aura > 0 ? remaining / allocation.aura : 0,
     });
 
-    scaled[largest] = Math.max(0, scaled[largest]! - excess);
+    remaining = 0;
   }
 
-  return { amounts: scaled, factor };
+  /* Back into the caller's order, so the result is a parallel list. */
+  return allocations.map((allocation) => settled.get(allocation.id)!);
 }
 
 
@@ -330,17 +428,11 @@ export function reconcileAuraAllocations(
     (allocation) => !unmanifested.has(allocation.id),
   );
 
-  /* 3. The budget. */
-  const reduced = proportionallyReduce(
-    surviving.map((allocation) => allocation.aura),
-    budget.deliberateBudget,
-  );
+  /* 3. The budget, settled by priority rather than shared out. */
+  const settled = settleAuraCommitments(surviving, budget.deliberateBudget);
 
-  const reducedById = new Map(
-    surviving.map((allocation, index) => [
-      allocation.id,
-      reduced.amounts[index]!,
-    ]),
+  const settledById = new Map(
+    surviving.map((allocation, index) => [allocation.id, settled[index]!]),
   );
 
   const next: AuraAllocation[] = [];
@@ -371,9 +463,21 @@ export function reconcileAuraAllocations(
       continue;
     }
 
-    const aura = reducedById.get(allocation.id)!;
+    const outcome = settledById.get(allocation.id)!;
 
-    if (aura === allocation.aura) {
+    if (outcome.kind === "released") {
+      changes.push({
+        kind: "removed-budget-exhausted",
+        allocationId: allocation.id,
+        previous: allocation,
+        available: outcome.available,
+        reason: outcome.reason,
+      });
+
+      continue;
+    }
+
+    if (outcome.kind === "kept") {
       next.push(allocation);
       changes.push({
         kind: "unchanged",
@@ -384,7 +488,7 @@ export function reconcileAuraAllocations(
       continue;
     }
 
-    const scaled: AuraAllocation = { ...allocation, aura };
+    const scaled: AuraAllocation = { ...allocation, aura: outcome.aura };
 
     next.push(scaled);
     changes.push({
@@ -392,7 +496,7 @@ export function reconcileAuraAllocations(
       allocationId: allocation.id,
       previous: allocation,
       allocation: scaled,
-      factor: reduced.factor,
+      factor: outcome.factor,
     });
   }
 

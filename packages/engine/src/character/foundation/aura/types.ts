@@ -48,12 +48,122 @@ export type AuraPlacement = typeof AURA_PLACEMENTS[number];
 /*
  * How much of the body one allocation covers.
  *
- *   whole-body  every present part, proportionally
- *   localized   one continuity identity
+ *   whole-body    every eligible present part, at EQUAL DENSITY
+ *   localized     one continuity identity
+ *   differential  several identities at stated, unequal weights
+ *
+ * The third is separated from the first two because it is the only one whose
+ * shape a caller can use to say something the rules do not otherwise permit.
+ * `whole-body` means equal density over the complete eligible domain — that is
+ * what the word means, and it is why the shape carries no weights and no
+ * exclusions: a "whole-body" allocation that skipped the left arm, or put
+ * twice the density on the fists, would be a differential placement wearing a
+ * uniform name, and nothing downstream could tell.
+ *
+ * `differential` says so openly, and has to be AUTHORIZED. Uneven Aura is what
+ * the advanced applications are made of, and a generic allocation path that
+ * accepted arbitrary weights would hand every caller those applications for
+ * free, without the mastery, the cost or the gate that is supposed to grant
+ * them. The authorization is not a permission bit: it names the allocation,
+ * the source and the owner it was granted for, so one cannot be reused on
+ * another allocation, another character, or by another mechanic.
  */
-export const AURA_COVERAGES = ["whole-body", "localized"] as const;
+export const AURA_COVERAGES = [
+  "whole-body",
+  "localized",
+  "differential",
+] as const;
 
 export type AuraCoverage = typeof AURA_COVERAGES[number];
+
+
+/*
+ * Permission to place Aura unevenly, bound to what it was granted for.
+ *
+ * Every field is a binding rather than a description. A grant that named only
+ * itself would be a token: copy it onto a different allocation, or hand it to
+ * a different character, and the rules it exists to enforce are gone. Checking
+ * all three against the allocation actually being resolved is what makes
+ * forging one require forging the thing it authorizes.
+ */
+export interface AuraDifferentialAuthorization {
+  /** Must equal the allocation's own id. */
+  readonly allocationId: string;
+
+  /** Must equal the allocation's `source`. */
+  readonly source: string;
+
+  /** Whose Aura this may be placed on. */
+  readonly owner: string;
+
+  /**
+   * What granted it — a mastery, an Item, a scene effect.
+   *
+   * Opaque to Aura, which neither interprets it nor decides who may issue
+   * one. Aura's job is to refuse an allocation that has no grant and to report
+   * which grant let one through; deciding that a given mechanic EARNS a grant
+   * is that mechanic's own rule, and belongs where that rule lives.
+   */
+  readonly grantedBy: string;
+}
+
+
+/** One identity's share of a differential placement. */
+export interface AuraDifferentialWeight {
+  readonly continuityKey: ContinuityKey;
+
+  /**
+   * Relative, not absolute. Normalized against the total before placement, so
+   * `[3, 1]` and `[0.75, 0.25]` are the same request — which keeps a caller
+   * from having to pre-divide and keeps rounding in one place.
+   */
+  readonly weight: number;
+}
+
+
+/* ── Commitment priority and shortage behaviour ─────────────────────────── */
+
+/*
+ * What a commitment that does not state a priority settles at.
+ *
+ * Every allocation written before priority existed is one of these, so the
+ * default has to be a value at which the old and new behaviour agree for the
+ * ordinary case: one commitment, or several that all fit.
+ */
+export const DEFAULT_AURA_COMMITMENT_PRIORITY = 0;
+
+/*
+ * What happens to a STANDING commitment when the Output budget shrinks under
+ * it — a drained reserve, a lost limb, Ren closing down.
+ *
+ *   reduce   it takes whatever capacity is left at its turn. A `minimum`, if
+ *            given, is the floor below which holding it is pointless and it is
+ *            dropped instead.
+ *
+ *   remove   it is indivisible. Half a Ken is not a weaker Ken, it is nothing,
+ *            so a commitment that cannot be held in full is released whole and
+ *            the capacity goes to whatever is next in priority order.
+ *
+ * Note what is NOT here: `consume-and-fail`. That policy is about committing
+ * to an ATTEMPT and paying for it; a commitment that already stands has
+ * nothing left to commit to, and decommitting Output spends no Current Aura at
+ * all. Reusing the funding union here would have offered a third case that
+ * could never fire.
+ */
+export type AuraCommitmentShortfall =
+  | { readonly kind: "reduce"; readonly minimum?: number }
+  | { readonly kind: "remove" };
+
+/*
+ * What a commitment that says nothing does.
+ *
+ * `reduce` with no floor, which is what every allocation did before the
+ * policy existed — the difference being that it now shrinks in priority order
+ * rather than proportionally with everything else.
+ */
+export const DEFAULT_AURA_COMMITMENT_SHORTFALL: AuraCommitmentShortfall = {
+  kind: "reduce",
+};
 
 
 /* ── Density ────────────────────────────────────────────────────────────── */
@@ -768,12 +878,37 @@ export type AuraAllocationChange =
     readonly placement: AuraPlacement;
   }
   | {
-    /* Scaled down to fit a budget that shrank underneath it. */
+    /*
+     * Cut down to the Output left for it once every higher priority had its
+     * share. `factor` is this allocation's own ratio, not a figure shared with
+     * the others — under priority settlement the allocations above this one
+     * were not scaled at all, which is the entire point.
+     */
     readonly kind: "reduced";
     readonly allocationId: string;
     readonly previous: AuraAllocation;
     readonly allocation: AuraAllocation;
     readonly factor: number;
+  }
+  | {
+    /*
+     * Released because the budget ran out before its turn in priority order,
+     * or because what was left was below the floor it declared.
+     *
+     * Distinct from `removed-not-manifested` and `removed-not-permitted`
+     * because the answer to "can I have it back" is different: the anatomy and
+     * the access are fine, and recovering Aura or dropping a higher-priority
+     * commitment restores this one's room. Releasing it spends NO Current
+     * Aura; decommitting Output never does.
+     */
+    readonly kind: "removed-budget-exhausted";
+    readonly allocationId: string;
+    readonly previous: AuraAllocation;
+
+    /** Output that was actually left for it — often zero. */
+    readonly available: number;
+
+    readonly reason: "indivisible" | "below-minimum" | "no-capacity";
   }
   | {
     readonly kind: "unchanged";

@@ -39,7 +39,12 @@ import type {
 import { createTraceNode } from "../../infrastructure/trace";
 import { validateGameTimeInterval } from "../../time/interval";
 
+import {
+  hasDeliberateAuraAccess,
+  resolveAuraAccess,
+} from "../foundation/aura/access";
 import { advanceAuraTime } from "../foundation/aura/time";
+import { advanceNenActivities } from "../nen/runtime";
 import { auraTransitionContext, resolveCharacter } from "../resolution";
 import type { Character } from "../types";
 
@@ -170,6 +175,53 @@ export function advanceCharacterTime(
 
   if (!aura.success) return fail(aura.errors);
 
+  /*
+   * The active runtime, carried across the SAME interval.
+   *
+   * After Aura, and against the access the advance actually produced. An
+   * activity that needs deliberate projection cannot survive a character being
+   * emptied into an involuntary Zetsu, and asking Aura first is what lets this
+   * be told rather than guessed — `deliberateAccess` is a fact the advance
+   * settled, not a second opinion formed here.
+   *
+   * Decommitting whatever stops costs nothing. The Aura state above is already
+   * final; nothing below it touches the reserve.
+   */
+  let nenActivities: CharacterTimeTransition["nenActivities"];
+
+  if (input.activeEffects?.nenActivities !== undefined) {
+    const access = resolveAuraAccess(context.access);
+
+    root.children.push(access.trace.root);
+
+    if (!access.success) return fail(access.errors);
+
+    /*
+     * Access AFTER the interval, not before it.
+     *
+     * A character emptied into an involuntary Zetsu part-way through eight
+     * hours cannot still be holding a technique at the end of them, and
+     * `collapse` is the advance's own record that it happened. Reading the
+     * access the character started with would leave every activity standing
+     * through the exact event that should have ended them.
+     */
+    const advancedActivities = advanceNenActivities(
+      input.activeEffects.nenActivities,
+      {
+        to: interval.endedAt,
+        by: { type: "character", id: character.id },
+        deliberateAccess: aura.payload.collapse === null &&
+          hasDeliberateAuraAccess(access.payload),
+      },
+    );
+
+    root.children.push(advancedActivities.trace.root);
+
+    if (!advancedActivities.success) return fail(advancedActivities.errors);
+
+    nenActivities = advancedActivities.payload;
+  }
+
   const advanced: Character = {
     ...character,
     aura: aura.payload.state,
@@ -194,6 +246,7 @@ export function advanceCharacterTime(
       aura: aura.payload,
       wakefulness: aura.payload.wakefulness,
       fatigue: aura.payload.fatigue,
+      ...(nenActivities === undefined ? {} : { nenActivities }),
     },
     trace: { root },
     warnings: aura.warnings,

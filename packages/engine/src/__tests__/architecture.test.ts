@@ -1545,7 +1545,17 @@ describe("GM adjudication is not scattered", () => {
  * ownership this phase spent five tickets moving out of it.
  */
 describe("Combat schedules neutral actions without owning them", () => {
-  const combatFiles = sourceFilesUnder(join(SRC, "gameplay"));
+  /*
+   * `gameplay/combat`, not `gameplay`.
+   *
+   * Every rule below is about COMBAT — its own comments say so — and it was
+   * scanning the whole of gameplay/ only because Combat was the only thing in
+   * it. `gameplay/aura` is a different composition with different, legitimate
+   * edges: it exists precisely to join a Character's Aura to a Target and a
+   * Spatial area, which the "imports no Character content" rule would forbid.
+   * Its own guards are below, so narrowing this one loses no coverage.
+   */
+  const combatFiles = sourceFilesUnder(join(SRC, "gameplay", "combat"));
 
   it("finds the sources it is checking", () => {
     expect(combatFiles.length).toBeGreaterThan(5);

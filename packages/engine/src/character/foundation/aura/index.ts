@@ -26,12 +26,14 @@
 
 export type {
   AuraAllocation,
+  AuraAllocationMetadata,
   CharacterAuraState,
   LocalizedAuraAllocation,
   WholeBodyAuraAllocation,
 } from "./state";
 
 export {
+  allocationPriority,
   allocationsForPlacement,
   allocationsWithCoverage,
   emptyAuraState,
@@ -67,6 +69,7 @@ export type {
   AuraRegenerationCapacity,
   AuraSuppressedAccessOverride,
   AutomaticSurfaceCoating,
+  AuraCommitmentShortfall,
   DroppedAuraAllocation,
   DroppedAuraAllocationReason,
   InternalAuraDensity,
@@ -88,6 +91,8 @@ export {
   AURA_COVERAGES,
   AURA_NODE_STATES,
   AURA_PLACEMENTS,
+  DEFAULT_AURA_COMMITMENT_PRIORITY,
+  DEFAULT_AURA_COMMITMENT_SHORTFALL,
   SQUARE_CENTIMETRES_PER_SQUARE_METRE,
   emptyAuraBalance,
 } from "./types";
@@ -114,10 +119,31 @@ export type {
 export {
   auraAdjustments,
   BASELINE_TEN_ALLOCATION_ID,
-  proportionallyReduce,
   reconcileAuraAllocations,
   resolveAuraBudget,
+  settleAuraCommitments,
 } from "./budget";
+
+
+/* ── Funding: priority, shortfall policy, and the Aura ledger ───────────── */
+
+export type {
+  AuraFundingOutcome,
+  AuraFundingSettlement,
+  AuraFundingStatus,
+  AuraShortfallKind,
+  AuraShortfallPolicy,
+} from "./funding";
+
+export {
+  AURA_FUNDING_STATUSES,
+  AURA_SHORTFALL_KINDS,
+  auraFundingSucceeded,
+  DEFAULT_AURA_SHORTFALL,
+  findAuraShortfallPolicyIssues,
+  permitsPartialAuraFunding,
+  settleAuraFunding,
+} from "./funding";
 
 
 /* ── Access ─────────────────────────────────────────────────────────────── */
