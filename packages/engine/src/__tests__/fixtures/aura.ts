@@ -21,6 +21,7 @@ import {
   resolveMorphology,
 } from "../../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../../character/foundation/body/types";
+import { withTenCoating } from "../../character/nen/access";
 import type { CharacterStats } from "../../character/foundation/attributes/stats";
 import type {
   Anatomy,
@@ -28,7 +29,10 @@ import type {
   BodyPartId,
 } from "../../character/foundation/body/anatomy/types";
 import type { BodyMorphology } from "../../character/foundation/body/types";
-import type { AuraAccessInput } from "../../character/foundation/aura/types";
+import type {
+  AuraAccessInput,
+  AuraAccessOverride,
+} from "../../character/foundation/aura/types";
 import type { AuraTransitionContext } from "../../character/foundation/aura/budget";
 import type { DifferentialAuraAllocation } from "../../character/foundation/aura/state";
 import type { AuraPlacement } from "../../character/foundation/aura/types";
@@ -98,11 +102,32 @@ export const UNCONTAINED: AuraAccessInput = {
   effectiveTenMastery: 0,
 };
 
-/** Awakened with Ten learned, which is Ten running. */
-export const WITH_TEN: AuraAccessInput = {
+/*
+ * Awakened with Ten learned, which is Ten running.
+ *
+ * Built through the same projection production uses, because Ten's coating is
+ * Ten's arithmetic and a literal here would be a third copy of it — one that
+ * would keep agreeing with the resolver right up until the formula changed.
+ *
+ * Ten I with no Ren is the 5% floor, which is what every suite that is not
+ * about Ten specifically has always assumed.
+ */
+export const WITH_TEN: AuraAccessInput = withTenCoating({
   awakened: true,
   effectiveTenMastery: 1,
-};
+});
+
+/** Awakened with Ten at a chosen rank, and optionally a chosen override. */
+export function withTen(
+  effectiveTenMastery: number,
+  override?: AuraAccessOverride,
+): AuraAccessInput {
+  return withTenCoating({
+    awakened: true,
+    effectiveTenMastery,
+    ...(override === undefined ? {} : { override }),
+  });
+}
 
 export interface AuraContextOptions {
   readonly attributes?: Partial<CharacterStats>;

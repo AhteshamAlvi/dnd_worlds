@@ -46,15 +46,13 @@ import {
   auraTestAttributes,
   UNAWAKENED,
   WITH_TEN,
+  withTen,
 } from "./fixtures/aura";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
 /* Ren III, which opens room above the 5% baseline Ten already commits. */
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
 function costFor(
   stats: CharacterStats,

@@ -27,16 +27,38 @@
  * NEITHER KIND IS ZETSU MASTERY, and nothing here implies otherwise. The
  * override is built from the suppression instance, never from the character's
  * Zetsu rank, and a character held in one has learned nothing.
+ *
+ *
+ * TEN'S COATING COMES THROUGH HERE TOO
+ * ------------------------------------
+ *
+ * Aura is told HOW MUCH Ten holds against the body, not asked to work it out.
+ * The coating is the greater of Ten's Mastery share of Ren-accessible Output
+ * and a 5% floor, and every term in that belongs to nen/principles/ten.ts — so
+ * a fraction stated on the Aura side could only ever have been a second,
+ * quietly diverging Ten. Aura had exactly that for a while: a flat 5% that was
+ * right at Mastery I with no Ren and wrong everywhere else.
+ *
+ * This is the only file that imports a principle to build an access input, and
+ * it imports the only principle that is not something a character DOES. Ten is
+ * passive, automatic and free; it is a property of the state, which is what
+ * makes resolving it here the same kind of act as reading effective Mastery.
+ * The active resolvers — Ren, Zetsu, Hatsu — stay out, and an architecture
+ * test holds that line.
  */
 
 import { NO_MASTERY } from "../capabilities/mastery";
-import type { AuraAccessInput } from "../foundation/aura/types";
+import type {
+  AuraAccessInput,
+  AuraAccessOverride,
+} from "../foundation/aura/types";
 import {
   deriveEffectiveNenMastery,
   hasEverAwakenedNen,
   isNenAwakened,
 } from "../foundation/nen/nen";
 import { isSuppressed } from "../foundation/nen/awakening/state";
+import { tenSurfaceCoating } from "../foundation/nen/principles/ten";
 import type { NenState } from "../foundation/nen/types";
 
 
@@ -50,6 +72,76 @@ import type { NenState } from "../foundation/nen/types";
 export const NEN_SUPPRESSION_ACCESS_SOURCE = "nen-suppression";
 
 
+/** An access input before Ten's coating has been resolved onto it. */
+export type UncoatedAuraAccessInput = Omit<AuraAccessInput, "tenCoating">;
+
+
+/*
+ * How much of physiological Output an override has opened, as Ten reads it.
+ *
+ * Ten's Mastery term is a share of what REN made reachable, so the question
+ * this answers is "how much Output is there to contain", not "which principle
+ * is running". Exhaustive over the union so that a new override kind has to
+ * decide its own answer here rather than inheriting somebody else's.
+ */
+function renAccessFraction(
+  override: AuraAccessOverride | undefined,
+): number {
+  if (override === undefined) return 0;
+
+  switch (override.kind) {
+    /* Ren, and anything else that opens a share of Output for Ten to hold. */
+    case "output-access":
+      return override.accessFraction;
+
+    /*
+     * An explicit override states its own reachable share, and states
+     * separately whether a coating applies at all. When it asks for one, that
+     * share is what Ten has to work with.
+     */
+    case "explicit":
+      return override.accessFraction;
+
+    /*
+     * Neither of these wears a coating — Chū has put the Aura inside the body
+     * and suppression has shut the nodes — so there is nothing for a Mastery
+     * share to be a share OF. Aura drops the coating for both regardless; zero
+     * here means the two files agree rather than merely coincide.
+     */
+    case "internal-access":
+    case "suppressed":
+      return 0;
+  }
+}
+
+
+/**
+ * Attach the coating Ten resolves for this state.
+ *
+ * The single projection from the Ten principle into Aura's vocabulary. It is
+ * separate from nenAuraAccessInput below so that a caller building an access
+ * input for a character who is DOING something — a Ren at a chosen Output,
+ * once that lands — resolves Ten's coating against that Output through the
+ * same function, instead of hand-assembling a coating beside it.
+ *
+ * Leaves the input untouched when Ten does not reach the character at all: the
+ * unawakened, the reverted, and the awakened character whose effective Ten is
+ * 0, who is the one Aura reports as uncontained.
+ */
+export function withTenCoating(
+  input: UncoatedAuraAccessInput,
+): AuraAccessInput {
+  if (!input.awakened) return input;
+
+  const coating = tenSurfaceCoating(
+    input.effectiveTenMastery,
+    renAccessFraction(input.override),
+  );
+
+  return coating === null ? input : { ...input, tenCoating: coating };
+}
+
+
 /**
  * What Aura should be told about this character.
  *
@@ -61,7 +153,7 @@ export const NEN_SUPPRESSION_ACCESS_SOURCE = "nen-suppression";
 export function nenAuraAccessInput(nen: NenState): AuraAccessInput {
   const effectiveTenMastery = deriveEffectiveNenMastery(nen, "ten");
 
-  const base = {
+  const base: UncoatedAuraAccessInput = {
     awakened: isNenAwakened(nen),
     previouslyAwakened: hasEverAwakenedNen(nen),
     effectiveTenMastery,
@@ -73,12 +165,14 @@ export function nenAuraAccessInput(nen: NenState): AuraAccessInput {
    * it is what keeps a reverted character's stale forced state (which the
    * reversion already cleared) from ever producing an invalid input.
    */
-  if (!base.awakened || !isSuppressed(nen.awakening)) return base;
+  if (!base.awakened || !isSuppressed(nen.awakening)) {
+    return withTenCoating(base);
+  }
 
-  return {
+  return withTenCoating({
     ...base,
     override: { kind: "suppressed", source: NEN_SUPPRESSION_ACCESS_SOURCE },
-  };
+  });
 }
 
 

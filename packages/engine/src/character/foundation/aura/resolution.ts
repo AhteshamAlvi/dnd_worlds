@@ -33,7 +33,8 @@
  *
  *   ACCESSIBLE      what the character can currently reach.  Physiological x
  *                   the access fraction. Ren raises the fraction; Zetsu closes
- *                   it; Ten's default state opens 5% of it. None of them touch
+ *                   it; Ten's default state opens exactly as much as its own
+ *                   coating draws. None of them touch
  *                   the physiological figure — a character in Zetsu has not
  *                   become physically weaker.
  *

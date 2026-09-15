@@ -15,8 +15,16 @@
  * Usable Output is one pool. Stored allocations and the automatic whole-body
  * coating the character's access state applies for them both draw on it, which
  * is why `deliberateBudget` is what is LEFT after the coating. A character
- * running baseline Ten has already committed 5% of physiological Output;
- * letting stored allocations spend the same 5% again would double it.
+ * running baseline Ten has already committed whatever share of physiological
+ * Output Ten resolved; letting stored allocations spend that share again would
+ * double it.
+ *
+ * That share is Ten's answer and arrives on the access state already resolved
+ * — the greater of Ten's Mastery share of Ren-accessible Output and a 5% floor
+ * — so nothing here decides how much a coating is worth. This file multiplies
+ * a fraction by a physiological maximum and caps the result; it does not know
+ * which of Ten's two terms produced the fraction, and must not grow a rule of
+ * its own about it.
  *
  * Passive unawakened pseudo-Chu is the exception and does not appear here at
  * all. It is drawn from Current Aura through half-open nodes and never passes
@@ -142,7 +150,13 @@ export interface AuraBudget {
  * The usable-Output cap on the coating normally changes nothing — usable
  * Output already accounts for the same two limits — but it keeps the coating
  * inside the budget if an access override ever opens a smaller fraction than
- * the coating draws.
+ * the coating draws. Ten's 5% floor is exactly such a case: a character whose
+ * Ren has opened less than 5% of their Output still INTENDS the floor, and
+ * gets as much of it as their Output and reserve can actually fund.
+ *
+ * Capping is not charging. The coating is an Output commitment and Current
+ * Aura is read only as a ceiling on it — allocating Ten deducts nothing, which
+ * is what makes it free to run indefinitely.
  */
 export function resolveAuraBudget(
   current: number,

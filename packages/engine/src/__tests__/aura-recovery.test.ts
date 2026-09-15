@@ -33,7 +33,13 @@ import { resolveAuraAccess } from "../character/foundation/aura/access";
 import { deriveZetsuReplenishmentMultiplier } from "../character/foundation/nen/principles/zetsu";
 import type { AuraSuppression } from "../character/foundation/aura/types";
 
-import { auraTestAttributes, UNAWAKENED, UNCONTAINED, WITH_TEN } from "./fixtures/aura";
+import {
+  auraTestAttributes,
+  UNAWAKENED,
+  UNCONTAINED,
+  WITH_TEN,
+  withTen,
+} from "./fixtures/aura";
 
 /* VIT 18 regenerates 700 Aura per hour at a x1.0 context. */
 const VIT_18 = auraTestAttributes({ con: 20, vit: 18 });
@@ -392,10 +398,7 @@ describe("which states actually leak", () => {
       override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
     })).toBe(true);
 
-    expect(uncontained({
-      ...WITH_TEN,
-      override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-    })).toBe(false);
+    expect(uncontained(withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 }))).toBe(false);
   });
 
   /*
@@ -403,15 +406,9 @@ describe("which states actually leak", () => {
    * missing coating: Chu has no coating and is containing Aura internally.
    */
   it("does not confuse an absent coating with an open wound", () => {
-    expect(uncontained({
-      ...WITH_TEN,
-      override: { kind: "internal-access", source: "chu", accessFraction: 0.3 },
-    })).toBe(false);
+    expect(uncontained(withTen(1, { kind: "internal-access", source: "chu", accessFraction: 0.3 }))).toBe(false);
 
-    expect(uncontained({
-      ...WITH_TEN,
-      override: { kind: "suppressed", source: "zetsu" },
-    })).toBe(false);
+    expect(uncontained(withTen(1, { kind: "suppressed", source: "zetsu" }))).toBe(false);
   });
 });
 

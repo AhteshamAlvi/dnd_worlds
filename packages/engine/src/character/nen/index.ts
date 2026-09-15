@@ -27,7 +27,10 @@ export {
   NEN_SUPPRESSION_ACCESS_SOURCE,
   isNenUncontained,
   nenAuraAccessInput,
+  withTenCoating,
 } from "./access";
+
+export type { UncoatedAuraAccessInput } from "./access";
 
 export {
   appliedOverrides,

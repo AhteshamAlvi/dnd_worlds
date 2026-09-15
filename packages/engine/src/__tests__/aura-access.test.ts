@@ -8,7 +8,9 @@
  *
  *   UNAWAKENED   half-open nodes, no deliberate access, passive pseudo-Chu
  *   UNCONTAINED  awakened with no Ten: open nodes reinforcing nothing
- *   TEN          awakened with Ten: the default state, 5% of Output as a coat
+ *   TEN          awakened with Ten: the default state, wearing the coating
+ *                Ten resolved — which is the 5% floor until Ren opens enough
+ *                Output for the Mastery term to beat it
  *
  * Overrides are the extension point for Ren, Zetsu, Chu and anything else.
  * None of their mechanics are implemented; what is tested here is that the
@@ -21,8 +23,10 @@ import {
   findAuraPlacementIssues,
   PSEUDO_CHU_EFFICIENCY,
   resolveAuraAccess,
-  TEN_SURFACE_COATING_OUTPUT_FRACTION,
 } from "../character/foundation/aura/access";
+import {
+  TEN_MINIMUM_COATING_OUTPUT_FRACTION,
+} from "../character/foundation/nen/principles/ten";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { AuraAllocation } from "../character/foundation/aura/state";
 import type {
@@ -30,7 +34,7 @@ import type {
   ResolvedAuraAccess,
 } from "../character/foundation/aura/types";
 
-import { UNAWAKENED, UNCONTAINED, WITH_TEN } from "./fixtures/aura";
+import { UNAWAKENED, UNCONTAINED, WITH_TEN, withTen } from "./fixtures/aura";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -130,12 +134,14 @@ describe("awakened with Ten", () => {
     expect(resolved.nodeState).toBe("open");
   });
 
-  it("coats the whole body from 5% of physiological Output", () => {
-    expect(TEN_SURFACE_COATING_OUTPUT_FRACTION).toBe(0.05);
+  it("coats the whole body from the 5% floor when there is no Ren", () => {
+    expect(TEN_MINIMUM_COATING_OUTPUT_FRACTION).toBe(0.05);
     expect(resolved.accessFraction).toBe(0.05);
     expect(resolved.automaticSurfaceCoating).toEqual({
       source: "baseline-ten",
       outputFraction: 0.05,
+      masteryFraction: 0,
+      minimumFraction: 0.05,
     });
   });
 
@@ -145,30 +151,72 @@ describe("awakened with Ten", () => {
   });
 
   /*
-   * Effective mastery decides availability and nothing else. Ten's scaling,
-   * upkeep and containment limits are Ten's own file's business, so every rank
-   * from I upward resolves to the same access.
+   * Effective mastery decides AVAILABILITY here and nothing else, which is why
+   * every rank still flattens to the same access: Ten's containment fraction
+   * is a share of what Ren has opened, and a character with no Ren has had
+   * nothing opened. Mastery X holds all of zero, so the floor is the whole
+   * coating at every rank, and the difference between ranks only appears once
+   * there is Output to contain. That case is Ten's own suite.
    */
-  it("resolves identically at every learned rank", () => {
+  it("resolves identically at every learned rank when there is no Ren", () => {
     for (let rank = 1; rank <= 10; rank += 1) {
-      expect(access({ awakened: true, effectiveTenMastery: rank }))
-        .toEqual(resolved);
+      expect(access(withTen(rank))).toEqual(resolved);
     }
   });
 
   it("falls back to uncontained when a seal reduces Ten to 0", () => {
-    expect(access({ awakened: true, effectiveTenMastery: 0 }).state)
-      .toBe("uncontained");
+    expect(access(withTen(0)).state).toBe("uncontained");
+  });
+
+  /*
+   * The coating is Ten's answer, and this file refuses to invent one.
+   *
+   * A hand-built input that skipped the Nen projection used to resolve a flat
+   * 5% regardless of rank or Ren, which is the defect the Ten correction
+   * removed. Silence is not available to it any more.
+   */
+  it("refuses a character with usable Ten and no resolved coating", () => {
+    const result = resolveAuraAccess({
+      awakened: true,
+      effectiveTenMastery: 3,
+    });
+
+    expect(result.success).toBe(false);
+    expect(errorCodes(result)).toContain("aura.access.ten_coating.missing");
+  });
+
+  it("refuses a coating that is not a share of Output", () => {
+    const result = resolveAuraAccess({
+      awakened: true,
+      effectiveTenMastery: 3,
+      tenCoating: {
+        source: "baseline-ten",
+        outputFraction: Number.NaN,
+        masteryFraction: 0,
+        minimumFraction: 0.05,
+      },
+    });
+
+    expect(result.success).toBe(false);
+    expect(errorCodes(result))
+      .toContain("aura.access.ten_coating.fraction.invalid");
+  });
+
+  /*
+   * And the mirror: an unawakened character is not missing anything. The
+   * coating is absent because Ten does not reach them, not because a caller
+   * forgot it.
+   */
+  it("asks no coating of anybody Ten does not reach", () => {
+    expect(resolveAuraAccess(UNAWAKENED).success).toBe(true);
+    expect(resolveAuraAccess(UNCONTAINED).success).toBe(true);
   });
 });
 
 
 describe("typed access overrides", () => {
   it("opens a share of Output and keeps Ten running", () => {
-    const resolved = access({
-      ...WITH_TEN,
-      override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-    });
+    const resolved = access(withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 }));
 
     expect(resolved.state).toBe("override");
     expect(resolved.source).toBe("ren-iii");
@@ -187,10 +235,7 @@ describe("typed access overrides", () => {
   });
 
   it("closes ordinary Output and Ten when suppressed", () => {
-    const resolved = access({
-      ...WITH_TEN,
-      override: { kind: "suppressed", source: "zetsu" },
-    });
+    const resolved = access(withTen(1, { kind: "suppressed", source: "zetsu" }));
 
     expect(resolved.accessFraction).toBe(0);
     expect(resolved.automaticSurfaceCoating).toBeNull();
@@ -199,14 +244,11 @@ describe("typed access overrides", () => {
   });
 
   it("trades the coating for internal placement", () => {
-    const resolved = access({
-      ...WITH_TEN,
-      override: {
-        kind: "internal-access",
-        source: "chu",
-        accessFraction: 0.4,
-      },
-    });
+    const resolved = access(withTen(1, {
+      kind: "internal-access",
+      source: "chu",
+      accessFraction: 0.4,
+    }));
 
     expect(resolved.deliberateInternalAccess).toBe(true);
     expect(resolved.automaticSurfaceCoating).toBeNull();
@@ -214,17 +256,14 @@ describe("typed access overrides", () => {
   });
 
   it("takes every field outright when stated explicitly", () => {
-    const resolved = access({
-      ...WITH_TEN,
-      override: {
-        kind: "explicit",
-        source: "some-later-effect",
-        accessFraction: 0.75,
-        deliberateInternalAccess: true,
-        deliberateExternalAccess: false,
-        automaticSurfaceCoating: false,
-      },
-    });
+    const resolved = access(withTen(1, {
+      kind: "explicit",
+      source: "some-later-effect",
+      accessFraction: 0.75,
+      deliberateInternalAccess: true,
+      deliberateExternalAccess: false,
+      automaticSurfaceCoating: false,
+    }));
 
     expect(resolved.accessFraction).toBe(0.75);
     expect(resolved.deliberateInternalAccess).toBe(true);
@@ -232,11 +271,37 @@ describe("typed access overrides", () => {
     expect(resolved.automaticSurfaceCoating).toBeNull();
   });
 
+  /*
+   * The one field an explicit override cannot state outright. It asks WHETHER
+   * a coating applies; how big one is has exactly one source, so an override
+   * can waive Ten's coating and cannot conjure one for a character with no Ten
+   * to conjure it from.
+   */
+  it("gives an explicitly requested coating the one Ten resolved", () => {
+    const asked = {
+      kind: "explicit",
+      source: "some-later-effect",
+      accessFraction: 0.5,
+      deliberateInternalAccess: false,
+      deliberateExternalAccess: true,
+      automaticSurfaceCoating: true,
+    } as const;
+
+    /* Ten X holding half the Output that override opened: 50%, not the floor. */
+    expect(access(withTen(10, asked)).automaticSurfaceCoating)
+      .toEqual({
+        source: "baseline-ten",
+        outputFraction: 0.5,
+        masteryFraction: 0.5,
+        minimumFraction: 0.05,
+      });
+
+    expect(access({ ...UNCONTAINED, override: asked }).automaticSurfaceCoating)
+      .toBeNull();
+  });
+
   it("never carries pseudo-Chu, which belongs to unawakened bodies", () => {
-    const resolved = access({
-      ...WITH_TEN,
-      override: { kind: "internal-access", source: "chu", accessFraction: 0.4 },
-    });
+    const resolved = access(withTen(1, { kind: "internal-access", source: "chu", accessFraction: 0.4 }));
 
     expect(resolved.passiveInternalReinforcement).toBeNull();
   });
@@ -257,17 +322,11 @@ describe("access inputs that cannot be true", () => {
   });
 
   it("rejects an access fraction outside 0 through 1", () => {
-    expect(errorCodes(resolveAuraAccess({
-      ...WITH_TEN,
-      override: { kind: "output-access", source: "ren", accessFraction: 1.5 },
-    }))).toContain("aura.access.fraction.invalid");
+    expect(errorCodes(resolveAuraAccess(withTen(1, { kind: "output-access", source: "ren", accessFraction: 1.5 })))).toContain("aura.access.fraction.invalid");
   });
 
   it("rejects an unnamed override", () => {
-    expect(errorCodes(resolveAuraAccess({
-      ...WITH_TEN,
-      override: { kind: "output-access", source: "  ", accessFraction: 0.2 },
-    }))).toContain("aura.access.override.source.missing");
+    expect(errorCodes(resolveAuraAccess(withTen(1, { kind: "output-access", source: "  ", accessFraction: 0.2 })))).toContain("aura.access.override.source.missing");
   });
 
   /*
@@ -313,10 +372,7 @@ describe("placement permission", () => {
   });
 
   it("permits internal placement once an override grants it", () => {
-    const granted = access({
-      ...WITH_TEN,
-      override: { kind: "internal-access", source: "chu", accessFraction: 0.4 },
-    });
+    const granted = access(withTen(1, { kind: "internal-access", source: "chu", accessFraction: 0.4 }));
 
     expect(findAuraPlacementIssues([INTERNAL], granted)).toEqual([]);
   });

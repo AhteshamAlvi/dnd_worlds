@@ -38,6 +38,7 @@ import {
   UNAWAKENED,
   UNCONTAINED,
   WITH_TEN,
+  withTen,
 } from "./fixtures/aura";
 
 const T0 = 1_000_000_000;
@@ -59,10 +60,7 @@ const STRONG = { con: 20, vit: 20, dex: 22 } as const;
 const ROUND_HOURS = 2 / 3600;
 const LEAK_PER_ROUND = 10_000 / 30;
 
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
 const ZETSU = { source: "zetsu", multiplier: 1, forced: false } as const;
 const FORCED_ZETSU = { source: "forced-zetsu", multiplier: 1, forced: true };

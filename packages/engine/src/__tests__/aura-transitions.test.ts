@@ -44,6 +44,7 @@ import {
   auraOnOnePart,
   UNAWAKENED,
   WITH_TEN,
+  withTen,
 } from "./fixtures/aura";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
@@ -53,10 +54,7 @@ const RIGHT_ARM = continuityKey("upper-limb:right");
  * 10,000. Ren III opens 30% of it, and baseline Ten takes 5% off the top, so a
  * character at full reserve has 3,000 usable Output and 2,500 of it free.
  */
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
 function context(
   overrides: {
@@ -406,14 +404,11 @@ describe("allocation transitions", () => {
     const result = replaceAuraAllocations(
       state(4000),
       context({
-        access: {
-          ...WITH_TEN,
-          override: {
-            kind: "internal-access",
-            source: "chu",
-            accessFraction: 0.3,
-          },
-        },
+        access: withTen(1, {
+          kind: "internal-access",
+          source: "chu",
+          accessFraction: 0.3,
+        }),
       }),
       [{
         id: "internal",

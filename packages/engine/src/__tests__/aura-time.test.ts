@@ -36,15 +36,13 @@ import {
   UNAWAKENED,
   UNCONTAINED,
   WITH_TEN,
+  withTen,
 } from "./fixtures/aura";
 
 /* CON 20 / VIT 20: Maximum Aura 50,000, Stamina 20, regeneration 5,000/hour. */
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;
 
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
 /*
  * A fixed campaign instant to hang every interval off, so timestamps in

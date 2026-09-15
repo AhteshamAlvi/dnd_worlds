@@ -154,7 +154,6 @@ export {
   hasDeliberateAuraAccess,
   PSEUDO_CHU_EFFICIENCY,
   resolveAuraAccess,
-  TEN_SURFACE_COATING_OUTPUT_FRACTION,
 } from "./access";
 
 

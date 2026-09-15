@@ -40,20 +40,15 @@ import {
   UNAWAKENED,
   UNCONTAINED,
   WITH_TEN,
+  withTen,
 } from "./fixtures/aura";
 
 const T0 = 1_000_000_000;
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;
 
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
-const ZETSU: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "suppressed", source: "zetsu" },
-};
+const ZETSU: AuraAccessInput = withTen(1, { kind: "suppressed", source: "zetsu" });
 
 const STATE: CharacterAuraState = { current: 20_000, allocations: [] };
 

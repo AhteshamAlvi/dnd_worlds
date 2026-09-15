@@ -2,52 +2,77 @@
  * Ten — the Nen principle of Aura containment.
  *
  * Ten is the passive Nen foundation that keeps Aura gathered around the body
- * instead of allowing it to dissipate freely.
+ * instead of letting it dissipate. It is AUTOMATIC once it is usable at all:
+ * there is nothing to declare, nothing to pay, nothing to renew. A character
+ * with Ten is running Ten, indefinitely, and the only things that stop it are
+ * losing the Mastery and having the nodes shut.
  *
- * Ten is indefinitely maintainable from Mastery I onward.
+ * It costs NOTHING. No activation, no upkeep, no duration, no passive leak,
+ * and no share of Aura Regeneration Capacity. Functioning Ten is not a slow
+ * expenditure the character is winning against; it is containment, and
+ * containment is the absence of loss rather than a cheaper form of it.
  *
- * Ten does NOT determine how much Aura the character can actively force out.
- * Ren owns active Aura Output. Ten instead determines how much of the body's
- * Physiological Aura Output the character is capable of handling efficiently.
  *
- * Ten and Ren therefore measure different ceilings against the same
- * Physiological Aura Output Capacity:
+ * WHAT TEN PLACES
+ * ---------------
  *
- *   Ten -> efficient containment
- *   Ren -> active Output access
+ * One even coating over the whole bodily surface, resolved as the GREATER of
+ * two terms:
  *
- * Aura produced through Ren above Ten's Containment Limit is not resolved
- * here. Ren owns the waste and diminishing-return consequences of forcing
- * Output beyond what Ten can efficiently contain.
+ *   renAccessibleOutput = physiologicalOutput * renAccessFraction
+ *   masteryCoating      = renAccessibleOutput * containmentFraction
+ *   minimumCoating      = physiologicalOutput * 0.05
+ *   intendedCoating     = max(masteryCoating, minimumCoating)
  *
- * Ordinary passive Ten leakage is also separate from active Ren waste.
- * Imperfect Ten consumes part of the body's Aura Regeneration Capacity
- * replacing Aura that would otherwise leak away. It never drains Current Aura
- * by itself.
+ * The Mastery term is what the character's containment skill makes of the
+ * Output Ren has actually opened, and it is the term that grows. The 5% floor
+ * is what a body holding a coating does regardless of skill, and it is what
+ * answers the character who has learned Ten and no Ren at all: with no Ren,
+ * `renAccessFraction` is zero, the Mastery term is zero, and the floor is the
+ * whole of the coating.
+ *
+ * So Ten and Ren multiply rather than compete. Ren decides how much Output is
+ * reachable; Ten decides how much of THAT is held against the body. Neither
+ * one substitutes for the other, and Ren never calculates a coating of its own.
+ *
+ * Worked example — Physiological Output 20, Ren I (10%), Ten I (10%):
+ *
+ *   renAccessibleOutput = 2
+ *   masteryCoating      = 0.2
+ *   minimumCoating      = 1
+ *   intendedCoating     = 1      (the floor, by a factor of five)
+ *
+ * INTENDED, not final. Runtime funding may cap what is actually resolved by
+ * usable Output and by Current Aura — but allocating the coating never DEDUCTS
+ * Current Aura, because holding Aura against the skin is not spending it.
+ *
  *
  * This file owns:
  *
  * - Ten's I-X Mastery profile;
  * - Ten's DEX eligibility gates;
  * - Ten's containment fraction;
- * - Ten's Containment Limit;
- * - passive Ten leakage;
- * - Ten's replenishment multiplier.
+ * - the 5% minimum coating;
+ * - the resolved coating, and the projection of it Aura consumes.
  *
  * This file does NOT own:
  *
- * - active Aura Output;
- * - Ren endurance;
- * - Aura waste above the Ten Containment Limit;
- * - diminishing returns above the Ten Containment Limit;
- * - Aura Pool, Output, Regeneration, Control, Distribution, or Density math;
- * - final Aura Density -> physical reinforcement math;
+ * - active Aura Output, Ren endurance, or Ren's waste above what Ten holds;
+ * - Body surface area, density arithmetic, or how one coating is spread;
+ * - reinforcement, damage, defense, Fatigue, Stamina, or physical expenditure;
+ * - Aura Pool, Output, Regeneration, Control or Distribution math;
+ * - recovery, reserve mutation, or collapse settlement;
+ * - uncontained leakage, which belongs to the character who never learned Ten;
  * - action-economy timing;
  * - Growth Point costs or breakthrough requirements;
  * - the universal Nen dependency graph or temporary mastery seals.
  */
 
-import type { EngineResult } from "../../../../infrastructure/result";
+import type { EngineError } from "../../../../infrastructure/diagnostics";
+import type {
+  EngineResult,
+  NonEmptyArray,
+} from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 
 import {
@@ -58,6 +83,8 @@ import {
   type MasteryTrack,
 } from "../../../capabilities/mastery";
 
+import type { AutomaticSurfaceCoating } from "../../aura/types";
+
 /* -------------------------------------------------------------------------- */
 /* Mastery                                                                    */
 /* -------------------------------------------------------------------------- */
@@ -65,21 +92,22 @@ import {
 export interface TenMasteryProfile {
   readonly rank: MasteryRank;
   readonly minimumDex: number;
+
+  /** Share of REN-ACCESSIBLE Output this rank holds against the body. */
   readonly containmentFraction: number;
-  readonly passiveLeakageFractionOfRegeneration: number;
 }
 
 export const TEN_MASTERY_PROFILES = {
-  1: { rank: 1, minimumDex: 12, containmentFraction: 0.10, passiveLeakageFractionOfRegeneration: 1.00 },
-  2: { rank: 2, minimumDex: 12, containmentFraction: 0.20, passiveLeakageFractionOfRegeneration: 0.80 },
-  3: { rank: 3, minimumDex: 13, containmentFraction: 0.30, passiveLeakageFractionOfRegeneration: 0.60 },
-  4: { rank: 4, minimumDex: 13, containmentFraction: 0.40, passiveLeakageFractionOfRegeneration: 0.45 },
-  5: { rank: 5, minimumDex: 14, containmentFraction: 0.50, passiveLeakageFractionOfRegeneration: 0.30 },
-  6: { rank: 6, minimumDex: 14, containmentFraction: 0.60, passiveLeakageFractionOfRegeneration: 0.20 },
-  7: { rank: 7, minimumDex: 15, containmentFraction: 0.70, passiveLeakageFractionOfRegeneration: 0.125 },
-  8: { rank: 8, minimumDex: 15, containmentFraction: 0.80, passiveLeakageFractionOfRegeneration: 0.075 },
-  9: { rank: 9, minimumDex: 16, containmentFraction: 0.90, passiveLeakageFractionOfRegeneration: 0.025 },
-  10: { rank: 10, minimumDex: 16, containmentFraction: 1.00, passiveLeakageFractionOfRegeneration: 0.00 },
+  1: { rank: 1, minimumDex: 12, containmentFraction: 0.10 },
+  2: { rank: 2, minimumDex: 12, containmentFraction: 0.20 },
+  3: { rank: 3, minimumDex: 13, containmentFraction: 0.30 },
+  4: { rank: 4, minimumDex: 13, containmentFraction: 0.40 },
+  5: { rank: 5, minimumDex: 14, containmentFraction: 0.50 },
+  6: { rank: 6, minimumDex: 14, containmentFraction: 0.60 },
+  7: { rank: 7, minimumDex: 15, containmentFraction: 0.70 },
+  8: { rank: 8, minimumDex: 15, containmentFraction: 0.80 },
+  9: { rank: 9, minimumDex: 16, containmentFraction: 0.90 },
+  10: { rank: 10, minimumDex: 16, containmentFraction: 1.00 },
 } as const satisfies Readonly<Record<MasteryRank, TenMasteryProfile>>;
 
 export const TEN_MASTERY_TRACK = {
@@ -88,8 +116,8 @@ export const TEN_MASTERY_TRACK = {
     rank,
     description:
       rank === STANDARD_MASTERY_MAX
-        ? "Perfect Aura containment: efficiently contain the body's full Physiological Aura Output while ordinary Ten causes no passive leakage."
-        : `Efficiently contain up to ${rank * 10}% of Physiological Aura Output while progressively reducing passive Aura leakage.`,
+        ? "Perfect Aura containment: coat the body with the whole of the Aura Output Ren makes accessible."
+        : `Coat the body with up to ${rank * 10}% of the Aura Output Ren makes accessible.`,
   })),
 } satisfies MasteryTrack;
 
@@ -115,215 +143,220 @@ export function meetsTenDexRequirement(
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Containment                                                                */
-/* -------------------------------------------------------------------------- */
-
-export interface TenContainment {
-  readonly mastery: MasteryRank;
-  readonly physiologicalOutput: number;
-  readonly containmentFraction: number;
-  readonly containmentLimit: number;
-}
-
 export function deriveTenContainmentFraction(
   mastery: MasteryRank,
 ): number {
   return TEN_MASTERY_PROFILES[mastery].containmentFraction;
 }
 
-export function resolveTenContainment(
-  physiologicalOutput: number,
-  mastery: number,
-): EngineResult<TenContainment> {
+
+/* -------------------------------------------------------------------------- */
+/* Coating                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * The coating a body holds regardless of containment skill.
+ *
+ * It lives here rather than in the Aura resolver because it is Ten's floor,
+ * not a property of a default access state — and because a second copy of it
+ * anywhere would be a second answer to how much Aura a novice is wearing. Aura
+ * is HANDED the resolved fraction and never spells this number.
+ */
+export const TEN_MINIMUM_COATING_OUTPUT_FRACTION = 0.05;
+
+
+/** Which of the two terms the resolved coating actually came from. */
+export type TenCoatingSource = "mastery" | "minimum";
+
+
+export interface TenCoating {
+  readonly mastery: MasteryRank;
+
+  readonly physiologicalOutput: number;
+  readonly renAccessFraction: number;
+  readonly renAccessibleOutput: number;
+
+  readonly containmentFraction: number;
+
+  /** Ten's Mastery share of what Ren has opened. */
+  readonly masteryCoating: number;
+
+  /** The 5% floor, which applies whether or not Ren is available at all. */
+  readonly minimumCoating: number;
+
+  /** The greater of the two, before any runtime funding cap. */
+  readonly intendedCoating: number;
+
+  readonly source: TenCoatingSource;
+}
+
+
+/*
+ * The coating as a SHARE OF PHYSIOLOGICAL OUTPUT.
+ *
+ * The same formula as resolveTenCoating with the Output factored out, which is
+ * what lets the Aura budget apply it against a physiological maximum it
+ * derives for itself. Both go through this, so there is one place the `max`
+ * is written.
+ */
+function coatingOutputFraction(
+  mastery: MasteryRank,
+  renAccessFraction: number,
+): { readonly fraction: number; readonly mastery: number; readonly minimum: number } {
+  const masteryFraction =
+    renAccessFraction * deriveTenContainmentFraction(mastery);
+
+  return {
+    fraction: Math.max(masteryFraction, TEN_MINIMUM_COATING_OUTPUT_FRACTION),
+    mastery: masteryFraction,
+    minimum: TEN_MINIMUM_COATING_OUTPUT_FRACTION,
+  };
+}
+
+
+export interface TenCoatingInput {
+  /** The body's Physiological Aura Output Capacity. */
+  readonly physiologicalOutput: number;
+
+  /** Ren's share of that Output, 0 through 1. Zero when Ren is unavailable. */
+  readonly renAccessFraction: number;
+
+  /** Effective Ten Mastery, after seals. */
+  readonly mastery: number;
+}
+
+
+/**
+ * How much Aura Ten intends to hold against the whole bodily surface.
+ *
+ * Pure arithmetic over plain numbers: it reads no character, no body and no
+ * Aura state, so the Aura domain can be handed its result without either
+ * domain importing the other's resolver.
+ */
+export function resolveTenCoating(
+  input: TenCoatingInput,
+): EngineResult<TenCoating> {
+  const { physiologicalOutput, renAccessFraction, mastery } = input;
+
   const traceNode = createTraceNode({
-    id: "nen.ten.containment",
-    label: "Resolve Ten containment",
+    id: "nen.ten.coating",
+    label: "Resolve the Ten coating",
     formula:
-      "containmentLimit = physiologicalOutput * containmentFraction",
+      "intendedCoating = max(physiologicalOutput * renAccessFraction * containmentFraction, physiologicalOutput * 0.05)",
     inputs: {
       physiologicalOutput: {
         value: Number.isFinite(physiologicalOutput)
           ? physiologicalOutput
           : String(physiologicalOutput),
       },
-      mastery: { value: mastery },
-    },
-  });
-
-  if (
-    !Number.isFinite(physiologicalOutput) ||
-    physiologicalOutput < 0
-  ) {
-    return {
-      success: false,
-      trace: { root: traceNode },
-      warnings: [],
-      errors: [
-        {
-          code: "nen.ten.physiological_output.invalid",
-          message:
-            "Ten requires a finite non-negative Physiological Aura Output.",
-          audience: "developer",
-          required: "finite number >= 0",
-          actual: Number.isFinite(physiologicalOutput)
-            ? physiologicalOutput
-            : String(physiologicalOutput),
-        },
-      ],
-    };
-  }
-
-  if (!isMasteryRank(mastery)) {
-    return {
-      success: false,
-      trace: { root: traceNode },
-      warnings: [],
-      errors: [
-        {
-          code: "nen.ten.mastery.invalid",
-          message:
-            "Ten mechanics require a learned Mastery rank from I through X.",
-          audience: "developer",
-          required: `integer from 1 through ${STANDARD_MASTERY_MAX}`,
-          actual: mastery,
-        },
-      ],
-    };
-  }
-
-  const containmentFraction =
-    deriveTenContainmentFraction(mastery);
-
-  const containmentLimit =
-    physiologicalOutput * containmentFraction;
-
-  const payload: TenContainment = {
-    mastery,
-    physiologicalOutput,
-    containmentFraction,
-    containmentLimit,
-  };
-
-  traceNode.output = {
-    mastery,
-    physiologicalOutput,
-    containmentFraction,
-    containmentLimit,
-  };
-
-  return {
-    success: true,
-    payload,
-    trace: { root: traceNode },
-    warnings: [],
-  };
-}
-
-/* -------------------------------------------------------------------------- */
-/* Passive containment                                                        */
-/* -------------------------------------------------------------------------- */
-
-export interface TenPassiveContainment {
-  readonly mastery: MasteryRank;
-  readonly regenerationCapacityPerHour: number;
-  readonly leakageFractionOfRegeneration: number;
-  readonly passiveLeakagePerHour: number;
-  readonly replenishmentMultiplier: number;
-  readonly effectiveRegenerationPerHour: number;
-}
-
-export function resolveTenPassiveContainment(
-  regenerationCapacityPerHour: number,
-  mastery: number,
-): EngineResult<TenPassiveContainment> {
-  const traceNode = createTraceNode({
-    id: "nen.ten.passive-containment",
-    label: "Resolve passive Ten containment",
-    formula:
-      "passiveLeakage = regenerationCapacity * leakageFraction; effectiveRegeneration = regenerationCapacity - passiveLeakage",
-    inputs: {
-      regenerationCapacityPerHour: {
-        value: Number.isFinite(regenerationCapacityPerHour)
-          ? regenerationCapacityPerHour
-          : String(regenerationCapacityPerHour),
+      renAccessFraction: {
+        value: Number.isFinite(renAccessFraction)
+          ? renAccessFraction
+          : String(renAccessFraction),
       },
       mastery: { value: mastery },
     },
   });
 
+  const errors: EngineError[] = [];
+
   if (
-    !Number.isFinite(regenerationCapacityPerHour) ||
-    regenerationCapacityPerHour < 0
+    !Number.isFinite(physiologicalOutput) ||
+    physiologicalOutput < 0
   ) {
-    return {
-      success: false,
-      trace: { root: traceNode },
-      warnings: [],
-      errors: [
-        {
-          code: "nen.ten.regeneration.invalid",
-          message:
-            "Ten passive containment requires a finite non-negative Aura Regeneration Capacity.",
-          audience: "developer",
-          required: "finite number >= 0",
-          actual: Number.isFinite(regenerationCapacityPerHour)
-            ? regenerationCapacityPerHour
-            : String(regenerationCapacityPerHour),
-        },
-      ],
-    };
+    errors.push({
+      code: "nen.ten.physiological_output.invalid",
+      message:
+        "Ten requires a finite non-negative Physiological Aura Output.",
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: Number.isFinite(physiologicalOutput)
+        ? physiologicalOutput
+        : String(physiologicalOutput),
+    });
+  }
+
+  /*
+   * Zero is the ordinary case, not an edge one: it is every character who has
+   * learned Ten and no Ren. Anything ABOVE 1 is a caller who has mistaken a
+   * percentage for a fraction, and is refused rather than clamped.
+   */
+  if (
+    !Number.isFinite(renAccessFraction) ||
+    renAccessFraction < 0 ||
+    renAccessFraction > 1
+  ) {
+    errors.push({
+      code: "nen.ten.ren_access_fraction.invalid",
+      message:
+        "Ten's coating reads Ren's share of Output as a fraction from 0 through 1.",
+      audience: "developer",
+      required: "finite number between 0 and 1",
+      actual: Number.isFinite(renAccessFraction)
+        ? renAccessFraction
+        : String(renAccessFraction),
+    });
   }
 
   if (!isMasteryRank(mastery)) {
+    errors.push({
+      code: "nen.ten.mastery.invalid",
+      message:
+        "Ten mechanics require a learned Mastery rank from I through X.",
+      audience: "developer",
+      required: `integer from 1 through ${STANDARD_MASTERY_MAX}`,
+      actual: mastery,
+    });
+  }
+
+  if (errors.length > 0) {
+    traceNode.output = false;
+
     return {
       success: false,
       trace: { root: traceNode },
       warnings: [],
-      errors: [
-        {
-          code: "nen.ten.mastery.invalid",
-          message:
-            "Ten mechanics require a learned Mastery rank from I through X.",
-          audience: "developer",
-          required: `integer from 1 through ${STANDARD_MASTERY_MAX}`,
-          actual: mastery,
-        },
-      ],
+      errors: errors as NonEmptyArray<EngineError>,
     };
   }
 
-  const profile = TEN_MASTERY_PROFILES[mastery];
+  const rank = mastery as MasteryRank;
 
-  const passiveLeakagePerHour =
-    regenerationCapacityPerHour *
-    profile.passiveLeakageFractionOfRegeneration;
+  const fractions = coatingOutputFraction(rank, renAccessFraction);
 
-  const replenishmentMultiplier =
-    1 - profile.passiveLeakageFractionOfRegeneration;
+  const renAccessibleOutput = physiologicalOutput * renAccessFraction;
 
-  const effectiveRegenerationPerHour =
-    regenerationCapacityPerHour *
-    replenishmentMultiplier;
+  const masteryCoating = physiologicalOutput * fractions.mastery;
+  const minimumCoating = physiologicalOutput * fractions.minimum;
+  const intendedCoating = physiologicalOutput * fractions.fraction;
 
-  const payload: TenPassiveContainment = {
-    mastery,
-    regenerationCapacityPerHour,
-    leakageFractionOfRegeneration:
-      profile.passiveLeakageFractionOfRegeneration,
-    passiveLeakagePerHour,
-    replenishmentMultiplier,
-    effectiveRegenerationPerHour,
+  const payload: TenCoating = {
+    mastery: rank,
+    physiologicalOutput,
+    renAccessFraction,
+    renAccessibleOutput,
+    containmentFraction: deriveTenContainmentFraction(rank),
+    masteryCoating,
+    minimumCoating,
+    intendedCoating,
+
+    /*
+     * A tie reads as the floor deliberately. The two terms coincide only when
+     * Mastery has just caught up with what the body does anyway, and reporting
+     * that as a Mastery-derived coating would tell a player their training had
+     * started paying before it had.
+     */
+    source: masteryCoating > minimumCoating ? "mastery" : "minimum",
   };
 
   traceNode.output = {
-    mastery,
-    regenerationCapacityPerHour,
-    leakageFractionOfRegeneration:
-      payload.leakageFractionOfRegeneration,
-    passiveLeakagePerHour,
-    replenishmentMultiplier,
-    effectiveRegenerationPerHour,
+    mastery: rank,
+    renAccessibleOutput,
+    containmentFraction: payload.containmentFraction,
+    masteryCoating,
+    minimumCoating,
+    intendedCoating,
+    source: payload.source,
   };
 
   return {
@@ -334,13 +367,39 @@ export function resolveTenPassiveContainment(
   };
 }
 
-export function deriveTenReplenishmentMultiplier(
-  mastery: MasteryRank,
-): number {
-  return (
-    1 -
-    TEN_MASTERY_PROFILES[
-      mastery
-    ].passiveLeakageFractionOfRegeneration
-  );
+
+/**
+ * Ten's coating in the vocabulary the Aura resolver consumes.
+ *
+ * The ONE-WAY projection that keeps Aura ignorant of Nen. Aura never imports
+ * this file; the Nen integration layer calls this and hands the result down as
+ * part of the flat access input, exactly as it hands down effective Mastery.
+ *
+ * Returns null when Ten is not available at all — an unlearned or fully sealed
+ * rank — which is the character the Aura resolver reports as uncontained.
+ *
+ * A malformed `renAccessFraction` resolves as zero rather than throwing. The
+ * override carrying it is refused by Aura's own access validation, so a
+ * coating built from it never reaches a budget; producing the floor here keeps
+ * one bad field from also being reported as a missing coating.
+ */
+export function tenSurfaceCoating(
+  effectiveTenMastery: number,
+  renAccessFraction: number,
+): AutomaticSurfaceCoating | null {
+  if (!isMasteryRank(effectiveTenMastery)) return null;
+
+  const usableFraction =
+    Number.isFinite(renAccessFraction) && renAccessFraction > 0
+      ? renAccessFraction
+      : 0;
+
+  const fractions = coatingOutputFraction(effectiveTenMastery, usableFraction);
+
+  return {
+    source: "baseline-ten",
+    outputFraction: fractions.fraction,
+    masteryFraction: fractions.mastery,
+    minimumFraction: fractions.minimum,
+  };
 }

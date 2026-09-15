@@ -36,17 +36,14 @@ import {
 import type { AuraAccessInput } from "../character/foundation/aura/types";
 import type { CharacterAuraState } from "../character/foundation/aura/state";
 
-import { auraContext, UNCONTAINED, WITH_TEN } from "./fixtures/aura";
+import { auraContext, UNCONTAINED, WITH_TEN, withTen } from "./fixtures/aura";
 
 const T0 = 1_000_000_000;
 
 /* The two-second Round, in hours. Uncontained leakage is fast enough to need it. */
 const ROUND_HOURS = 2 / 3600;
 
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
 /* CON 20 / VIT 20: Maximum Aura 50,000, Stamina 20, regeneration 5,000/hour. */
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;

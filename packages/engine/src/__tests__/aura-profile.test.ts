@@ -47,6 +47,7 @@ import {
   UNAWAKENED,
   UNCONTAINED,
   WITH_TEN,
+  withTen,
   type AuraContextOptions,
 } from "./fixtures/aura";
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
@@ -55,16 +56,10 @@ import { standardAwakenedNen } from "./fixtures/nen";
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
 /* Ren III: 30% of physiological Output, and room to place things by hand. */
-const REN_III: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-};
+const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
 /* Chu: internal placement permitted, Ten's coating traded away for it. */
-const CHU: AuraAccessInput = {
-  ...WITH_TEN,
-  override: { kind: "internal-access", source: "chu", accessFraction: 0.3 },
-};
+const CHU: AuraAccessInput = withTen(1, { kind: "internal-access", source: "chu", accessFraction: 0.3 });
 
 interface ProfileOptions extends AuraContextOptions {
   readonly current?: number;
@@ -190,10 +185,7 @@ describe("accessible and usable Output", () => {
     const suppressed = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
-      access: {
-        ...WITH_TEN,
-        override: { kind: "suppressed", source: "zetsu" },
-      },
+      access: withTen(1, { kind: "suppressed", source: "zetsu" }),
     });
 
     expect(suppressed.output.physiologicalMaximum).toBe(10_000);
@@ -817,7 +809,6 @@ describe("the Aura subsystem's public surface", () => {
       "BASELINE_TEN_ALLOCATION_ID",
       "PSEUDO_CHU_ALLOCATION_ID",
       "PSEUDO_CHU_EFFICIENCY",
-      "TEN_SURFACE_COATING_OUTPUT_FRACTION",
       "findAuraPlacementIssues",
 
       /*

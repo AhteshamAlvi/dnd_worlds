@@ -31,8 +31,9 @@
  * The Access Fraction is SUPPLIED, not derived here, and this function does
  * not care where it came from. Ren is the usual source and is why the field
  * used to be called renAccessFraction — but Zetsu closes access and the
- * default Ten state opens 5% of it, and naming the general parameter after one
- * principle made every other route look like an exception to a Ren rule.
+ * default Ten state opens whatever its coating draws, and naming the general
+ * parameter after one principle made every other route look like an exception
+ * to a Ren rule.
  *
  * An UNAWAKENED character's fraction is zero, and that is not a shortcut. Half
  * open nodes project nothing; the reinforcement such a body does receive is

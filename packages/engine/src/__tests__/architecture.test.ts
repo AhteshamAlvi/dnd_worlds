@@ -2496,11 +2496,115 @@ describe("Nen awakening stays inside its own domain", () => {
    * Phase 6 owns active principle runtime. Phase 5 may create the forced-Zetsu
    * state and its release guard, and nothing else — so it must not import the
    * principle resolvers, whose job is what a character is DOING.
+   *
+   * The rule names those resolvers rather than the whole directory, because
+   * TEN IS NOT ONE OF THEM. Ten is passive, automatic, free and indefinite: a
+   * character with usable Ten is running Ten, having declared nothing, so its
+   * coating is a property of the access state in exactly the way effective
+   * Mastery is. The Ten correction made that concrete — the coating is the
+   * greater of Ten's Mastery share of Ren-accessible Output and a 5% floor,
+   * and every term belongs to ten.ts — which left three places it could be
+   * resolved and only one that is not a second implementation of Ten:
+   *
+   *   aura/access.ts        would make Aura import Nen, and Nen already
+   *                         imports the Aura vocabulary. A cycle, and the
+   *                         thing access.ts's own header forbids by name.
+   *   a constant in Aura    the defect being repaired. A flat 5% is right at
+   *                         Mastery I with no Ren and wrong everywhere else.
+   *   the projection below  Nen resolves Ten's coating and hands it down with
+   *                         the other flat facts. One-way, and checked.
+   *
+   * So the exception is one import, in the one file that already exists to
+   * turn Nen state into an Aura access input, and the rule below pins it
+   * there. Ren, Hatsu and Zetsu remain barred outright.
    */
+  const ACTIVE_PRINCIPLES = ["ren", "hatsu", "zetsu"];
+
   it("imports no active-principle resolver", () => {
     const offenders = nenFiles.filter((path) =>
       moduleSpecifiers(path).some((specifier) =>
-        resolvesInto(path, specifier, join("nen", "principles")),
+        ACTIVE_PRINCIPLES.some((principle) =>
+          resolvesInto(path, specifier, join("nen", "principles", principle)),
+        ),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reaches the passive Ten principle from the access projection alone", () => {
+    /*
+     * The exception, stated as an exact list rather than as a permission.
+     *
+     * A second file reaching for ten.ts fails here and has to argue for
+     * itself, which is the only form an architecture exception survives in —
+     * and if the projection ever moves, this says so rather than quietly
+     * allowing Ten to be imported from anywhere in the domain.
+     */
+    const reaching = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles", "ten")),
+      ),
+    );
+
+    expect(reaching).toEqual([join(SRC, "character", "nen", "access.ts")]);
+  });
+
+  it("keeps Aura ignorant of Ten in return", () => {
+    /*
+     * The other half of the exception, and the reason it is safe.
+     *
+     * The projection is only one-way while Aura imports no principle at all.
+     * One import here and the two domains are mutually dependent, with the
+     * coating resolvable from both sides — which is the state this whole
+     * correction existed to leave.
+     */
+    const auraFiles = sourceFilesUnder(
+      join(SRC, "character", "foundation", "aura"),
+    );
+
+    expect(auraFiles.length).toBeGreaterThan(5);
+
+    const offenders = auraFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("foundation", "nen")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("states no Ten coating fraction of its own anywhere in Aura", () => {
+    /*
+     * A rule about the NUMBER rather than the import, because the cheapest
+     * way to reintroduce the defect does not need an import: someone writes
+     * `0.05` beside the word coating and the two domains disagree forever
+     * without a single dependency edge to find it by.
+     */
+    const auraFiles = sourceFilesUnder(
+      join(SRC, "character", "foundation", "aura"),
+    );
+
+    const statesACoatingFraction = (code: string) =>
+      /(coating|containment)\w*\s*[:=]\s*0?\.\d/i.test(code);
+
+    /*
+     * The predicate, exercised against the exact line that used to be in
+     * access.ts. A filter whose pattern stopped matching would report the
+     * same clean result forever.
+     */
+    expect(statesACoatingFraction(
+      "export const TEN_SURFACE_COATING_OUTPUT_FRACTION = 0.05;",
+    )).toBe(true);
+    expect(statesACoatingFraction("  coatingFraction: 0.05,")).toBe(true);
+    expect(statesACoatingFraction("  const usable = output * fraction;"))
+      .toBe(false);
+
+    const offenders = auraFiles.filter((path) =>
+      statesACoatingFraction(
+        readFileSync(path, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/.*$/gm, ""),
       ),
     );
 

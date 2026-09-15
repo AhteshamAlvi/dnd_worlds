@@ -30,12 +30,14 @@
  *
  * AWAKENED WITH TEN. Effective Ten Mastery I or higher. Ten is the DEFAULT
  * state — it is on unless something later turns it off, not something the
- * character has to declare — and it coats the whole body's surface with 5% of
- * physiological Output. Internal Density is still zero.
+ * character has to declare — and it coats the whole body's surface with the
+ * share of physiological Output TEN resolved, which arrives on the access
+ * input alongside the rank. Internal Density is still zero.
  *
  * Effective Ten Mastery is consulted for exactly one thing: whether Ten is
- * available. Ten's mastery scaling, upkeep, containment efficiency and density
- * limits live in nen/principles/ten.ts and are not read here.
+ * available. Ten's mastery scaling, containment efficiency, minimum coating
+ * and density limits live in nen/principles/ten.ts and are not read here — the
+ * COATING that file resolves is handed down, never recomputed.
  *
  *
  * WHAT OVERRIDES WILL DO
@@ -70,18 +72,6 @@ import type {
 
 
 /*
- * The share of physiological Output baseline Ten draws.
- *
- * Ten's ONLY number in this file. It lives here rather than in ten.ts because
- * it is a property of the default access state rather than of the principle's
- * mastery track — and because ten.ts must not become an import of the Aura
- * resolver's. When Ten's full resolver lands it will supply an explicit
- * override and this constant becomes the fallback for a character who has
- * simply learned Ten and is doing nothing else.
- */
-export const TEN_SURFACE_COATING_OUTPUT_FRACTION = 0.05;
-
-/*
  * How much of an unawakened character's Current Aura becomes effective
  * internal Aura.
  *
@@ -93,10 +83,18 @@ export const PSEUDO_CHU_EFFICIENCY = 0.20;
 const TEN_AVAILABLE_FROM = 1;
 
 
-const TEN_COATING: AutomaticSurfaceCoating = {
-  source: "baseline-ten",
-  outputFraction: TEN_SURFACE_COATING_OUTPUT_FRACTION,
-};
+/*
+ * There is deliberately no TEN_COATING constant here any more.
+ *
+ * There used to be — a flat 5% of physiological Output, stated in this file
+ * because it was the only number the default state needed. It was wrong at
+ * every rank above I and it was wrong for anybody running Ren, because the
+ * coating is the GREATER of Ten's Mastery share of Ren-accessible Output and
+ * that 5% floor, and neither term is knowable without Ten's own table. A
+ * constant here could only ever have been one of them.
+ *
+ * So the coating arrives resolved, on the access input. See ten.ts.
+ */
 
 const PSEUDO_CHU: PassiveInternalReinforcement = {
   source: "unawakened-pseudo-chu",
@@ -153,15 +151,61 @@ function overrideIssues(
 
 
 /*
+ * What a supplied Ten coating has to look like to be usable.
+ *
+ * Checked rather than trusted because this file cannot rebuild it: a coating
+ * carrying NaN would flow straight into the budget as an Output commitment and
+ * poison every allocation settled against it, and nothing downstream is in a
+ * position to notice that the number came from Ten rather than from arithmetic
+ * of its own.
+ */
+function coatingIssues(
+  coating: AutomaticSurfaceCoating,
+): readonly EngineError[] {
+  if (coating.source !== "baseline-ten") {
+    return [{
+      code: "aura.access.ten_coating.source.invalid",
+      message: "The automatic surface coating must name the state that applied it.",
+      audience: "developer",
+      required: '"baseline-ten"',
+      actual: String(coating.source),
+    }];
+  }
+
+  if (invalidFraction(coating.outputFraction)) {
+    return [{
+      code: "aura.access.ten_coating.fraction.invalid",
+      message:
+        "Ten's resolved coating must be a finite share of physiological Output from 0 through 1.",
+      audience: "developer",
+      required: "finite number between 0 and 1",
+      actual: Number.isFinite(coating.outputFraction)
+        ? coating.outputFraction
+        : String(coating.outputFraction),
+    }];
+  }
+
+  return [];
+}
+
+
+/*
  * The override branch, flattened.
  *
  * Exhaustive over the union rather than defaulted, so adding a variant is a
  * compile error here instead of a silent fall-through to whatever the last
  * case happened to be.
+ *
+ * `coating` is Ten's resolved coating, or null when Ten is not available. It
+ * is passed ALONGSIDE `tenAvailable` rather than inferred from it, because an
+ * override is free to refuse a coating from a character who has Ten — and
+ * "no coating" and "not containing" are the two conditions this file exists to
+ * keep apart.
  */
 function resolveOverride(
   override: AuraAccessOverride,
   tenAvailable: boolean,
+  coating: AutomaticSurfaceCoating | null,
 ): Omit<ResolvedAuraAccess, "state" | "awakened" | "nodeState"> {
   const base = {
     source: override.source,
@@ -176,7 +220,7 @@ function resolveOverride(
         accessFraction: override.accessFraction,
         deliberateInternalAccess: false,
         deliberateExternalAccess: true,
-        automaticSurfaceCoating: tenAvailable ? TEN_COATING : null,
+        automaticSurfaceCoating: coating,
 
         /*
          * Opening Output does not teach containment. A character forcing Ren
@@ -222,8 +266,17 @@ function resolveOverride(
         accessFraction: override.accessFraction,
         deliberateInternalAccess: override.deliberateInternalAccess,
         deliberateExternalAccess: override.deliberateExternalAccess,
+
+        /*
+         * The one field an explicit override CANNOT state outright, and it is
+         * a boolean for that reason: it asks whether a coating applies, not
+         * how big one is, because how big is Ten's question and there is no
+         * other answer to it. So asking for a coating from a character with no
+         * Ten gets none — the override can waive Ten's coating, and cannot
+         * conjure one for somebody who has nothing to coat with.
+         */
         automaticSurfaceCoating: override.automaticSurfaceCoating
-          ? TEN_COATING
+          ? coating
           : null,
         uncontained: override.uncontained ?? false,
       };
@@ -251,6 +304,11 @@ export function resolveAuraAccess(
         value: Number.isFinite(input.effectiveTenMastery)
           ? input.effectiveTenMastery
           : String(input.effectiveTenMastery),
+      },
+      tenCoating: {
+        value: input.tenCoating === undefined
+          ? "none"
+          : input.tenCoating.outputFraction,
       },
       override: { value: input.override?.kind ?? "none" },
     },
@@ -317,6 +375,39 @@ export function resolveAuraAccess(
     });
   }
 
+  /*
+   * Awakening is authoritative over mastery, not the other way round. Ten is
+   * only reachable once the nodes are open, so an unawakened character with a
+   * recorded rank is still unawakened.
+   */
+  const tenAvailable =
+    input.awakened === true && mastery >= TEN_AVAILABLE_FROM;
+
+  if (input.tenCoating !== undefined) {
+    errors.push(...coatingIssues(input.tenCoating));
+  } else if (tenAvailable) {
+    /*
+     * The one thing this file refuses to guess.
+     *
+     * A missing coating on a character who HAS Ten is a caller that skipped
+     * the Nen projection, and the only two ways to absorb it are both worse
+     * than refusing: resolving a coating of zero would report a character in
+     * perfect containment as wearing nothing, and inventing a fraction would
+     * put a second Ten in this file, which is what the whole correction
+     * removed. See character/nen/access.ts for the producer.
+     */
+    errors.push({
+      code: "aura.access.ten_coating.missing",
+      message:
+        "A character with usable Ten must arrive with the coating Ten resolved.",
+      audience: "developer",
+      required: "a tenCoating supplied by nen/principles/ten.ts",
+      actual: `effective Ten Mastery ${mastery} with no coating`,
+      resolution:
+        "Build the access input through the Nen projection rather than by hand; it resolves Ten's coating from the rank and from whatever share of Output Ren has opened.",
+    });
+  }
+
   if (input.override !== undefined) {
     errors.push(...overrideIssues(input.override));
 
@@ -349,12 +440,11 @@ export function resolveAuraAccess(
   }
 
   /*
-   * Awakening is authoritative over mastery, not the other way round. Ten is
-   * only reachable once the nodes are open, so an unawakened character with a
-   * recorded rank is still unawakened.
+   * Ten's coating, or nothing. Validation above has already established that
+   * an available Ten came with one, so the only null here is a character Ten
+   * does not reach.
    */
-  const tenAvailable =
-    input.awakened && mastery >= TEN_AVAILABLE_FROM;
+  const coating = tenAvailable ? input.tenCoating ?? null : null;
 
   const payload: ResolvedAuraAccess = ((): ResolvedAuraAccess => {
     if (input.override !== undefined) {
@@ -362,7 +452,7 @@ export function resolveAuraAccess(
         state: "override",
         awakened: true,
         nodeState: "open",
-        ...resolveOverride(input.override, tenAvailable),
+        ...resolveOverride(input.override, tenAvailable, coating),
       };
     }
 
@@ -407,7 +497,7 @@ export function resolveAuraAccess(
       };
     }
 
-    if (!tenAvailable) {
+    if (coating === null) {
       return {
         state: "uncontained",
         source: "awakened-uncontained",
@@ -432,10 +522,20 @@ export function resolveAuraAccess(
       source: "baseline-ten",
       awakened: true,
       nodeState: "open",
-      accessFraction: TEN_SURFACE_COATING_OUTPUT_FRACTION,
+
+      /*
+       * Exactly as much Output as the coating needs, and no more.
+       *
+       * Baseline Ten opens nothing on its own — Ren is what reaches further
+       * into physiological Output — so the reachable share IS the coating's
+       * share. Stating it any other way would leave the budget with a
+       * deliberate allowance a character running nothing but Ten has not
+       * earned, or with less Output than their own coating commits.
+       */
+      accessFraction: coating.outputFraction,
       deliberateInternalAccess: false,
       deliberateExternalAccess: true,
-      automaticSurfaceCoating: TEN_COATING,
+      automaticSurfaceCoating: coating,
       passiveInternalReinforcement: null,
 
       /* Containment is the whole of what Ten does. */

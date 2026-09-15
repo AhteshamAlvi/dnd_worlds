@@ -435,8 +435,10 @@ export type {
  * for missing data.
  *
  * Ten's EFFECTIVE mastery, after seals, is what the Aura resolver is handed to
- * decide whether Ten is available; deriveEffectiveNenMastery is where that
- * comes from, and it is the only Nen fact Aura consumes.
+ * decide whether Ten is AVAILABLE; deriveEffectiveNenMastery is where that
+ * comes from. It is handed the coating Ten resolved alongside it, and those
+ * two are the whole of what Aura consumes from Nen — Aura imports no principle
+ * and computes no part of Ten itself.
  *
  * The principle mechanics themselves — advancement, prerequisites, Ren, Ten —
  * are not exported yet; they land with the Nen resolution ticket.

@@ -232,8 +232,8 @@ export interface AuraOutputLimit {
  *
  * `accessibleMaximum` is deliberately NOT called renAccessibleMaximum. Ren is
  * one principle that opens access; Zetsu closes it, and the default Ten state
- * opens 5% of it. Naming the general field after one principle made every
- * other route look like a special case. Ren's own resolver keeps
+ * opens what its own coating draws. Naming the general field after one
+ * principle made every other route look like a special case. Ren's own resolver keeps
  * `renAccessibleMaximum` for the figure that IS specifically Ren's.
  *
  * All three figures are ZERO for an unawakened character, whose nodes cannot
@@ -354,13 +354,25 @@ export interface PassiveInternalReinforcement {
  *
  * Ten is the one that exists today. It is described as a FRACTION OF
  * PHYSIOLOGICAL OUTPUT rather than as a principle so the resolver can apply it
- * without knowing what produced it.
+ * without knowing what produced it — and it is RESOLVED ELSEWHERE and handed
+ * in, so that nothing here is a second opinion about how much Aura Ten holds.
+ * nen/principles/ten.ts owns that arithmetic; this is its result.
  */
 export interface AutomaticSurfaceCoating {
   readonly source: "baseline-ten";
 
   /** Share of physiological Output the coating draws. */
   readonly outputFraction: number;
+
+  /*
+   * The two terms the fraction above is the greater of, carried for the trace.
+   *
+   * Provenance rather than input: a sheet that can say a coating came from the
+   * body's floor rather than from the character's containment skill is worth
+   * the two extra fields, and nothing branches on either of them.
+   */
+  readonly masteryFraction: number;
+  readonly minimumFraction: number;
 }
 
 
@@ -421,10 +433,15 @@ export type AuraAccessOverride =
  * What the Aura resolver is told about access, before it resolves any of it.
  *
  * `effectiveTenMastery` is mastery AFTER seals, and it is consulted for one
- * thing only: whether Ten is available at all. Ten's own scaling, upkeep,
- * containment efficiency and density limits are Ten's file's business, not
- * this one's — a resolver that read the rank for anything else would be a
- * second implementation of Ten.
+ * thing only: whether Ten is available at all. Ten's own scaling, containment
+ * efficiency, minimum coating and density limits are Ten's file's business,
+ * not this one's — a resolver that read the rank for anything else would be a
+ * second implementation of Ten. What that scaling PRODUCES arrives separately,
+ * as `tenCoating`, already resolved.
+ *
+ * Ten has no upkeep to be anybody's business. It is passive, automatic and
+ * indefinite: it commits Output and costs neither Current Aura nor any share
+ * of regeneration.
  */
 export interface AuraAccessInput {
   readonly awakened: boolean;
@@ -447,6 +464,21 @@ export interface AuraAccessInput {
 
   /** 0 for not learned; I-X once it is. Seals already applied. */
   readonly effectiveTenMastery: number;
+
+  /*
+   * What Ten has resolved to hold against the body, supplied by Ten.
+   *
+   * REQUIRED whenever the rank above makes Ten available, and refused as a
+   * caller bug when it is missing — because the alternative is a fallback
+   * fraction living here, which is exactly the second implementation of Ten
+   * the rank field's own note rules out. Ten's coating depends on Ten's
+   * containment table, on the 5% floor and on how much Output Ren has opened,
+   * and none of those three are things this file is allowed to know.
+   *
+   * Absent for everybody Ten does not reach: the unawakened, the reverted, and
+   * the awakened character whose effective Ten is 0.
+   */
+  readonly tenCoating?: AutomaticSurfaceCoating;
 
   readonly override?: AuraAccessOverride;
 }
