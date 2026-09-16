@@ -53,7 +53,19 @@ import {
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
 /* Ren III, which opens room above the 5% baseline Ten already commits. */
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten I with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow, and these suites are about budgets and upkeep, not Ren.
+ */
+const OPEN_III: AuraAccessInput = withTen(1, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 function errorCodes(
   result: { success: boolean; errors?: readonly { code: string }[] },
@@ -332,7 +344,7 @@ describe("paying for an action", () => {
       { current: 5000, allocations: [] },
       auraContext({
         attributes: { con: 20, vit: 20, dex: 22 },
-        access: REN_III,
+        access: OPEN_III,
       }),
       { additionalPhysicalCostRate: 0.001, baseAuraCost: 200 },
     );
@@ -362,7 +374,7 @@ describe("paying for an action", () => {
       before,
       auraContext({
         attributes: { con: 20, vit: 20, dex: 22 },
-        access: REN_III,
+        access: OPEN_III,
       }),
       { additionalPhysicalCostRate: 0.001, baseAuraCost: 200 },
     );
@@ -374,7 +386,7 @@ describe("paying for an action", () => {
   it("reconciles allocations the smaller reserve can no longer support", () => {
     const context = auraContext({
       attributes: { con: 20, vit: 20, dex: 22 },
-      access: REN_III,
+      access: OPEN_III,
     });
 
     const result = spendActionAura(
@@ -394,9 +406,9 @@ describe("paying for an action", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 50,000 x 0.004 = 200, leaving 1,800 usable and 1,300 free. */
+    /* 50,000 x 0.004 = 200, leaving 1,800 usable; Ten holds 1,000, so 800 free. */
     expect(result.payload.current).toBe(1800);
-    expect(result.payload.state.allocations[0]!.aura).toBeCloseTo(1300, 8);
+    expect(result.payload.state.allocations[0]!.aura).toBeCloseTo(800, 8);
     expect(result.payload.allocationChanges)
       .toEqual([expect.objectContaining({ kind: "reduced" })]);
   });
@@ -424,7 +436,7 @@ describe("paying for an action", () => {
           aura: 500,
         }],
       },
-      auraContext({ attributes: { con: 20, vit: 20 }, access: REN_III }),
+      auraContext({ attributes: { con: 20, vit: 20 }, access: OPEN_III }),
       { requiredOutput: 500 },
     );
 

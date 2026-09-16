@@ -700,12 +700,13 @@ describe("elapsed time", () => {
       requested: { aura: 100, durationSeconds: 30 },
     });
 
-    const long = advanceNenActivities(base, { to: 60, by: ACTOR });
+    /* Timestamps are game MILLISECONDS; the duration is in seconds. */
+    const long = advanceNenActivities(base, { to: 60_000, by: ACTOR });
 
     let stepped = base;
 
     for (let second = 1; second <= 60; second += 1) {
-      const step = advanceNenActivities(stepped, { to: second, by: ACTOR });
+      const step = advanceNenActivities(stepped, { to: second * 1000, by: ACTOR });
 
       expect(step.success).toBe(true);
       if (!step.success) return;
@@ -717,16 +718,18 @@ describe("elapsed time", () => {
     if (!long.success) return;
 
     /*
-     * The expiry is dated when it ACTUALLY expired — startedAt + duration —
+     * The expiry is dated when it ACTUALLY expired — startedAt + duration,
+     * with the duration's seconds converted to the timeline's milliseconds —
      * rather than at the end of whichever advance noticed it. Dating it at the
-     * advance's end is what would make these two disagree.
+     * advance's end is what would make these two disagree, and adding the
+     * seconds straight to the timestamp is what expired it at 30 ms.
      */
     const oneShot = findNenActivity(long.payload.runtime, "activity-1")!;
     const bySecond = findNenActivity(stepped, "activity-1")!;
 
     expect(oneShot.stop!.cause).toBe("expired");
-    expect(oneShot.stop!.at).toBe(30);
-    expect(bySecond.stop!.at).toBe(30);
+    expect(oneShot.stop!.at).toBe(30_000);
+    expect(bySecond.stop!.at).toBe(30_000);
     expect(oneShot.endedAt).toBe(bySecond.endedAt);
   });
 
@@ -738,9 +741,15 @@ describe("elapsed time", () => {
     const activity = only(base);
 
     expect(wasNenActivityRunningAt(activity, 0)).toBe(true);
-    expect(wasNenActivityRunningAt(activity, 29)).toBe(true);
+    expect(wasNenActivityRunningAt(activity, 29_999)).toBe(true);
 
-    const done = advanceNenActivities(base, { to: 30, by: ACTOR });
+    /* Not a millisecond early: 29.999 seconds in, it is still running. */
+    const early = advanceNenActivities(base, { to: 29_999, by: ACTOR });
+
+    expect(early.success && findNenActivity(early.payload.runtime, "activity-1")!.condition)
+      .toBe("active");
+
+    const done = advanceNenActivities(base, { to: 30_000, by: ACTOR });
 
     expect(done.success).toBe(true);
     if (!done.success) return;
@@ -748,7 +757,7 @@ describe("elapsed time", () => {
     /* [startedAt, endedAt): t=30 belongs to whatever starts there, not this. */
     expect(wasNenActivityRunningAt(
       findNenActivity(done.payload.runtime, "activity-1")!,
-      30,
+      30_000,
     )).toBe(false);
   });
 

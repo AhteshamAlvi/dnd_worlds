@@ -59,8 +59,11 @@
  *
  * Half-open and contained are IDENTICAL, and that is a statement rather than a
  * coincidence: an ordinary person's body and a character running Ten are both
- * closed systems. What separates them is that the ordinary body leaks 2R the
- * whole time, which is elsewhere — see leakage.ts — and nets them to zero.
+ * closed systems. What separates them is what still escapes, which is
+ * elsewhere: the ordinary body's pores leak a flat 2R (see leakage.ts), and a
+ * containment leaks the residual its access state carries — 2R at Ten I,
+ * falling to nothing at Ten X. Both are subtracted as their own contribution;
+ * neither changes this table.
  *
  *
  * WHAT REPLACED THE OLD MULTIPLIERS

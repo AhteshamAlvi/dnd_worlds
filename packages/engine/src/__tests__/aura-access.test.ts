@@ -28,7 +28,7 @@ import {
   PSEUDO_CHU_SOURCE,
 } from "../character/foundation/nen/principles/chu";
 import {
-  TEN_MINIMUM_COATING_OUTPUT_FRACTION,
+  TEN_COATING_OUTPUT_FRACTION,
 } from "../character/foundation/nen/principles/ten";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { AuraAllocation } from "../character/foundation/aura/state";
@@ -179,15 +179,16 @@ describe("awakened with Ten", () => {
     expect(resolved.nodeState).toBe("open");
   });
 
-  it("coats the whole body from the 5% floor when there is no Ren", () => {
-    expect(TEN_MINIMUM_COATING_OUTPUT_FRACTION).toBe(0.05);
-    expect(resolved.accessFraction).toBe(0.05);
+  it("coats the whole body with 10% of Output and leaks Ten I's residual", () => {
+    expect(TEN_COATING_OUTPUT_FRACTION).toBe(0.1);
+    expect(resolved.accessFraction).toBe(0.1);
     expect(resolved.automaticSurfaceCoating).toEqual({
       source: "baseline-ten",
-      outputFraction: 0.05,
-      masteryFraction: 0,
-      minimumFraction: 0.05,
+      outputFraction: 0.1,
+      leakageRegenerationMultiple: 2,
     });
+    expect(resolved.containedLeakageRegenerationMultiple).toBe(2);
+    expect(resolved.outwardFlow).toBe(false);
   });
 
   it("places nothing inside the body", () => {
@@ -196,16 +197,23 @@ describe("awakened with Ten", () => {
   });
 
   /*
-   * Effective mastery decides AVAILABILITY here and nothing else, which is why
-   * every rank still flattens to the same access: Ten's containment fraction
-   * is a share of what Ren has opened, and a character with no Ren has had
-   * nothing opened. Mastery X holds all of zero, so the floor is the whole
-   * coating at every rank, and the difference between ranks only appears once
-   * there is Output to contain. That case is Ten's own suite.
+   * Effective mastery changes one thing and one thing only: how much still
+   * escapes. The coating, the reachable Output and every permission are the
+   * same at every rank, and the residual leak is copied off Ten's own coating
+   * rather than recomputed here.
    */
-  it("resolves identically at every learned rank when there is no Ren", () => {
+  it("resolves the same coating at every rank and only the residual leak differs", () => {
     for (let rank = 1; rank <= 10; rank += 1) {
-      expect(access(withTen(rank))).toEqual(resolved);
+      const atRank = access(withTen(rank));
+
+      expect({
+        ...atRank,
+        automaticSurfaceCoating: { ...atRank.automaticSurfaceCoating!, leakageRegenerationMultiple: 2 },
+        containedLeakageRegenerationMultiple: 2,
+      }).toEqual(resolved);
+
+      expect(atRank.containedLeakageRegenerationMultiple)
+        .toBe(atRank.automaticSurfaceCoating!.leakageRegenerationMultiple);
     }
   });
 
@@ -237,14 +245,30 @@ describe("awakened with Ten", () => {
       tenCoating: {
         source: "baseline-ten",
         outputFraction: Number.NaN,
-        masteryFraction: 0,
-        minimumFraction: 0.05,
+        leakageRegenerationMultiple: 0,
       },
     });
 
     expect(result.success).toBe(false);
     expect(errorCodes(result))
       .toContain("aura.access.ten_coating.fraction.invalid");
+  });
+
+  it("refuses a coating whose residual leak is not a non-negative multiple", () => {
+    for (const leak of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const result = resolveAuraAccess({
+        awakened: true,
+        effectiveTenMastery: 3,
+        tenCoating: {
+          source: "baseline-ten",
+          outputFraction: 0.1,
+          leakageRegenerationMultiple: leak,
+        },
+      });
+
+      expect([leak, errorCodes(result)])
+        .toEqual([leak, ["aura.access.ten_coating.leakage.invalid"]]);
+    }
   });
 
   /*
@@ -260,23 +284,38 @@ describe("awakened with Ten", () => {
 
 
 describe("typed access overrides", () => {
-  it("opens a share of Output and keeps Ten running", () => {
-    const resolved = access(withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 }));
+  /*
+   * An outward flow REPLACES Ten rather than running beside it: no coating, no
+   * residual leak, and no open-node bleed either, because the deliberate flow
+   * is what leaves the body while it runs.
+   */
+  it("opens a share of Output as an outward flow and sets Ten aside", () => {
+    const resolved = access(withTen(1, { kind: "outward-flow", source: "ren-iii", accessFraction: 0.3 }));
 
     expect(resolved.state).toBe("override");
     expect(resolved.source).toBe("ren-iii");
     expect(resolved.accessFraction).toBe(0.3);
     expect(resolved.deliberateExternalAccess).toBe(true);
-    expect(resolved.automaticSurfaceCoating).not.toBeNull();
+    expect(resolved.deliberateInternalAccess).toBe(false);
+    expect(resolved.outwardFlow).toBe(true);
+    expect(resolved.automaticSurfaceCoating).toBeNull();
+    expect(resolved.containedLeakageRegenerationMultiple).toBe(0);
+    expect(resolved.uncontained).toBe(false);
   });
 
-  it("does not conjure a Ten coating for a character without Ten", () => {
-    const resolved = access({
+  it("resolves the same flow for a character without Ten", () => {
+    const withoutTen = access({
       ...UNCONTAINED,
-      override: { kind: "output-access", source: "ren-i", accessFraction: 0.1 },
+      override: { kind: "outward-flow", source: "ren-iii", accessFraction: 0.3 },
     });
 
-    expect(resolved.automaticSurfaceCoating).toBeNull();
+    const withTenLearned = access(withTen(10, {
+      kind: "outward-flow",
+      source: "ren-iii",
+      accessFraction: 0.3,
+    }));
+
+    expect(withoutTen).toEqual(withTenLearned);
   });
 
   it("closes ordinary Output and Ten when suppressed", () => {
@@ -332,14 +371,16 @@ describe("typed access overrides", () => {
       automaticSurfaceCoating: true,
     } as const;
 
-    /* Ten X holding half the Output that override opened: 50%, not the floor. */
+    /* The same fixed coating, with Ten X's leak, whatever the override opened. */
     expect(access(withTen(10, asked)).automaticSurfaceCoating)
       .toEqual({
         source: "baseline-ten",
-        outputFraction: 0.5,
-        masteryFraction: 0.5,
-        minimumFraction: 0.05,
+        outputFraction: 0.1,
+        leakageRegenerationMultiple: 0,
       });
+
+    expect(access(withTen(1, asked)).containedLeakageRegenerationMultiple)
+      .toBe(2);
 
     expect(access({ ...UNCONTAINED, override: asked }).automaticSurfaceCoating)
       .toBeNull();
@@ -367,11 +408,11 @@ describe("access inputs that cannot be true", () => {
   });
 
   it("rejects an access fraction outside 0 through 1", () => {
-    expect(errorCodes(resolveAuraAccess(withTen(1, { kind: "output-access", source: "ren", accessFraction: 1.5 })))).toContain("aura.access.fraction.invalid");
+    expect(errorCodes(resolveAuraAccess(withTen(1, { kind: "outward-flow", source: "ren", accessFraction: 1.5 })))).toContain("aura.access.fraction.invalid");
   });
 
   it("rejects an unnamed override", () => {
-    expect(errorCodes(resolveAuraAccess(withTen(1, { kind: "output-access", source: "  ", accessFraction: 0.2 })))).toContain("aura.access.override.source.missing");
+    expect(errorCodes(resolveAuraAccess(withTen(1, { kind: "outward-flow", source: "  ", accessFraction: 0.2 })))).toContain("aura.access.override.source.missing");
   });
 
   /*
@@ -382,7 +423,7 @@ describe("access inputs that cannot be true", () => {
   it("rejects an override on an unawakened character", () => {
     expect(errorCodes(resolveAuraAccess({
       ...UNAWAKENED,
-      override: { kind: "output-access", source: "ren", accessFraction: 0.2 },
+      override: { kind: "outward-flow", source: "ren", accessFraction: 0.2 },
     }))).toContain("aura.access.override.unawakened");
   });
 });

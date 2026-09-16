@@ -19,6 +19,7 @@ import {
   describeDiagnosticValue,
   type EngineError,
 } from "../../../../infrastructure/diagnostics";
+import { GAME_MILLISECONDS_PER_SECOND } from "../../../../time/duration";
 import type { GameTimestamp } from "../../../../time/types";
 
 import {
@@ -28,6 +29,7 @@ import {
   type NenActivity,
   type NenActivityCondition,
   type NenActivityDefinition,
+  type NenActivityProgress,
   type NenActivityRuntime,
 } from "./types";
 
@@ -96,6 +98,90 @@ export function wasNenActivityRunningAt(
   if (at < activity.startedAt) return false;
 
   return activity.endedAt === null || at < activity.endedAt;
+}
+
+
+/* ── Exertion ───────────────────────────────────────────────────────────── */
+
+/*
+ * How far past the declared duration a stored exertion may sit before it is
+ * a contradiction rather than a rounding residual.
+ */
+const EXERTION_TOLERANCE_SECONDS = 1e-6;
+
+
+/** Exertion accrued per second of running. Absent means every second counts. */
+export function nenActivityExertionLoad(activity: NenActivity): number {
+  return activity.requested.exertionLoad ?? 1;
+}
+
+
+/**
+ * The activity's exertion, settled to an instant.
+ *
+ * An ACTIVE activity accrues at its load from the progress it carries; a
+ * stopped one accrued nothing after it stopped, so its progress is returned as
+ * stored. Absent progress normalises to none as of `startedAt`, which is what
+ * an activity that predates the field genuinely has.
+ *
+ * Pure and total over a well-formed activity. Settling to an instant before
+ * the stored one is a caller error the transitions refuse first; here it
+ * accrues nothing rather than subtracting.
+ */
+export function nenActivityProgressAt(
+  activity: NenActivity,
+  at: GameTimestamp,
+): NenActivityProgress {
+  const stored = activity.progress ?? {
+    exertionSeconds: 0,
+    resolvedAt: activity.startedAt,
+  };
+
+  if (activity.condition !== "active" || at <= stored.resolvedAt) {
+    return stored;
+  }
+
+  const elapsedSeconds =
+    (at - stored.resolvedAt) / GAME_MILLISECONDS_PER_SECOND;
+
+  return {
+    exertionSeconds:
+      stored.exertionSeconds + nenActivityExertionLoad(activity) * elapsedSeconds,
+    resolvedAt: at,
+  };
+}
+
+
+/**
+ * The exact instant a running activity's exertion reaches its duration.
+ *
+ * `null` for an activity with no declared duration, and for one that is not
+ * running. The ONE producer of the expiry instant: the lifecycle advance stops
+ * an activity here, and the character-time coordinator hands the same instant
+ * to the Aura time solver as a boundary, so the two cannot disagree about when
+ * something ran out.
+ *
+ *   expiresAt = resolvedAt + (duration - exertion) / load   (seconds -> ms)
+ */
+export function nenActivityExpiryAt(
+  activity: NenActivity,
+): GameTimestamp | null {
+  if (activity.condition !== "active") return null;
+
+  const duration = activity.requested.durationSeconds;
+
+  if (duration === undefined) return null;
+
+  const progress = activity.progress ?? {
+    exertionSeconds: 0,
+    resolvedAt: activity.startedAt,
+  };
+
+  const remainingSeconds =
+    Math.max(0, duration - progress.exertionSeconds) /
+    nenActivityExertionLoad(activity);
+
+  return progress.resolvedAt + remainingSeconds * GAME_MILLISECONDS_PER_SECOND;
 }
 
 
@@ -347,6 +433,22 @@ export function findNenActivityIssues(
     }
   }
 
+  const requested = activity.requested;
+
+  if (requested === null || typeof requested !== "object") {
+    errors.push({
+      code: "nen.activity.configuration.invalid",
+      message: `${at} must record the configuration it asked for.`,
+      audience: "developer",
+      required: "NenActivityConfiguration",
+      actual: describeDiagnosticValue(requested),
+    });
+  } else {
+    errors.push(...findNenActivityConfigurationIssues(requested, at));
+  }
+
+  errors.push(...findProgressIssues(activity, at));
+
   if (
     !Number.isFinite(activity.funding?.committed) ||
     activity.funding.committed < 0
@@ -357,6 +459,174 @@ export function findNenActivityIssues(
       audience: "developer",
       required: "finite number >= 0",
       actual: describeDiagnosticValue(activity.funding?.committed),
+    });
+  }
+
+  return errors;
+}
+
+
+/**
+ * Everything wrong with a requested configuration's numbers.
+ *
+ * Shared by the stored-activity validator and by every transition that
+ * accepts a new configuration, so a shape one refuses cannot be written by the
+ * other.
+ */
+export function findNenActivityConfigurationIssues(
+  requested: NenActivity["requested"],
+  label = "a Nen activity",
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  const aura = requested.aura;
+
+  if (typeof aura !== "number" || !Number.isFinite(aura) || aura < 0) {
+    errors.push({
+      code: "nen.activity.configuration.invalid",
+      message: `${label} must request a finite non-negative amount of Aura.`,
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: describeDiagnosticValue(aura),
+    });
+  }
+
+  const upkeep = requested.upkeepPerRound;
+
+  if (
+    upkeep !== undefined &&
+    (typeof upkeep !== "number" || !Number.isFinite(upkeep) || upkeep < 0)
+  ) {
+    errors.push({
+      code: "nen.activity.configuration.invalid",
+      message: "An upkeep rate must be a finite non-negative number.",
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: describeDiagnosticValue(upkeep),
+    });
+  }
+
+  const duration = requested.durationSeconds;
+
+  if (
+    duration !== undefined &&
+    (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0)
+  ) {
+    errors.push({
+      code: "nen.activity.configuration.invalid",
+      message: "A declared duration must be a finite positive number.",
+      audience: "developer",
+      required: "finite number > 0",
+      actual: describeDiagnosticValue(duration),
+    });
+  }
+
+  const load = requested.exertionLoad;
+
+  if (
+    load !== undefined &&
+    (typeof load !== "number" || !Number.isFinite(load) || load <= 0 || load > 1)
+  ) {
+    errors.push({
+      code: "nen.activity.configuration.invalid",
+      message: "An exertion load must be a finite number in (0, 1].",
+      audience: "developer",
+      required: "finite number > 0 and <= 1",
+      actual: describeDiagnosticValue(load),
+    });
+  }
+
+  return errors;
+}
+
+
+/*
+ * Everything wrong with an activity's stored exertion.
+ *
+ * Refused rather than repaired: negative or non-finite exertion, progress
+ * dated before the activity's current interval began or after it ended, or
+ * more exertion than the duration allows.
+ *
+ * Deliberately NOT compared against wall-clock time since `startedAt`: a
+ * resumed activity starts a new interval and keeps the exertion it had already
+ * spent, which is exactly what stops a suspension from refilling endurance.
+ */
+function findProgressIssues(
+  activity: NenActivity,
+  at: string,
+): readonly EngineError[] {
+  const progress = activity.progress;
+
+  if (progress === undefined) return [];
+
+  if (progress === null || typeof progress !== "object") {
+    return [{
+      code: "nen.activity.progress.invalid",
+      message: `${at} carries malformed exertion progress.`,
+      audience: "developer",
+      required: "{ exertionSeconds, resolvedAt }",
+      actual: describeDiagnosticValue(progress),
+    }];
+  }
+
+  const { exertionSeconds, resolvedAt } = progress;
+
+  if (
+    typeof exertionSeconds !== "number" ||
+    !Number.isFinite(exertionSeconds) ||
+    exertionSeconds < 0 ||
+    typeof resolvedAt !== "number" ||
+    !Number.isFinite(resolvedAt)
+  ) {
+    return [{
+      code: "nen.activity.progress.invalid",
+      message:
+        `${at} must record a finite non-negative exertion at a finite timestamp.`,
+      audience: "developer",
+      required: "exertionSeconds >= 0, finite resolvedAt",
+      actual: describeDiagnosticValue(exertionSeconds),
+    }];
+  }
+
+  const errors: EngineError[] = [];
+
+  if (Number.isFinite(activity.startedAt) && resolvedAt < activity.startedAt) {
+    errors.push({
+      code: "nen.activity.progress.contradictory",
+      message: `${at} records exertion as of a moment before it started.`,
+      audience: "developer",
+      required: `resolvedAt >= ${activity.startedAt}`,
+      actual: resolvedAt,
+    });
+  }
+
+  if (
+    activity.endedAt !== null &&
+    Number.isFinite(activity.endedAt) &&
+    resolvedAt > activity.endedAt
+  ) {
+    errors.push({
+      code: "nen.activity.progress.contradictory",
+      message: `${at} records exertion as of a moment after it ended.`,
+      audience: "developer",
+      required: `resolvedAt <= ${activity.endedAt}`,
+      actual: resolvedAt,
+    });
+  }
+
+  const duration = activity.requested?.durationSeconds;
+
+  if (
+    typeof duration === "number" &&
+    Number.isFinite(duration) &&
+    exertionSeconds > duration + EXERTION_TOLERANCE_SECONDS
+  ) {
+    errors.push({
+      code: "nen.activity.progress.contradictory",
+      message: `${at} records more exertion than its duration permits.`,
+      audience: "developer",
+      required: `exertionSeconds <= ${duration}`,
+      actual: exertionSeconds,
     });
   }
 
@@ -416,6 +686,28 @@ export function findNenActivityRuntimeIssues(
 
   for (const activity of runtime.activities) {
     errors.push(...findNenActivityIssues(activity, runtime.owner));
+
+    /*
+     * Progress dated after the runtime itself is exertion from the future: the
+     * runtime is the instant everything in it is described at.
+     */
+    const resolvedAt = activity?.progress?.resolvedAt;
+
+    if (
+      typeof resolvedAt === "number" &&
+      Number.isFinite(resolvedAt) &&
+      Number.isFinite(runtime.at) &&
+      resolvedAt > runtime.at
+    ) {
+      errors.push({
+        code: "nen.activity.progress.future",
+        message:
+          `activity ${String(activity.id)} records exertion after the instant its runtime is described at.`,
+        audience: "developer",
+        required: `resolvedAt <= ${runtime.at}`,
+        actual: resolvedAt,
+      });
+    }
 
     if (typeof activity?.id !== "string") continue;
 

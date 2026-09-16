@@ -56,7 +56,19 @@ import { standardAwakenedNen } from "./fixtures/nen";
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
 /* Ren III: 30% of physiological Output, and room to place things by hand. */
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten I with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow, and these suites are about budgets and upkeep, not Ren.
+ */
+const OPEN_III: AuraAccessInput = withTen(1, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 /* Chu: internal placement permitted, Ten's coating traded away for it. */
 const CHU: AuraAccessInput = withTen(1, { kind: "internal-access", source: "chu", accessFraction: 0.3 });
@@ -158,7 +170,7 @@ describe("accessible and usable Output", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
-      access: REN_III,
+      access: OPEN_III,
     });
 
     expect(resolved.output.physiologicalMaximum).toBe(10_000);
@@ -174,7 +186,7 @@ describe("accessible and usable Output", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 400,
-      access: REN_III,
+      access: OPEN_III,
     });
 
     expect(resolved.output.accessibleMaximum).toBeCloseTo(3000, 10);
@@ -324,7 +336,7 @@ describe("awakening", () => {
        * internal placement, which says nothing about how the Aura is spread —
        * and ordinary internal Aura is complete and even. 1,200 over 60 L is
        * 20 per litre on every part, the right Arm included, and fits inside
-       * the 2,500 of deliberate budget this access leaves.
+       * the 3,000 of deliberate budget this access leaves.
        */
       allocations: [{
         id: "internal",
@@ -363,15 +375,15 @@ describe("baseline Ten", () => {
     }
   });
 
-  it("draws 5% of physiological Output", () => {
+  it("draws 10% of physiological Output", () => {
     expect(resolved.output.physiologicalMaximum).toBe(10_000);
-    expect(resolved.distribution.activeAura).toBeCloseTo(500, 10);
+    expect(resolved.distribution.activeAura).toBeCloseTo(1000, 10);
   });
 
   it("produces equal surface density over the whole body", () => {
     for (const part of resolved.byBodyPart) {
       expect(part.surface!.density.auraPerSquareMeter)
-        .toBeCloseTo(500 / 1.69, 10);
+        .toBeCloseTo(1000 / 1.69, 10);
     }
   });
 
@@ -421,10 +433,10 @@ describe("baseline Ten", () => {
 
     expect(surfaceOn(resolvedOneArmed, "arm-1")).toBeUndefined();
 
-    /* Same 500 Aura over less skin, so the density everywhere rises. */
+    /* Same 1,000 Aura over less skin, so the density everywhere rises. */
     for (const part of resolvedOneArmed.byBodyPart) {
       expect(part.surface!.density.auraPerSquareMeter)
-        .toBeCloseTo(500 / ((16_900 - 1183) / 10_000), 10);
+        .toBeCloseTo(1000 / ((16_900 - 1183) / 10_000), 10);
     }
   });
 
@@ -460,12 +472,12 @@ describe("aggregating contributions on one Body Part", () => {
   const resolved = profile({
     attributes: { con: 20, vit: 20 },
     current: 50_000,
-    access: REN_III,
+    access: OPEN_III,
     allocations: [ARM_CONCENTRATION],
   });
 
-  /* Baseline Ten's share of the right Arm: 500 x (1183 / 16,900). */
-  const TEN_ON_ARM = 500 * (1183 / 16_900);
+  /* Baseline Ten's share of the right Arm: 1,000 x (1183 / 16,900). */
+  const TEN_ON_ARM = 1000 * (1183 / 16_900);
 
   it("keeps every contribution separately", () => {
     const arm = surfaceOn(resolved, "arm-2")!;
@@ -494,13 +506,13 @@ describe("aggregating contributions on one Body Part", () => {
 
     expect(arm.density.auraPerSquareMeter).toBeCloseTo(separately, 8);
     expect(arm.density.auraPerSquareMeter)
-      .toBeCloseTo(1000 + 500 / 1.69, 8);
+      .toBeCloseTo(1000 + 1000 / 1.69, 8);
   });
 
   it("leaves the parts the concentration does not cover alone", () => {
     expect(surfaceOn(resolved, "arm-1")!.contributions).toHaveLength(1);
     expect(surfaceOn(resolved, "arm-1")!.density.auraPerSquareMeter)
-      .toBeCloseTo(500 / 1.69, 10);
+      .toBeCloseTo(1000 / 1.69, 10);
   });
 
   /*
@@ -537,19 +549,19 @@ describe("aggregating contributions on one Body Part", () => {
 describe("one shared Output budget", () => {
   /*
    * Baseline Ten and stored allocations draw on the same usable Output. Ten
-   * has already committed 5% of physiological Output, and a stored allocation
+   * has already committed 10% of physiological Output, and a stored allocation
    * cannot spend it a second time.
    */
   it("counts the automatic coating against the ceiling", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
-      access: REN_III,
+      access: OPEN_III,
       allocations: [{
         id: "ken",
         coverage: "whole-body",
         placement: "surface",
-        aura: 2500,
+        aura: 2000,
       }],
     });
 
@@ -563,7 +575,7 @@ describe("one shared Output budget", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
-      access: REN_III,
+      access: OPEN_III,
       allocations: [
         {
           id: "a",
@@ -583,8 +595,8 @@ describe("one shared Output budget", () => {
     });
 
     /*
-     * 2,500 of budget left after Ten's 500. The higher priority takes all of
-     * it and the lower one is released — NOT the 2,000/500 the old
+     * 2,000 of budget left after Ten's 1,000. The higher priority takes all of
+     * it and the lower one is released — NOT the proportional split the old
      * proportional rule produced, which left the character with two
      * commitments that had both been quietly halved.
      */
@@ -641,7 +653,7 @@ describe("one shared Output budget", () => {
     const resolved = profile({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
-      access: REN_III,
+      access: OPEN_III,
       anatomy: setBodyPartState(
         STANDARD_HUMANOID_ANATOMY,
         "arm-2",
@@ -665,7 +677,7 @@ describe("one shared Output budget", () => {
 
     /* The Aura returns to unallocated Output; Current Aura is untouched. */
     expect(resolved.pool.current).toBe(50_000);
-    expect(resolved.distribution.unallocatedOutput).toBeCloseTo(2500, 8);
+    expect(resolved.distribution.unallocatedOutput).toBeCloseTo(2000, 8);
   });
 
   it("never resolves a distribution above usable Output", () => {
@@ -673,7 +685,7 @@ describe("one shared Output budget", () => {
       const resolved = profile({
         attributes: { con: 20, vit: 20 },
         current: 50_000,
-        access: REN_III,
+        access: OPEN_III,
         allocations: [
           { id: "a", coverage: "whole-body", placement: "surface", aura },
         ],
@@ -764,7 +776,7 @@ describe("inputs the resolver cannot make sense of", () => {
     expect(errorCodes(attempt({
       attributes: { con: 20, vit: 20 },
       current: 50_000,
-      access: REN_III,
+      access: OPEN_III,
       allocations: [
         { id: "dup", coverage: "whole-body", placement: "surface", aura: 1 },
         { id: "dup", coverage: "whole-body", placement: "surface", aura: 1 },

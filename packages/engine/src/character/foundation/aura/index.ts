@@ -62,7 +62,7 @@ export type {
   AuraInternalAccessOverride,
   AuraNodeState,
   AuraOutput,
-  AuraOutputAccessOverride,
+  AuraOutwardFlowAccessOverride,
   AuraOutputLimit,
   AuraPlacement,
   AuraPool,

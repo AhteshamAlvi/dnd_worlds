@@ -35,6 +35,28 @@ export {
 export type { UncoatedAuraAccessInput } from "./access";
 
 export {
+  REN_ACTIVITY_DEFINITION,
+  REN_ACTIVITY_DEFINITION_ID,
+  REN_OUTWARD_FLOW_SOURCE,
+  activeRenActivity,
+  adjustRen,
+  isRenActivity,
+  renOutwardFlow,
+  renStopCauseFor,
+  resolveRenAttackContribution,
+  startRen,
+  withRenAccess,
+} from "./ren";
+
+export type {
+  AdjustRenRequest,
+  RenAttackContribution,
+  RenAttackRequest,
+  StartRenInput,
+  StartRenRequest,
+} from "./ren";
+
+export {
   appliedOverrides,
   declaredOverrideFields,
   findExceptionalSourceIssues,

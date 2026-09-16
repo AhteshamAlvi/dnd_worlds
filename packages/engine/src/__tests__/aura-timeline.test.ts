@@ -37,7 +37,7 @@ import {
   auraContext,
   UNAWAKENED,
   UNCONTAINED,
-  WITH_TEN,
+  WITH_PERFECT_TEN,
   withTen,
 } from "./fixtures/aura";
 
@@ -60,7 +60,20 @@ const STRONG = { con: 20, vit: 20, dex: 22 } as const;
 const ROUND_HOURS = 2 / 3600;
 const LEAK_PER_ROUND = 10_000 / 30;
 
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten X with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow. Perfect containment, so the solver scenarios below move the
+ * pool by nothing but the thing under test.
+ */
+const OPEN_III: AuraAccessInput = withTen(10, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 const ZETSU = { source: "zetsu", forced: false } as const;
 
@@ -243,7 +256,7 @@ describe("half-open interval ownership", () => {
 
   it("accepts an event at the opening instant", () => {
     const result = succeed({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(0, "forced-drain", 100)],
     });
 
@@ -252,21 +265,21 @@ describe("half-open interval ownership", () => {
 
   it("accepts an event strictly inside", () => {
     expect(succeed({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(1, "forced-drain", 100)],
     }).balance.forcedDrain).toBe(100);
   });
 
   it("rejects an event at the closing instant", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(2, "forced-drain", 100)],
     }))).toContain("aura.timeline.event.outside");
   });
 
   it("rejects an event that predates the interval", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(-1, "forced-drain", 100)],
     }))).toContain("aura.timeline.event.stale");
   });
@@ -287,14 +300,14 @@ describe("half-open interval ownership", () => {
 
     /* The first interval refuses it outright. */
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       hours: 2,
       instantaneous: [event],
     }))).toContain("aura.timeline.event.outside");
 
     /* The second, beginning there, owns it. */
     const second = succeed({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       startedAt: boundary,
       hours: 2,
       instantaneous: [event],
@@ -341,7 +354,7 @@ describe("half-open interval ownership", () => {
    */
   it("emits no start event for an effect that began earlier", () => {
     const result = succeed({
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [{
         id: "ren",
         source: "ren",
@@ -358,7 +371,7 @@ describe("half-open interval ownership", () => {
 
   it("emits a start event for one that begins inside", () => {
     const result = succeed({
-      access: REN_III,
+      access: OPEN_III,
       hours: 4,
       upkeep: [{
         id: "ren",
@@ -399,7 +412,7 @@ describe("half-open interval ownership", () => {
 describe("timeline validation", () => {
   it("rejects an unknown event kind rather than treating it as a drain", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [{
         at: T0,
         kind: "nonsense" as ScheduledAuraEvent["kind"],
@@ -411,19 +424,19 @@ describe("timeline validation", () => {
 
   it("rejects an unnamed event source", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(1, "deliberate", 10, "  ")],
     }))).toContain("aura.timeline.event.source.missing");
   });
 
   it("rejects a non-finite or negative amount", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(1, "deliberate", Number.NaN)],
     }))).toContain("aura.timeline.event.amount.invalid");
 
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [at(1, "deliberate", -1)],
     }))).toContain("aura.timeline.event.amount.invalid");
   });
@@ -449,7 +462,7 @@ describe("timeline validation", () => {
    */
   it("rejects a suppression that does not say whether it was chosen", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: {
         mode: "sleep",
         suppression: { source: "z", forced: "no" as unknown as boolean },
@@ -464,7 +477,7 @@ describe("timeline validation", () => {
    */
   it("rejects suppression and active Nen at once", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: {
         mode: "sleep",
         activeNenUse: true,
@@ -482,7 +495,7 @@ describe("timeline validation", () => {
 
   it("rejects an active-Nen fact that is not a boolean", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: {
         mode: "ordinary-waking",
         activeNenUse: "yes" as unknown as boolean,
@@ -492,7 +505,7 @@ describe("timeline validation", () => {
 
   it("rejects an unnamed suppression", () => {
     expect(errorCodes(advance({
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: {
         mode: "sleep",
         suppression: { source: " ", forced: false },
@@ -509,7 +522,7 @@ describe("timeline validation", () => {
 
   it("rejects malformed and duplicate upkeep commitments", () => {
     const codes = errorCodes(advance({
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [
         { id: "", source: "", baseRate: 10, period: "hour" },
         { id: "", source: "a", baseRate: 10, period: "hour" },
@@ -520,7 +533,7 @@ describe("timeline validation", () => {
     expect(codes).toContain("aura.upkeep.source.missing");
 
     expect(errorCodes(advance({
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [
         { id: "a", source: "a", baseRate: 10, period: "hour" },
         { id: "a", source: "b", baseRate: 10, period: "hour" },
@@ -530,7 +543,7 @@ describe("timeline validation", () => {
 
   it("rejects an upkeep window that ends before it starts", () => {
     expect(errorCodes(advance({
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [{
         id: "a",
         source: "a",
@@ -544,7 +557,7 @@ describe("timeline validation", () => {
 
   it("rejects a non-finite priority", () => {
     expect(errorCodes(advance({
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [{
         id: "a",
         source: "a",
@@ -562,7 +575,7 @@ describe("timeline validation", () => {
 
     const result = advance({
       state: before,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [
         at(0.5, "forced-drain", 5000),
         at(1, "deliberate", Number.NaN),
@@ -588,13 +601,13 @@ describe("simultaneous events resolve atomically", () => {
     const forward = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [drain, heal],
     });
     const reversed = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [heal, drain],
     });
 
@@ -607,7 +620,7 @@ describe("simultaneous events resolve atomically", () => {
     const result = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: HOLDING,
       instantaneous: [drain, heal],
     });
@@ -621,7 +634,7 @@ describe("simultaneous events resolve atomically", () => {
     const result = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: HOLDING,
       instantaneous: [at(0, "forced-drain", 900, "d"), at(0, "recovery", 200, "h")],
     });
@@ -635,7 +648,7 @@ describe("simultaneous events resolve atomically", () => {
     const result = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [drain, heal],
     });
 
@@ -649,13 +662,13 @@ describe("simultaneous events resolve atomically", () => {
     const forward = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [drain, heal],
     });
     const reversed = succeed({
       current: 100,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       instantaneous: [heal, drain],
     });
 
@@ -668,7 +681,7 @@ describe("simultaneous events resolve atomically", () => {
     const result = succeed({
       current: 49_000,
       hours: 0.0001,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: HOLDING,
       instantaneous: [
         at(0, "recovery", 1000, "a"),
@@ -697,7 +710,7 @@ describe("recovery provenance", () => {
     const result = succeed({
       current: 0,
       hours: 4,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: { mode: "intentional-rest" },
       activityChanges: [{
         at: T0 + hoursToDuration(2),
@@ -727,7 +740,7 @@ describe("recovery provenance", () => {
     const result = succeed({
       current: 10_000,
       hours: 4,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: { mode: "ordinary-waking", activeNenUse: true },
     });
 
@@ -739,7 +752,7 @@ describe("recovery provenance", () => {
     const result = succeed({
       current: 0,
       hours: 4,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: { mode: "intentional-rest" },
       activityChanges: [{
         at: T0 + hoursToDuration(2),
@@ -759,7 +772,7 @@ describe("recovery provenance", () => {
     const result = succeed({
       current: 0,
       hours: 1,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: HOLDING,
       instantaneous: [at(0.5, "recovery", 500, "healing-potion")],
     });
@@ -778,7 +791,7 @@ describe("recovery provenance", () => {
     const result = succeed({
       current: 0,
       hours: 4,
-      access: WITH_TEN,
+      access: WITH_PERFECT_TEN,
       activity: { mode: "sleep" },
       activityChanges: [
         { at: T0 + hoursToDuration(1), activity: { mode: "sleep" } },
@@ -809,7 +822,7 @@ describe("recovery provenance", () => {
         }],
       },
     ]) {
-      const result = succeed({ access: WITH_TEN, ...scenario });
+      const result = succeed({ access: WITH_PERFECT_TEN, ...scenario });
       const { recoveryBySource } = result.balance;
 
       const sum = (pick: "potential" | "used" | "discarded"): number =>
@@ -840,7 +853,7 @@ describe("upkeep reports what it was actually charged for", () => {
     const result = succeed({
       current: 50_000,
       hours,
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [commitment],
     });
 
@@ -912,7 +925,7 @@ describe("upkeep reports what it was actually charged for", () => {
     const result = succeed({
       current: 150,
       hours: 2,
-      access: REN_III,
+      access: OPEN_III,
       activity: HOLDING,
       upkeep: [{ id: "ren", source: "ren", baseRate: RATE, period: "hour" }],
     });
@@ -926,7 +939,7 @@ describe("upkeep reports what it was actually charged for", () => {
     const result = succeed({
       current: 50_000,
       hours: 4,
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [{ id: "ren", source: "ren", baseRate: RATE, period: "hour" }],
       activityChanges: [{
         at: T0 + hoursToDuration(1),
@@ -961,7 +974,7 @@ describe("upkeep reports what it was actually charged for", () => {
     const result = succeed({
       current: 50_000,
       hours: 4,
-      access: REN_III,
+      access: OPEN_III,
       upkeep: commitments,
     });
 

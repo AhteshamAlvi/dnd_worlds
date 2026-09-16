@@ -38,7 +38,7 @@ import {
   auraTestAttributes,
   UNAWAKENED,
   UNCONTAINED,
-  WITH_TEN,
+  WITH_PERFECT_TEN,
   withTen,
 } from "./fixtures/aura";
 
@@ -67,7 +67,20 @@ const R = 2500;
  */
 const HOLDING = { mode: "ordinary-waking", activeNenUse: true } as const;
 
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten X with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow. Perfect containment, so these scenarios move the pool by
+ * nothing but the rates under test; Ten's residual leak is tested with Ten.
+ */
+const OPEN_III: AuraAccessInput = withTen(10, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 /*
  * A fixed campaign instant to hang every interval off, so timestamps in
@@ -87,7 +100,7 @@ type Options =
 function advance(options: Options = {}) {
   const {
     attributes = STRONG,
-    access = WITH_TEN,
+    access = WITH_PERFECT_TEN,
     state = { current: 0, allocations: [] },
     wakefulness = restedWakefulness(),
     hours = 1,
@@ -175,7 +188,7 @@ describe("the balance keeps every contribution apart", () => {
     activity: { mode: "ordinary-waking", activity: "strenuous" },
     upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
     instantaneous: [at(0.5, "deliberate", 500), at(1, "forced-drain", 250)],
-    access: REN_III,
+    access: OPEN_III,
   });
 
   it("reports each term separately", () => {
@@ -208,6 +221,7 @@ describe("the balance keeps every contribution apart", () => {
       "forcedDrain",
       "leakage",
       "net",
+      "outwardFlow",
       "physical",
       "recovery",
       "recoveryBySource",
@@ -293,7 +307,7 @@ describe("recovery through an interval", () => {
         mode: "intentional-rest",
         suppression: { source: "zetsu-3", forced: false },
       },
-      access: REN_III,
+      access: OPEN_III,
     });
 
     /* Suppressed rest is 4R, against the 3R an unsuppressed rest earns. */
@@ -488,7 +502,7 @@ describe("upkeep across an interval", () => {
     const result = succeed({
       state: { current: 50_000, allocations: [] },
       hours: 2,
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [
         { id: "ren", source: "ren", baseRate: 100, period: "hour" },
         { id: "ken", source: "ken", baseRate: 1, period: "round" },
@@ -510,7 +524,7 @@ describe("upkeep across an interval", () => {
     const result = succeed({
       state: { current: 150, allocations: [] },
       hours: 2,
-      access: REN_III,
+      access: OPEN_III,
       activity: HOLDING,
       upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
     });
@@ -540,7 +554,7 @@ describe("upkeep across an interval", () => {
     const result = succeed({
       state: { current: 1000, allocations: [] },
       hours: 4,
-      access: REN_III,
+      access: OPEN_III,
       activity: { mode: "intentional-rest" },
       upkeep: [
         { id: "expendable", source: "in", baseRate: 16_000, period: "hour", priority: 0 },
@@ -562,7 +576,7 @@ describe("upkeep across an interval", () => {
     const forward = succeed({
       state: { current: 250, allocations: [] },
       hours: 1,
-      access: REN_III,
+      access: OPEN_III,
       activity: HOLDING,
       upkeep: [
         { id: "aaa", source: "in", baseRate: 200, period: "hour" },
@@ -572,7 +586,7 @@ describe("upkeep across an interval", () => {
     const reversed = succeed({
       state: { current: 250, allocations: [] },
       hours: 1,
-      access: REN_III,
+      access: OPEN_III,
       activity: HOLDING,
       upkeep: [
         { id: "zzz", source: "ren", baseRate: 400, period: "hour" },
@@ -596,7 +610,7 @@ describe("upkeep across an interval", () => {
    * that moved it was upkeep.
    */
   it("charges nothing for baseline Ten or pseudo-Chu", () => {
-    for (const access of [WITH_TEN, UNAWAKENED]) {
+    for (const access of [WITH_PERFECT_TEN, UNAWAKENED]) {
       const result = succeed({
         state: { current: 25_000, allocations: [] },
         hours: 24,
@@ -801,7 +815,7 @@ describe("uncontained leakage over time", () => {
    * ordinary person is still there two days later.
    */
   it("leaves a contained character alone", () => {
-    for (const access of [WITH_TEN, UNAWAKENED]) {
+    for (const access of [WITH_PERFECT_TEN, UNAWAKENED]) {
       const result = succeed({
         attributes: STANDARD,
         access,
@@ -820,7 +834,7 @@ describe("uncontained leakage over time", () => {
 describe("reconciliation and Fatigue across an interval", () => {
   it("reconciles allocations the shrunken reserve cannot support", () => {
     const result = succeed({
-      access: REN_III,
+      access: OPEN_III,
       state: {
         current: 2000,
         allocations: [{
@@ -954,7 +968,7 @@ describe("boundaries inside one interval", () => {
     const result = succeed({
       state: { current: 2500, allocations: [] },
       hours: 4,
-      access: REN_III,
+      access: OPEN_III,
       activity: HOLDING,
       upkeep: [{ id: "ren", source: "ren", baseRate: 1000, period: "hour" }],
     });
@@ -969,7 +983,7 @@ describe("boundaries inside one interval", () => {
     const result = succeed({
       state: { current: 50_000, allocations: [] },
       hours: 4,
-      access: REN_III,
+      access: OPEN_III,
       upkeep: [{
         id: "ken",
         source: "ken",
@@ -1034,7 +1048,7 @@ describe("recovery is netted before the pool is clamped", () => {
     const result = succeed({
       state: { current: 50_000, allocations: [] },
       hours: 1,
-      access: REN_III,
+      access: OPEN_III,
       activity: { mode: "sleep" },
       upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
     });
@@ -1068,7 +1082,7 @@ describe("recovery is netted before the pool is clamped", () => {
         activity: { mode: "sleep" as const } },
       { state: { current: 100, allocations: [] }, hours: 2,
         activity: { mode: "ordinary-waking" as const, activity: "extreme" as const } },
-      { state: { current: 5000, allocations: [] }, hours: 2, access: REN_III,
+      { state: { current: 5000, allocations: [] }, hours: 2, access: OPEN_III,
         upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" as const }],
         instantaneous: [at(1, "forced-drain", 400)] },
     ]) {
@@ -1105,7 +1119,7 @@ describe("immutability and determinism", () => {
 
   function run() {
     return advance({
-      access: REN_III,
+      access: OPEN_III,
       state,
       wakefulness,
       hours: 3,

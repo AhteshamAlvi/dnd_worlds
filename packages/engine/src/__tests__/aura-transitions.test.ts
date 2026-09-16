@@ -51,10 +51,22 @@ const RIGHT_ARM = continuityKey("upper-limb:right");
 
 /*
  * CON 20 / VIT 20 gives a Maximum Aura of 50,000 and a physiological Output of
- * 10,000. Ren III opens 30% of it, and baseline Ten takes 5% off the top, so a
- * character at full reserve has 3,000 usable Output and 2,500 of it free.
+ * 10,000. an explicit override opens 30% of it, and baseline Ten takes 10% off the top, so a
+ * character at full reserve has 3,000 usable Output and 2,000 of it free.
  */
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten I with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow, and these suites are about budgets and upkeep, not Ren.
+ */
+const OPEN_III: AuraAccessInput = withTen(1, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 function context(
   overrides: {
@@ -65,7 +77,7 @@ function context(
 ): AuraTransitionContext {
   return auraContext({
     attributes: { con: 20, vit: 20, dex: overrides.dex ?? 22 },
-    access: overrides.access ?? REN_III,
+    access: overrides.access ?? OPEN_III,
     ...(overrides.anatomy === undefined ? {} : { anatomy: overrides.anatomy }),
   });
 }
@@ -184,15 +196,15 @@ describe("deliberate expenditure", () => {
    * shrinks the budget the character's existing placement is standing on.
    */
   it("reconciles allocations when the spend lowers usable Output", () => {
-    const before = state(4000, [{ ...WHOLE_BODY_KEN, aura: 2500 }]);
+    const before = state(4500, [{ ...WHOLE_BODY_KEN, aura: 2500 }]);
 
     const result = spendAura(before, context(), 2500);
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 1,500 left: Ten takes 500, so 1,000 of budget remains for Ken. */
-    expect(result.payload.current).toBe(1500);
+    /* 2,000 left: Ten takes 1,000, so 1,000 of budget remains for Ken. */
+    expect(result.payload.current).toBe(2000);
     expect(result.payload.state.allocations[0]!.aura).toBeCloseTo(1000, 8);
     expect(result.payload.allocationChanges).toEqual([
       expect.objectContaining({ kind: "reduced", allocationId: "ken" }),
@@ -260,7 +272,7 @@ describe("involuntary drain", () => {
 
   it("reconciles allocations after the deduction", () => {
     const result = drainAura(
-      state(4000, [{ ...WHOLE_BODY_KEN, aura: 2500 }]),
+      state(4500, [{ ...WHOLE_BODY_KEN, aura: 2500 }]),
       context(),
       2500,
     );
@@ -363,14 +375,14 @@ describe("allocation transitions", () => {
     const result = replaceAuraAllocations(
       state(50_000),
       context(),
-      [{ ...WHOLE_BODY_KEN, aura: 2501 }],
+      [{ ...WHOLE_BODY_KEN, aura: 2001 }],
     );
 
     expect(errorCodes(result)).toContain("aura.allocation.over_output");
     if (result.success) return;
 
-    /* 3,000 usable, 500 of it already committed by baseline Ten. */
-    expect(result.errors[0]!.required).toBeCloseTo(2500, 8);
+    /* 3,000 usable, 1,000 of it already committed by baseline Ten. */
+    expect(result.errors[0]!.required).toBeCloseTo(2000, 8);
   });
 
   it("refuses malformed allocations before anything else", () => {
@@ -522,7 +534,7 @@ describe("reconciliation", () => {
 
   it("leaves every commitment alone while they all still fit", () => {
     const result = reconcileAuraState(
-      state(1500, [
+      state(2000, [
         { id: "a", coverage: "whole-body", placement: "surface", aura: 800 },
         { id: "b", coverage: "whole-body", placement: "surface", aura: 200 },
       ]),
@@ -532,7 +544,7 @@ describe("reconciliation", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 1,500 usable, 500 to Ten, 1,000 left — which is exactly 800 + 200. */
+    /* 2,000 usable, 1,000 to Ten, 1,000 left — which is exactly 800 + 200. */
     const byId = new Map(
       result.payload.state.allocations.map((one) => [one.id, one.aura]),
     );
@@ -553,7 +565,7 @@ describe("reconciliation", () => {
    */
   it("preserves the higher priority and cuts only the lowest necessary", () => {
     const result = reconcileAuraState(
-      state(1000, [
+      state(1500, [
         {
           id: "guard",
           coverage: "whole-body",
@@ -575,7 +587,7 @@ describe("reconciliation", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 1,000 usable, 500 to Ten, 500 left for 800 of commitments. */
+    /* 1,500 usable, 1,000 to Ten, 500 left for 800 of commitments. */
     const byId = new Map(
       result.payload.state.allocations.map((one) => [one.id, one.aura]),
     );
@@ -597,7 +609,7 @@ describe("reconciliation", () => {
 
   it("releases the commitments below the one that exhausted the budget", () => {
     const result = reconcileAuraState(
-      state(1000, [
+      state(1500, [
         {
           id: "guard",
           coverage: "whole-body",
@@ -641,7 +653,7 @@ describe("reconciliation", () => {
 
   it("releases an indivisible commitment whole and passes the room down", () => {
     const result = reconcileAuraState(
-      state(1000, [
+      state(1500, [
         {
           id: "ken",
           coverage: "whole-body",
@@ -691,7 +703,7 @@ describe("reconciliation", () => {
 
   it("drops a commitment that cannot keep the floor it declared", () => {
     const result = reconcileAuraState(
-      state(1000, [
+      state(1500, [
         {
           id: "guard",
           coverage: "whole-body",
@@ -753,8 +765,8 @@ describe("reconciliation", () => {
      * the technique first and cut the guard; only an explicit priority
      * produces the same answer from both arrangements.
      */
-    const forward = reconcileAuraState(state(1000, [guard, technique]), context());
-    const reversed = reconcileAuraState(state(1000, [technique, guard]), context());
+    const forward = reconcileAuraState(state(1500, [guard, technique]), context());
+    const reversed = reconcileAuraState(state(1500, [technique, guard]), context());
 
     expect(forward.success && reversed.success).toBe(true);
     if (!forward.success || !reversed.success) return;
@@ -771,7 +783,7 @@ describe("reconciliation", () => {
 
   it("reports the factor it reduced by", () => {
     const result = reconcileAuraState(
-      state(1000, [{ ...WHOLE_BODY_KEN, aura: 1000 }]),
+      state(1500, [{ ...WHOLE_BODY_KEN, aura: 1000 }]),
       context(),
     );
 
@@ -810,7 +822,7 @@ describe("reconciliation", () => {
 
   it("leaves a reconciled state that the resolver then accepts unchanged", () => {
     const reconciled = reconcileAuraState(
-      state(1000, [{ ...WHOLE_BODY_KEN, aura: 1000 }]),
+      state(1500, [{ ...WHOLE_BODY_KEN, aura: 1000 }]),
       context(),
     );
 

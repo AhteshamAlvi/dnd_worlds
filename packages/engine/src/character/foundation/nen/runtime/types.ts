@@ -193,11 +193,50 @@ export interface NenActivityConfiguration {
   /** Output the activity wants to commit while it runs. */
   readonly aura: number;
 
-  /** Deliberate Aura per round of holding it. Absent means free to hold. */
+  /*
+   * Deliberate Aura per round of holding it, as DESCRIPTIVE metadata.
+   *
+   * Nothing in the runtime charges it, and nothing may: a maintained cost is
+   * integrated by the Aura time solver, which is the one settlement authority.
+   * An activity whose flow the solver already charges must not also be billed
+   * through this, so an adapter that projects a flow leaves it absent.
+   */
   readonly upkeepPerRound?: number;
 
-  /** When it ends on its own. Absent means it runs until stopped. */
+  /*
+   * How much EXERTION the activity may accumulate before it expires, in
+   * full-output-equivalent seconds. Absent means it runs until stopped.
+   *
+   * Exertion accrues at `exertionLoad` per second of running, so at the
+   * default load of 1 this is simply a wall-clock duration — and at a load of
+   * one half the activity lasts twice as long.
+   */
   readonly durationSeconds?: number;
+
+  /*
+   * Exertion accrued per second of running, in (0, 1]. Absent means 1.
+   *
+   * Generic: the adapter that configures an activity decides what load means
+   * for it. The runtime only integrates it.
+   */
+  readonly exertionLoad?: number;
+}
+
+
+/*
+ * How much of its duration an activity has already used, and as of when.
+ *
+ * Kept on the activity so an ADJUSTMENT can change the load without resetting
+ * what has been spent: exertion is settled to the adjustment instant under the
+ * old load, and accrues under the new one from there. Absent on an activity
+ * that predates it, which reads as no exertion as of `startedAt`.
+ */
+export interface NenActivityProgress {
+  /** Full-output-equivalent seconds accumulated. Not wall-clock time. */
+  readonly exertionSeconds: number;
+
+  /** The instant `exertionSeconds` is accurate as of. */
+  readonly resolvedAt: GameTimestamp;
 }
 
 
@@ -280,6 +319,9 @@ export interface NenActivity {
 
   /** `null` while active. Preserved through a suspension and a resume. */
   readonly stop: NenActivityStop | null;
+
+  /** Accumulated exertion. Absent reads as none, as of `startedAt`. */
+  readonly progress?: NenActivityProgress;
 }
 
 

@@ -60,9 +60,12 @@ import {
   type AuraFundingOutcome,
 } from "../../foundation/aura/funding";
 import {
+  findNenActivityConfigurationIssues,
   findNenActivityDefinitionIssues,
   findNenActivityRuntimeIssues,
   findNenActivity,
+  nenActivityExpiryAt,
+  nenActivityProgressAt,
   orderNenActivities,
 } from "../../foundation/nen/runtime/state";
 import type {
@@ -399,6 +402,9 @@ export function activateNenActivity(
       ...(request.constraints ?? []),
     ],
     stop: null,
+
+    /* A fresh activity has spent none of its endurance. */
+    progress: { exertionSeconds: 0, resolvedAt: request.at },
   };
 
   const stoppedById = new Map(stopped.map((one) => [one.id, one]));
@@ -477,41 +483,18 @@ function findActivationIssues(
     });
   }
 
-  const aura = request.requested?.aura;
-
-  if (!Number.isFinite(aura) || (aura as number) < 0) {
+  if (request.requested === null || typeof request.requested !== "object") {
     errors.push({
       code: "nen.activity.configuration.invalid",
-      message:
-        "A Nen activation must request a finite non-negative amount of Aura.",
+      message: "A Nen activation must state the configuration it asks for.",
       audience: "developer",
-      required: "finite number >= 0",
-      actual: String(aura),
+      required: "NenActivityConfiguration",
+      actual: describeDiagnosticValue(request.requested),
     });
-  }
-
-  const upkeep = request.requested?.upkeepPerRound;
-
-  if (upkeep !== undefined && (!Number.isFinite(upkeep) || upkeep < 0)) {
-    errors.push({
-      code: "nen.activity.configuration.invalid",
-      message: "An upkeep rate must be a finite non-negative number.",
-      audience: "developer",
-      required: "finite number >= 0",
-      actual: String(upkeep),
-    });
-  }
-
-  const duration = request.requested?.durationSeconds;
-
-  if (duration !== undefined && (!Number.isFinite(duration) || duration <= 0)) {
-    errors.push({
-      code: "nen.activity.configuration.invalid",
-      message: "A declared duration must be a finite positive number.",
-      audience: "developer",
-      required: "finite number > 0",
-      actual: String(duration),
-    });
+  } else {
+    errors.push(
+      ...findNenActivityConfigurationIssues(request.requested, "A Nen activation"),
+    );
   }
 
   if (
@@ -650,6 +633,9 @@ function stoppedActivity(
     ...activity,
     condition: stop.resume === null ? "ended" : "suspended",
     endedAt: stop.at,
+
+    /* Exertion stops accruing at the instant the activity does. */
+    progress: nenActivityProgressAt(activity, stop.at),
 
     /*
      * A stopped activity holds no Output. Releasing it costs no Current Aura —
@@ -976,6 +962,16 @@ export function resumeNenActivity(
       unmet: request.funding.unmet,
     },
     stop: null,
+
+    /*
+     * Exertion survives the suspension. Nothing accrued while it was stopped,
+     * and nothing is refunded either — a pause is not a rest that refills
+     * endurance.
+     */
+    progress: {
+      exertionSeconds: nenActivityProgressAt(activity, request.at).exertionSeconds,
+      resolvedAt: request.at,
+    },
   };
 
   return succeed(root, {
@@ -1024,9 +1020,14 @@ export interface NenAdjustRequest {
  * the old commitment first and then discovered the new one could not be funded
  * would have turned a failed redistribution into a cancellation.
  *
- * The identity is preserved. Adjusting Ren from 200 to 180 is the same
+ * The identity is preserved. Adjusting an activity from 200 to 180 is the same
  * activity at a new level, not a stop and a start, so its id, source and start
  * time survive — otherwise anything watching the activity would see it end.
+ *
+ * So is its EXERTION. Whatever was accrued is settled to the adjustment
+ * instant under the OLD load and carried forward; the new load only changes
+ * how fast the rest is spent. A stop-and-restart would have handed back a
+ * fresh duration, which is the loophole this closes.
  */
 export function adjustNenActivity(
   runtime: NenActivityRuntime,
@@ -1070,15 +1071,39 @@ export function adjustNenActivity(
     }]);
   }
 
-  const aura = request.requested?.aura;
-
-  if (!Number.isFinite(aura) || (aura as number) < 0) {
+  if (request.requested === null || typeof request.requested !== "object") {
     return fail(root, [{
       code: "nen.activity.configuration.invalid",
-      message: "An adjustment must request a finite non-negative amount of Aura.",
+      message: "An adjustment must state the configuration it asks for.",
       audience: "developer",
-      required: "finite number >= 0",
-      actual: String(aura),
+      required: "NenActivityConfiguration",
+      actual: describeDiagnosticValue(request.requested),
+    }]);
+  }
+
+  const configurationIssues = findNenActivityConfigurationIssues(
+    request.requested,
+    "An adjustment",
+  );
+
+  if (configurationIssues.length > 0) return fail(root, configurationIssues);
+
+  /*
+   * An activity that ran out before the adjustment instant is not running at
+   * it, whatever the stored condition still says. Advancing to the instant
+   * first is what records the expiry; adjusting past it would resurrect it.
+   */
+  const expiresAt = nenActivityExpiryAt(activity);
+
+  if (expiresAt !== null && expiresAt <= request.at) {
+    return fail(root, [{
+      code: "nen.activity.adjust.expired",
+      message:
+        `"${activity.id}" had already expired before this adjustment.`,
+      audience: "developer",
+      required: `an adjustment before ${expiresAt}`,
+      actual: request.at,
+      resolution: "Advance the runtime to the adjustment instant first.",
     }]);
   }
 
@@ -1097,6 +1122,7 @@ export function adjustNenActivity(
   const adjusted: NenActivity = {
     ...activity,
     requested: request.requested,
+    progress: nenActivityProgressAt(activity, request.at),
     funding: {
       requestId: request.funding.requestId,
       committed: request.funding.funded,
@@ -1158,8 +1184,11 @@ export interface NenAdvanceRequest {
  * declared duration and the constraints and not on how the caller chose to
  * chop up the time. The one thing that could break it is a stop dated at the
  * advance's END rather than at the moment the condition actually became true —
- * so an expiry is dated at `startedAt + duration`, which is the same instant
- * however many advances it took to reach it.
+ * so an expiry is dated at the instant accumulated exertion reached the
+ * declared duration, which is the same instant however many advances it took
+ * to reach it. A surviving activity's progress is left as stored rather than
+ * re-settled at every advance, so a stepped advance accumulates no rounding a
+ * single one would not.
  *
  * Constraint failures are dated at `to`, and honestly so: a constraint is
  * evaluated against facts supplied for this advance, and the engine genuinely
@@ -1261,18 +1290,19 @@ function advanceVerdictFor(
   readonly at: GameTimestamp;
   readonly detail: string;
 } | null {
-  const duration = activity.requested.durationSeconds;
+  /*
+   * Seconds of exertion against a millisecond timeline, converted in ONE
+   * place. Adding the duration straight to `startedAt` used to expire every
+   * timed activity a thousand times too early.
+   */
+  const expiresAt = nenActivityExpiryAt(activity);
 
-  if (duration !== undefined) {
-    const expiresAt = activity.startedAt + duration;
-
-    if (request.to >= expiresAt) {
-      return {
-        cause: "expired",
-        at: expiresAt,
-        detail: "its declared duration ran out",
-      };
-    }
+  if (expiresAt !== null && request.to >= expiresAt) {
+    return {
+      cause: "expired",
+      at: expiresAt,
+      detail: "its declared duration ran out",
+    };
   }
 
   for (const constraint of activity.constraints) {

@@ -122,12 +122,24 @@ export const UNCONTAINED: AuraAccessInput = withPassiveNen({
  * Ten's arithmetic and a literal here would be a third copy of it — one that
  * would keep agreeing with the resolver right up until the formula changed.
  *
- * Ten I with no Ren is the 5% floor, which is what every suite that is not
- * about Ten specifically has always assumed.
+ * Ten I: the 10% coating, and a residual leak of 2R an hour.
  */
 export const WITH_TEN: AuraAccessInput = withPassiveNen({
   awakened: true,
   effectiveTenMastery: 1,
+});
+
+/*
+ * Awakened with PERFECT containment: Ten X, the same coating, and no residual
+ * leak at all.
+ *
+ * For suites about the solver, budgets or upkeep, where the pool should move
+ * only by the thing under test. Ten I's 2R-an-hour residual is real and is
+ * tested where Ten is the subject.
+ */
+export const WITH_PERFECT_TEN: AuraAccessInput = withPassiveNen({
+  awakened: true,
+  effectiveTenMastery: 10,
 });
 
 /** Awakened with Ten at a chosen rank, and optionally a chosen override. */

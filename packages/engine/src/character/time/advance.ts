@@ -3,8 +3,8 @@
  *
  * ONE function applies an interval to a character, and everything
  * time-dependent about them goes through it: Aura recovery, sustained
- * expenditure, upkeep, uncontained leakage, wakefulness, sleep debt and the
- * Fatigue that falls out of the last two.
+ * expenditure, upkeep, Ren's outward flow, leakage, wakefulness, sleep debt and
+ * the Fatigue that falls out of the last two.
  *
  * It exists because those things are not independent. The same eight hours
  * decide how much Aura came back AND how much sleep debt was paid, from one
@@ -29,6 +29,22 @@
  * It does not read the clock and it does not advance it. The interval arrives
  * from the caller, which got it from the clock, which is the only thing that
  * knows what time it is.
+ *
+ *
+ * REN, AT ITS EXACT BOUNDARIES
+ * ----------------------------
+ *
+ * A running Ren is projected — by its own adapter, never by an id compared
+ * here — into a generic outward flow the Aura solver integrates. The solver
+ * stops that flow at the first of its expiry, suppression or an empty reserve
+ * and restores the ordinary access, Ten included, at that same instant; this
+ * coordinator then records the stop on the activity at the instant the solver
+ * reported. So the order at a shared timestamp is always: settle the rates up
+ * to it, stop Ren once, release its Output, reproject access, resolve the
+ * remainder — and a caller never re-runs the rest of the interval by hand.
+ *
+ * Adjusting and cancelling Ren are lifecycle transitions dated at their own
+ * instants, applied between advances, exactly like every other transition.
  */
 
 import type { EngineError } from "../../infrastructure/diagnostics";
@@ -44,8 +60,21 @@ import {
   resolveAuraAccess,
 } from "../foundation/aura/access";
 import { advanceAuraTime } from "../foundation/aura/time";
-import { activeNenActivities } from "../foundation/nen/runtime";
-import { advanceNenActivities } from "../nen/runtime";
+import {
+  activeNenActivities,
+  type NenActivityRuntime,
+  type NenActivityStopCause,
+} from "../foundation/nen/runtime";
+import {
+  activeRenActivity,
+  renOutwardFlow,
+  renStopCauseFor,
+} from "../nen/ren";
+import {
+  advanceNenActivities,
+  stopNenActivity,
+  type NenActivityTransition,
+} from "../nen/runtime";
 import { auraTransitionContext, resolveCharacter } from "../resolution";
 import type { Character } from "../types";
 
@@ -155,23 +184,82 @@ export function advanceCharacterTime(
     character.nen,
   );
 
+  const self = { type: "character", id: character.id } as const;
+
   /*
-   * Whether a Nen activity is running as the interval OPENS.
+   * The runtime, brought up to the interval's opening instant.
    *
-   * Generic, and asked of the runtime's own query rather than of any
-   * activity's definition — `activeNenActivities` filters on a condition the
-   * runtime owns, and nothing here reads a `definitionId`. Ten never appears,
-   * because passive derived state is not an activity.
-   *
-   * THE OPENING FACT ONLY. An activity that expires part-way through does not
-   * change the recovery rate by itself; a caller who wants the rest of the
-   * hour resolved differently says so with an activity change, which is the
-   * same mechanism every other mid-interval change already uses. Deriving it
-   * continuously would need a second clock inside Aura reading Nen state,
-   * which is the thing the whole coordinator exists to prevent.
+   * Anything that expired in the gap since it was last described is stopped at
+   * the instant it expired, and a Ren the character's authored state no
+   * longer permits — unawakened, suppressed, sealed — is stopped at the
+   * opening instant, because none of those facts can change inside an advance.
+   * What remains is exactly what is running as the interval opens.
    */
-  const activeNenUse = input.activeEffects?.nenActivities !== undefined &&
-    activeNenActivities(input.activeEffects.nenActivities).length > 0;
+  let openingActivities: NenActivityRuntime | undefined =
+    input.activeEffects?.nenActivities;
+
+  /*
+   * Every stop this advance makes, in the order it made them, so the returned
+   * transition reports all of them rather than only the last step's.
+   */
+  const runtimeSteps: NenActivityTransition[] = [];
+
+  if (openingActivities !== undefined) {
+    const opened = advanceNenActivities(openingActivities, {
+      to: interval.startedAt,
+      by: self,
+    });
+
+    root.children.push(opened.trace.root);
+
+    if (!opened.success) return fail(opened.errors);
+
+    openingActivities = opened.payload.runtime;
+    runtimeSteps.push(opened.payload);
+
+    const ren = activeRenActivity(openingActivities);
+    const illegal = renStopCauseFor(character.nen);
+
+    if (ren !== undefined && illegal !== null) {
+      const stopped = stopNenActivity(openingActivities, {
+        activityId: ren.id,
+        cause: illegal,
+        at: interval.startedAt,
+        by: self,
+        detail: "Ren is not legal for this character's Nen state",
+      });
+
+      root.children.push(stopped.trace.root);
+
+      if (!stopped.success) return fail(stopped.errors);
+
+      openingActivities = stopped.payload.runtime;
+      runtimeSteps.push(stopped.payload);
+    }
+  }
+
+  /*
+   * The running Ren, as the generic flow Aura integrates. Null when none is.
+   */
+  const flow = openingActivities === undefined
+    ? null
+    : renOutwardFlow(openingActivities);
+
+  /*
+   * Whether some OTHER Nen activity is running as the interval opens.
+   *
+   * Generic, and asked of the runtime's own query — nothing here reads a
+   * `definitionId`. Ten never appears, because passive derived state is not an
+   * activity, and Ren is excluded because its flow already makes the solver
+   * treat every segment it runs across as active Nen, and stop doing so at
+   * the exact instant it stops.
+   *
+   * The opening fact only, for these others: a caller who wants the rest of
+   * the hour resolved differently says so with an activity change.
+   */
+  const activeNenUse = openingActivities !== undefined &&
+    activeNenActivities(openingActivities)
+      .some((activity) => activity.id !== flow?.id);
 
   const aura = advanceAuraTime({
     state: character.aura,
@@ -190,6 +278,7 @@ export function advanceCharacterTime(
     ...(input.activeEffects?.instantaneous === undefined
       ? {}
       : { instantaneous: input.activeEffects.instantaneous }),
+    ...(flow === null ? {} : { outwardFlow: flow }),
   });
 
   root.children.push(aura.trace.root);
@@ -210,7 +299,41 @@ export function advanceCharacterTime(
    */
   let nenActivities: CharacterTimeTransition["nenActivities"];
 
-  if (input.activeEffects?.nenActivities !== undefined) {
+  if (openingActivities !== undefined) {
+    let carried = openingActivities;
+
+    /*
+     * Ren stopped inside the interval for a reason only the solver could see:
+     * the reserve could not pay for it, or suppression closed over it. The
+     * stop is recorded at the solver's instant, once. An expiry is left to the
+     * lifecycle advance below, which dates it at the same instant from the
+     * same function.
+     */
+    const flowStop = aura.payload.outwardFlowStop;
+
+    if (flowStop !== null && flowStop.reason !== "ended") {
+      const cause: NenActivityStopCause = flowStop.reason === "unfunded"
+        ? "unfunded"
+        : "suppressed";
+
+      const stopped = stopNenActivity(carried, {
+        activityId: flowStop.id,
+        cause,
+        at: flowStop.at,
+        by: self,
+        detail: flowStop.reason === "unfunded"
+          ? "the reserve could no longer fund the selected Output"
+          : "suppression closed the nodes",
+      });
+
+      root.children.push(stopped.trace.root);
+
+      if (!stopped.success) return fail(stopped.errors);
+
+      carried = stopped.payload.runtime;
+      runtimeSteps.push(stopped.payload);
+    }
+
     const access = resolveAuraAccess(context.access);
 
     root.children.push(access.trace.root);
@@ -227,10 +350,10 @@ export function advanceCharacterTime(
      * through the exact event that should have ended them.
      */
     const advancedActivities = advanceNenActivities(
-      input.activeEffects.nenActivities,
+      carried,
       {
         to: interval.endedAt,
-        by: { type: "character", id: character.id },
+        by: self,
         deliberateAccess: aura.payload.collapse === null &&
           hasDeliberateAuraAccess(access.payload),
       },
@@ -240,7 +363,17 @@ export function advanceCharacterTime(
 
     if (!advancedActivities.success) return fail(advancedActivities.errors);
 
-    nenActivities = advancedActivities.payload;
+    runtimeSteps.push(advancedActivities.payload);
+
+    nenActivities = {
+      runtime: advancedActivities.payload.runtime,
+      before: null,
+      after: null,
+      consequences: runtimeSteps.flatMap((step) =>
+        step.after === null ? step.consequences : [step.after, ...step.consequences]
+      ),
+      events: runtimeSteps.flatMap((step) => step.events),
+    };
   }
 
   const advanced: Character = {

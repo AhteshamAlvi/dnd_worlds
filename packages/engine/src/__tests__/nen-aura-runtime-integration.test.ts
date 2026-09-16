@@ -325,12 +325,12 @@ describe("authoritative time drives both", () => {
       requested: { aura: 100, durationSeconds: 17 },
     });
 
-    const long = advanceNenActivities(base, { to: 60, by: ACTOR });
+    const long = advanceNenActivities(base, { to: 60_000, by: ACTOR });
 
     let stepped = base;
 
     for (let second = 1; second <= 60; second += 1) {
-      const step = advanceNenActivities(stepped, { to: second, by: ACTOR });
+      const step = advanceNenActivities(stepped, { to: second * 1000, by: ACTOR });
 
       expect(step.success).toBe(true);
       if (!step.success) return;
@@ -341,8 +341,8 @@ describe("authoritative time drives both", () => {
     expect(long.success).toBe(true);
     if (!long.success) return;
 
-    expect(findNenActivity(long.payload.runtime, "guard")!.stop!.at).toBe(17);
-    expect(findNenActivity(stepped, "guard")!.stop!.at).toBe(17);
+    expect(findNenActivity(long.payload.runtime, "guard")!.stop!.at).toBe(17_000);
+    expect(findNenActivity(stepped, "guard")!.stop!.at).toBe(17_000);
   });
 
   it("stops an activity when access is lost, creating no mastery", () => {
@@ -430,7 +430,7 @@ describe("authoritative time drives both", () => {
     )!;
 
     expect(advanced.stop!.cause).toBe("expired");
-    expect(advanced.stop!.at).toBe(60);
+    expect(advanced.stop!.at).toBe(60_000);
 
     /*
      * The character is ready to persist and carries NO activity state. Scene

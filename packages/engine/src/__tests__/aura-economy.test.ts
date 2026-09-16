@@ -11,14 +11,16 @@
  * VIT curve. VIT 20 rounds to 5,000, so R is 2,500.
  *
  *   net/hour = regeneration
- *            - leakage            2R half-open, 60O uncontained, 0 otherwise
+ *            - leakage            2R half-open, 60O uncontained,
+ *                                 2R(10 - m)/9 under Ten m, 0 otherwise
  *            - physicalConsumption  2R while the body is working
  *            - deliberateNenCost
  *            - upkeep
  *            - forcedDrain
  *
- * The three passive outflows are independent and stack. Ten and Zetsu stop
- * LEAKAGE; neither stops the cost of working.
+ * The three passive outflows are independent and stack. Zetsu and Ten X stop
+ * LEAKAGE, and lower Ten ranks shrink it; none of them stops the cost of
+ * working.
  */
 
 import { describe, expect, it } from "vitest";
@@ -52,6 +54,7 @@ import {
   REVERTED,
   UNAWAKENED,
   UNCONTAINED,
+  WITH_PERFECT_TEN,
   WITH_TEN,
   withTen,
 } from "./fixtures/aura";
@@ -81,7 +84,8 @@ const ROWS: readonly Row[] = [
   { label: "unawakened", access: UNAWAKENED },
   { label: "zetsu", access: ZETSU, suppressed: true },
   { label: "unmastered ten", access: UNCONTAINED },
-  { label: "in ten", access: WITH_TEN },
+  { label: "in ten i", access: WITH_TEN },
+  { label: "in ten x", access: WITH_PERFECT_TEN },
 ];
 
 function advance(options: {
@@ -169,28 +173,32 @@ describe("the rate matrix", () => {
     "unawakened": [2, 2 * R, 0],
     "zetsu": [3, 0, 0],
     "unmastered ten": [1, UNCONTAINED_LEAK_PER_HOUR, 0],
-    "in ten": [2, 0, 0],
+    "in ten i": [2, 2 * R, 0],
+    "in ten x": [2, 0, 0],
   };
 
   const physical: Record<string, readonly [number, number, number]> = {
     "unawakened": [1, 2 * R, 2 * R],
     "zetsu": [1, 0, 2 * R],
     "unmastered ten": [1, UNCONTAINED_LEAK_PER_HOUR, 2 * R],
-    "in ten": [1, 0, 2 * R],
+    "in ten i": [1, 2 * R, 2 * R],
+    "in ten x": [1, 0, 2 * R],
   };
 
   const resting: Record<string, readonly [number, number, number]> = {
     "unawakened": [3, 2 * R, 0],
     "zetsu": [4, 0, 0],
     "unmastered ten": [2, UNCONTAINED_LEAK_PER_HOUR, 0],
-    "in ten": [3, 0, 0],
+    "in ten i": [3, 2 * R, 0],
+    "in ten x": [3, 0, 0],
   };
 
   const sleeping: Record<string, readonly [number, number, number]> = {
     "unawakened": [4, 2 * R, 0],
     "zetsu": [4, 0, 0],
     "unmastered ten": [4, UNCONTAINED_LEAK_PER_HOUR, 0],
-    "in ten": [4, 0, 0],
+    "in ten i": [4, 2 * R, 0],
+    "in ten x": [4, 0, 0],
   };
 
   const columns = [
@@ -290,9 +298,12 @@ describe("the rate matrix", () => {
   it("still charges upkeep under active Nen", () => {
     const result = advance({
       access: withTen(1, {
-        kind: "output-access",
-        source: "ren-iii",
+        kind: "explicit",
+        source: "open-output-iii",
         accessFraction: 0.3,
+        deliberateInternalAccess: false,
+        deliberateExternalAccess: true,
+        automaticSurfaceCoating: true,
       }),
       attributes: { ...STRONG, dex: 22 },
       activeNenUse: true,
@@ -354,8 +365,8 @@ describe("the drains stack independently", () => {
    * Containment and suppression stop the LEAK. Neither makes the body stop
    * costing something to work.
    */
-  it("lets Ten and Zetsu stop the leak and not the effort", () => {
-    for (const row of [ROWS[3]!, ROWS[1]!]) {
+  it("lets perfect Ten and Zetsu stop the leak and not the effort", () => {
+    for (const row of [ROWS[4]!, ROWS[1]!]) {
       const result = advance({
         access: row.access,
         ...(row.suppressed === true ? { suppressed: true } : {}),

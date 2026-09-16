@@ -12,17 +12,19 @@
  * WHAT COSTS NOTHING, AND WHY THAT IS NOT AN OVERSIGHT
  * ----------------------------------------------------
  *
- * Baseline Ten has zero net waking expenditure. It occupies Output — a
- * Ten-only character has no free Output at all — but occupying Output is not
- * spending Aura, and a Ten that drained the reserve would make the default
- * state of every awakened character a slow death.
+ * Holding baseline Ten charges no upkeep. It occupies Output — a Ten-only
+ * character has no free Output at all — but occupying Output is not spending
+ * Aura. What Ten does lose is a residual leak that Ten Mastery closes, and that
+ * is involuntary leakage, integrated by the time solver, not upkeep.
  *
  * Unawakened pseudo-Chu likewise costs nothing. It is a conversion of Current
  * Aura, not a withdrawal from it.
  *
- * Elevated Output is the thing that costs. Ren, and every sustained Nen effect
- * above the baseline, will supply a Base Upkeep Rate; none of those rates are
- * decided here, and this file never asks which principle is asking.
+ * Sustained Nen effects supply a Base Upkeep Rate; none of those rates are
+ * decided here, and this file never asks which principle is asking. Ren is not
+ * one of them: its continuous cost is an outward flow at exactly its selected
+ * Output, not scaled by Control, and charged by the time solver as its own
+ * contribution — see flow.ts.
  *
  *
  * RATES ARE QUOTED IN THE UNIT THE MECHANIC THINKS IN

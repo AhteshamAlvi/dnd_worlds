@@ -1,8 +1,8 @@
 /*
  * Advancing time — continuous rates, resolved at their boundaries.
  *
- *   A' = clamp(A + recovery - physical - deliberate - upkeep - leakage
- *              - forcedDrain, 0, A_max)
+ *   A' = clamp(A + recovery - physical - deliberate - upkeep - outwardFlow
+ *              - leakage - forcedDrain, 0, A_max)
  *
  * That equation is still the model. What changed is that it is no longer
  * applied ONCE across whatever span a caller happened to submit. It is applied
@@ -35,11 +35,13 @@
  * ----------------
  *
  *   1  apply everything scheduled at this instant
- *   2  resolve which upkeep is running, and shed what cannot be carried
- *   3  compute the rates that hold from here
- *   4  find the nearest boundary, mathematically
- *   5  integrate to it
- *   6  emit the event, and go again
+ *   2  stop an outward flow whose end, suppression or empty reserve is here,
+ *      and restore the ordinary access at the same instant
+ *   3  resolve which upkeep is running, and shed what cannot be carried
+ *   4  compute the rates that hold from here
+ *   5  find the nearest boundary, mathematically
+ *   6  integrate to it
+ *   7  emit the event, and go again
  *
  * Boundaries are calculated, never searched. The pool reaching zero at
  * 1.4732 hours is solved for, not stepped towards — simulating seconds would
@@ -92,7 +94,7 @@ import {
   type WakefulnessMode,
 } from "../body/endurance";
 
-import { hasDeliberateAuraAccess } from "./access";
+import { hasDeliberateAuraAccess, resolveAuraAccess } from "./access";
 import { resolveAuraTimeline } from "./timeline";
 import type {
   AuraActivityWindow,
@@ -104,6 +106,12 @@ import type {
 import { resolveAuraBudget, type AuraTransitionContext } from "./budget";
 import { deriveAuraControl } from "./control";
 import { derivePhysicalConsumptionPerHour } from "./expenditure";
+import {
+  findAuraOutwardFlowIssues,
+  outwardFlowRatePerHour,
+  type AuraOutwardFlowCommitment,
+  type AuraOutwardFlowStop,
+} from "./flow";
 import {
   deriveHalfOpenLeakage,
   deriveUncontainedLeakage,
@@ -132,6 +140,7 @@ import type {
   AuraRecoveryContribution,
   AuraRecoverySource,
   AuraSuppression,
+  ResolvedAuraAccess,
 } from "./types";
 
 
@@ -215,6 +224,14 @@ export interface AdvanceAuraTimeInput {
 
   /** Actions resolved at their own moments inside the interval. */
   readonly instantaneous?: readonly ScheduledAuraEvent[];
+
+  /*
+   * A deliberate outward flow running as the interval opens.
+   *
+   * Replaces the ordinary surface state for as long as it runs and is charged
+   * at exactly its Output per minute. See flow.ts.
+   */
+  readonly outwardFlow?: AuraOutwardFlowCommitment;
 }
 
 
@@ -227,6 +244,7 @@ export const AURA_TIMELINE_EVENT_KINDS = [
   "upkeep-expired",
   "upkeep-shutdown",
   "collapse",
+  "outward-flow-stopped",
   "sleep-completed",
   "activity-changed",
   "instantaneous",
@@ -282,6 +300,23 @@ export const COLLAPSE_SUPPRESSION_SOURCE = "aura-collapse-forced-zetsu";
 export const SLEEP_COMPLETION_CONTEXT = "completed-sleep";
 
 
+/*
+ * Where involuntary leakage came from, kept apart.
+ *
+ *   halfOpen     pores that were never opened, or closed again by reversion
+ *   uncontained  open nodes with nothing holding them — the only one of the
+ *                three that can collapse a character
+ *   contained    the residual escaping a containment such as Ten
+ */
+export interface AuraLeakageBySource {
+  readonly halfOpen: number;
+  readonly uncontained: number;
+  readonly contained: number;
+}
+
+export type AuraLeakageSource = "half-open" | "uncontained" | "contained";
+
+
 /** One stretch of the interval over which every rate was constant. */
 export interface AuraTimeSegment {
   readonly startedAt: GameTimestamp;
@@ -294,8 +329,18 @@ export interface AuraTimeSegment {
   readonly recoveryRatePerHour: number;
   readonly physicalRatePerHour: number;
   readonly upkeepRatePerHour: number;
+  readonly outwardFlowRatePerHour: number;
   readonly leakageRatePerHour: number;
   readonly netRatePerHour: number;
+
+  /** Which leak `leakageRatePerHour` is, or null when nothing leaked. */
+  readonly leakageSource: AuraLeakageSource | null;
+
+  /** The outward flow running across this segment, by id. */
+  readonly outwardFlow: string | null;
+
+  /** The access state in force across this segment. */
+  readonly accessState: ResolvedAuraAccess["state"];
 
   readonly mode: WakefulnessMode;
   readonly activeUpkeep: readonly string[];
@@ -323,6 +368,18 @@ export interface AuraTimeTransition extends AuraStateTransition {
   /** Present when an uncontained reserve reached zero. */
   readonly collapse: AuraCollapse | null;
 
+  /** Involuntary leakage, by where it came from. Sums to `balance.leakage`. */
+  readonly leakageBySource: AuraLeakageBySource;
+
+  /*
+   * How and when a supplied outward flow stopped inside the interval. Null
+   * when none was supplied, or when it was still running at the end.
+   */
+  readonly outwardFlowStop: AuraOutwardFlowStop | null;
+
+  /** The access in force at the interval's end. */
+  readonly endingAccess: ResolvedAuraAccess;
+
   /*
    * Drain the empty pool could not pay for.
    *
@@ -342,7 +399,9 @@ export interface AuraTimeTransition extends AuraStateTransition {
 interface SegmentRates {
   readonly recovery: number;
   readonly physical: number;
+  readonly outwardFlow: number;
   readonly leakage: number;
+  readonly leakageSource: AuraLeakageSource | null;
 }
 
 
@@ -385,7 +444,7 @@ export function advanceAuraTime(
     id: "aura.time.advance",
     label: "Advance Aura and wakefulness",
     formula:
-      "per segment: next = clamp(current + (recovery - physical - upkeep - leakage) * dt, 0, maximum)",
+      "per segment: next = clamp(current + (recovery - physical - upkeep - outwardFlow - leakage) * dt, 0, maximum)",
 
     decisionId: "time.continuous-resolution.boundaries",
     inputs: {
@@ -444,7 +503,7 @@ export function advanceAuraTime(
 
   if (!budget.success) return fail(budget.errors);
 
-  const { pool, access } = budget.payload;
+  const { pool, access: ordinaryAccess } = budget.payload;
 
   /*
    * The WHOLE timeline, judged before anything is calculated.
@@ -467,12 +526,85 @@ export function advanceAuraTime(
         ? {}
         : { instantaneous: input.instantaneous }),
     },
-    access,
+    ordinaryAccess,
   );
 
   root.children.push(timeline.trace.root);
 
   if (!timeline.success) return fail(timeline.errors);
+
+  /*
+   * The outward flow, and the access it replaces the ordinary state with.
+   *
+   * Resolved through the SAME access resolver as everything else, by laying
+   * a generic override over the character's own input — so a flow on an
+   * unawakened character is refused by the rule that refuses any override on
+   * one, and the coating the flow sets aside is set aside by the override's
+   * own resolution rather than by a branch here.
+   */
+  const flow = input.outwardFlow;
+  let flowAccess: ResolvedAuraAccess | null = null;
+
+  /*
+   * An outward-flow override on the character's own input would open Output
+   * the solver has no rate for — a Ren charged nothing. Across an interval a
+   * flow must arrive as a commitment, which is what meters it.
+   */
+  if (context.access.override?.kind === "outward-flow") {
+    return fail([{
+      code: "aura.outward_flow.unmetered",
+      message:
+        "An outward flow must be supplied as a commitment to be advanced through time, not as a bare access override.",
+      audience: "developer",
+      required: "input.outwardFlow",
+      actual: "an outward-flow access override",
+      resolution:
+        "Pass the flow as `outwardFlow`; the solver lays the override itself for exactly as long as the flow runs.",
+    }]);
+  }
+
+  if (flow !== undefined) {
+    const flowIssues = findAuraOutwardFlowIssues(
+      flow,
+      interval,
+      budget.payload.physiologicalOutput,
+    );
+
+    if (flowIssues.length > 0) {
+      return fail(flowIssues as NonEmptyArray<EngineError>);
+    }
+
+    /*
+     * An override is already a statement about what the nodes are doing. A
+     * flow on top of one — most obviously a suppression — is two descriptions
+     * of the same instant that cannot both be true.
+     */
+    if (context.access.override !== undefined) {
+      return fail([{
+        code: "aura.outward_flow.access.contradictory",
+        message:
+          "An outward flow cannot run over an access state that is already overridden.",
+        audience: "developer",
+        required: "no access override while a flow is supplied",
+        actual: context.access.override.kind,
+      }]);
+    }
+
+    const resolvedFlowAccess = resolveAuraAccess({
+      ...context.access,
+      override: {
+        kind: "outward-flow",
+        source: flow.source,
+        accessFraction: flow.output / budget.payload.physiologicalOutput,
+      },
+    });
+
+    root.children.push(resolvedFlowAccess.trace.root);
+
+    if (!resolvedFlowAccess.success) return fail(resolvedFlowAccess.errors);
+
+    flowAccess = resolvedFlowAccess.payload;
+  }
 
   const control = deriveAuraControl(context.attributes.dex);
 
@@ -490,28 +622,19 @@ export function advanceAuraTime(
     derivePhysicalConsumptionPerHour(regenerationPerHour);
 
   /*
-   * Whether this character bleeds AT ALL, from their resolved access.
-   *
-   * Kept apart from whether they are bleeding right now, because suppression
-   * interrupts leakage without curing what causes it. Collapsing them into one
-   * flag is what had a character in Zetsu still losing Aura through nodes the
-   * Zetsu had closed — and, worse, still able to collapse from it.
-   */
-  const uncontainedByDefault = access.uncontained;
-
-  /*
    * From the Output Capacity the budget already derived, not from Maximum
    * Aura. Uncontained nodes bleed at the rate they can pass, and the budget is
    * the one place that capacity is computed — re-deriving it here would be a
    * second producer of a figure that also caps every deliberate expenditure.
    *
    * Constant across the interval, so interval invariance is unaffected: the
-   * rate does not depend on the reserve, only on the body.
+   * rate does not depend on the reserve, only on the body. Whether it APPLIES
+   * is a per-instant question, asked below.
    */
-  const leakageRatePerHour = uncontainedByDefault
-    ? deriveUncontainedLeakage(budget.payload.physiologicalOutput, pool.current)
-      .ratePerHour
-    : 0;
+  const uncontainedRatePerHour = deriveUncontainedLeakage(
+    budget.payload.physiologicalOutput,
+    pool.current,
+  ).ratePerHour;
 
   /*
    * What a body that never opened its nodes loses, which is a different thing.
@@ -521,9 +644,13 @@ export function advanceAuraTime(
    * leakage.ts. Constant across the interval for the same reason the other
    * rate is.
    */
-  const halfOpenRatePerHour = access.nodeState === "half-open"
+  const halfOpenRatePerHour = ordinaryAccess.nodeState === "half-open"
     ? deriveHalfOpenLeakage(regenerationPerHour).ratePerHour
     : 0;
+
+  const flowRatePerHour = flow === undefined
+    ? 0
+    : outwardFlowRatePerHour(flow.output);
 
   const commitments = timeline.payload.upkeep;
 
@@ -557,6 +684,21 @@ export function advanceAuraTime(
    * the instant it lifts if the character is still fundamentally uncontained.
    */
   let collapse: AuraCollapse | null = null;
+
+  /*
+   * Whether the supplied flow is still running, and how it stopped.
+   *
+   * A flow only ever stops within an interval; it never starts. Starting one is
+   * a lifecycle transition dated at its own instant, which the caller applies
+   * between advances.
+   */
+  let flowRunning = flow !== undefined;
+  let flowStop: AuraOutwardFlowStop | null = null;
+
+  let outwardFlowTotal = 0;
+  let halfOpenLeakageTotal = 0;
+  let uncontainedLeakageTotal = 0;
+  let containedLeakageTotal = 0;
 
   /*
    * Whether this interval has already paid the completed-sleep benefit.
@@ -689,6 +831,15 @@ export function advanceAuraTime(
   const suppressedNow = (): boolean => suppressionNow() !== undefined;
 
   /*
+   * The access in force right now: the flow's while it runs, the character's
+   * own before it starts and after it stops. Every per-instant question below
+   * reads this, so the moment a flow stops is the moment Ten — or whatever the
+   * ordinary state is — takes over again.
+   */
+  const accessNow = (): ResolvedAuraAccess =>
+    flowRunning && flowAccess !== null ? flowAccess : ordinaryAccess;
+
+  /*
    * Which of the four states the character's Aura is in, right now.
    *
    * The ONE place the class is decided, and it reads only generic facts:
@@ -698,9 +849,9 @@ export function advanceAuraTime(
    */
   const accessClassNow = (): AuraRecoveryAccessClass => {
     if (suppressedNow()) return "suppressed";
-    if (access.nodeState === "half-open") return "half-open";
+    if (accessNow().nodeState === "half-open") return "half-open";
 
-    return uncontainedByDefault ? "uncontained" : "contained";
+    return accessNow().uncontained ? "uncontained" : "contained";
   };
 
   /*
@@ -717,8 +868,15 @@ export function advanceAuraTime(
   const exertingNow = (): boolean =>
     collapse === null && sustainedLoadPerHour(activity) > 0;
 
+  /*
+   * Whether the character is bleeding through open, uncontained nodes.
+   *
+   * Kept apart from whether they bleed by DEFAULT, because suppression
+   * interrupts leakage without curing what causes it — and a flow replaces it
+   * for as long as the flow runs.
+   */
   const leakageNow = (): boolean =>
-    uncontainedByDefault && collapse === null && !suppressedNow();
+    accessNow().uncontained && collapse === null && !suppressedNow();
 
   /*
    * Whether this segment counts towards a completed sleep.
@@ -753,13 +911,35 @@ export function advanceAuraTime(
       mode: activity.mode,
       accessClass: accessClassNow(),
       exerting: exertingNow(),
-      activeNenUse: activity.activeNenUse === true && !suppressedNow(),
+      /* A running flow IS active Nen, whatever else the activity says. */
+      activeNenUse:
+        (activity.activeNenUse === true || flowRunning) && !suppressedNow(),
       ...(suppression === undefined ? {} : { suppression }),
     });
   };
 
   const ratesFor = (): SegmentRates => {
     const resolvedRecovery = recoveryNow();
+
+    /*
+     * The three leaks are alternatives, never a sum: nodes are half-open or
+     * open, and open nodes are either uncontained or held by a containment
+     * that leaks its own residual. Suppression stops all three, and so does a
+     * collapse; a running flow replaces the open-node ones.
+     */
+    const containedRate =
+      regenerationPerHour * accessNow().containedLeakageRegenerationMultiple;
+
+    const leak: { rate: number; source: AuraLeakageSource | null } =
+      suppressedNow()
+        ? { rate: 0, source: null }
+        : leakageNow()
+          ? { rate: uncontainedRatePerHour, source: "uncontained" }
+          : accessNow().nodeState === "half-open"
+            ? { rate: halfOpenRatePerHour, source: "half-open" }
+            : collapse === null && containedRate > 0
+              ? { rate: containedRate, source: "contained" }
+              : { rate: 0, source: null };
 
     return {
       /*
@@ -771,16 +951,10 @@ export function advanceAuraTime(
 
       physical: exertingNow() ? physicalRatePerHour : 0,
 
-      /*
-       * The two leaks are alternatives, never a sum: a character's nodes are
-       * either half-open or open, and the half-open rate is zero for anybody
-       * whose are open. Suppression stops both, and so does a collapse.
-       */
-      leakage: suppressedNow()
-        ? 0
-        : leakageNow()
-          ? leakageRatePerHour
-          : halfOpenRatePerHour,
+      outwardFlow: flowRunning ? flowRatePerHour : 0,
+
+      leakage: leak.rate,
+      leakageSource: leak.rate > 0 ? leak.source : null,
     };
   };
 
@@ -790,7 +964,18 @@ export function advanceAuraTime(
    * it drops the Ren at the moment it closes.
    */
   const deliberatePermittedNow = (): boolean =>
-    hasDeliberateAuraAccess(access) && !suppressedNow();
+    hasDeliberateAuraAccess(accessNow()) && !suppressedNow();
+
+  const stopFlow = (
+    at: GameTimestamp,
+    reason: AuraOutwardFlowStop["reason"],
+  ): void => {
+    if (!flowRunning || flow === undefined) return;
+
+    flowRunning = false;
+    flowStop = { id: flow.id, source: flow.source, reason, at };
+    emit(at, "outward-flow-stopped", flow.id);
+  };
 
   const shutDown = (
     entry: RunningUpkeep,
@@ -963,6 +1148,28 @@ export function advanceAuraTime(
     }
 
     /*
+     * The flow's own end, and suppression closing over it.
+     *
+     * Before collapse and before the loop can end, so a flow ending exactly on
+     * the interval boundary is reported in this interval rather than in
+     * whichever one the caller happens to advance next — and so the access a
+     * collapse check reads is already the ordinary one.
+     *
+     * The declared end wins a tie with an empty reserve: both are true at the
+     * same instant, and one stop is reported rather than two.
+     */
+    if (flowRunning && flow !== undefined) {
+      if (
+        flow.endsAt !== undefined &&
+        flow.endsAt <= at + BOUNDARY_EPSILON_MS
+      ) {
+        stopFlow(at, "ended");
+      } else if (suppressedNow()) {
+        stopFlow(at, "access-lost");
+      }
+    }
+
+    /*
      * Collapse, judged before the loop can end.
      *
      * An uncontained reserve that hits zero exactly ON the interval boundary
@@ -987,7 +1194,27 @@ export function advanceAuraTime(
 
     if (at >= interval.endedAt - BOUNDARY_EPSILON_MS) break;
 
-    /* 2. Access, then affordability. */
+    /*
+     * 2. A flow the reserve can no longer pay for.
+     *
+     * At zero, with the flow still in force, the balance cannot be positive —
+     * a flow is active Nen, so nothing is being recovered — and the flow is
+     * what stops. It goes BEFORE any upkeep is shed, because it is the drain
+     * that also suppresses recovery, and the ordinary access it hands back may
+     * make the rest sustainable.
+     */
+    if (flowRunning && isEmpty(current)) {
+      const withFlow = ratesFor();
+
+      if (
+        withFlow.recovery - withFlow.physical - withFlow.outwardFlow -
+          withFlow.leakage < 0
+      ) {
+        stopFlow(at, "unfunded");
+      }
+    }
+
+    /* 3. Access, then affordability. */
     let running = runningAt(at);
 
     if (!deliberatePermittedNow()) {
@@ -1014,7 +1241,8 @@ export function advanceAuraTime(
 
       while (
         running.length > 0 &&
-        rates.recovery - rates.physical - upkeepRate - rates.leakage < 0
+        rates.recovery - rates.physical - rates.outwardFlow - upkeepRate -
+          rates.leakage < 0
       ) {
         const dropped = running[0]!;
 
@@ -1029,8 +1257,12 @@ export function advanceAuraTime(
       0,
     );
 
-    /* 3. The nearest boundary. */
+    /* 4. The nearest boundary. */
     const boundaries: number[] = [interval.endedAt];
+
+    if (flowRunning && flow?.endsAt !== undefined && flow.endsAt > at) {
+      boundaries.push(flow.endsAt);
+    }
 
     if (instantIndex < instants.length) {
       boundaries.push(instants[instantIndex]!.at);
@@ -1052,7 +1284,9 @@ export function advanceAuraTime(
       }
     }
 
-    const net = rates.recovery - rates.physical - upkeepRate - rates.leakage;
+    const net =
+      rates.recovery - rates.physical - rates.outwardFlow - upkeepRate -
+      rates.leakage;
 
     if (net > 0 && current < maximumAura) {
       boundaries.push(
@@ -1086,7 +1320,7 @@ export function advanceAuraTime(
 
     const hours = (endsAt - at) / GAME_MILLISECONDS_PER_HOUR;
 
-    /* 4. Integrate. */
+    /* 5. Integrate. */
     const startingAura = current;
 
     const unclamped = current + net * hours;
@@ -1099,7 +1333,16 @@ export function advanceAuraTime(
     potentialRecovery += segmentPotential;
     physicalTotal += rates.physical * hours;
     upkeepTotal += upkeepRate * hours;
+    outwardFlowTotal += rates.outwardFlow * hours;
     leakageTotal += rates.leakage * hours;
+
+    if (rates.leakageSource === "half-open") {
+      halfOpenLeakageTotal += rates.leakage * hours;
+    } else if (rates.leakageSource === "uncontained") {
+      uncontainedLeakageTotal += rates.leakage * hours;
+    } else if (rates.leakageSource === "contained") {
+      containedLeakageTotal += rates.leakage * hours;
+    }
 
     discardedRecovery += segmentDiscarded;
     unmetDrain += Math.max(0, -unclamped);
@@ -1199,15 +1442,19 @@ export function advanceAuraTime(
       recoveryRatePerHour: rates.recovery,
       physicalRatePerHour: rates.physical,
       upkeepRatePerHour: upkeepRate,
+      outwardFlowRatePerHour: rates.outwardFlow,
       leakageRatePerHour: rates.leakage,
       netRatePerHour: net,
+      leakageSource: rates.leakageSource,
+      outwardFlow: flowRunning && flow !== undefined ? flow.id : null,
+      accessState: accessNow().state,
       mode: activity.mode,
       activeUpkeep: running.map((entry) => entry.commitment.id),
     });
 
     at = endsAt;
 
-    /* 5. Expiries and pool boundaries, reported where they happened. */
+    /* 6. Expiries and pool boundaries, reported where they happened. */
     for (const commitment of sheddingOrder) {
       if (shutdownIds.has(commitment.id)) continue;
       if (commitment.endsAt === undefined) continue;
@@ -1252,6 +1499,7 @@ export function advanceAuraTime(
     physical: physicalTotal,
     deliberate: deliberateTotal,
     upkeep: upkeepTotal,
+    outwardFlow: outwardFlowTotal,
     leakage: leakageTotal,
     forcedDrain: forcedDrainTotal,
 
@@ -1263,7 +1511,7 @@ export function advanceAuraTime(
      */
     net:
       recoveryUsed - physicalTotal - deliberateTotal - upkeepTotal -
-      leakageTotal - forcedDrainTotal,
+      outwardFlowTotal - leakageTotal - forcedDrainTotal,
   };
 
   const previousFatigue = deriveFatigue({
@@ -1272,11 +1520,29 @@ export function advanceAuraTime(
     depletionFraction: pool.depletionFraction,
   });
 
+  /*
+   * Settled against the access in force at the END. A flow still running has
+   * opened more Output than the ordinary state would; one that stopped has
+   * handed the ordinary state back. Reconciling allocations against the wrong
+   * one would shed or keep commitments the character's actual state does not
+   * justify.
+   */
+  const endingAccessInput = flowRunning && flow !== undefined
+    ? {
+      ...context.access,
+      override: {
+        kind: "outward-flow" as const,
+        source: flow.source,
+        accessFraction: flow.output / budget.payload.physiologicalOutput,
+      },
+    }
+    : context.access;
+
   const settled = settleAuraTransition(
     state,
     current,
     state.allocations,
-    context,
+    { ...context, access: endingAccessInput },
     root,
     [],
     balance,
@@ -1345,6 +1611,7 @@ export function advanceAuraTime(
     physical: physicalTotal,
     deliberate: deliberateTotal,
     upkeep: upkeepTotal,
+    outwardFlow: outwardFlowTotal,
     leakage: leakageTotal,
     forcedDrain: forcedDrainTotal,
     unmetDrain,
@@ -1354,6 +1621,9 @@ export function advanceAuraTime(
     fatigue: fatigue.level,
     upkeepShutdowns: shutdowns.length,
     collapsed: collapse !== null,
+    outwardFlowStopped: flowStop === null
+      ? "no"
+      : `${(flowStop as AuraOutwardFlowStop).reason}@${(flowStop as AuraOutwardFlowStop).at}`,
   };
 
   return {
@@ -1374,6 +1644,13 @@ export function advanceAuraTime(
       upkeepCharges,
       upkeepShutdowns: shutdowns,
       collapse,
+      leakageBySource: {
+        halfOpen: halfOpenLeakageTotal,
+        uncontained: uncontainedLeakageTotal,
+        contained: containedLeakageTotal,
+      },
+      outwardFlowStop: flowStop,
+      endingAccess: accessNow(),
       unmetDrain,
       events,
       segments,

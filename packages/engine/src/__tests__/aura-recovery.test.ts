@@ -596,14 +596,18 @@ describe("which states actually leak", () => {
     expect(uncontained(WITH_TEN)).toBe(false);
   });
 
-  /* Opening Output does not teach containment. */
-  it("keeps a Ten-less character leaking even under Ren", () => {
+  /*
+   * A deliberate outward flow is what leaves the body while it runs, so it
+   * replaces the open-node bleed rather than adding to it — for a character
+   * with no Ten as much as for one with Ten.
+   */
+  it("stops the open-node bleed while an outward flow runs, Ten or no Ten", () => {
     expect(uncontained({
       ...UNCONTAINED,
-      override: { kind: "output-access", source: "ren-iii", accessFraction: 0.3 },
-    })).toBe(true);
+      override: { kind: "outward-flow", source: "ren-iii", accessFraction: 0.3 },
+    })).toBe(false);
 
-    expect(uncontained(withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 }))).toBe(false);
+    expect(uncontained(withTen(1, { kind: "outward-flow", source: "ren-iii", accessFraction: 0.3 }))).toBe(false);
   });
 
   /*

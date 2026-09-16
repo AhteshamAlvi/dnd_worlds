@@ -29,27 +29,28 @@
  * nothing.
  *
  * AWAKENED WITH TEN. Effective Ten Mastery I or higher. Ten is the DEFAULT
- * state — it is on unless something later turns it off, not something the
- * character has to declare — and it coats the whole body's surface with the
- * share of physiological Output TEN resolved, which arrives on the access
- * input alongside the rank. Internal Density is still zero.
+ * state — it is on unless something turns it off, not something the character
+ * has to declare — and it coats the whole body's surface with the share of
+ * physiological Output TEN resolved, leaking the residual TEN resolved, both of
+ * which arrive on the access input alongside the rank. Internal Density is
+ * still zero.
  *
  * Effective Ten Mastery is consulted for exactly one thing: whether Ten is
- * available. Ten's mastery scaling, containment efficiency, minimum coating
- * and density limits live in nen/principles/ten.ts and are not read here — the
- * COATING that file resolves is handed down, never recomputed.
+ * available. The coating fraction and the residual leak live in
+ * nen/principles/ten.ts and are not read here — the coating that file resolves
+ * is handed down, never recomputed.
  *
  *
- * WHAT OVERRIDES WILL DO
- * ----------------------
+ * WHAT OVERRIDES DO
+ * -----------------
  *
- * None of these are implemented here; the shapes exist so that when they are,
- * they plug in rather than being special-cased:
+ * Each is generic; the principle that supplies one is not named here:
  *
- *   Ren I-X   output-access, 10% through 100% of physiological Output
- *   Zetsu     suppressed, closing ordinary Output and Ten
- *   Chu       internal-access, disabling Ten and permitting internal placement
- *   anything  explicit, with every field stated outright
+ *   outward-flow     opens a share of Output and pours it outward, replacing
+ *                    the coating and every leak while it runs (Ren)
+ *   suppressed       closes ordinary Output and the coating (Zetsu)
+ *   internal-access  trades the coating for internal placement (Chu)
+ *   explicit         every field stated outright
  */
 
 import type { EngineError } from "../../../infrastructure/diagnostics";
@@ -76,16 +77,11 @@ const TEN_AVAILABLE_FROM = 1;
 
 
 /*
- * There is deliberately no TEN_COATING constant here any more.
+ * There is deliberately no TEN_COATING constant here.
  *
- * There used to be — a flat 5% of physiological Output, stated in this file
- * because it was the only number the default state needed. It was wrong at
- * every rank above I and it was wrong for anybody running Ren, because the
- * coating is the GREATER of Ten's Mastery share of Ren-accessible Output and
- * that 5% floor, and neither term is knowable without Ten's own table. A
- * constant here could only ever have been one of them.
- *
- * So the coating arrives resolved, on the access input. See ten.ts.
+ * The coating fraction and the leak that escapes it are both Ten's numbers,
+ * and a constant here would be a second copy of one of them, free to drift.
+ * Both arrive resolved, on the access input. See ten.ts.
  */
 
 /*
@@ -182,6 +178,21 @@ function coatingIssues(
     }];
   }
 
+  const leak = coating.leakageRegenerationMultiple;
+
+  if (typeof leak !== "number" || !Number.isFinite(leak) || leak < 0) {
+    return [{
+      code: "aura.access.ten_coating.leakage.invalid",
+      message:
+        "A coating's residual leak must be a finite non-negative multiple of Regeneration.",
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: typeof leak === "number" && Number.isFinite(leak)
+        ? leak
+        : String(leak),
+    }];
+  }
+
   return [];
 }
 
@@ -234,38 +245,41 @@ function reinforcementIssues(
  * compile error here instead of a silent fall-through to whatever the last
  * case happened to be.
  *
- * `coating` is Ten's resolved coating, or null when Ten is not available. It
- * is passed ALONGSIDE `tenAvailable` rather than inferred from it, because an
- * override is free to refuse a coating from a character who has Ten — and
- * "no coating" and "not containing" are the two conditions this file exists to
- * keep apart.
+ * `coating` is Ten's resolved coating, or null when Ten is not available. Each
+ * override decides for itself whether it keeps it, because an override is
+ * free to refuse a coating from a character who has Ten — and "no coating" and
+ * "not containing" are the two conditions this file exists to keep apart.
  */
 function resolveOverride(
   override: AuraAccessOverride,
-  tenAvailable: boolean,
   coating: AutomaticSurfaceCoating | null,
 ): Omit<ResolvedAuraAccess, "state" | "awakened" | "nodeState"> {
   const base = {
     source: override.source,
     passiveInternalReinforcement: null,
+    containedLeakageRegenerationMultiple: 0,
+    outwardFlow: false,
   } as const;
 
   switch (override.kind) {
-    /* Ren and anything else that opens a share of Output. Ten keeps running. */
-    case "output-access":
+    /*
+     * Ren and anything else that opens Output and pours it outward.
+     *
+     * The coating is REPLACED, not kept: the two are alternative operating
+     * states, and a character never wears both. Nothing leaks either — not
+     * the coating's residual, and not the open-node bleed of a character with
+     * no containment — because the deliberate flow is what is leaving the
+     * body, and the time solver charges exactly that.
+     */
+    case "outward-flow":
       return {
         ...base,
         accessFraction: override.accessFraction,
         deliberateInternalAccess: false,
         deliberateExternalAccess: true,
-        automaticSurfaceCoating: coating,
-
-        /*
-         * Opening Output does not teach containment. A character forcing Ren
-         * without Ten is projecting hard through nodes nothing is holding
-         * shut, and is still bleeding.
-         */
-        uncontained: !tenAvailable,
+        automaticSurfaceCoating: null,
+        outwardFlow: true,
+        uncontained: false,
       };
 
     /* Zetsu and anything else that closes ordinary Output and Ten. */
@@ -298,7 +312,10 @@ function resolveOverride(
         uncontained: false,
       };
 
-    case "explicit":
+    case "explicit": {
+      const applied = override.automaticSurfaceCoating ? coating : null;
+      const uncontained = override.uncontained ?? false;
+
       return {
         ...base,
         accessFraction: override.accessFraction,
@@ -313,11 +330,16 @@ function resolveOverride(
          * Ten gets none — the override can waive Ten's coating, and cannot
          * conjure one for somebody who has nothing to coat with.
          */
-        automaticSurfaceCoating: override.automaticSurfaceCoating
-          ? coating
-          : null,
-        uncontained: override.uncontained ?? false,
+        automaticSurfaceCoating: applied,
+
+        /* A coating brings its containment's residual leak with it. */
+        containedLeakageRegenerationMultiple:
+          applied === null || uncontained
+            ? 0
+            : applied.leakageRegenerationMultiple,
+        uncontained,
       };
+    }
   }
 }
 
@@ -442,7 +464,7 @@ export function resolveAuraAccess(
       required: "a tenCoating supplied by nen/principles/ten.ts",
       actual: `effective Ten Mastery ${mastery} with no coating`,
       resolution:
-        "Build the access input through the Nen projection rather than by hand; it resolves Ten's coating from the rank and from whatever share of Output Ren has opened.",
+        "Build the access input through the Nen projection rather than by hand; it resolves Ten's coating and residual leak from the rank.",
     });
   }
 
@@ -505,7 +527,7 @@ export function resolveAuraAccess(
         state: "override",
         awakened: true,
         nodeState: "open",
-        ...resolveOverride(input.override, tenAvailable, coating),
+        ...resolveOverride(input.override, coating),
       };
     }
 
@@ -547,6 +569,10 @@ export function resolveAuraAccess(
          */
         passiveInternalReinforcement: reverted ? null : reinforcement,
 
+        /* Half-open pores leak at their own rate, which is not containment's. */
+        containedLeakageRegenerationMultiple: 0,
+        outwardFlow: false,
+
         /*
          * Half-open nodes leak, but that leakage is what the pseudo-Chu is
          * made of rather than a loss. An ordinary person does not bleed out
@@ -568,6 +594,8 @@ export function resolveAuraAccess(
         deliberateExternalAccess: true,
         automaticSurfaceCoating: null,
         passiveInternalReinforcement: null,
+        containedLeakageRegenerationMultiple: 0,
+        outwardFlow: false,
 
         /*
          * The one baseline state that bleeds. Open nodes, nothing containing
@@ -586,9 +614,9 @@ export function resolveAuraAccess(
       /*
        * Exactly as much Output as the coating needs, and no more.
        *
-       * Baseline Ten opens nothing on its own — Ren is what reaches further
-       * into physiological Output — so the reachable share IS the coating's
-       * share. Stating it any other way would leave the budget with a
+       * Baseline Ten opens nothing on its own — deliberately opening Output is
+       * a different state that replaces Ten — so the reachable share IS the
+       * coating's share. Stating it any other way would leave the budget with a
        * deliberate allowance a character running nothing but Ten has not
        * earned, or with less Output than their own coating commits.
        */
@@ -598,7 +626,13 @@ export function resolveAuraAccess(
       automaticSurfaceCoating: coating,
       passiveInternalReinforcement: null,
 
-      /* Containment is the whole of what Ten does. */
+      /*
+       * Containment is the whole of what Ten does, and how COMPLETELY it
+       * contains is the whole of what Ten Mastery buys.
+       */
+      containedLeakageRegenerationMultiple:
+        coating.leakageRegenerationMultiple,
+      outwardFlow: false,
       uncontained: false,
     };
   })();
@@ -612,6 +646,9 @@ export function resolveAuraAccess(
     automaticSurfaceCoating: payload.automaticSurfaceCoating !== null,
     passiveInternalReinforcement:
       payload.passiveInternalReinforcement !== null,
+    containedLeakageRegenerationMultiple:
+      payload.containedLeakageRegenerationMultiple,
+    outwardFlow: payload.outwardFlow,
     uncontained: payload.uncontained,
   };
 

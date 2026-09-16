@@ -35,7 +35,7 @@ import type { WakefulnessMode } from "../body/endurance/types";
  * Where Aura physically sits.
  *
  *   internal  through the body's volume — reinforcement, Chū, Ryū inward
- *   surface   across the body's skin    — Ten, Ren, Ken
+ *   surface   across the body's skin    — Ten, Ken
  *
  * Not a mode the character is "in". A character running whole-body Ten while
  * reinforcing one fist has Aura in both placements at once, which is why
@@ -230,11 +230,10 @@ export interface AuraOutputLimit {
 /*
  * The character's currently derived Aura Output capacities.
  *
- * `accessibleMaximum` is deliberately NOT called renAccessibleMaximum. Ren is
- * one principle that opens access; Zetsu closes it, and the default Ten state
+ * `accessibleMaximum` is deliberately not named after Ren. Ren is one
+ * principle that opens access; Zetsu closes it, and the default Ten state
  * opens what its own coating draws. Naming the general field after one
- * principle made every other route look like a special case. Ren's own resolver keeps
- * `renAccessibleMaximum` for the figure that IS specifically Ren's.
+ * principle made every other route look like a special case.
  *
  * All three figures are ZERO for an unawakened character, whose nodes cannot
  * project Aura at all. What such a body does receive is passive internal
@@ -357,12 +356,13 @@ export interface PassiveInternalReinforcement {
 
 /*
  * A whole-body surface coating the character's default state applies without
- * being asked for.
+ * being asked for, and the containment that holds it.
  *
  * Ten is the one that exists today. It is described as a FRACTION OF
- * PHYSIOLOGICAL OUTPUT rather than as a principle so the resolver can apply it
- * without knowing what produced it — and it is RESOLVED ELSEWHERE and handed
- * in, so that nothing here is a second opinion about how much Aura Ten holds.
+ * PHYSIOLOGICAL OUTPUT and a MULTIPLE OF REGENERATION rather than as a
+ * principle, so the resolver can apply both without knowing what produced
+ * them — and both are RESOLVED ELSEWHERE and handed in, so that nothing here
+ * is a second opinion about how much Aura Ten holds or how much escapes it.
  * nen/principles/ten.ts owns that arithmetic; this is its result.
  */
 export interface AutomaticSurfaceCoating {
@@ -372,14 +372,14 @@ export interface AutomaticSurfaceCoating {
   readonly outputFraction: number;
 
   /*
-   * The two terms the fraction above is the greater of, carried for the trace.
+   * What still escapes the containment, as a multiple of the character's
+   * Aura Regeneration per hour.
    *
-   * Provenance rather than input: a sheet that can say a coating came from the
-   * body's floor rather than from the character's containment skill is worth
-   * the two extra fields, and nothing branches on either of them.
+   * CONTAINED leakage: it drains the reserve like any other rate and can empty
+   * it, but it is not open nodes bleeding out and never collapses anybody.
+   * Zero is perfect containment.
    */
-  readonly masteryFraction: number;
-  readonly minimumFraction: number;
+  readonly leakageRegenerationMultiple: number;
 }
 
 
@@ -391,18 +391,28 @@ export interface AutomaticSurfaceCoating {
  * this file, in view of every other access route, rather than a new string
  * appearing at a call site.
  *
- *   output-access    Ren and anything else that opens a share of Output
+ *   outward-flow     Ren and anything else that opens a share of Output and
+ *                    pours it outward, replacing the coating while it runs
  *   suppressed       Zetsu and anything else that closes Output and Ten
  *   internal-access  Chu and anything else that permits internal placement
  *   explicit         everything else, with every field stated outright
  *
  * `source` is a provenance label. Nothing branches on it.
  */
-export interface AuraOutputAccessOverride {
-  readonly kind: "output-access";
+/*
+ * Output deliberately opened and emitted outward, continuously.
+ *
+ * REPLACES the automatic coating rather than adding to it: there is no stable
+ * coating and no contained leak while it runs, and there is no uncontrolled
+ * leak either — the deliberate flow is what leaves the body. What that flow
+ * costs over time is the time solver's business, and the rate is the Output
+ * the fraction below opens.
+ */
+export interface AuraOutwardFlowAccessOverride {
+  readonly kind: "outward-flow";
   readonly source: string;
 
-  /** 0 through 1. Ren I-X supply 0.10 through 1.00. */
+  /** 0 through 1: the selected Output as a share of physiological Output. */
   readonly accessFraction: number;
 }
 
@@ -430,7 +440,7 @@ export interface AuraExplicitAccessOverride {
 }
 
 export type AuraAccessOverride =
-  | AuraOutputAccessOverride
+  | AuraOutwardFlowAccessOverride
   | AuraSuppressedAccessOverride
   | AuraInternalAccessOverride
   | AuraExplicitAccessOverride;
@@ -440,15 +450,13 @@ export type AuraAccessOverride =
  * What the Aura resolver is told about access, before it resolves any of it.
  *
  * `effectiveTenMastery` is mastery AFTER seals, and it is consulted for one
- * thing only: whether Ten is available at all. Ten's own scaling, containment
- * efficiency, minimum coating and density limits are Ten's file's business,
- * not this one's — a resolver that read the rank for anything else would be a
- * second implementation of Ten. What that scaling PRODUCES arrives separately,
- * as `tenCoating`, already resolved.
+ * thing only: whether Ten is available at all. Ten's coating and its residual
+ * leak are Ten's file's business, not this one's — a resolver that read the
+ * rank for anything else would be a second implementation of Ten. What Ten
+ * PRODUCES arrives separately, as `tenCoating`, already resolved.
  *
  * Ten has no upkeep to be anybody's business. It is passive, automatic and
- * indefinite: it commits Output and costs neither Current Aura nor any share
- * of regeneration.
+ * indefinite: holding its coating commits Output and costs no Current Aura.
  */
 export interface AuraAccessInput {
   readonly awakened: boolean;
@@ -478,9 +486,9 @@ export interface AuraAccessInput {
    * REQUIRED whenever the rank above makes Ten available, and refused as a
    * caller bug when it is missing — because the alternative is a fallback
    * fraction living here, which is exactly the second implementation of Ten
-   * the rank field's own note rules out. Ten's coating depends on Ten's
-   * containment table, on the 5% floor and on how much Output Ren has opened,
-   * and none of those three are things this file is allowed to know.
+   * the rank field's own note rules out. Ten's coating fraction and its
+   * residual leak are Ten's numbers, and neither is something this file is
+   * allowed to know.
    *
    * Absent for everybody Ten does not reach: the unawakened, the reverted, and
    * the awakened character whose effective Ten is 0.
@@ -536,6 +544,24 @@ export interface ResolvedAuraAccess {
 
   readonly automaticSurfaceCoating: AutomaticSurfaceCoating | null;
   readonly passiveInternalReinforcement: PassiveInternalReinforcement | null;
+
+  /*
+   * What escapes a contained state anyway, as a multiple of Regeneration.
+   *
+   * Zero for every state that is not holding a coating. Generic: the resolver
+   * copies it off whatever coating is in force and never asks which principle
+   * supplied it.
+   */
+  readonly containedLeakageRegenerationMultiple: number;
+
+  /*
+   * Output is being deliberately opened and emitted outward.
+   *
+   * Active Nen by definition, so natural recovery stops while it is true. Its
+   * rate — the opened share of physiological Output, per minute — is charged
+   * by the time solver, which is the one place a flow is integrated.
+   */
+  readonly outwardFlow: boolean;
 
   /*
    * Aura is escaping and reinforcing nothing.
@@ -905,10 +931,10 @@ export interface AuraRecoveryContribution {
 /*
  * Every way Current Aura moved, kept apart.
  *
- *   A' = clamp(A + recovery - physical - deliberate - upkeep - leakage
- *              - forcedDrain, 0, A_max)
+ *   A' = clamp(A + recovery - physical - deliberate - upkeep - outwardFlow
+ *              - leakage - forcedDrain, 0, A_max)
  *
- * One equation, six named drains and one gain, and the reason they are not
+ * One equation, seven named drains and one gain, and the reason they are not
  * collapsed into a single delta is that they answer different questions. "You
  * lost 40 Aura" is unactionable; "you lost 25 to a maximal swing, 12 to Ren
  * upkeep and 3 to leakage" tells a player what to stop doing. Every transition
@@ -932,7 +958,16 @@ export interface AuraBalance {
   /** Holding maintained effects open. Scaled by Control. */
   readonly upkeep: number;
 
-  /** Involuntary loss from an uncontained state. Unscaled. */
+  /*
+   * Output deliberately emitted outward, at exactly the opened rate. Unscaled:
+   * the flow IS the Output, so there is nothing for Control to discount.
+   */
+  readonly outwardFlow: number;
+
+  /*
+   * Involuntary loss: half-open pores, uncontained nodes, or the residual leak
+   * of a containment. Unscaled. The time transition reports the three apart.
+   */
   readonly leakage: number;
 
   /** Everything taken from the character by something else. Unscaled. */
@@ -950,6 +985,7 @@ export function emptyAuraBalance(): AuraBalance {
     physical: 0,
     deliberate: 0,
     upkeep: 0,
+    outwardFlow: 0,
     leakage: 0,
     forcedDrain: 0,
     net: 0,

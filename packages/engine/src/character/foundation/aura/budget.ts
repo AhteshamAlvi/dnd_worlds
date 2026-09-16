@@ -19,12 +19,14 @@
  * Output Ten resolved; letting stored allocations spend that share again would
  * double it.
  *
- * That share is Ten's answer and arrives on the access state already resolved
- * — the greater of Ten's Mastery share of Ren-accessible Output and a 5% floor
- * — so nothing here decides how much a coating is worth. This file multiplies
- * a fraction by a physiological maximum and caps the result; it does not know
- * which of Ten's two terms produced the fraction, and must not grow a rule of
- * its own about it.
+ * That share is Ten's answer and arrives on the access state already resolved,
+ * so nothing here decides how much a coating is worth. This file multiplies a
+ * fraction by a physiological maximum and caps the result; it does not know
+ * what produced the fraction, and must not grow a rule of its own about it.
+ *
+ * A deliberate outward flow is not a coating and never appears here: the
+ * access override that carries one sets the coating aside, so a character
+ * running Ren holds no automatic commitment at all.
  *
  * Passive unawakened pseudo-Chu is the exception and does not appear here at
  * all. It is drawn from Current Aura through half-open nodes and never passes
@@ -149,10 +151,9 @@ export interface AuraBudget {
  *
  * The usable-Output cap on the coating normally changes nothing — usable
  * Output already accounts for the same two limits — but it keeps the coating
- * inside the budget if an access override ever opens a smaller fraction than
- * the coating draws. Ten's 5% floor is exactly such a case: a character whose
- * Ren has opened less than 5% of their Output still INTENDS the floor, and
- * gets as much of it as their Output and reserve can actually fund.
+ * inside the budget if an explicit override ever opens a smaller fraction than
+ * the coating draws. The character still INTENDS the whole coating, and gets
+ * as much of it as their Output and reserve can actually fund.
  *
  * Capping is not charging. The coating is an Output commitment and Current
  * Aura is read only as a ceiling on it — allocating Ten deducts nothing, which

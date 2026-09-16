@@ -45,7 +45,19 @@ import {
 const T0 = 1_000_000_000;
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;
 
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten I with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow, and these suites are about budgets and upkeep, not Ren.
+ */
+const OPEN_III: AuraAccessInput = withTen(1, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 const ZETSU: AuraAccessInput = withTen(1, { kind: "suppressed", source: "zetsu" });
 
@@ -68,7 +80,7 @@ const CLOSED = [
 
 const OPEN = [
   ["with Ten", WITH_TEN],
-  ["under Ren", REN_III],
+  ["with Output opened", OPEN_III],
   ["uncontained", UNCONTAINED],
 ] as const;
 
@@ -193,7 +205,7 @@ describe("deliberate expenditure", () => {
   it("still charges the physical half of a mixed action when access is open", () => {
     const result = spendActionAura(
       STATE,
-      context(REN_III),
+      context(OPEN_III),
       { additionalPhysicalCostRate: 0.001, baseAuraCost: 100 },
     );
 
@@ -228,7 +240,7 @@ describe("deliberate upkeep", () => {
   });
 
   it("is paid when access is open", () => {
-    const resolved = resolveAuraAccess(REN_III);
+    const resolved = resolveAuraAccess(OPEN_III);
 
     expect(resolved.success).toBe(true);
     if (!resolved.success) return;
@@ -267,7 +279,7 @@ describe("deliberate upkeep", () => {
     const result = advanceAuraTime({
       state: STATE,
       wakefulness: restedWakefulness(),
-      context: context(REN_III),
+      context: context(OPEN_III),
       interval: gameTimeIntervalOf(T0, hoursToDuration(4)),
       activity: { mode: "ordinary-waking" },
       activityChanges: [{
@@ -299,7 +311,7 @@ describe("deliberate upkeep", () => {
     const result = advanceAuraTime({
       state: STATE,
       wakefulness: restedWakefulness(),
-      context: context(REN_III),
+      context: context(OPEN_III),
       interval: gameTimeIntervalOf(T0, hoursToDuration(4)),
       activity: { mode: "ordinary-waking" },
       activityChanges: [{
@@ -330,7 +342,7 @@ describe("leakage against access", () => {
    * nodes with nothing holding them shut lose the whole Output Capacity every
    * minute. Suppression and containment both stop the bleeding entirely.
    */
-  it("applies only to the awakened character who never learned Ten", () => {
+  it("bleeds through open nodes only for the awakened character who never learned Ten", () => {
     const leaked = ([...CLOSED, ...OPEN] as const).map(([name, access]) => {
       const result = advanceAuraTime({
         state: STATE,
@@ -342,16 +354,20 @@ describe("leakage against access", () => {
 
       if (!result.success) throw new Error(`${name} failed to resolve`);
 
-      return [name, result.payload.balance.leakage > 0] as const;
+      const { halfOpen, uncontained, contained } =
+        result.payload.leakageBySource;
+
+      return [name, { halfOpen: halfOpen > 0, uncontained: uncontained > 0, contained: contained > 0 }] as const;
     });
 
     expect(leaked).toEqual([
       /* Half-open pores, which leak — and recover exactly as much. */
-      ["unawakened", true],
-      ["suppressed", false],
-      ["with Ten", false],
-      ["under Ren", false],
-      ["uncontained", true],
+      ["unawakened", { halfOpen: true, uncontained: false, contained: false }],
+      ["suppressed", { halfOpen: false, uncontained: false, contained: false }],
+      /* Ten I's residual: contained leakage, which never collapses anybody. */
+      ["with Ten", { halfOpen: false, uncontained: false, contained: true }],
+      ["with Output opened", { halfOpen: false, uncontained: false, contained: true }],
+      ["uncontained", { halfOpen: false, uncontained: true, contained: false }],
     ]);
   });
 

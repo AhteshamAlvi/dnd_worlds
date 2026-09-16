@@ -32,19 +32,19 @@
  * TEN'S COATING COMES THROUGH HERE TOO
  * ------------------------------------
  *
- * Aura is told HOW MUCH Ten holds against the body, not asked to work it out.
- * The coating is the greater of Ten's Mastery share of Ren-accessible Output
- * and a 5% floor, and every term in that belongs to nen/principles/ten.ts — so
- * a fraction stated on the Aura side could only ever have been a second,
- * quietly diverging Ten. Aura had exactly that for a while: a flat 5% that was
- * right at Mastery I with no Ren and wrong everywhere else.
+ * Aura is told HOW MUCH Ten holds against the body and HOW MUCH still escapes
+ * it, not asked to work either out. The coating is a fixed share of
+ * Physiological Output and the residual leak falls with Ten Mastery, and both
+ * belong to nen/principles/ten.ts — so a figure stated on the Aura side could
+ * only ever be a second, quietly diverging Ten.
  *
- * This is the only file that imports a principle to build an access input, and
- * it imports only the principles that are not something a character DOES. Ten
- * is passive, automatic and free; pseudo-Chū is not even learned. Both are
- * properties of the state, which is what makes resolving them here the same
- * kind of act as reading effective Mastery. The active resolvers — Ren, Zetsu,
- * Hatsu — stay out, and an architecture test holds that line.
+ * This is the only file that imports a PASSIVE principle to build an access
+ * input. Ten is passive, automatic and free; pseudo-Chū is not even learned.
+ * Both are properties of the state, which is what makes resolving them here
+ * the same kind of act as reading effective Mastery. Nothing a character DOES
+ * comes through here: Ren, which replaces Ten while it runs, is projected by
+ * its own adapter (character/nen/ren.ts) as a generic outward-flow override,
+ * and an architecture test holds both lines.
  *
  * Pseudo-Chū comes through the same door for the same reason: its 20% is
  * nen/principles/chu.ts's, Aura owned a copy of it, and the copy was attached
@@ -54,10 +54,7 @@
  */
 
 import { NO_MASTERY } from "../capabilities/mastery";
-import type {
-  AuraAccessInput,
-  AuraAccessOverride,
-} from "../foundation/aura/types";
+import type { AuraAccessInput } from "../foundation/aura/types";
 import {
   deriveEffectiveNenMastery,
   hasEverAwakenedNen,
@@ -84,53 +81,14 @@ export type UncoatedAuraAccessInput =
   Omit<AuraAccessInput, "tenCoating" | "passiveInternalReinforcement">;
 
 
-/*
- * How much of physiological Output an override has opened, as Ten reads it.
- *
- * Ten's Mastery term is a share of what REN made reachable, so the question
- * this answers is "how much Output is there to contain", not "which principle
- * is running". Exhaustive over the union so that a new override kind has to
- * decide its own answer here rather than inheriting somebody else's.
- */
-function renAccessFraction(
-  override: AuraAccessOverride | undefined,
-): number {
-  if (override === undefined) return 0;
-
-  switch (override.kind) {
-    /* Ren, and anything else that opens a share of Output for Ten to hold. */
-    case "output-access":
-      return override.accessFraction;
-
-    /*
-     * An explicit override states its own reachable share, and states
-     * separately whether a coating applies at all. When it asks for one, that
-     * share is what Ten has to work with.
-     */
-    case "explicit":
-      return override.accessFraction;
-
-    /*
-     * Neither of these wears a coating — Chū has put the Aura inside the body
-     * and suppression has shut the nodes — so there is nothing for a Mastery
-     * share to be a share OF. Aura drops the coating for both regardless; zero
-     * here means the two files agree rather than merely coincide.
-     */
-    case "internal-access":
-    case "suppressed":
-      return 0;
-  }
-}
-
-
 /**
  * Attach the coating Ten resolves for this state.
  *
- * The single projection from the Ten principle into Aura's vocabulary. It is
- * separate from nenAuraAccessInput below so that a caller building an access
- * input for a character who is DOING something — a Ren at a chosen Output,
- * once that lands — resolves Ten's coating against that Output through the
- * same function, instead of hand-assembling a coating beside it.
+ * The single projection from the Ten principle into Aura's vocabulary. The
+ * coating depends on the rank alone — never on an override — so a character
+ * doing something that replaces Ten still carries the SAME resolved Ten on
+ * their input, and Aura's override resolution is what sets it aside for as
+ * long as the replacement runs.
  *
  * Leaves the input untouched when Ten does not reach the character at all: the
  * unawakened, the reverted, and the awakened character whose effective Ten is
@@ -141,10 +99,7 @@ export function withTenCoating(
 ): AuraAccessInput {
   if (!input.awakened) return input;
 
-  const coating = tenSurfaceCoating(
-    input.effectiveTenMastery,
-    renAccessFraction(input.override),
-  );
+  const coating = tenSurfaceCoating(input.effectiveTenMastery);
 
   return coating === null ? input : { ...input, tenCoating: coating };
 }
@@ -185,10 +140,7 @@ export function withPassiveNen(
   input: UncoatedAuraAccessInput,
 ): AuraAccessInput {
   const coating = input.awakened
-    ? tenSurfaceCoating(
-      input.effectiveTenMastery,
-      renAccessFraction(input.override),
-    )
+    ? tenSurfaceCoating(input.effectiveTenMastery)
     : null;
 
   const reinforcement = pseudoChuReinforcement(

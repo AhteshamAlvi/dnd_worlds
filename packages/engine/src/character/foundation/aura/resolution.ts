@@ -32,9 +32,10 @@
  *                   of Maximum Aura, and when they differ it is not.
  *
  *   ACCESSIBLE      what the character can currently reach.  Physiological x
- *                   the access fraction. Ren raises the fraction; Zetsu closes
- *                   it; Ten's default state opens exactly as much as its own
- *                   coating draws. None of them touch
+ *                   the access fraction. Ren's outward flow raises the
+ *                   fraction and replaces the coating; Zetsu closes it; Ten's
+ *                   default state opens exactly as much as its own coating
+ *                   draws. None of them touch
  *                   the physiological figure — a character in Zetsu has not
  *                   become physically weaker.
  *

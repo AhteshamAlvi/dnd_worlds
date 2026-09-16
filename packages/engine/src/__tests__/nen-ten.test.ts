@@ -1,82 +1,68 @@
 /*
- * Ten: the coating a body wears for free, and the one place its size is decided.
+ * Ten: a fixed coating, and a leak that Mastery closes.
  *
- * Ten used to be two mechanics that disagreed. ten.ts computed a "containment
- * limit" straight off Physiological Output and modelled imperfect Ten as
- * eating a share of Aura Regeneration Capacity; aura/access.ts separately
- * applied a flat 5% coating at every rank. Nothing called the first, so the
- * second was the real rule — which made Ten X indistinguishable from Ten I,
- * and made a principle that costs nothing cost regeneration on paper.
+ * Ten used to scale its coating by Ten Mastery and by how much Output Ren had
+ * opened, with a 5% floor underneath, and to leak nothing at every rank. That
+ * coupled two principles that are alternatives rather than layers, and gave
+ * Mastery a job — coating strength — it no longer has. The rule now is two
+ * formulas, neither of which reads Ren:
  *
- * One formula replaced both:
+ *   intendedCoating       = P * 0.10                at every rank
+ *   leakagePerHour(m)     = 2R * (10 - m) / 9       2R at I, 0 at X
  *
- *   intendedCoating = max(
- *     physiologicalOutput * renAccessFraction * containmentFraction,
- *     physiologicalOutput * 0.05,
- *   )
+ * Ten keeps the CONTAINED recovery column and reports its residual leak as a
+ * separate contribution, so Ten I breaks even on an ordinary day and Ten X
+ * gains 2R.
  *
- * The two terms are doing different jobs and both are needed. The Mastery term
- * is what containment skill makes of the Output REN has opened — so Ten and
- * Ren multiply, and neither is worth anything alone. The floor is what a body
- * does regardless of skill, and it is the entire answer for the character who
- * has learned Ten and no Ren, who would otherwise be wearing nothing.
+ * Working numbers, standard human at CON 20 / VIT 20:
  *
- * Working numbers used below, standard human:
- *
- *   CON 20        Physiological Output 10,000, Maximum Aura 50,000
- *   whole body    60.00 L    16,900 cm2  (1.69 m2)
- *   one Arm        2.37 L     1,183 cm2  (0.1183 m2)
+ *   Physiological Output P   10,000
+ *   Maximum Aura             50,000
+ *   Regeneration unit R       2,500
+ *   whole body surface       16,900 cm2 (1.69 m2)
  */
 
 import { describe, expect, it } from "vitest";
 
 import { advanceAuraTime } from "../character/foundation/aura/time";
+import type { AuraTimeActivity } from "../character/foundation/aura/time";
 import { resolveAuraBudget } from "../character/foundation/aura/budget";
 import { resolveAuraProfile } from "../character/foundation/aura/resolution";
-import { restedWakefulness } from "../character/foundation/body/endurance";
 import {
-  gameTimeIntervalOf,
-  hoursToDuration,
-} from "../time/interval";
+  deriveFatigue,
+  restedWakefulness,
+} from "../character/foundation/body/endurance";
+import { gameTimeIntervalOf, hoursToDuration } from "../time/interval";
 import * as ten from "../character/foundation/nen/principles/ten";
 import {
-  resolveTenCoating,
+  deriveTenLeakageRegenerationMultiple,
+  resolveTenContainment,
+  TEN_COATING_OUTPUT_FRACTION,
   TEN_MASTERY_PROFILES,
-  TEN_MINIMUM_COATING_OUTPUT_FRACTION,
   tenSurfaceCoating,
 } from "../character/foundation/nen/principles/ten";
-import type { AuraAccessInput } from "../character/foundation/aura/types";
 import type { MasteryRank } from "../character/capabilities/mastery";
 
-import { auraContext, UNCONTAINED, withTen } from "./fixtures/aura";
+import { auraContext, withTen } from "./fixtures/aura";
 
-/* CON 20 / VIT 20: Physiological Output 10,000, Maximum Aura 50,000. */
 const STRONG = { con: 20, vit: 20 } as const;
+const P = 10_000;
+const R = 2500;
+const MAX = 50_000;
+const T0 = 1_000_000_000;
 
 const RANKS: readonly MasteryRank[] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
 
-/** Ten at `mastery`, with Ren opening `renFraction` of physiological Output. */
-function tenWithRen(
-  mastery: number,
-  renFraction: number,
-): AuraAccessInput {
-  return withTen(mastery, {
-    kind: "output-access",
-    source: `ren:${renFraction}`,
-    accessFraction: renFraction,
-  });
-}
-
-function coating(input: {
+function containment(input: {
   physiologicalOutput: number;
-  renAccessFraction: number;
+  regenerationPerHour: number;
   mastery: number;
 }) {
-  const result = resolveTenCoating(input);
+  const result = resolveTenContainment(input);
 
   if (!result.success) {
     throw new Error(
-      "Expected the Ten coating to resolve: " +
+      "Expected Ten to resolve: " +
       result.errors.map((error) => error.code).join(", "),
     );
   }
@@ -90,498 +76,480 @@ function errorCodes(
   return result.success ? [] : (result.errors ?? []).map((error) => error.code);
 }
 
-/** The whole-body coating a character actually ends up wearing. */
-function automaticAura(options: {
-  readonly access: AuraAccessInput;
+function advance(options: {
+  readonly rank: number;
   readonly current?: number;
-}): number {
-  const result = resolveAuraBudget(
-    options.current ?? 40_000,
-    auraContext({ attributes: STRONG, access: options.access }),
-  );
+  readonly hours?: number;
+  readonly activity?: AuraTimeActivity;
+  readonly startedAt?: number;
+  readonly wakefulness?: ReturnType<typeof restedWakefulness>;
+}) {
+  const result = advanceAuraTime({
+    state: { current: options.current ?? 25_000, allocations: [] },
+    wakefulness: options.wakefulness ?? restedWakefulness(),
+    context: auraContext({ attributes: STRONG, access: withTen(options.rank) }),
+    interval: gameTimeIntervalOf(
+      options.startedAt ?? T0,
+      hoursToDuration(options.hours ?? 1),
+    ),
+    activity: options.activity ?? { mode: "ordinary-waking" },
+  });
 
   if (!result.success) {
     throw new Error(
-      "Expected the budget to resolve: " +
+      "Expected the interval to resolve: " +
       result.errors.map((error) => error.code).join(", "),
     );
   }
 
-  return result.payload.automaticAura;
+  return result.payload;
 }
 
 
-/*
- * The ticket's four worked cases, at the Physiological Output it states.
- *
- * They are the whole shape of the rule in four lines: the floor wins when
- * neither Ten nor Ren is developed, either one developed alone doubles it, and
- * both developed together is the only way to reach the body's whole Output.
- */
-describe("the coating at Physiological Output 20", () => {
-  const cases: readonly (readonly [string, number, number, number])[] = [
-    ["Ten I + Ren I", 1, 0.1, 1],
-    ["Ten X + Ren I", 10, 0.1, 2],
-    ["Ten I + Ren X", 1, 1.0, 2],
-    ["Ten X + Ren X", 10, 1.0, 20],
-  ];
+/* ── 10.1 Pure behaviour ────────────────────────────────────────────────── */
 
-  for (const [label, mastery, renAccessFraction, expected] of cases) {
-    it(`resolves ${expected} Aura for ${label}`, () => {
-      expect(coating({
-        physiologicalOutput: 20,
-        renAccessFraction,
-        mastery,
-      }).intendedCoating).toBeCloseTo(expected, 10);
-    });
-  }
+describe("the coating is 10% of Physiological Output at every rank", () => {
+  it("resolves exactly 0.10P for every rank and several P, fractional included", () => {
+    for (const physiologicalOutput of [0, 3.3, 20, 137.5, 10_000]) {
+      for (const mastery of RANKS) {
+        const resolved = containment({
+          physiologicalOutput,
+          regenerationPerHour: R,
+          mastery,
+        });
 
-  it("takes the floor for Ten I + Ren I and the Mastery share for the rest", () => {
-    const sourceOf = (mastery: number, renAccessFraction: number) =>
-      coating({ physiologicalOutput: 20, renAccessFraction, mastery }).source;
-
-    expect(sourceOf(1, 0.1)).toBe("minimum");
-    expect(sourceOf(10, 0.1)).toBe("mastery");
-    expect(sourceOf(1, 1.0)).toBe("mastery");
-    expect(sourceOf(10, 1.0)).toBe("mastery");
+        expect([physiologicalOutput, mastery, resolved.intendedCoating])
+          .toEqual([physiologicalOutput, mastery, physiologicalOutput * 0.1]);
+      }
+    }
   });
 
-  it("reports both terms, not only the one that won", () => {
-    const resolved = coating({
-      physiologicalOutput: 20,
-      renAccessFraction: 0.1,
-      mastery: 1,
-    });
+  /*
+   * The old floor was 5%, and at P = 20 a novice wore 1. The fixed rule gives
+   * 2 — which a restored floor, a mastery scale or a Ren share would all move.
+   */
+  it("has no 5% floor and no mastery scaling", () => {
+    expect(TEN_COATING_OUTPUT_FRACTION).toBe(0.1);
 
-    expect(resolved.renAccessibleOutput).toBeCloseTo(2, 10);
-    expect(resolved.masteryCoating).toBeCloseTo(0.2, 10);
-    expect(resolved.minimumCoating).toBeCloseTo(1, 10);
-    expect(resolved.intendedCoating).toBeCloseTo(1, 10);
+    const atOne = containment({ physiologicalOutput: 20, regenerationPerHour: R, mastery: 1 });
+    const atTen = containment({ physiologicalOutput: 20, regenerationPerHour: R, mastery: 10 });
+
+    expect(atOne.intendedCoating).toBe(2);
+    expect(atTen.intendedCoating).toBe(2);
+  });
+
+  /*
+   * Ren is not an input. A caller still passing the old field gets exactly the
+   * same answer, because nothing reads it.
+   */
+  it("is identical however much Ren a stale caller claims", () => {
+    const base = containment({ physiologicalOutput: P, regenerationPerHour: R, mastery: 4 });
+
+    for (const renAccessFraction of [0, 0.1, 0.5, 1]) {
+      const stale = resolveTenContainment({
+        physiologicalOutput: P,
+        regenerationPerHour: R,
+        mastery: 4,
+        renAccessFraction,
+      } as Parameters<typeof resolveTenContainment>[0]);
+
+      expect(stale.success && stale.payload).toEqual(base);
+    }
+
+    for (const mastery of RANKS) {
+      expect(tenSurfaceCoating(mastery)!.outputFraction).toBe(0.1);
+    }
   });
 });
 
 
-describe("Ten without Ren", () => {
+describe("Mastery closes the residual leak", () => {
+  it("leaks exactly 2R at Mastery I and nothing at Mastery X", () => {
+    expect(containment({ physiologicalOutput: P, regenerationPerHour: R, mastery: 1 }).leakagePerHour)
+      .toBe(2 * R);
+    expect(containment({ physiologicalOutput: P, regenerationPerHour: R, mastery: 10 }).leakagePerHour)
+      .toBe(0);
+  });
+
   /*
-   * The case the floor exists for. Ten's Mastery term is a share of what Ren
-   * opened, and a character with no Ren has had nothing opened — so at every
-   * rank from I to X the Mastery term is zero and the floor is the whole
-   * coating. Perfect containment of nothing is still nothing.
+   * Exact rationals, not the printed coefficients. 16/9 and 2/9 are what the
+   * formula produces; 1.78 and 0.22 are what a rules page shows.
    */
-  it("resolves the 5% floor at every rank", () => {
-    expect(TEN_MINIMUM_COATING_OUTPUT_FRACTION).toBe(0.05);
+  it("uses the exact rational multiple at every intermediate rank", () => {
+    expect(deriveTenLeakageRegenerationMultiple(2)).toBe(16 / 9);
+    expect(deriveTenLeakageRegenerationMultiple(9)).toBe(2 / 9);
+    expect(deriveTenLeakageRegenerationMultiple(2)).not.toBe(1.78);
+    expect(deriveTenLeakageRegenerationMultiple(9)).not.toBe(0.22);
 
     for (const mastery of RANKS) {
-      const resolved = coating({
-        physiologicalOutput: 20,
-        renAccessFraction: 0,
+      expect([mastery, deriveTenLeakageRegenerationMultiple(mastery)])
+        .toEqual([mastery, (2 * (10 - mastery)) / 9]);
+
+      const resolved = containment({
+        physiologicalOutput: P,
+        regenerationPerHour: R,
         mastery,
       });
 
-      expect([mastery, resolved.intendedCoating, resolved.source])
-        .toEqual([mastery, 1, "minimum"]);
+      expect(resolved.leakagePerHour)
+        .toBeCloseTo((2 * R * (10 - mastery)) / 9, 9);
     }
+
+    expect(containment({ physiologicalOutput: P, regenerationPerHour: R, mastery: 2 }).leakagePerHour)
+      .toBeCloseTo((16 * R) / 9, 9);
   });
 
-  it("wears that floor on an actual body", () => {
+  it("carries the same multiple into the projection Aura consumes", () => {
     for (const mastery of RANKS) {
-      expect([mastery, automaticAura({ access: withTen(mastery) })])
-        .toEqual([mastery, 500]);
+      expect(tenSurfaceCoating(mastery)).toEqual({
+        source: "baseline-ten",
+        outputFraction: 0.1,
+        leakageRegenerationMultiple: deriveTenLeakageRegenerationMultiple(mastery),
+      });
     }
   });
 });
 
 
-describe("Ten and Ren multiply", () => {
-  /*
-   * The same four cases again, through the whole Aura pipeline rather than
-   * through the formula alone — because the formula being right is worth
-   * nothing if the budget is still applying a rule of its own.
-   */
-  it("scales the resolved coating by both", () => {
-    expect(automaticAura({ access: tenWithRen(1, 0.1) })).toBeCloseTo(500, 10);
-    expect(automaticAura({ access: tenWithRen(10, 0.1) })).toBeCloseTo(1000, 10);
-    expect(automaticAura({ access: tenWithRen(1, 1.0) })).toBeCloseTo(1000, 10);
-    expect(automaticAura({ access: tenWithRen(10, 1.0) })).toBeCloseTo(10_000, 10);
+describe("bad input is refused rather than absorbed", () => {
+  const cases: readonly (readonly [string, Parameters<typeof resolveTenContainment>[0], string])[] = [
+    ["a negative Physiological Output", { physiologicalOutput: -1, regenerationPerHour: R, mastery: 3 }, "nen.ten.physiological_output.invalid"],
+    ["a NaN Physiological Output", { physiologicalOutput: Number.NaN, regenerationPerHour: R, mastery: 3 }, "nen.ten.physiological_output.invalid"],
+    ["an infinite Physiological Output", { physiologicalOutput: Number.POSITIVE_INFINITY, regenerationPerHour: R, mastery: 3 }, "nen.ten.physiological_output.invalid"],
+    ["a negative R", { physiologicalOutput: P, regenerationPerHour: -1, mastery: 3 }, "nen.ten.regeneration.invalid"],
+    ["a NaN R", { physiologicalOutput: P, regenerationPerHour: Number.NaN, mastery: 3 }, "nen.ten.regeneration.invalid"],
+    ["Mastery XI", { physiologicalOutput: P, regenerationPerHour: R, mastery: 11 }, "nen.ten.mastery.invalid"],
+    ["an unlearned Mastery", { physiologicalOutput: P, regenerationPerHour: R, mastery: 0 }, "nen.ten.mastery.invalid"],
+    ["a fractional Mastery", { physiologicalOutput: P, regenerationPerHour: R, mastery: 1.5 }, "nen.ten.mastery.invalid"],
+    ["a NaN Mastery", { physiologicalOutput: P, regenerationPerHour: R, mastery: Number.NaN }, "nen.ten.mastery.invalid"],
+  ];
+
+  for (const [label, input, code] of cases) {
+    it(`refuses ${label}`, () => {
+      const result = resolveTenContainment(input);
+
+      expect(result.success).toBe(false);
+      expect(errorCodes(result)).toContain(code);
+      expect(result.trace.root.output).toBe(false);
+    });
+  }
+
+  it("projects no coating for a character Ten does not reach", () => {
+    expect(tenSurfaceCoating(0)).toBeNull();
+    expect(tenSurfaceCoating(11)).toBeNull();
+    expect(tenSurfaceCoating(1.5)).toBeNull();
+    expect(tenSurfaceCoating(Number.NaN)).toBeNull();
   });
 
-  /*
-   * Ten's containment fraction is a share of REN-accessible Output, so every
-   * rank's own table entry has to survive the trip. Checked against the
-   * profile rather than restated, so a changed table fails here.
-   */
-  it("holds exactly its rank's share of what Ren opened", () => {
-    for (const mastery of RANKS) {
-      const share = TEN_MASTERY_PROFILES[mastery].containmentFraction;
+  it("traces the arithmetic when it succeeds", () => {
+    const result = resolveTenContainment({ physiologicalOutput: 20, regenerationPerHour: 9, mastery: 1 });
 
-      expect([mastery, automaticAura({ access: tenWithRen(mastery, 1.0) })])
-        .toEqual([mastery, 10_000 * share]);
+    expect(result.trace.root.id).toBe("nen.ten.containment");
+    expect(result.trace.root.output).toMatchObject({
+      intendedCoating: 2,
+      leakageRegenerationMultiple: 2,
+      leakagePerHour: 18,
+    });
+  });
+});
+
+
+describe("the surface of the file", () => {
+  it("keeps the DEX gates and nothing else in the Mastery profile", () => {
+    expect(Object.values(TEN_MASTERY_PROFILES).map((profile) => profile.minimumDex))
+      .toEqual([12, 12, 13, 13, 14, 14, 15, 15, 16, 16]);
+
+    for (const profile of Object.values(TEN_MASTERY_PROFILES)) {
+      expect(Object.keys(profile).sort()).toEqual(["minimumDex", "rank"]);
+    }
+  });
+
+  it("exports none of the coupled model", () => {
+    const surface = Object.keys(ten);
+
+    for (const removed of [
+      "resolveTenCoating",
+      "TEN_MINIMUM_COATING_OUTPUT_FRACTION",
+      "deriveTenContainmentFraction",
+      "resolveTenPassiveContainment",
+    ]) {
+      expect(surface).not.toContain(removed);
     }
   });
 });
 
 
 describe("the coating Ten places", () => {
-  function profileWithTen(mastery: number, renFraction = 1.0) {
+  function profileAt(mastery: number, current = 40_000) {
     const result = resolveAuraProfile({
-      state: { current: 40_000, allocations: [] },
-      ...auraContext({
-        attributes: STRONG,
-        access: tenWithRen(mastery, renFraction),
-      }),
+      state: { current, allocations: [] },
+      ...auraContext({ attributes: STRONG, access: withTen(mastery) }),
     });
 
-    if (!result.success) {
-      throw new Error(
-        "Expected the profile to resolve: " +
-        result.errors.map((error) => error.code).join(", "),
-      );
-    }
+    if (!result.success) throw new Error("Expected the profile to resolve.");
 
     return result.payload;
   }
 
   /*
-   * Automatic, whole-body and surface-only, at EVERY rank. Ten is not
-   * something a character declares and not something they can aim: a rank that
-   * placed its coating anywhere but over the whole skin would be a different
-   * principle wearing Ten's name.
+   * The canonical surface owner spreads it: every part's share sums back to
+   * the resolved coating, at equal density, surface only.
    */
-  it("is automatic, whole-body and surface-only at every rank", () => {
+  it("partitions exactly 0.10P over the whole surface at every rank", () => {
     for (const mastery of RANKS) {
-      const resolved = profileWithTen(mastery);
+      const resolved = profileAt(mastery);
 
-      expect(resolved.distribution.allocations.length).toBeGreaterThan(0);
+      const total = resolved.distribution.allocations.reduce(
+        (sum, allocation) => sum + allocation.aura,
+        0,
+      );
+
+      expect([mastery, total]).toEqual([mastery, expect.closeTo(1000, 9)]);
 
       for (const allocation of resolved.distribution.allocations) {
-        expect([
-          allocation.allocationId,
-          allocation.source,
-          allocation.coverage,
-          allocation.placement,
-        ]).toEqual(["baseline-ten", "baseline-ten", "whole-body", "surface"]);
+        expect([allocation.source, allocation.coverage, allocation.placement])
+          .toEqual(["baseline-ten", "whole-body", "surface"]);
       }
-    }
-  });
 
-  /*
-   * Evenly, which is the other half of "coats the body". Differently sized
-   * parts take different AMOUNTS of Aura and arrive at the same density — the
-   * Arm is 1,183 cm2 of a 16,900 cm2 body and holds 1183/16900 of the coating.
-   */
-  it("spreads at equal density over differently sized Body Parts", () => {
-    const resolved = profileWithTen(10);
-
-    const densities = resolved.byBodyPart.map(
-      (part) => part.surface!.density.auraPerSquareMeter,
-    );
-
-    expect(densities.length).toBeGreaterThan(1);
-
-    for (const density of densities) {
-      expect(density).toBeCloseTo(10_000 / 1.69, 10);
-    }
-
-    /* And the amounts genuinely differ, so the equality above means something. */
-    expect(new Set(resolved.byBodyPart.map((part) => part.surface!.aura)).size)
-      .toBeGreaterThan(1);
-  });
-
-  it("never places anything inside the body", () => {
-    for (const mastery of RANKS) {
-      for (const part of profileWithTen(mastery).byBodyPart) {
+      for (const part of resolved.byBodyPart) {
+        expect(part.surface!.density.auraPerSquareMeter).toBeCloseTo(1000 / 1.69, 9);
         expect(part.internal?.aura ?? 0).toBe(0);
       }
     }
   });
+
+  it("is capped by what the reserve can fund, and never charged", () => {
+    const budget = resolveAuraBudget(250, auraContext({ attributes: STRONG, access: withTen(10) }));
+
+    expect(budget.success && budget.payload.automaticAura).toBe(250);
+    expect(budget.success && budget.payload.pool.current).toBe(250);
+  });
 });
 
 
-describe("Ten costs nothing", () => {
-  /*
-   * The claim the old model contradicted twice over — once by charging
-   * regeneration for imperfect Ten, once by describing the coating as a
-   * commitment. Allocation is not expenditure: the coating draws on OUTPUT,
-   * which is a rate the body sustains, and reads Current Aura only as a
-   * ceiling.
-   */
-  it("deducts no Current Aura to place the coating", () => {
-    for (const mastery of RANKS) {
-      const result = resolveAuraBudget(
-        40_000,
-        auraContext({ attributes: STRONG, access: tenWithRen(mastery, 1.0) }),
-      );
+/* ── 10.2 Time integration ──────────────────────────────────────────────── */
 
-      if (!result.success) throw new Error("Expected the budget to resolve.");
+describe("Ten through the real interval solver", () => {
+  type Column = readonly [string, AuraTimeActivity, number, number];
 
-      expect([mastery, result.payload.pool.current]).toEqual([mastery, 40_000]);
-    }
-  });
+  /* [label, activity, recovery coefficient, physical rate] */
+  const columns: readonly Column[] = [
+    ["ordinary", { mode: "ordinary-waking" }, 2, 0],
+    ["physical", { mode: "ordinary-waking", activity: "strenuous" }, 1, 2 * R],
+    ["rest", { mode: "intentional-rest" }, 3, 0],
+    ["sleep", { mode: "sleep" }, 4, 0],
+  ];
 
-  /*
-   * An hour of ordinary waking life with Ten up, and nothing leaves the
-   * reserve. No upkeep and no leak — the character GAINS, because a contained
-   * ordinary hour recovers 2R, and the point here is that Ten took none of it.
-   */
-  it("charges no upkeep and leaks nothing over an hour", () => {
-    for (const mastery of RANKS) {
-      const result = advanceAuraTime({
-        state: { current: 20_000, allocations: [] },
-        wakefulness: restedWakefulness(),
-        context: auraContext({
-          attributes: STRONG,
-          access: tenWithRen(mastery, 1.0),
-        }),
-        interval: gameTimeIntervalOf(1_000_000_000, hoursToDuration(1)),
-        activity: { mode: "ordinary-waking" },
+  for (const mastery of [1, 2, 5, 9, 10] as const) {
+    for (const [label, activity, coefficient, physical] of columns) {
+      it(`settles Ten ${mastery} during ${label} term by term`, () => {
+        const leak = (2 * R * (10 - mastery)) / 9;
+        const result = advance({ rank: mastery, activity });
+        const segment = result.segments[0]!;
+
+        expect(result.segments).toHaveLength(1);
+        expect(segment.recoveryRatePerHour).toBe(coefficient * R);
+        expect(segment.leakageRatePerHour).toBeCloseTo(leak, 9);
+        expect(segment.leakageSource).toBe(mastery === 10 ? null : "contained");
+        expect(segment.physicalRatePerHour).toBe(physical);
+        expect(segment.outwardFlowRatePerHour).toBe(0);
+        expect(segment.accessState).toBe("ten");
+        expect(segment.netRatePerHour)
+          .toBeCloseTo(coefficient * R - leak - physical, 9);
+
+        expect(result.balance.recovery).toBe(coefficient * R);
+        expect(result.balance.leakage).toBeCloseTo(leak, 9);
+        expect(result.leakageBySource).toEqual({
+          halfOpen: 0,
+          uncontained: 0,
+          contained: expect.closeTo(leak, 9),
+        });
+        expect(result.balance.physical).toBe(physical);
+        expect(result.balance.upkeep).toBe(0);
+        expect(result.balance.outwardFlow).toBe(0);
+        expect(result.balance.net).toBeCloseTo(coefficient * R - leak - physical, 9);
+        expect(result.currentChange).toBeCloseTo(result.balance.net, 9);
+        expect(result.unmetDrain).toBe(0);
+        expect(result.recovery.discarded).toBe(0);
+        expect(result.collapse).toBeNull();
+
+        /* Ten is passive: it never suppresses recovery as active Nen would. */
+        expect(result.balance.recoveryBySource[0]!.multiplier).toBe(coefficient);
       });
-
-      if (!result.success) throw new Error("Expected the interval to resolve.");
-
-      expect([
-        mastery,
-        result.payload.balance.upkeep,
-        result.payload.balance.leakage,
-        result.payload.balance.physical,
-      ]).toEqual([mastery, 0, 0, 0]);
-
-      /* And the reserve moved only by what regeneration put in. */
-      expect(result.payload.currentChange)
-        .toBe(result.payload.balance.recovery);
     }
+  }
+
+  it("anchors Ten I at 0, -3R, +R and +2R", () => {
+    expect(columns.map(([, activity]) => advance({ rank: 1, activity }).balance.net))
+      .toEqual([0, -3 * R, R, 2 * R]);
+  });
+
+  it("anchors Ten X at +2R, -R, +3R and +4R", () => {
+    expect(columns.map(([, activity]) => advance({ rank: 10, activity }).balance.net))
+      .toEqual([2 * R, -R, 3 * R, 4 * R]);
   });
 
   /*
-   * And it takes no share of regeneration, which is the specific arithmetic
-   * the old resolveTenPassiveContainment invented. A full night's sleep
-   * recovers the same Aura at Ten I as at Ten X.
+   * Eight continuous hours still top the reserve off once, after the rates up
+   * to that instant are settled — at every rank, leak or no leak.
    */
-  it("reduces regeneration at no rank", () => {
-    const recovered = (mastery: number) => {
-      const result = advanceAuraTime({
-        state: { current: 0, allocations: [] },
-        wakefulness: restedWakefulness(),
-        context: auraContext({
-          attributes: STRONG,
-          access: tenWithRen(mastery, 1.0),
-        }),
-        interval: gameTimeIntervalOf(1_000_000_000, hoursToDuration(4)),
+  it("completes an eight-hour sleep at every rank", () => {
+    for (const mastery of RANKS) {
+      const result = advance({
+        rank: mastery,
+        current: 0,
+        hours: 9,
         activity: { mode: "sleep" },
       });
 
-      if (!result.success) throw new Error("Expected the interval to resolve.");
+      const completed = result.events.filter((event) => event.kind === "sleep-completed");
 
-      return result.payload.balance.recovery;
-    };
+      expect([mastery, completed.map((event) => event.at)])
+        .toEqual([mastery, [T0 + hoursToDuration(8)]]);
+      expect([mastery, result.current]).toEqual([mastery, MAX]);
 
-    const atRankOne = recovered(1);
+      const leak = (2 * R * (10 - mastery)) / 9;
+      const byRate = Math.min(MAX, (4 * R - leak) * 8);
+      const topOff = result.balance.recoveryBySource
+        .find((one) => one.source === "sleep-completion");
 
-    expect(atRankOne).toBeGreaterThan(0);
-
-    for (const mastery of RANKS) {
-      expect([mastery, recovered(mastery)]).toEqual([mastery, atRankOne]);
-    }
-  });
-
-  /*
-   * Stated as a rule about the file rather than about a number, because the
-   * removed model's distinguishing feature was a per-rank regeneration
-   * penalty, and the cheapest way to bring it back is a second table.
-   */
-  it("exports no replenishment or passive-leakage API at all", () => {
-    const surface = Object.keys(ten);
-
-    expect(surface).not.toContain("resolveTenPassiveContainment");
-    expect(surface).not.toContain("deriveTenReplenishmentMultiplier");
-    expect(surface).not.toContain("resolveTenContainment");
-
-    for (const profile of Object.values(TEN_MASTERY_PROFILES)) {
-      expect(Object.keys(profile).sort())
-        .toEqual(["containmentFraction", "minimumDex", "rank"]);
+      expect([mastery, topOff?.used ?? 0])
+        .toEqual([mastery, expect.closeTo(MAX - byRate, 6)]);
     }
   });
 });
 
 
-describe("containment is the whole of what Ten does", () => {
-  it("leaves a character with no Ten in the uncontained leakage path", () => {
-    const result = advanceAuraTime({
-      state: { current: 20_000, allocations: [] },
-      wakefulness: restedWakefulness(),
-      context: auraContext({ attributes: STRONG, access: UNCONTAINED }),
-      interval: gameTimeIntervalOf(1_000_000_000, hoursToDuration(1)),
-      activity: { mode: "ordinary-waking" },
-    });
-
-    if (!result.success) throw new Error("Expected the interval to resolve.");
-
-    expect(result.payload.balance.leakage).toBeGreaterThan(0);
+describe("Ten leakage reaching zero is ordinary depletion", () => {
+  /*
+   * Ten I while working: -3R an hour. 5,000 lasts 40 minutes, and the rest of
+   * the two hours is spent at zero — clamped, with the shortfall reported —
+   * and nobody collapses, blacks out or is shut into a Zetsu.
+   */
+  const result = advance({
+    rank: 1,
+    current: 5000,
+    hours: 2,
+    activity: { mode: "ordinary-waking", activity: "strenuous" },
   });
 
-  it("takes every functioning rank out of it", () => {
-    for (const mastery of RANKS) {
-      const result = resolveAuraBudget(
-        40_000,
-        auraContext({ attributes: STRONG, access: withTen(mastery) }),
-      );
+  it("clamps at zero at the exact instant and reports the shortfall", () => {
+    expect(result.current).toBe(0);
+    expect(result.events.find((event) => event.kind === "aura-empty")!.at)
+      .toBeCloseTo(T0 + hoursToDuration(40 / 60), 3);
 
-      if (!result.success) throw new Error("Expected the budget to resolve.");
+    /* Rates keep running after empty; what the pool could not pay is unmet. */
+    expect(result.balance.leakage).toBeCloseTo(2 * 2 * R, 6);
+    expect(result.balance.physical).toBeCloseTo(2 * 2 * R, 6);
+    expect(result.balance.recovery).toBeCloseTo(2 * R, 6);
+    expect(result.unmetDrain)
+      .toBeCloseTo(result.balance.leakage + result.balance.physical - result.balance.recovery - 5000, 6);
+  });
 
-      expect([mastery, result.payload.access.uncontained])
-        .toEqual([mastery, false]);
+  it("emits no collapse, no forced suppression and no blackout", () => {
+    expect(result.collapse).toBeNull();
+    expect(result.events.some((event) => event.kind === "collapse")).toBe(false);
+
+    for (const segment of result.segments) {
+      expect(segment.accessState).toBe("ten");
+      expect(segment.leakageSource).toBe("contained");
     }
   });
 
-  /*
-   * Suppression closes the nodes, which removes the coating AND stops the
-   * leak. Those two going together is the point: a character in Zetsu is not
-   * an uncontained character who happens to have no coating.
-   */
-  it("is removed by suppression, which stops the leak rather than starting one", () => {
-    const suppressed = withTen(10, { kind: "suppressed", source: "zetsu" });
+  it("recomputes coating funding and depletion Fatigue normally at zero", () => {
+    const budget = resolveAuraBudget(0, auraContext({ attributes: STRONG, access: withTen(1) }));
 
-    const budget = resolveAuraBudget(
-      40_000,
-      auraContext({ attributes: STRONG, access: suppressed }),
-    );
+    expect(budget.success && budget.payload.access.automaticSurfaceCoating!.outputFraction).toBe(0.1);
+    expect(budget.success && budget.payload.automaticAura).toBe(0);
+    expect(budget.success && budget.payload.usableOutput).toBe(0);
 
-    if (!budget.success) throw new Error("Expected the budget to resolve.");
-
-    expect(budget.payload.access.automaticSurfaceCoating).toBeNull();
-    expect(budget.payload.automatic).toEqual([]);
-    expect(budget.payload.automaticAura).toBe(0);
-    expect(budget.payload.access.uncontained).toBe(false);
-
-    const hour = advanceAuraTime({
-      state: { current: 20_000, allocations: [] },
-      wakefulness: restedWakefulness(),
-      context: auraContext({ attributes: STRONG, access: suppressed }),
-      interval: gameTimeIntervalOf(1_000_000_000, hoursToDuration(1)),
-      activity: { mode: "ordinary-waking" },
-    });
-
-    if (!hour.success) throw new Error("Expected the interval to resolve.");
-
-    expect(hour.payload.balance.leakage).toBe(0);
+    expect(result.fatigue).toEqual(deriveFatigue({
+      wakefulness: result.wakefulness,
+      maximumAura: MAX,
+      depletionFraction: 1,
+    }));
   });
 });
 
 
-describe("the coating is capped, never charged", () => {
-  /*
-   * A reserve smaller than the coating does not make Ten fail; it makes the
-   * coating smaller. The character is still contained, still wearing what they
-   * can afford to hold out, and still paying nothing for it.
-   */
-  it("funds what the reserve can hold and no more", () => {
-    const placed = automaticAura({
-      access: tenWithRen(10, 1.0),
-      current: 250,
-    });
+describe("Ten is subdivision-invariant", () => {
+  function chained(options: {
+    rank: number;
+    current: number;
+    activity: AuraTimeActivity;
+    steps: number;
+    stepHours: number;
+  }) {
+    let current = options.current;
+    let wakefulness = restedWakefulness();
+    let at = T0;
+    let leakage = 0;
+    let unmet = 0;
+    const events: { at: number; kind: string }[] = [];
 
-    expect(placed).toBe(250);
-  });
+    for (let step = 0; step < options.steps; step += 1) {
+      const result = advance({
+        rank: options.rank,
+        current,
+        hours: options.stepHours,
+        activity: options.activity,
+        startedAt: at,
+        wakefulness,
+      });
 
-  /*
-   * And the floor is subject to the same cap rather than exempt from it. Ten's
-   * 5% is what it INTENDS, which is a different question from what a drained
-   * body can currently put out.
-   */
-  it("caps the 5% floor too", () => {
-    expect(automaticAura({ access: withTen(1), current: 120 })).toBe(120);
-  });
-});
+      current = result.current;
+      wakefulness = result.wakefulness;
+      leakage += result.balance.leakage;
+      unmet += result.unmetDrain;
+      at += hoursToDuration(options.stepHours);
 
+      for (const event of result.events) {
+        if (event.kind === "interval-end") continue;
+        events.push({ at: event.at, kind: event.kind });
+      }
+    }
 
-describe("bad input is refused rather than absorbed", () => {
-  const cases: readonly (readonly [string, Parameters<typeof resolveTenCoating>[0], string])[] = [
-    [
-      "a negative Physiological Output",
-      { physiologicalOutput: -1, renAccessFraction: 0.5, mastery: 3 },
-      "nen.ten.physiological_output.invalid",
-    ],
-    [
-      "a Physiological Output that is not a number",
-      { physiologicalOutput: Number.NaN, renAccessFraction: 0.5, mastery: 3 },
-      "nen.ten.physiological_output.invalid",
-    ],
-    [
-      "a Ren share stated as a percentage",
-      { physiologicalOutput: 20, renAccessFraction: 30, mastery: 3 },
-      "nen.ten.ren_access_fraction.invalid",
-    ],
-    [
-      "a negative Ren share",
-      { physiologicalOutput: 20, renAccessFraction: -0.1, mastery: 3 },
-      "nen.ten.ren_access_fraction.invalid",
-    ],
-    [
-      "a Mastery rank nobody can hold",
-      { physiologicalOutput: 20, renAccessFraction: 0.5, mastery: 11 },
-      "nen.ten.mastery.invalid",
-    ],
-    [
-      "an unlearned Mastery",
-      { physiologicalOutput: 20, renAccessFraction: 0.5, mastery: 0 },
-      "nen.ten.mastery.invalid",
-    ],
-  ];
-
-  for (const [label, input, code] of cases) {
-    it(`refuses ${label}`, () => {
-      const result = resolveTenCoating(input);
-
-      expect(errorCodes(result)).toContain(code);
-    });
+    return { current, wakefulness, leakage, unmet, events };
   }
 
-  it("traces the refusal rather than returning a bare failure", () => {
-    const result = resolveTenCoating({
-      physiologicalOutput: 20,
-      renAccessFraction: 0.5,
-      mastery: 11,
-    });
+  it("agrees across an exact zero boundary", () => {
+    const activity: AuraTimeActivity = { mode: "ordinary-waking", activity: "strenuous" };
+    const whole = chained({ rank: 1, current: 5000, activity, steps: 1, stepHours: 3 });
+    const hourly = chained({ rank: 1, current: 5000, activity, steps: 3, stepHours: 1 });
+    const byMinute = chained({ rank: 1, current: 5000, activity, steps: 180, stepHours: 1 / 60 });
 
-    expect(result.trace.root.id).toBe("nen.ten.coating");
-    expect(result.trace.root.formula).toContain("max(");
-    expect(result.trace.root.inputs).toMatchObject({
-      physiologicalOutput: { value: 20 },
-      mastery: { value: 11 },
-    });
+    for (const split of [hourly, byMinute]) {
+      expect(split.current).toBeCloseTo(whole.current, 6);
+      expect(split.leakage).toBeCloseTo(whole.leakage, 6);
+      expect(split.unmet).toBeCloseTo(whole.unmet, 6);
+      expect(split.events.map((event) => event.kind)).toEqual(whole.events.map((event) => event.kind));
+
+      split.events.forEach((event, index) => {
+        expect(event.at).toBeCloseTo(whole.events[index]!.at, 0);
+      });
+    }
   });
 
-  it("traces the arithmetic when it succeeds", () => {
-    const result = resolveTenCoating({
-      physiologicalOutput: 20,
-      renAccessFraction: 1,
-      mastery: 10,
-    });
+  it("agrees across a completed sleep", () => {
+    const activity: AuraTimeActivity = { mode: "sleep" };
+    const whole = chained({ rank: 5, current: 0, activity, steps: 1, stepHours: 10 });
+    const split = chained({ rank: 5, current: 0, activity, steps: 40, stepHours: 0.25 });
 
-    expect(result.success).toBe(true);
-    expect(result.trace.root.output).toMatchObject({
-      intendedCoating: 20,
-      minimumCoating: 1,
-      source: "mastery",
-    });
-  });
+    expect(split.current).toBeCloseTo(whole.current, 6);
+    expect(split.leakage).toBeCloseTo(whole.leakage, 6);
+    expect(split.wakefulness.consecutiveSleepHours)
+      .toBeCloseTo(whole.wakefulness.consecutiveSleepHours ?? 0, 9);
 
-  /*
-   * The projection is total where the resolver is strict, and deliberately so:
-   * it answers "is Ten running, and wearing what" for states Aura has to be
-   * able to resolve, including states with no Ten in them at all.
-   */
-  it("projects nothing for a character Ten does not reach", () => {
-    expect(tenSurfaceCoating(0, 0.5)).toBeNull();
-    expect(tenSurfaceCoating(11, 0.5)).toBeNull();
-    expect(tenSurfaceCoating(1.5, 0.5)).toBeNull();
-  });
+    /*
+     * The completion lands at the same eighth hour either way. Only the FIRST
+     * report is compared: a night advanced in slices re-reports completion on
+     * every slice after the eighth hour, because the capped streak stays at
+     * eight. That is a pre-existing sleep-completion reporting defect outside
+     * this ticket's scope; the reserve it produces is identical, as above.
+     */
+    const firstCompletion = (events: readonly { at: number; kind: string }[]) =>
+      events.find((event) => event.kind === "sleep-completed")!.at;
 
-  it("projects the floor rather than a wrong coating for a malformed Ren share", () => {
-    expect(tenSurfaceCoating(10, Number.NaN)).toEqual({
-      source: "baseline-ten",
-      outputFraction: 0.05,
-      masteryFraction: 0,
-      minimumFraction: 0.05,
-    });
+    expect(firstCompletion(split.events)).toBeCloseTo(firstCompletion(whole.events), 0);
   });
 });

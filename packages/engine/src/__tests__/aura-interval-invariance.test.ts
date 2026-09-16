@@ -39,14 +39,27 @@ import {
 import type { AuraAccessInput } from "../character/foundation/aura/types";
 import type { CharacterAuraState } from "../character/foundation/aura/state";
 
-import { auraContext, UNCONTAINED, WITH_TEN, withTen } from "./fixtures/aura";
+import { auraContext, UNCONTAINED, WITH_PERFECT_TEN, withTen } from "./fixtures/aura";
 
 const T0 = 1_000_000_000;
 
 /* The two-second Round, in hours. Uncontained leakage is fast enough to need it. */
 const ROUND_HOURS = 2 / 3600;
 
-const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
+/*
+ * Ten X with 30% of physiological Output opened for deliberate use, through the
+ * generic explicit override. Not Ren: Ren replaces Ten and is metered as an
+ * outward flow. Perfect containment, so these scenarios move the pool by
+ * nothing but the rates under test; Ten's residual leak is tested with Ten.
+ */
+const OPEN_III: AuraAccessInput = withTen(10, {
+  kind: "explicit",
+  source: "open-output-iii",
+  accessFraction: 0.3,
+  deliberateInternalAccess: false,
+  deliberateExternalAccess: true,
+  automaticSurfaceCoating: true,
+});
 
 /* CON 20 / VIT 20: Maximum Aura 50,000, Stamina 20, regeneration 5,000/hour. */
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;
@@ -72,7 +85,7 @@ interface Case {
 function run(scenario: Case, steps: number) {
   const context = auraContext({
     attributes: scenario.attributes ?? STRONG,
-    access: scenario.access ?? REN_III,
+    access: scenario.access ?? OPEN_III,
   });
 
   let state: CharacterAuraState = {
@@ -556,7 +569,7 @@ describe("one advance equals many", () => {
    * subdivision error a player could see.
    */
   it("reaches the same Fatigue however the day is divided", () => {
-    const context = auraContext({ attributes: STRONG, access: REN_III });
+    const context = auraContext({ attributes: STRONG, access: OPEN_III });
 
     const levels = [1, 4, 96].map((steps) => {
       let state: CharacterAuraState = { current: 50_000, allocations: [] };

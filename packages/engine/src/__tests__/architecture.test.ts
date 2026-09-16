@@ -2500,36 +2500,37 @@ describe("Nen awakening stays inside its own domain", () => {
    * The rule names those resolvers rather than the whole directory, because
    * TEN IS NOT ONE OF THEM. Ten is passive, automatic, free and indefinite: a
    * character with usable Ten is running Ten, having declared nothing, so its
-   * coating is a property of the access state in exactly the way effective
-   * Mastery is. The Ten correction made that concrete — the coating is the
-   * greater of Ten's Mastery share of Ren-accessible Output and a 5% floor,
-   * and every term belongs to ten.ts — which left three places it could be
-   * resolved and only one that is not a second implementation of Ten:
+   * coating and residual leak are properties of the access state in exactly
+   * the way effective Mastery is. They are resolved in the one projection that
+   * turns Nen state into an Aura access input, and pinned there below.
    *
-   *   aura/access.ts        would make Aura import Nen, and Nen already
-   *                         imports the Aura vocabulary. A cycle, and the
-   *                         thing access.ts's own header forbids by name.
-   *   a constant in Aura    the defect being repaired. A flat 5% is right at
-   *                         Mastery I with no Ren and wrong everywhere else.
-   *   the projection below  Nen resolves Ten's coating and hands it down with
-   *                         the other flat facts. One-way, and checked.
-   *
-   * So the exception is one import, in the one file that already exists to
-   * turn Nen state into an Aura access input, and the rule below pins it
-   * there. Ren, Hatsu and Zetsu remain barred outright.
+   * Hatsu and Zetsu remain barred outright. Ren is barred everywhere but ONE
+   * adapter: Ren is something a character does, it lives in the generic
+   * activity runtime, and the adapter is the single place that knows which
+   * activity is a Ren and translates it into a generic outward flow.
    */
-  const ACTIVE_PRINCIPLES = ["ren", "hatsu", "zetsu"];
+  const BARRED_PRINCIPLES = ["hatsu", "zetsu"];
 
   it("imports no active-principle resolver", () => {
     const offenders = nenFiles.filter((path) =>
       moduleSpecifiers(path).some((specifier) =>
-        ACTIVE_PRINCIPLES.some((principle) =>
+        BARRED_PRINCIPLES.some((principle) =>
           resolvesInto(path, specifier, join("nen", "principles", principle)),
         ),
       ),
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  it("reaches the Ren principle from the Ren adapter alone", () => {
+    const reaching = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles", "ren")),
+      ),
+    );
+
+    expect(reaching).toEqual([join(SRC, "character", "nen", "ren.ts")]);
   });
 
   /*
@@ -3508,4 +3509,124 @@ describe("Aura placement is a layer above Character, not inside it", () => {
     return resolved === join(SRC, domain) ||
       resolved.startsWith(join(SRC, domain) + "/");
   }
+});
+
+
+/*
+ * TRR-1 — Ten and Ren as independent, mutually exclusive principles.
+ *
+ * The coupled model lived in exactly the places these rules watch: a Ten
+ * coating computed from Ren's access, Ren waste computed from Ten's
+ * containment, and an access override that kept Ten's coating up under Ren.
+ * Each rule below is the cheapest way that model could come back.
+ */
+describe("Ten and Ren stay independent, with one producer per rule", () => {
+  const production = sourceFilesUnder(SRC).filter(
+    (path) => !path.startsWith(join(SRC, "__tests__")),
+  );
+
+  const TEN_FILE = join(SRC, "character", "foundation", "nen", "principles", "ten.ts");
+  const REN_FILE = join(SRC, "character", "foundation", "nen", "principles", "ren.ts");
+
+  const code = (path: string): string =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const importers = (principle: "ten" | "ren") =>
+    production.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles", principle)),
+      ),
+    );
+
+  it("finds the sources it is checking", () => {
+    expect(production.length).toBeGreaterThan(200);
+    expect(production).toContain(TEN_FILE);
+    expect(production).toContain(REN_FILE);
+  });
+
+  /*
+   * One approved adapter each. The passive projection turns Ten into an Aura
+   * access input; the Ren adapter turns a running Ren into a generic flow.
+   */
+  it("lets only the approved adapters import either principle", () => {
+    expect(importers("ten")).toEqual([join(SRC, "character", "nen", "access.ts")]);
+    expect(importers("ren")).toEqual([join(SRC, "character", "nen", "ren.ts")]);
+  });
+
+  it("keeps Aura, the generic runtime and the time coordinator principle-free", () => {
+    const generic = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "aura")),
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "nen", "runtime")),
+      ...sourceFilesUnder(join(SRC, "character", "nen", "runtime")),
+      ...sourceFilesUnder(join(SRC, "character", "time")),
+    ];
+
+    expect(generic.length).toBeGreaterThan(25);
+
+    const offenders = generic.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * Ten's two numbers, each written once. A second `0.10` beside a coating or
+   * a second `(10 - m) / 9` beside a leak is a second Ten, however it is spelt.
+   */
+  const statesTenCoating = (source: string): boolean =>
+    /coating\w*[^;\n]*=\s*[^;\n]*\b0?\.10?\b/i.test(source);
+
+  const statesTenLeak = (source: string): boolean =>
+    /\(\s*(?:10|STANDARD_MASTERY_MAX)\s*-\s*\w+\s*\)\s*\/\s*(?:9|\(\s*STANDARD_MASTERY_MAX\s*-\s*1\s*\))/.test(source);
+
+  it("states Ten's coating fraction and leak formula only in ten.ts", () => {
+    expect(statesTenCoating(code(TEN_FILE))).toBe(true);
+    expect(statesTenLeak(code(TEN_FILE))).toBe(true);
+
+    const offenders = production
+      .filter((path) => path !== TEN_FILE)
+      .filter((path) => statesTenCoating(code(path)) || statesTenLeak(code(path)));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("declares Ren's Mastery and endurance tables only in ren.ts", () => {
+    const statesRenTable = (source: string): boolean =>
+      /fullOutputDurationMinutes\s*:\s*\d/.test(source) ||
+      /accessFraction\s*:\s*0\.\d0\s*,\s*fullOutput/.test(source);
+
+    expect(statesRenTable(code(REN_FILE))).toBe(true);
+
+    const offenders = production
+      .filter((path) => path !== REN_FILE)
+      .filter((path) => statesRenTable(code(path)));
+
+    expect(offenders).toEqual([]);
+  });
+
+  const REMOVED =
+    /\b(?:minimumCoating|renAccessFraction|renAccessibleOutput|resolveRenContainmentEfficiency|deriveRenContainmentAuraLoss|TEN_MINIMUM_COATING_OUTPUT_FRACTION|containmentFraction|resolveTenCoating|masteryFraction|minimumFraction)\b|"output-access"/;
+
+  it("leaves no removed coupling API or override in production code", () => {
+    const offenders = production.filter((path) => REMOVED.test(code(path)));
+
+    expect(offenders).toEqual([]);
+  });
+
+  /* Every predicate above, exercised so none of them can stop matching quietly. */
+  it("would catch each of them coming back", () => {
+    expect(statesTenCoating("const intendedCoating = physiologicalOutput * 0.10;")).toBe(true);
+    expect(statesTenCoating("  coatingFraction: 0.1,")).toBe(false);
+    expect(statesTenCoating("const coatingFraction = 0.1;")).toBe(true);
+    expect(statesTenLeak("return 2 * (10 - mastery) / 9;")).toBe(true);
+    expect(statesTenLeak("2 * (STANDARD_MASTERY_MAX - rank) / (STANDARD_MASTERY_MAX - 1)")).toBe(true);
+    expect(REMOVED.test("resolveRenContainmentEfficiency(output, limit)")).toBe(true);
+    expect(REMOVED.test('{ kind: "output-access", source }')).toBe(true);
+    expect(REMOVED.test("const renAccessFraction = 0;")).toBe(true);
+  });
 });
