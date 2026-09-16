@@ -54,9 +54,22 @@
  *
  * Control does not apply. Leakage is not something the character is doing.
  *
- * The UNAWAKENED case is not this. Half-open nodes leak too, and what escapes
- * becomes passive pseudo-Chu rather than being lost — see aura/passive.ts. An
- * ordinary person does not bleed out, and nothing here applies to them.
+ * THE UNAWAKENED CASE IS NOT THIS, AND IS ALSO NOT FREE.
+ *
+ * Half-open nodes leak too, at a flat 2R an hour — see deriveHalfOpenLeakage
+ * below. It used to be modelled as costing nothing at all, on the reasoning
+ * that what escaped became passive pseudo-Chu rather than being lost. That
+ * conflated two different things. ALL of an unawakened character's Aura
+ * circulates through their body and reinforces it (see nen/principles/chu.ts,
+ * which owns that rule); the pores still lose some of it, and the loss is
+ * real. What makes an ordinary person not bleed out is that their 2R recovery
+ * exactly cancels their 2R leak, not that the leak is imaginary.
+ *
+ * The two rates are deliberately unrelated in every way. Half-open leakage is
+ * denominated in REGENERATION, because it is the body's own turnover escaping
+ * a body that is replacing it. Uncontained leakage is denominated in OUTPUT,
+ * because it is the nodes passing everything they physically can. And only the
+ * second one can empty a character and collapse them.
  *
  *
  * COLLAPSE IS A BOUNDARY RESULT
@@ -123,6 +136,51 @@ export const UNCONTAINED_COLLAPSE_REQUESTS: readonly AuraCollapseRequest[] = [
 
 const MINUTES_PER_HOUR = 60;
 const SECONDS_PER_MINUTE = 60;
+
+
+/* ── Half-open leakage ──────────────────────────────────────────────────── */
+
+/*
+ * What half-open pores lose, as a multiple of Aura Regeneration Capacity.
+ *
+ * Two, which is exactly what an unawakened body recovers during an ordinary
+ * hour — so an ordinary person's day nets to zero and they neither gain nor
+ * lose by existing. That is the calibration the number was chosen for, and it
+ * is why resting (3R in, 2R out) is what makes an ordinary person recover at
+ * all.
+ */
+export const HALF_OPEN_LEAKAGE_REGENERATION_MULTIPLE = 2;
+
+
+export interface HalfOpenLeakage {
+  readonly regenerationPerHour: number;
+  readonly ratePerHour: number;
+}
+
+
+/**
+ * The rate a body with half-open nodes loses Aura.
+ *
+ * Flat, denominated in the character's own Regeneration Capacity, and with no
+ * exhaustion projection of its own — because unlike the uncontained rate this
+ * one CANNOT empty anybody on its own. Every mode recovers at least as much as
+ * it loses, so the worst case is breaking even. The solver still caps it at
+ * the reserve, because a half-open character drained by something else must
+ * not be pushed below zero by their own pores.
+ *
+ * Not a source of collapse, and deliberately shaped so it cannot become one:
+ * there is no `uncontainedCollapse` counterpart here. A character who has
+ * never awakened does not black out from being alive.
+ */
+export function deriveHalfOpenLeakage(
+  regenerationPerHour: number,
+): HalfOpenLeakage {
+  return {
+    regenerationPerHour,
+    ratePerHour:
+      regenerationPerHour * HALF_OPEN_LEAKAGE_REGENERATION_MULTIPLE,
+  };
+}
 
 
 export interface UncontainedLeakage {

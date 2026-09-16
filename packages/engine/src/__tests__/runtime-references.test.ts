@@ -83,7 +83,7 @@ describe("Aura as a cost handler", () => {
           from: CALLER,
           to: GON_AURA,
           requested: 0,
-          exertionLoad: 2,
+          additionalPhysicalCostRate: 0.001,
         })],
         resolve: () => ({ result: "swung" }),
       },
@@ -137,7 +137,7 @@ describe("Aura as a cost handler", () => {
       from: CALLER,
       to: GON_AURA,
       requested: 0,
-      exertionLoad: 2,
+      additionalPhysicalCostRate: 0.001,
     });
 
     const one = runCoordinatedOperation(
@@ -185,7 +185,7 @@ describe("Aura as a cost handler", () => {
           from: CALLER,
           to: GON_AURA,
           requested: 0,
-          exertionLoad: 10,
+          additionalPhysicalCostRate: 0.005,
         })],
         resolve: () => ({ result: "swung" }),
       },
@@ -215,7 +215,7 @@ describe("Aura as a cost handler", () => {
             from: CALLER,
             to: GON_AURA,
             requested: 0,
-            exertionLoad: 2,
+            additionalPhysicalCostRate: 0.001,
           }),
           {
             requestId: "r-action",
@@ -261,7 +261,7 @@ describe("Aura as a cost handler", () => {
   it("leaves the frozen input state untouched on success and on failure", () => {
     const { state, context } = auraSetup(20_000);
 
-    const request = (requestId: string, exertionLoad: number) =>
+    const request = (requestId: string, additionalPhysicalCostRate: number) =>
       auraCostRequest({
         requestId,
         operationId: OPERATION.operationId,
@@ -269,14 +269,14 @@ describe("Aura as a cost handler", () => {
         from: CALLER,
         to: GON_AURA,
         requested: 0,
-        exertionLoad,
+        additionalPhysicalCostRate,
       });
 
     const succeeded = runCoordinatedOperation(
       {
         context: OPERATION,
         states: { "aura:gon": state },
-        costs: [request("r1", 2)],
+        costs: [request("r1", 0.001)],
         resolve: () => ({ result: "swung" }),
       },
       { costs: [createAuraCostHandler(() => context)], effects: [] },
@@ -286,7 +286,7 @@ describe("Aura as a cost handler", () => {
       {
         context: OPERATION,
         states: { "aura:gon": state },
-        costs: [request("r1", 100_000)],
+        costs: [request("r1", 100)],
         resolve: () => ({ result: "swung" }),
       },
       { costs: [createAuraCostHandler(() => context)], effects: [] },
@@ -548,7 +548,7 @@ describe("Aura resolves its context per owner", () => {
       from: CALLER,
       to,
       requested: 0,
-      exertionLoad: 2,
+      additionalPhysicalCostRate: 0.001,
     });
 
   it("charges each character against their own body", () => {

@@ -168,9 +168,14 @@ describe("deriveAuraOutput", () => {
 });
 
 describe("deriveAuraRegeneration", () => {
+  /*
+   * R, which is HALF the rounded curve. The halving is what makes the recovery
+   * table's coefficients small integers; the rounding still happens first, so
+   * that halving cannot change which figure gets rounded.
+   */
   it("derives Aura Regeneration Capacity from VIT alone", () => {
-    expect(deriveAuraRegeneration(attributesWith(10, 18))).toBe(700);
-    expect(deriveAuraRegeneration(attributesWith(30, 18))).toBe(700);
+    expect(deriveAuraRegeneration(attributesWith(10, 18))).toBe(350);
+    expect(deriveAuraRegeneration(attributesWith(30, 18))).toBe(350);
   });
 });
 
@@ -179,22 +184,22 @@ describe("deriveAuraRegeneration", () => {
  * because it restored Aura at the full VIT rate for any hours it was handed —
  * so an ordinary waking day was a full heal, and rest, sleep and Zetsu were
  * all decoration on top of something already free. The contexts themselves are
- * covered in aura-endurance.test.ts; what is checked here is the capacity and
- * the cap, which are the parts that did not change.
+ * covered in aura-recovery.test.ts; what is checked here is the capacity and
+ * the cap.
  */
 describe("recoverAura", () => {
   it("restores Aura at the derived rate, capped at what's missing", () => {
     const result = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       1,
     );
 
     expect(result.success).toBe(true);
     if (result.success) {
-      // Regen for VIT 18 is 700/hour; 6500 + 700 = 7200.
-      expect(result.payload.pool.current).toBe(7200);
+      /* R is 350 for VIT 18, and sleep is 4R: 6,500 + 1,400 = 7,900. */
+      expect(result.payload.pool.current).toBe(7900);
     }
   });
 
@@ -202,14 +207,14 @@ describe("recoverAura", () => {
     const result = recoverAura(
       createAuraPool(19800, 20000),
       attributesWith(20, 18),
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       1,
     );
 
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.payload.pool.current).toBe(20000);
-      expect(result.payload.contribution.potential).toBe(700);
+      expect(result.payload.contribution.potential).toBe(1400);
       expect(result.payload.contribution.used).toBe(200);
     }
   });
@@ -218,7 +223,7 @@ describe("recoverAura", () => {
     const result = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       0,
     );
 
@@ -232,7 +237,7 @@ describe("recoverAura", () => {
     const result = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       -1,
     );
 
@@ -243,7 +248,7 @@ describe("recoverAura", () => {
     const result = recoverAura(
       createAuraPool(25000, 20000),
       attributesWith(20, 18),
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       1,
     );
 
@@ -279,7 +284,7 @@ describe("Aura depletion", () => {
     const recovered = recoverAura(
       createAuraPool(6500, 20000),
       attributesWith(20, 18),
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       1,
     );
 
@@ -287,7 +292,7 @@ describe("Aura depletion", () => {
     if (!recovered.success) return;
 
     expect(recovered.payload.pool.depletionFraction).toBeCloseTo(
-      (20000 - 7200) / 20000,
+      (20000 - 7900) / 20000,
       10,
     );
   });

@@ -24,13 +24,22 @@
  * Ordinary Zetsu is indefinitely maintainable from Mastery I onward.
  *
  *
- * REPLENISHMENT
- * -------------
+ * REPLENISHMENT IS NOT THIS FILE'S, AND IS NOT MASTERY'S
+ * -------------------------------------------------------
  *
- * Suppressing active Aura flow allows Aura to replenish more effectively.
+ * Suppressing active Aura flow does allow Aura to replenish more effectively,
+ * and that is now the only thing said about it here. HOW MUCH belongs to
+ * aura/recovery.ts, which resolves it from what the character is DOING while
+ * suppressed — 3R going about their day, 4R resting or asleep, R if something
+ * is working their body.
  *
- * Mastery increases the multiplier applied to normal Aura Regeneration
- * Capacity:
+ * Mastery used to supply a multiplier from x1.00 at I to x5.00 at X, and it
+ * was wrong in a way that only showed up next to the activity table: a Zetsu X
+ * standing in a corridor recovered five times the capacity of a Zetsu I asleep
+ * in a bed, so the rank replaced the rest rather than rewarding it. Rank buys
+ * concealment and the ability to hold the state; it does not buy metabolism.
+ *
+ * What is left of the old table, for the record:
  *
  *   I     -> x1.00
  *   II    -> x1.25
@@ -104,11 +113,12 @@
  *
  * - Zetsu's I-X Mastery profile;
  * - Active Aura Output suppression;
- * - Zetsu replenishment multipliers;
  * - Zetsu Aura Concealment modifiers.
  *
  * This file does NOT own:
  *
+ * - Aura replenishment while suppressed, which is activity-dependent and lives
+ *   in aura/recovery.ts;
  * - the universal Nen dependency graph or temporary seals;
  * - cross-Principle compatibility;
  * - Aura Pool derivation;
@@ -145,12 +155,6 @@ export interface ZetsuMasteryProfile {
   readonly rank: MasteryRank;
 
   /*
-   * Multiplier applied to normal Aura Regeneration Capacity while Zetsu is
-   * active.
-   */
-  readonly replenishmentMultiplier: number;
-
-  /*
    * Sense-specific bonus contributed to Aura Concealment.
    *
    * DEX and WIS are deliberately not included here. They remain inputs to the
@@ -163,61 +167,51 @@ export interface ZetsuMasteryProfile {
 export const ZETSU_MASTERY_PROFILES = {
   1: {
     rank: 1,
-    replenishmentMultiplier: 1.00,
     auraConcealmentModifier: 1,
   },
 
   2: {
     rank: 2,
-    replenishmentMultiplier: 1.25,
     auraConcealmentModifier: 1,
   },
 
   3: {
     rank: 3,
-    replenishmentMultiplier: 1.50,
     auraConcealmentModifier: 1,
   },
 
   4: {
     rank: 4,
-    replenishmentMultiplier: 1.75,
     auraConcealmentModifier: 2,
   },
 
   5: {
     rank: 5,
-    replenishmentMultiplier: 2.00,
     auraConcealmentModifier: 2,
   },
 
   6: {
     rank: 6,
-    replenishmentMultiplier: 2.50,
     auraConcealmentModifier: 3,
   },
 
   7: {
     rank: 7,
-    replenishmentMultiplier: 3.00,
     auraConcealmentModifier: 3,
   },
 
   8: {
     rank: 8,
-    replenishmentMultiplier: 3.50,
     auraConcealmentModifier: 4,
   },
 
   9: {
     rank: 9,
-    replenishmentMultiplier: 4.00,
     auraConcealmentModifier: 4,
   },
 
   10: {
     rank: 10,
-    replenishmentMultiplier: 5.00,
     auraConcealmentModifier: 5,
   },
 } as const satisfies Readonly<
@@ -244,8 +238,8 @@ export const ZETSU_MASTERY_TRACK = {
 
       description:
         rank === STANDARD_MASTERY_MAX
-          ? "Perfect Zetsu: suppress Active Aura Output to zero, replenish Aura at 5x normal capacity, and gain +5 Aura Concealment."
-          : `Suppress Active Aura Output to zero, replenish Aura at ${profile.replenishmentMultiplier}x normal capacity, and gain +${profile.auraConcealmentModifier} Aura Concealment.`,
+          ? "Perfect Zetsu: suppress Active Aura Output to zero and gain +5 Aura Concealment."
+          : `Suppress Active Aura Output to zero and gain +${profile.auraConcealmentModifier} Aura Concealment.`,
     };
   }),
 } satisfies MasteryTrack;
@@ -426,181 +420,20 @@ export function resolveZetsuSuppression(
 /* Replenishment                                                              */
 /* -------------------------------------------------------------------------- */
 
-export interface ZetsuReplenishment {
-  readonly mastery: MasteryRank;
-
-  readonly regenerationCapacityPerHour: number;
-
-  readonly replenishmentMultiplier: number;
-
-  readonly effectiveRegenerationPerHour: number;
-}
-
-
-/**
- * Return the multiplier applied to normal Aura Regeneration Capacity while
- * Zetsu is active.
+/*
+ * Deliberately empty.
+ *
+ * ZetsuReplenishment, deriveZetsuReplenishmentMultiplier and
+ * resolveZetsuReplenishment all lived here and are gone. They answered "how
+ * much faster does a Zetsu of this RANK recover" — a question with no correct
+ * answer, because suppression's recovery depends on what the character is
+ * doing while suppressed and not on how well they do it.
+ *
+ * aura/recovery.ts owns it now, as one column of a table that covers every
+ * access state the same way. Nothing here projects a multiplier into it, and
+ * nothing may: a Zetsu-shaped number arriving in Aura would be this mechanic
+ * growing back with a different name.
  */
-export function deriveZetsuReplenishmentMultiplier(
-  mastery: MasteryRank,
-): number {
-  return (
-    ZETSU_MASTERY_PROFILES[
-      mastery
-    ].replenishmentMultiplier
-  );
-}
-
-
-/**
- * Resolve Aura replenishment while Zetsu is active.
- *
- * Formula:
- *
- *   effectiveRegeneration =
- *     regenerationCapacity
- *     * replenishmentMultiplier
- *
- * Zetsu I therefore restores Aura at the character's normal regeneration
- * rate, while Zetsu X restores Aura at five times that rate.
- */
-export function resolveZetsuReplenishment(
-  regenerationCapacityPerHour: number,
-  mastery: number,
-): EngineResult<ZetsuReplenishment> {
-  const traceNode = createTraceNode({
-    id: "nen.zetsu.replenishment",
-    label: "Resolve Zetsu replenishment",
-
-    formula:
-      "effectiveRegeneration = regenerationCapacity * replenishmentMultiplier",
-
-    inputs: {
-      regenerationCapacityPerHour: {
-        value:
-          Number.isFinite(
-            regenerationCapacityPerHour,
-          )
-            ? regenerationCapacityPerHour
-            : String(
-                regenerationCapacityPerHour,
-              ),
-      },
-
-      mastery: {
-        value: mastery,
-      },
-    },
-  });
-
-
-  if (
-    !Number.isFinite(
-      regenerationCapacityPerHour,
-    ) ||
-    regenerationCapacityPerHour < 0
-  ) {
-    return {
-      success: false,
-
-      trace: {
-        root: traceNode,
-      },
-
-      warnings: [],
-
-      errors: [
-        {
-          code:
-            "nen.zetsu.regeneration.invalid",
-          message:
-            "Zetsu replenishment requires a finite non-negative Aura Regeneration Capacity.",
-          audience: "developer",
-          required: "finite number >= 0",
-          actual:
-            Number.isFinite(
-              regenerationCapacityPerHour,
-            )
-              ? regenerationCapacityPerHour
-              : String(
-                  regenerationCapacityPerHour,
-                ),
-        },
-      ],
-    };
-  }
-
-
-  if (!isMasteryRank(mastery)) {
-    return {
-      success: false,
-
-      trace: {
-        root: traceNode,
-      },
-
-      warnings: [],
-
-      errors: [
-        {
-          code:
-            "nen.zetsu.mastery.invalid",
-          message:
-            "Zetsu mechanics require a learned Mastery rank from I through X.",
-          audience: "developer",
-          required:
-            `integer from 1 through ${STANDARD_MASTERY_MAX}`,
-          actual: mastery,
-        },
-      ],
-    };
-  }
-
-
-  const replenishmentMultiplier =
-    deriveZetsuReplenishmentMultiplier(
-      mastery,
-    );
-
-  const effectiveRegenerationPerHour =
-    regenerationCapacityPerHour *
-    replenishmentMultiplier;
-
-
-  const payload: ZetsuReplenishment = {
-    mastery,
-
-    regenerationCapacityPerHour,
-
-    replenishmentMultiplier,
-
-    effectiveRegenerationPerHour,
-  };
-
-
-  traceNode.output = {
-    mastery,
-
-    regenerationCapacityPerHour,
-
-    replenishmentMultiplier,
-
-    effectiveRegenerationPerHour,
-  };
-
-
-  return {
-    success: true,
-    payload,
-
-    trace: {
-      root: traceNode,
-    },
-
-    warnings: [],
-  };
-}
-
 
 /* -------------------------------------------------------------------------- */
 /* Aura Concealment                                                           */
@@ -644,8 +477,6 @@ export interface ZetsuResolution {
 
   readonly suppression: ZetsuSuppression;
 
-  readonly replenishment: ZetsuReplenishment;
-
   /*
    * Modifier contributed specifically to Aura Concealment.
    *
@@ -662,8 +493,11 @@ export interface ZetsuResolution {
  * This resolves:
  *
  * - Active Aura Output suppression;
- * - Aura replenishment;
  * - Aura Concealment contribution.
+ *
+ * Aura replenishment is NOT among them. How fast a suppressed character
+ * recovers depends on what they are doing, which this file cannot see; see
+ * aura/recovery.ts.
  *
  * It does not:
  *
@@ -674,7 +508,6 @@ export interface ZetsuResolution {
  */
 export function resolveZetsu(
   activeAuraOutput: number,
-  regenerationCapacityPerHour: number,
   mastery: number,
 ): EngineResult<ZetsuResolution> {
   const traceNode = createTraceNode({
@@ -682,7 +515,7 @@ export function resolveZetsu(
     label: "Resolve active Zetsu",
 
     formula:
-      "activeAuraOutput = 0; effectiveRegeneration = regenerationCapacity * replenishmentMultiplier; apply Aura Concealment modifier",
+      "activeAuraOutput = 0; apply Aura Concealment modifier",
 
     inputs: {
       activeAuraOutput: {
@@ -690,17 +523,6 @@ export function resolveZetsu(
           Number.isFinite(activeAuraOutput)
             ? activeAuraOutput
             : String(activeAuraOutput),
-      },
-
-      regenerationCapacityPerHour: {
-        value:
-          Number.isFinite(
-            regenerationCapacityPerHour,
-          )
-            ? regenerationCapacityPerHour
-            : String(
-                regenerationCapacityPerHour,
-              ),
       },
 
       mastery: {
@@ -767,48 +589,11 @@ export function resolveZetsu(
   }
 
 
-  if (
-    !Number.isFinite(
-      regenerationCapacityPerHour,
-    ) ||
-    regenerationCapacityPerHour < 0
-  ) {
-    return {
-      success: false,
-
-      trace: {
-        root: traceNode,
-      },
-
-      warnings: [],
-
-      errors: [
-        {
-          code:
-            "nen.zetsu.regeneration.invalid",
-          message:
-            "Zetsu requires a finite non-negative Aura Regeneration Capacity.",
-          audience: "developer",
-          required: "finite number >= 0",
-          actual:
-            Number.isFinite(
-              regenerationCapacityPerHour,
-            )
-              ? regenerationCapacityPerHour
-              : String(
-                  regenerationCapacityPerHour,
-                ),
-        },
-      ],
-    };
-  }
-
-
   /*
-   * Mastery and numeric inputs have already been validated above, so these
-   * child resolutions are expected to succeed. Calling the dedicated
-   * functions keeps their formulas authoritative rather than duplicating the
-   * calculations here.
+   * Mastery and numeric inputs have already been validated above, so this
+   * child resolution is expected to succeed. Calling the dedicated function
+   * keeps its formula authoritative rather than duplicating the calculation
+   * here.
    */
   const suppressionResult =
     resolveZetsuSuppression(
@@ -816,17 +601,8 @@ export function resolveZetsu(
       mastery,
     );
 
-  const replenishmentResult =
-    resolveZetsuReplenishment(
-      regenerationCapacityPerHour,
-      mastery,
-    );
 
-
-  if (
-    !suppressionResult.success ||
-    !replenishmentResult.success
-  ) {
+  if (!suppressionResult.success) {
     return {
       success: false,
 
@@ -846,9 +622,6 @@ export function resolveZetsu(
           actual: {
             suppressionSuccess:
               suppressionResult.success,
-
-            replenishmentSuccess:
-              replenishmentResult.success,
           },
         },
       ],
@@ -870,9 +643,6 @@ export function resolveZetsu(
     suppression:
       suppressionResult.payload,
 
-    replenishment:
-      replenishmentResult.payload,
-
     auraConcealmentModifier,
   };
 
@@ -889,14 +659,6 @@ export function resolveZetsu(
     activeAuraOutput:
       payload.suppression
         .activeAuraOutput,
-
-    replenishmentMultiplier:
-      payload.replenishment
-        .replenishmentMultiplier,
-
-    effectiveRegenerationPerHour:
-      payload.replenishment
-        .effectiveRegenerationPerHour,
 
     auraConcealmentModifier,
   };

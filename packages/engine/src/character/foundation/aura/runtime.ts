@@ -79,14 +79,18 @@ export const AURA_ACTION_COST = "aura.action-cost";
  *
  * `requested` is the requester's own estimate, reported back against what Aura
  * actually charged. The AUTHORITATIVE figure is whatever the expenditure rules
- * produce from the load: a requester that disagrees does not win, it is simply
- * told. Exertion load is relative to the actor and must be supplied, because
- * Aura may never infer whether a blow was strenuous for the body that threw it.
+ * produce: a requester that disagrees does not win, it is simply told.
+ *
+ * `additionalPhysicalCostRate` is the application's own declared share of
+ * Maximum Aura, and is absent for almost everything. Aura may never infer it —
+ * not from an exertion tier, not from what the action looks like — because the
+ * effort an action takes is charged by the hour through the activity the
+ * character is in, and a second inferred charge here would bill it twice.
  */
 export interface AuraCostRequest extends QuantitativeRequest {
   readonly kind: typeof AURA_ACTION_COST;
 
-  readonly exertionLoad?: number;
+  readonly additionalPhysicalCostRate?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
 
@@ -311,9 +315,12 @@ export function createAuraCostHandler(
         current,
         context,
         {
-          ...(auraRequest.exertionLoad === undefined
+          ...(auraRequest.additionalPhysicalCostRate === undefined
             ? {}
-            : { exertionLoad: auraRequest.exertionLoad }),
+            : {
+              additionalPhysicalCostRate:
+                auraRequest.additionalPhysicalCostRate,
+            }),
           ...(auraRequest.baseAuraCost === undefined
             ? {}
             : { baseAuraCost: auraRequest.baseAuraCost }),
@@ -419,7 +426,7 @@ export function auraCostRequest(input: {
   readonly to: RuntimeOwnerRef;
 
   readonly requested: number;
-  readonly exertionLoad?: number;
+  readonly additionalPhysicalCostRate?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
 
@@ -453,9 +460,11 @@ export function auraCostRequest(input: {
     ...(input.costPriority === undefined
       ? {}
       : { costPriority: input.costPriority }),
-    ...(input.exertionLoad === undefined
+    ...(input.additionalPhysicalCostRate === undefined
       ? {}
-      : { exertionLoad: input.exertionLoad }),
+      : {
+        additionalPhysicalCostRate: input.additionalPhysicalCostRate,
+      }),
     ...(input.baseAuraCost === undefined
       ? {}
       : { baseAuraCost: input.baseAuraCost }),

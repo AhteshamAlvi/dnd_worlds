@@ -544,15 +544,17 @@ export function rosterReducer(
       );
 
       /*
-       * Recovery needs an explicit context now — an ordinary waking hour
-       * restores nothing. The Workbench has no rest/sleep control yet, so this
-       * asks for sleep, which is what the old unrestricted replenishment was
-       * silently doing. A proper control belongs to the Workbench migration.
+       * Recovery needs an explicit context: a wakefulness mode AND the state
+       * the character's Aura nodes are in, because the two together decide the
+       * rate. The Workbench has no rest/sleep control and no access control
+       * yet, so this asks for a contained sleep — the best ordinary case,
+       * which is what the old unrestricted replenishment was silently doing.
+       * Proper controls belong to the Workbench migration.
        */
       const result = recoverAura(
         pool,
         attributes,
-        { mode: "sleep" },
+        { mode: "sleep", accessClass: "contained" },
         operation.hours,
       );
 

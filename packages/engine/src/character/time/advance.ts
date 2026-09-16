@@ -44,6 +44,7 @@ import {
   resolveAuraAccess,
 } from "../foundation/aura/access";
 import { advanceAuraTime } from "../foundation/aura/time";
+import { activeNenActivities } from "../foundation/nen/runtime";
 import { advanceNenActivities } from "../nen/runtime";
 import { auraTransitionContext, resolveCharacter } from "../resolution";
 import type { Character } from "../types";
@@ -154,12 +155,32 @@ export function advanceCharacterTime(
     character.nen,
   );
 
+  /*
+   * Whether a Nen activity is running as the interval OPENS.
+   *
+   * Generic, and asked of the runtime's own query rather than of any
+   * activity's definition — `activeNenActivities` filters on a condition the
+   * runtime owns, and nothing here reads a `definitionId`. Ten never appears,
+   * because passive derived state is not an activity.
+   *
+   * THE OPENING FACT ONLY. An activity that expires part-way through does not
+   * change the recovery rate by itself; a caller who wants the rest of the
+   * hour resolved differently says so with an activity change, which is the
+   * same mechanism every other mid-interval change already uses. Deriving it
+   * continuously would need a second clock inside Aura reading Nen state,
+   * which is the thing the whole coordinator exists to prevent.
+   */
+  const activeNenUse = input.activeEffects?.nenActivities !== undefined &&
+    activeNenActivities(input.activeEffects.nenActivities).length > 0;
+
   const aura = advanceAuraTime({
     state: character.aura,
     wakefulness: character.wakefulness,
     context,
     interval,
-    activity: activity.initial,
+    activity: activeNenUse
+      ? { ...activity.initial, activeNenUse: true }
+      : activity.initial,
     ...(activity.changes === undefined
       ? {}
       : { activityChanges: activity.changes }),

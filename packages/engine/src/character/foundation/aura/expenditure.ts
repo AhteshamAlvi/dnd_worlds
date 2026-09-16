@@ -8,21 +8,47 @@
  * is not. One reserve has none of those questions.
  *
  *
- * THE COST
- * --------
+ * EFFORT IS PAID FOR BY THE HOUR, NOT BY THE SWING
+ * ------------------------------------------------
  *
- *   C_physical = A_max x 0.001 x E x M_Stamina
+ *   C_physical = 2R per hour, whenever the body is working
  *
- * Proportional to MAXIMUM AURA, which is what makes the model scale. A
- * superhuman's ordinary punch and an ordinary person's ordinary punch are both
- * Exertion Load 1 — the same relative effort — and the superhuman pays vastly
- * more absolute Aura for a vastly more destructive punch. Their higher Stamina
- * then makes it a smaller share of a much larger reserve, so being powerful is
- * both more expensive and more sustainable at once, which is the intended
- * shape:
+ * Flat, and denominated in the character's own Regeneration Capacity. A
+ * strenuous hour and a merely busy one cost the same, because the thing being
+ * modelled is the body running hot rather than the number of times it moved.
+ * time.ts integrates it; nothing here charges per action.
  *
- *   CON 10 / VIT 10   A_max     10   Stamina 10   ordinary punch  0.01   (0.1%)
- *   CON 20 / VIT 20   A_max 50,000   Stamina 20   ordinary punch    25   (0.05%)
+ * WHAT THIS REPLACED. Every action used to carry its own price:
+ *
+ *   C = A_max x 0.001 x ExertionLoad x M_Stamina
+ *
+ * Three things were wrong with it, and they compounded. It made the engine
+ * charge for effort TWICE — once through the action and once through the
+ * sustained hour containing it — with a comment asking callers to please pick
+ * one. It required every authored Skill application to declare an exertion
+ * tier, which is a judgement about a fiction the engine cannot make. And it
+ * scaled with Maximum Aura, so a superhuman paid thousands of Aura to throw a
+ * punch that a shopkeeper paid a hundredth of one for.
+ *
+ * Stamina is gone from Aura entirely along with it. It was the efficiency term
+ * for a cost that no longer exists.
+ *
+ *
+ * THE SURCHARGE THAT REPLACED THE TIER
+ * ------------------------------------
+ *
+ *   C_additional = A_max x p
+ *
+ * Some applications really are a burst of effort rather than an hour of it — a
+ * Sprint, a desperate leap — and they may now say so EXPLICITLY, by declaring
+ * their own fraction of Maximum Aura. A Sprint declaring 0.02 costs a 100-Aura
+ * character 2 Aura when it settles.
+ *
+ * AUTHORED, never inferred. Nothing derives `p` from an exertion tier, a Skill
+ * category, or whether the action looks physical — that inference is exactly
+ * what the old model did, and it is what made the cost unarguable-with. Most
+ * applications omit the field and cost nothing discrete; the ones that declare
+ * it have had somebody decide the number on purpose.
  *
  *
  * WHAT IT BYPASSES, AND WHY
@@ -30,8 +56,7 @@
  *
  * Aura Control is not applied. Control describes how efficiently a character
  * projects Aura on purpose; throwing a punch is not that, and a clumsy
- * character does not tire five times faster than a graceful one. Stamina is
- * the efficiency term for physical effort, and it is the only one.
+ * character does not tire five times faster than a graceful one.
  *
  * Awakening is not required either. An unawakened character has a real Aura
  * pool and their body burns it exactly the same way; awakening gates
@@ -41,11 +66,11 @@
  * COMPOSING WITH AURA ENHANCEMENT
  * -------------------------------
  *
- *   C_total = C_physical + (C_baseAura x M_Control)
+ *   C_total = C_additional + (C_baseAura x M_Control)
  *
- * Two components, two efficiency terms, never mixed. Stamina touches only the
- * first and Control only the second, and they are reported separately all the
- * way out so a sheet can show why a Nen-enhanced strike cost what it did.
+ * Two components, one efficiency term, never mixed. Control touches only the
+ * second, and they are reported separately all the way out so a sheet can show
+ * why a Nen-enhanced strike cost what it did.
  *
  * REQUIRED OUTPUT is a third thing again, and is not spent. An application may
  * need a given amount of Aura placed on the body to function without consuming
@@ -58,14 +83,7 @@ import type {
   NonEmptyArray,
 } from "../../../infrastructure/result";
 import { createTraceNode, type TraceNode } from "../../../infrastructure/trace";
-import { resolveStamina } from "../attributes/derived/resolution";
 import type { CharacterStats } from "../attributes/stats";
-import {
-  deriveStaminaExpenditureMultiplier,
-  sustainedActivityLoadPerHour,
-  type PhysicalExertionLoad,
-  type SustainedActivityLevel,
-} from "../body/endurance";
 
 import {
   deliberateAccessError,
@@ -79,113 +97,78 @@ import type { AuraExpenditure } from "./types";
 
 
 /*
- * The share of Maximum Aura one unit of Exertion Load costs at Stamina 10.
+ * What an hour of physical work costs, as a multiple of Regeneration Capacity.
  *
- * A tenth of a percent. Centralized as a single constant because it is the
- * master calibration dial for the entire physical-expenditure model: every
- * discrete action and every hour of sustained activity is this number times a
- * load. Moving it moves the whole economy at once, which is the only way a
- * dial like this stays honest.
+ * Two, which is the same figure half-open pores lose — deliberately, because
+ * both are "the body running at its own turnover". Set against the recovery
+ * table it means a working hour costs an ordinary person 2R while earning them
+ * R, a net R an hour down, whatever their Attributes: effort is equally
+ * expensive in relative terms for the shopkeeper and the superhuman, which is
+ * the property the old Maximum-Aura scaling destroyed.
+ *
+ * time.ts integrates this. It is the ONLY producer of continuous physical
+ * consumption.
  */
-export const PHYSICAL_AURA_COST_COEFFICIENT = 0.001;
+export const PHYSICAL_CONSUMPTION_REGENERATION_MULTIPLE = 2;
+
+
+/**
+ * What an hour of physical work costs this character.
+ *
+ * Flat while exerting and zero otherwise — there is no load term, because the
+ * magnitude of the effort no longer changes the price.
+ */
+export function derivePhysicalConsumptionPerHour(
+  regenerationPerHour: number,
+): number {
+  return regenerationPerHour * PHYSICAL_CONSUMPTION_REGENERATION_MULTIPLE;
+}
 
 
 /* ── Cost derivation ────────────────────────────────────────────────────── */
 
 /*
- * The full working of one physical cost.
+ * The full working of one application's declared physical surcharge.
  *
  * Every factor is kept rather than collapsed into the answer, because "that
- * punch cost 25 Aura" is unarguable and undebuggable, and a GM asking why
- * wants to see the pool it scaled from and the Stamina that discounted it.
+ * Sprint cost 2 Aura" is unarguable and undebuggable, and a GM asking why
+ * wants to see the pool it scaled from and the rate the application declared.
  */
 export interface PhysicalAuraCost {
   readonly maximumAura: number;
-  readonly exertionLoad: PhysicalExertionLoad;
-  readonly stamina: number;
-  readonly staminaMultiplier: number;
-  readonly coefficient: number;
+
+  /** The application's own declared share of Maximum Aura. Authored. */
+  readonly rate: number;
 
   /** Unrounded. Fractional Aura is the norm at ordinary Attribute levels. */
   readonly cost: number;
 }
 
 
-function invalidLoad(load: number): boolean {
-  return !Number.isFinite(load) || load < 0;
+function invalidRate(rate: number): boolean {
+  return !Number.isFinite(rate) || rate < 0;
 }
 
 
 /**
- * The Aura an ordinary physical action costs.
+ * The Aura an application's declared physical surcharge costs.
  *
- * `stamina` is the derived Stamina SCORE — round((CON + VIT) / 2) — not a
- * multiplier and not a reserve. Taken as a number so this stays usable by
- * anything holding a stat block without going back through resolution.
+ *   C = A_max x p
+ *
+ * `rate` comes from the application and from nowhere else. There is
+ * deliberately no overload taking an exertion tier, a Skill category or an
+ * activity level: every one of those would be the engine guessing at a
+ * judgement the author is supposed to have made.
  */
 export function derivePhysicalAuraCost(
   maximumAura: number,
-  exertionLoad: PhysicalExertionLoad,
-  stamina: number,
+  rate: number,
 ): PhysicalAuraCost {
-  const staminaMultiplier = deriveStaminaExpenditureMultiplier(stamina);
-
   return {
     maximumAura,
-    exertionLoad,
-    stamina,
-    staminaMultiplier,
-    coefficient: PHYSICAL_AURA_COST_COEFFICIENT,
-    cost:
-      maximumAura *
-      PHYSICAL_AURA_COST_COEFFICIENT *
-      exertionLoad *
-      staminaMultiplier,
+    rate,
+    cost: maximumAura * rate,
   };
-}
-
-
-/**
- * The Aura an interval of sustained physical activity costs.
- *
- * The same coefficient and the same Stamina multiplier as a discrete action,
- * against a load quoted PER HOUR:
- *
- *   C = A_max x 0.001 x E_perHour x M_Stamina x t
- *
- * At Stamina 10 the named activity levels come out as 0%, 0.5%, 1.5%, 5% and
- * 10% of Maximum Aura per hour, which is the form they were calibrated in.
- *
- * Discrete actions and sustained rates must not both charge for the same
- * effort. An hour described as "strenuous" already includes the swinging; a
- * caller resolving individual blows within that hour should describe the hour
- * as something quieter, or charge the blows and not the hour.
- */
-export function deriveSustainedPhysicalAuraCost(
-  maximumAura: number,
-  loadPerHour: PhysicalExertionLoad,
-  stamina: number,
-  hours: number,
-): PhysicalAuraCost {
-  const perHour = derivePhysicalAuraCost(maximumAura, loadPerHour, stamina);
-
-  return { ...perHour, cost: perHour.cost * hours };
-}
-
-
-/** The same, from a named activity level rather than a raw load. */
-export function deriveSustainedActivityAuraCost(
-  maximumAura: number,
-  activity: SustainedActivityLevel,
-  stamina: number,
-  hours: number,
-): PhysicalAuraCost {
-  return deriveSustainedPhysicalAuraCost(
-    maximumAura,
-    sustainedActivityLoadPerHour(activity),
-    stamina,
-    hours,
-  );
 }
 
 
@@ -194,16 +177,23 @@ export function deriveSustainedActivityAuraCost(
 /*
  * What an action asks the character to pay.
  *
- * `exertionLoad` and `baseAuraCost` are supplied by whatever is producing the
- * action — Combat, an action definition, a Nen ability. Aura never infers
- * whether a swing was forceful or whether a technique costs anything.
+ * Every field is supplied by whatever is producing the action — Combat, an
+ * action definition, a Nen ability. Aura never infers whether an act was
+ * strenuous or whether a technique costs anything.
+ *
+ * `additionalPhysicalCostRate` is the application's own declared share of
+ * Maximum Aura, and OMITTING IT IS THE ORDINARY CASE. An action that does not
+ * declare one has no discrete physical cost at all; the effort it took is
+ * charged by the hour, through the activity the character was in. Nothing
+ * derives this from an exertion tier or from whether the action looks
+ * physical.
  *
  * `requiredOutput` is checked and NOT spent. A technique may need 500 Aura
  * held on the body to function while consuming none of it; conflating the two
  * would charge a character for standing still in Ren.
  */
 export interface AuraActionCostRequest {
-  readonly exertionLoad?: PhysicalExertionLoad;
+  readonly additionalPhysicalCostRate?: number;
   readonly baseAuraCost?: number;
   readonly requiredOutput?: number;
 }
@@ -246,15 +236,16 @@ function costErrors(
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
 
-  const load = request.exertionLoad ?? 0;
+  const rate = request.additionalPhysicalCostRate ?? 0;
 
-  if (invalidLoad(load)) {
+  if (invalidRate(rate)) {
     errors.push({
-      code: "aura.exertion.load.invalid",
-      message: "Physical Exertion Load must be a finite non-negative number.",
+      code: "aura.action.physical_rate.invalid",
+      message:
+        "An additional physical Aura cost rate must be a finite non-negative share of Maximum Aura.",
       audience: "developer",
       required: "finite number >= 0",
-      actual: Number.isFinite(load) ? load : String(load),
+      actual: Number.isFinite(rate) ? rate : String(rate),
     });
   }
 
@@ -317,7 +308,8 @@ function costErrors(
  * that did not happen.
  *
  * Returns the components. `settle`-style reconciliation of allocations is the
- * caller's — spendPhysicalAura below is the transition-shaped wrapper.
+ * caller's — spendActionAura in transitions.ts is the transition-shaped
+ * wrapper.
  */
 export function resolveAuraActionCost(
   stats: CharacterStats,
@@ -325,22 +317,20 @@ export function resolveAuraActionCost(
   usableOutput: number,
 ): EngineResult<AuraActionCost> {
   const maximumAura = deriveMaximumAura(stats);
-  const stamina = resolveStamina(stats);
 
   const traceNode = createTraceNode({
     id: "aura.expenditure.action",
     label: "Resolve action Aura cost",
     formula:
-      "physical = maximumAura * 0.001 * exertionLoad * staminaMultiplier; deliberate = baseAuraCost * controlMultiplier",
+      "physical = maximumAura * additionalPhysicalCostRate; deliberate = baseAuraCost * controlMultiplier",
 
     decisionId: "aura.endurance.single-reserve",
     inputs: {
       maximumAura: { value: maximumAura },
-      stamina: { value: stamina },
-      exertionLoad: {
-        value: Number.isFinite(request.exertionLoad ?? 0)
-          ? request.exertionLoad ?? 0
-          : String(request.exertionLoad),
+      additionalPhysicalCostRate: {
+        value: Number.isFinite(request.additionalPhysicalCostRate ?? 0)
+          ? request.additionalPhysicalCostRate ?? 0
+          : String(request.additionalPhysicalCostRate),
       },
       baseAuraCost: {
         value: Number.isFinite(request.baseAuraCost ?? 0)
@@ -368,8 +358,7 @@ export function resolveAuraActionCost(
 
   const physical = derivePhysicalAuraCost(
     maximumAura,
-    request.exertionLoad ?? 0,
-    stamina,
+    request.additionalPhysicalCostRate ?? 0,
   );
 
   /*
@@ -409,7 +398,7 @@ export function resolveAuraActionCost(
 
   traceNode.output = {
     physicalCost: physical.cost,
-    staminaMultiplier: physical.staminaMultiplier,
+    physicalRate: physical.rate,
     deliberateCost: deliberate?.finalCost ?? 0,
     controlMultiplier: deliberate?.controlMultiplier ?? null,
     requiredOutput: payload.requiredOutput,

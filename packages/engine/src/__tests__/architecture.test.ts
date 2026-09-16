@@ -2532,23 +2532,37 @@ describe("Nen awakening stays inside its own domain", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("reaches the passive Ten principle from the access projection alone", () => {
-    /*
-     * The exception, stated as an exact list rather than as a permission.
-     *
-     * A second file reaching for ten.ts fails here and has to argue for
-     * itself, which is the only form an architecture exception survives in —
-     * and if the projection ever moves, this says so rather than quietly
-     * allowing Ten to be imported from anywhere in the domain.
-     */
-    const reaching = nenFiles.filter((path) =>
-      moduleSpecifiers(path).some((specifier) =>
-        resolvesInto(path, specifier, join("nen", "principles", "ten")),
-      ),
-    );
+  /*
+   * The passive principles, and the one file allowed to reach for them.
+   *
+   * Ten's coating and pseudo-Chū's efficiency came through the same door for
+   * the same reason: both are properties of a STATE rather than things a
+   * character does, both are owned by a principle file, and Aura held a
+   * quietly diverging copy of each until it stopped. Chū joined the list when
+   * its 20% moved out of aura/access.ts.
+   */
+  const PASSIVE_PRINCIPLES = ["ten", "chu"];
 
-    expect(reaching).toEqual([join(SRC, "character", "nen", "access.ts")]);
-  });
+  for (const principle of PASSIVE_PRINCIPLES) {
+    it(`reaches the passive ${principle} principle from the access projection alone`, () => {
+      /*
+       * The exception, stated as an exact list rather than as a permission.
+       *
+       * A second file reaching for it fails here and has to argue for itself,
+       * which is the only form an architecture exception survives in — and if
+       * the projection ever moves, this says so rather than quietly allowing
+       * the principle to be imported from anywhere in the domain.
+       */
+      const reaching = nenFiles.filter((path) =>
+        moduleSpecifiers(path).some((specifier) =>
+          resolvesInto(path, specifier, join("nen", "principles", principle)),
+        ),
+      );
+
+      expect([principle, reaching])
+        .toEqual([principle, [join(SRC, "character", "nen", "access.ts")]]);
+    });
+  }
 
   it("keeps Aura ignorant of Ten in return", () => {
     /*
@@ -2568,6 +2582,38 @@ describe("Nen awakening stays inside its own domain", () => {
     const offenders = auraFiles.filter((path) =>
       moduleSpecifiers(path).some((specifier) =>
         resolvesInto(path, specifier, join("foundation", "nen")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * Pseudo-Chū's 20%, the other borrowed principle number.
+   *
+   * Checked as a LITERAL rather than as an import, because the cheap way to
+   * reintroduce it needs no dependency edge at all: somebody writes `0.2`
+   * beside the word efficiency and the two domains disagree forever.
+   */
+  it("states no passive reinforcement efficiency of its own anywhere in Aura", () => {
+    const statesAnEfficiency = (code: string) =>
+      /efficiency\w*\s*[:=]\s*0?\.\d/i.test(code);
+
+    expect(statesAnEfficiency("export const PSEUDO_CHU_EFFICIENCY = 0.20;"))
+      .toBe(true);
+    expect(statesAnEfficiency("  efficiency: 0.2,")).toBe(true);
+    expect(statesAnEfficiency("  efficiency: reinforcement.efficiency,"))
+      .toBe(false);
+
+    const auraFiles = sourceFilesUnder(
+      join(SRC, "character", "foundation", "aura"),
+    );
+
+    const offenders = auraFiles.filter((path) =>
+      statesAnEfficiency(
+        readFileSync(path, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/.*$/gm, ""),
       ),
     );
 
@@ -2873,6 +2919,160 @@ describe("one canonical Round duration", () => {
   it("keeps the canonical declaration where it belongs", () => {
     expect(readFileSync(canonical, "utf8"))
       .toMatch(/export const SECONDS_PER_COMBAT_ROUND = 2;/);
+  });
+});
+
+
+/*
+ * The Aura-over-time economy, and the two shapes it must not grow back.
+ *
+ * Both were removed for the same reason: they let a principle's name or a
+ * character's power level decide a rate that should have depended on what the
+ * character was DOING. Neither leaves an import behind when it returns, so
+ * both are checked against the source text.
+ */
+describe("the Aura economy stays generic", () => {
+  /*
+   * LIVE source only. Tests name the removed symbols on purpose — asserting
+   * that a module no longer exports one is how the removal is pinned — and a
+   * rule that flagged those would force the guards to describe themselves in
+   * paraphrase.
+   */
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__"),
+  );
+
+  const codeOf = (path: string) =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+  it("finds the sources it is checking", () => {
+    expect(everySource.length).toBeGreaterThan(50);
+  });
+
+  /*
+   * The per-action physical cost, in any spelling.
+   *
+   * `A_max x 0.001 x load x M_Stamina` is gone, and what makes it stay gone is
+   * that the TERMS are gone: there is no coefficient to multiply, no Stamina
+   * multiplier to apply, and no exertion tier reaching an Aura cost request.
+   * Effort is 2R an hour, integrated by the solver, for everybody.
+   */
+  it("prices physical effort through no coefficient, tier or Stamina term", () => {
+    const forbidden = [
+      "PHYSICAL_AURA_COST_COEFFICIENT",
+      "deriveStaminaExpenditureMultiplier",
+      "deriveSustainedActivityAuraCost",
+      "deriveSustainedPhysicalAuraCost",
+      "spendPhysicalAura",
+    ];
+
+    for (const name of forbidden) {
+      const offenders = everySource.filter((path) =>
+        new RegExp(`\\b${name}\\b`).test(codeOf(path)),
+      );
+
+      expect([name, offenders]).toEqual([name, []]);
+    }
+  });
+
+  it("lets no Aura cost request carry an exertion tier", () => {
+    /*
+     * The tier still exists as CLASSIFICATION on an authored application, and
+     * that is deliberate. What it may not do is reach a cost: an application
+     * that should cost something declares its own share of Maximum Aura, so a
+     * cost request naming `exertionLoad` is the inference coming back.
+     */
+    const costFiles = [
+      join(SRC, "character", "foundation", "aura", "expenditure.ts"),
+      join(SRC, "character", "foundation", "aura", "runtime.ts"),
+      join(SRC, "character", "foundation", "aura", "transitions.ts"),
+      join(SRC, "character", "foundation", "aura", "funding.ts"),
+    ];
+
+    for (const path of costFiles) {
+      expect([path.replace(SRC, ""), /\bexertionLoad\b/.test(codeOf(path))])
+        .toEqual([path.replace(SRC, ""), false]);
+    }
+  });
+
+  /*
+   * And the recovery side: the active-Nen fact is a BOOLEAN the coordinator
+   * derives from a generic query. A runtime that branched on `definitionId`
+   * would be deciding a rate from a principle's name, which is the thing the
+   * four access classes exist to make impossible.
+   */
+  it("branches on no principle id in the generic activity runtime", () => {
+    const runtimeFiles = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "nen", "runtime")),
+      ...sourceFilesUnder(join(SRC, "character", "nen", "runtime")),
+      join(SRC, "character", "time", "advance.ts"),
+    ];
+
+    expect(runtimeFiles.length).toBeGreaterThan(3);
+
+    /*
+     * Comparing a definition id against a STRING LITERAL, which is the whole
+     * of the offence. Comparing one against another id is how a declared
+     * relation between two activities is resolved, and `typeof x !== "string"`
+     * is a validator — neither reads a principle's name.
+     */
+    /*
+     * Two shapes. Comparing a definition id against ANY string literal is the
+     * obvious one; naming a PRINCIPLE in a comparison or a case label is the
+     * one that dodges it, because a helper can call the parameter anything it
+     * likes — `id === "ren"` reads a principle's name just as much as
+     * `activity.definitionId === "ren"` does.
+     */
+    const pattern =
+      /definitionId\s*(?:===|!==)\s*"|(?:===|!==)\s*"(?:ren|ten|zetsu|hatsu|chu)"|case\s+"(?:ren|ten|zetsu|hatsu|chu)"/;
+
+    /*
+     * Per LINE, skipping any that also says `typeof`. A validator asking
+     * whether an id is a string is not reading which principle it names, and
+     * it is spelt with the same operator.
+     */
+    const branching = (code: string): boolean =>
+      code.split("\n").some(
+        (line) => pattern.test(line) && !line.includes("typeof"),
+      );
+
+    /* The predicate, exercised so it cannot stop matching in silence. */
+    expect(branching('if (activity.definitionId === "ren") {')).toBe(true);
+    expect(branching('      case "zetsu":')).toBe(true);
+    expect(branching('  return id === "ren";')).toBe(true);
+    expect(branching("const id = activity.definitionId;")).toBe(false);
+    expect(branching('    typeof activity.definitionId !== "string" ||'))
+      .toBe(false);
+    expect(branching("(one) => one.definitionId === relation.other"))
+      .toBe(false);
+
+    const offenders = runtimeFiles.filter((path) => branching(codeOf(path)));
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * The old recovery table, which was three numbers and a Zetsu rank.
+   *
+   * A mode multiplier of 0, 0.5 or 1 anywhere in Aura would be it coming back,
+   * and so would a Zetsu profile carrying a replenishment figure.
+   */
+  it("keeps no mode-only recovery multiplier and no Zetsu replenishment", () => {
+    const zetsu = codeOf(
+      join(SRC, "character", "foundation", "nen", "principles", "zetsu.ts"),
+    );
+
+    expect(zetsu).not.toMatch(/replenishmentMultiplier/);
+    expect(zetsu).not.toMatch(/resolveZetsuReplenishment/);
+
+    const recovery = codeOf(
+      join(SRC, "character", "foundation", "aura", "recovery.ts"),
+    );
+
+    expect(recovery).not.toMatch(/AURA_RECOVERY_MODE_MULTIPLIERS/);
+    expect(recovery).toMatch(/AURA_RECOVERY_COEFFICIENTS/);
   });
 });
 

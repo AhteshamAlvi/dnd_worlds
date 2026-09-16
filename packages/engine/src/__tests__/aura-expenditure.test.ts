@@ -1,25 +1,29 @@
 /*
  * Spending Aura on effort: physical cost, Aura enhancement, and upkeep.
  *
- * There is one reserve. A punch, a Nen strike and an hour of holding Ren open
- * all come out of the same pool, and what distinguishes them is which
- * efficiency term applies:
+ * There is one reserve. A declared surcharge, a Nen strike and an hour of
+ * holding Ren open all come out of the same pool, and what distinguishes them
+ * is which efficiency term applies:
  *
- *   physical    scaled by STAMINA, never by Control
- *   deliberate  scaled by CONTROL, never by Stamina
+ *   physical    the application's OWN declared share of Maximum Aura, scaled
+ *               by nothing at all
+ *   deliberate  scaled by CONTROL
  *   upkeep      deliberate, charged per unit time
  *
- * The two are reported separately all the way out, because "that strike cost
- * 37 Aura" cannot be argued with and cannot be debugged.
+ * They are reported separately all the way out, because "that strike cost 37
+ * Aura" cannot be argued with and cannot be debugged.
+ *
+ * WHAT IS NOT HERE ANY MORE. Bodily effort used to be priced per action, from
+ * an exertion tier and a Stamina multiplier against Maximum Aura. It is a
+ * continuous rate now — 2R an hour whenever the body is working, integrated by
+ * the time solver — so there is no such thing as the Aura cost of a punch, and
+ * these suites test that there is no route to one.
  */
 
 import { describe, expect, it } from "vitest";
 
 import {
-  PHYSICAL_AURA_COST_COEFFICIENT,
   derivePhysicalAuraCost,
-  deriveSustainedActivityAuraCost,
-  deriveSustainedPhysicalAuraCost,
   resolveAuraActionCost,
 } from "../character/foundation/aura/expenditure";
 import {
@@ -28,15 +32,12 @@ import {
   upkeepRatePerHour,
 } from "../character/foundation/aura/upkeep";
 import { deriveMaximumAura } from "../character/foundation/aura/pool";
-import {
-  spendActionAura,
-  spendPhysicalAura,
-} from "../character/foundation/aura/transitions";
+import * as transitionModule from "../character/foundation/aura/transitions";
+import { spendActionAura } from "../character/foundation/aura/transitions";
 import {
   PHYSICAL_EXERTION_LOADS,
   physicalExertionLoad,
 } from "../character/foundation/body/endurance";
-import { resolveStamina } from "../character/foundation/attributes/derived/resolution";
 import { continuityKey } from "../character/foundation/body/anatomy/types";
 import type { CharacterStats } from "../character/foundation/attributes/stats";
 import type { AuraAccessInput } from "../character/foundation/aura/types";
@@ -54,17 +55,6 @@ const RIGHT_ARM = continuityKey("upper-limb:right");
 /* Ren III, which opens room above the 5% baseline Ten already commits. */
 const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
-function costFor(
-  stats: CharacterStats,
-  load: number,
-): number {
-  return derivePhysicalAuraCost(
-    deriveMaximumAura(stats),
-    load,
-    resolveStamina(stats),
-  ).cost;
-}
-
 function errorCodes(
   result: { success: boolean; errors?: readonly { code: string }[] },
 ): readonly string[] {
@@ -72,153 +62,117 @@ function errorCodes(
 }
 
 
-describe("discrete physical Aura cost", () => {
+describe("the declared physical surcharge", () => {
   const STANDARD = auraTestAttributes();
-
-  it("centralizes the calibration coefficient", () => {
-    expect(PHYSICAL_AURA_COST_COEFFICIENT).toBe(0.001);
-  });
+  const STRONG = auraTestAttributes({ con: 20, vit: 20 });
 
   /*
-   * The reference character: Maximum Aura 10, Stamina 10, multiplier x1.0, so
-   * each cost is exactly a tenth of a percent of the pool per unit of load.
+   * A_max x p, and nothing else in the expression. No coefficient, no exertion
+   * tier, no Stamina — those were the three terms of the removed model, and
+   * the whole point of the replacement is that an author names the number.
    */
-  it("hits every exertion level for the standard character", () => {
-    const expected: readonly (readonly [string, number])[] = [
-      ["negligible", 0],
-      ["light", 0.0025],
-      ["ordinary-committed", 0.01],
-      ["forceful", 0.02],
-      ["maximal", 0.04],
-      ["desperate-overexertion", 0.08],
-    ];
-
-    for (const [level, cost] of expected) {
-      const load = PHYSICAL_EXERTION_LOADS[
-        level as keyof typeof PHYSICAL_EXERTION_LOADS
-      ];
-
-      expect([level, costFor(STANDARD, load)]).toEqual([level, cost]);
-    }
+  it("is the application's own share of Maximum Aura", () => {
+    expect(derivePhysicalAuraCost(100, 0.02).cost).toBe(2);
+    expect(derivePhysicalAuraCost(deriveMaximumAura(STRONG), 0.02).cost)
+      .toBe(deriveMaximumAura(STRONG) * 0.02);
   });
 
-  it("scales linearly with Exertion Load", () => {
-    expect(costFor(STANDARD, 2)).toBeCloseTo(costFor(STANDARD, 1) * 2, 12);
-    expect(costFor(STANDARD, 8)).toBeCloseTo(costFor(STANDARD, 1) * 8, 12);
-  });
-
-  it("applies the Stamina multiplier and nothing else", () => {
-    const resolved = derivePhysicalAuraCost(1000, 1, 20);
-
-    expect(resolved.staminaMultiplier).toBe(0.5);
-    expect(resolved.cost).toBe(1000 * 0.001 * 1 * 0.5);
-  });
-
-  /*
-   * The shape the whole model is built for. A stronger character's ordinary
-   * punch costs vastly more absolute Aura — it is a vastly more destructive
-   * punch — while being a smaller share of a much larger reserve.
-   */
-  it("costs more in absolute Aura and less in percentage as the pool grows", () => {
-    const strong = auraTestAttributes({ con: 20, vit: 20 });
-
-    const weakCost = costFor(STANDARD, 1);
-    const strongCost = costFor(strong, 1);
-
-    expect(strongCost).toBeGreaterThan(weakCost);
-    expect(strongCost).toBe(25);
-
-    expect(strongCost / deriveMaximumAura(strong))
-      .toBeLessThan(weakCost / deriveMaximumAura(STANDARD));
-  });
-
-  it("keeps the factors that produced it rather than only the answer", () => {
-    const resolved = derivePhysicalAuraCost(50_000, 2, 20);
-
-    expect(resolved).toEqual({
-      maximumAura: 50_000,
-      exertionLoad: 2,
-      stamina: 20,
-      staminaMultiplier: 0.5,
-      coefficient: 0.001,
-      cost: 50,
+  it("keeps the two factors that produced it, not only the answer", () => {
+    expect(derivePhysicalAuraCost(100, 0.02)).toEqual({
+      maximumAura: 100,
+      rate: 0.02,
+      cost: 2,
     });
   });
 
-  it("preserves fractional cost rather than rounding it away", () => {
-    expect(costFor(STANDARD, physicalExertionLoad("light"))).toBe(0.0025);
+  it("costs nothing when nothing is declared", () => {
+    const result = resolveAuraActionCost(
+      STRONG,
+      { baseAuraCost: 0 },
+      Number.POSITIVE_INFINITY,
+    );
+
+    expect(result.success && result.payload.physical.cost).toBe(0);
   });
-});
 
-
-describe("sustained physical Aura cost", () => {
-  const STANDARD = auraTestAttributes();
-  const MAX = deriveMaximumAura(STANDARD);
+  it("preserves fractional cost rather than rounding it away", () => {
+    expect(derivePhysicalAuraCost(deriveMaximumAura(STANDARD), 0.02).cost)
+      .toBeCloseTo(deriveMaximumAura(STANDARD) * 0.02, 12);
+  });
 
   /*
-   * The form the rates were calibrated in: at Stamina 10 the named levels come
-   * out as round percentages of Maximum Aura per hour.
+   * Stamina used to discount this, through `M_Stamina = 10 / Stamina`. It does
+   * not, and cannot: the multiplier no longer exists, and the rate an author
+   * declared is the rate they meant for everybody.
    */
-  it("resolves to the calibrated percentages at Stamina 10", () => {
-    const expected: readonly (readonly [string, number])[] = [
-      ["ordinary-waking", 0],
-      ["light", 0.005],
-      ["moderate", 0.015],
-      ["strenuous", 0.05],
-      ["extreme", 0.1],
-    ];
+  it("is not discounted by Stamina", () => {
+    const tough = auraTestAttributes({ con: 30, vit: 30 });
+    const frail = auraTestAttributes({ con: 20, vit: 20 });
 
-    for (const [activity, fraction] of expected) {
-      const cost = deriveSustainedActivityAuraCost(
-        MAX,
-        activity as "light",
-        10,
-        1,
-      ).cost;
+    const share = (stats: CharacterStats) => {
+      const result = resolveAuraActionCost(
+        stats,
+        { additionalPhysicalCostRate: 0.02 },
+        Number.POSITIVE_INFINITY,
+      );
 
-      expect([activity, cost / MAX]).toEqual([activity, fraction]);
-    }
+      if (!result.success) throw new Error("Expected the cost to resolve.");
+
+      return result.payload.physical.cost / deriveMaximumAura(stats);
+    };
+
+    expect(share(tough)).toBeCloseTo(share(frail), 12);
+    expect(share(tough)).toBeCloseTo(0.02, 12);
   });
 
-  /* An ordinary day costs nothing. Only wakefulness accumulates. */
-  it("charges nothing for ordinary waking, however long it lasts", () => {
-    expect(
-      deriveSustainedActivityAuraCost(MAX, "ordinary-waking", 10, 100).cost,
-    ).toBe(0);
-  });
+  /*
+   * The removed model, stated as a rule rather than as an absence: no
+   * combination of an exertion tier and a Stamina score produces an Aura cost
+   * any more. A "maximal" Skill and a "light" one cost the same unless their
+   * authors said otherwise.
+   */
+  it("derives nothing from the exertion tiers, which are classification", () => {
+    /*
+     * The tiers still exist and still differ. What no longer exists is any way
+     * to turn one into Aura: the cost request has no field that would take
+     * one, so the strongest statement available is that the vocabulary is
+     * intact and disconnected.
+     */
+    expect(physicalExertionLoad("desperate-overexertion")).toBe(8);
+    expect(physicalExertionLoad("light")).toBe(0.25);
 
-  it("scales with time", () => {
-    const oneHour = deriveSustainedActivityAuraCost(MAX, "strenuous", 10, 1);
-    const threeHours = deriveSustainedActivityAuraCost(MAX, "strenuous", 10, 3);
+    const request = { additionalPhysicalCostRate: 0.001 } as Record<string, unknown>;
 
-    expect(threeHours.cost).toBeCloseTo(oneHour.cost * 3, 12);
-  });
+    expect(Object.keys(PHYSICAL_EXERTION_LOADS)).not.toContain("rate");
+    expect(request["exertionLoad"]).toBeUndefined();
 
-  it("uses the same coefficient and Stamina multiplier as a discrete action", () => {
-    const sustained = deriveSustainedPhysicalAuraCost(MAX, 4, 20, 1);
-    const discrete = derivePhysicalAuraCost(MAX, 4, 20);
+    const resolved = resolveAuraActionCost(
+      STRONG,
+      { additionalPhysicalCostRate: 0.001 },
+      Number.POSITIVE_INFINITY,
+    );
 
-    expect(sustained.coefficient).toBe(discrete.coefficient);
-    expect(sustained.staminaMultiplier).toBe(discrete.staminaMultiplier);
-    expect(sustained.cost).toBe(discrete.cost);
+    /* The declared rate, and nothing a tier could have added to it. */
+    expect(resolved.success && resolved.payload.physical.cost)
+      .toBe(deriveMaximumAura(STRONG) * 0.001);
   });
 });
 
 
-describe("composing physical and Aura-enhancement cost", () => {
+describe("composing the surcharge with Aura enhancement", () => {
   const STATS = auraTestAttributes({ con: 20, vit: 20, dex: 10 });
 
   it("keeps the two components separate", () => {
     const result = resolveAuraActionCost(
       STATS,
-      { exertionLoad: 2, baseAuraCost: 100 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 100 },
       Number.POSITIVE_INFINITY,
     );
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* Physical: 50,000 x 0.001 x 2 x 0.5. Deliberate: 100 x 2.9 at DEX 10. */
+    /* Physical: 50,000 x 0.001. Deliberate: 100 x 2.9 at DEX 10. */
     expect(result.payload.physical.cost).toBe(50);
     expect(result.payload.deliberate).toEqual({
       baseCost: 100,
@@ -228,40 +182,15 @@ describe("composing physical and Aura-enhancement cost", () => {
     expect(result.payload.total).toBe(340);
   });
 
-  /*
-   * Two efficiency terms, two components, and neither reaches the other. A
-   * clumsy character does not tire faster from swinging a sword.
-   */
-  it("lets Stamina move only the physical half", () => {
-    const clumsyStrong = resolveAuraActionCost(
-      auraTestAttributes({ con: 20, vit: 20, dex: 10 }),
-      { exertionLoad: 2, baseAuraCost: 100 },
-      Number.POSITIVE_INFINITY,
-    );
-    const clumsyWeak = resolveAuraActionCost(
-      auraTestAttributes({ con: 20, vit: 10, dex: 10 }),
-      { exertionLoad: 2, baseAuraCost: 100 },
-      Number.POSITIVE_INFINITY,
-    );
-
-    expect(clumsyStrong.success && clumsyWeak.success).toBe(true);
-    if (!clumsyStrong.success || !clumsyWeak.success) return;
-
-    expect(clumsyStrong.payload.deliberate!.finalCost)
-      .toBe(clumsyWeak.payload.deliberate!.finalCost);
-    expect(clumsyStrong.payload.physical.staminaMultiplier)
-      .not.toBe(clumsyWeak.payload.physical.staminaMultiplier);
-  });
-
   it("lets Control move only the deliberate half", () => {
     const clumsy = resolveAuraActionCost(
       auraTestAttributes({ con: 20, vit: 20, dex: 10 }),
-      { exertionLoad: 2, baseAuraCost: 100 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 100 },
       Number.POSITIVE_INFINITY,
     );
     const precise = resolveAuraActionCost(
       auraTestAttributes({ con: 20, vit: 20, dex: 30 }),
-      { exertionLoad: 2, baseAuraCost: 100 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 100 },
       Number.POSITIVE_INFINITY,
     );
 
@@ -274,14 +203,14 @@ describe("composing physical and Aura-enhancement cost", () => {
   });
 
   /*
-   * An unenhanced punch has nothing for Control to scale, and reporting a
+   * An unenhanced action has nothing for Control to scale, and reporting a
    * zero-cost expenditure beside it would imply the character projected
    * something.
    */
   it("reports no deliberate component for an unenhanced action", () => {
     const result = resolveAuraActionCost(
       STATS,
-      { exertionLoad: 1 },
+      { additionalPhysicalCostRate: 0.001 },
       Number.POSITIVE_INFINITY,
     );
 
@@ -295,7 +224,11 @@ describe("composing physical and Aura-enhancement cost", () => {
   it("checks required Output without spending it", () => {
     const result = resolveAuraActionCost(
       STATS,
-      { exertionLoad: 1, baseAuraCost: 10, requiredOutput: 400 },
+      {
+        additionalPhysicalCostRate: 0.001,
+        baseAuraCost: 10,
+        requiredOutput: 400,
+      },
       3000,
     );
 
@@ -310,14 +243,18 @@ describe("composing physical and Aura-enhancement cost", () => {
   it("refuses an action whose required Output is out of reach", () => {
     expect(errorCodes(resolveAuraActionCost(
       STATS,
-      { exertionLoad: 1, requiredOutput: 9000 },
+      { additionalPhysicalCostRate: 0.001, requiredOutput: 9000 },
       3000,
     ))).toContain("aura.action.required_output.unreachable");
   });
 
-  it("rejects a negative load or base cost", () => {
-    expect(errorCodes(resolveAuraActionCost(STATS, { exertionLoad: -1 }, 0)))
-      .toContain("aura.exertion.load.invalid");
+  it("rejects a negative rate or base cost", () => {
+    expect(errorCodes(resolveAuraActionCost(
+      STATS,
+      { additionalPhysicalCostRate: -1 },
+      0,
+    ))).toContain("aura.action.physical_rate.invalid");
+
     expect(errorCodes(resolveAuraActionCost(STATS, { baseAuraCost: -1 }, 0)))
       .toContain("aura.control.base_cost.invalid");
   });
@@ -325,17 +262,32 @@ describe("composing physical and Aura-enhancement cost", () => {
 
 
 describe("paying for an action", () => {
-  it("deducts the physical cost and reports it apart from deliberate", () => {
-    const result = spendPhysicalAura(
+  /*
+   * The removed transition, stated as a rule.
+   *
+   * `spendPhysicalAura(state, context, exertionLoad)` charged a character for
+   * one swing. Effort is now paid for by the hour, so there is nothing left
+   * for it to do, and leaving it exported would have been an invitation to
+   * charge the same effort twice.
+   */
+  it("has no route for charging a character merely for exerting themselves", () => {
+    const transitions = transitionModule as Record<string, unknown>;
+
+    expect(transitions["spendPhysicalAura"]).toBeUndefined();
+    expect(transitions["spendActionAura"]).toBeTypeOf("function");
+  });
+
+  it("deducts a declared surcharge and reports it apart from deliberate", () => {
+    const result = spendActionAura(
       { current: 5000, allocations: [] },
       auraContext({ attributes: { con: 20, vit: 20 }, access: WITH_TEN }),
-      physicalExertionLoad("maximal"),
+      { additionalPhysicalCostRate: 0.002 },
     );
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 50,000 x 0.001 x 4 x 0.5 = 100. */
+    /* 50,000 x 0.002 = 100. */
     expect(result.payload.current).toBe(4900);
     expect(result.payload.balance.physical).toBe(100);
     expect(result.payload.balance.deliberate).toBe(0);
@@ -347,28 +299,26 @@ describe("paying for an action", () => {
    * character has a real pool and their body burns it the same way.
    */
   it("works before and after awakening, identically", () => {
-    const before = spendPhysicalAura(
+    const charge = (access: AuraAccessInput) => spendActionAura(
       { current: 5000, allocations: [] },
-      auraContext({ attributes: { con: 20, vit: 20 }, access: UNAWAKENED }),
-      2,
+      auraContext({ attributes: { con: 20, vit: 20 }, access }),
+      { additionalPhysicalCostRate: 0.001 },
     );
-    const after = spendPhysicalAura(
-      { current: 5000, allocations: [] },
-      auraContext({ attributes: { con: 20, vit: 20 }, access: WITH_TEN }),
-      2,
-    );
+
+    const before = charge(UNAWAKENED);
+    const after = charge(WITH_TEN);
 
     expect(before.success && before.payload.balance.physical).toBe(50);
     expect(after.success && after.payload.balance.physical).toBe(50);
   });
 
-  /* Control describes deliberate projection. A punch is not that. */
-  it("charges the same physical cost at every DEX", () => {
+  /* Control describes deliberate projection. A surcharge is not that. */
+  it("charges the same surcharge at every DEX", () => {
     const costs = [7, 22, 30].map((dex) => {
-      const result = spendPhysicalAura(
+      const result = spendActionAura(
         { current: 5000, allocations: [] },
         auraContext({ attributes: { con: 20, vit: 20, dex }, access: WITH_TEN }),
-        2,
+        { additionalPhysicalCostRate: 0.001 },
       );
 
       return result.success ? result.payload.balance.physical : null;
@@ -384,7 +334,7 @@ describe("paying for an action", () => {
         attributes: { con: 20, vit: 20, dex: 22 },
         access: REN_III,
       }),
-      { exertionLoad: 2, baseAuraCost: 200 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 200 },
     );
 
     expect(result.success).toBe(true);
@@ -414,7 +364,7 @@ describe("paying for an action", () => {
         attributes: { con: 20, vit: 20, dex: 22 },
         access: REN_III,
       }),
-      { exertionLoad: 2, baseAuraCost: 200 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 200 },
     );
 
     expect(errorCodes(result)).toContain("aura.expenditure.insufficient");
@@ -438,13 +388,13 @@ describe("paying for an action", () => {
         }],
       },
       context,
-      { exertionLoad: 8 },
+      { additionalPhysicalCostRate: 0.004 },
     );
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* 50,000 x 0.001 x 8 x 0.5 = 200, leaving 1,800 usable and 1,300 free. */
+    /* 50,000 x 0.004 = 200, leaving 1,800 usable and 1,300 free. */
     expect(result.payload.current).toBe(1800);
     expect(result.payload.state.allocations[0]!.aura).toBeCloseTo(1300, 8);
     expect(result.payload.allocationChanges)
@@ -455,7 +405,7 @@ describe("paying for an action", () => {
     const result = spendActionAura(
       { current: 50_000, allocations: [] },
       auraContext({ attributes: { con: 20, vit: 20 }, access: WITH_TEN }),
-      { exertionLoad: 1, requiredOutput: 4000 },
+      { requiredOutput: 4000 },
     );
 
     expect(errorCodes(result))
@@ -475,15 +425,16 @@ describe("paying for an action", () => {
         }],
       },
       auraContext({ attributes: { con: 20, vit: 20 }, access: REN_III }),
-      { exertionLoad: 1, requiredOutput: 500 },
+      { requiredOutput: 500 },
     );
 
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    /* The 500 held on the arm is untouched; only the swing was paid for. */
+    /* The 500 held on the arm is untouched; nothing was charged. */
     expect(result.payload.state.allocations[0]!.aura).toBe(500);
     expect(result.payload.balance.deliberate).toBe(0);
+    expect(result.payload.balance.physical).toBe(0);
   });
 });
 

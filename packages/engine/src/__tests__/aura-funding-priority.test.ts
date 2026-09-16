@@ -461,7 +461,7 @@ describe("the ledger", () => {
 
   it("claims no useful Aura for purely physical effort", () => {
     const result = fundActionAura(state(10_000), context(), {
-      exertionLoad: 1,
+      additionalPhysicalCostRate: 0.0005,
     });
 
     expect(result.success).toBe(true);

@@ -106,13 +106,40 @@ export type SustainedActivityLevel = typeof SUSTAINED_ACTIVITY_LEVELS[number];
  * it. A character who sleeps four hours after being up for thirty is not
  * freshly rested, and this is where that debt lives.
  */
+/*
+ * How long a continuous sleep has to run before it is worth a full reserve.
+ *
+ * Eight hours, and the number lives here rather than in Aura because it is a
+ * property of sleep rather than of Aura — Aura is what happens to be paying
+ * the benefit out today.
+ */
+export const QUALIFYING_SLEEP_HOURS = 8;
+
 export interface CharacterWakefulnessState {
   readonly hoursAwake: number;
+
+  /*
+   * How much of a continuous qualifying sleep is behind the character.
+   *
+   * STORED rather than derived, and stored for one reason: eight one-hour
+   * advances have to be able to add up to one night. Nothing else in the
+   * wakefulness model needs memory of the hour before — `hoursAwake` is a
+   * running total either way — but a benefit that fires at a threshold cannot
+   * be reconstructed from a total, so the progress towards it has to survive
+   * between calls.
+   *
+   * Optional, and absent normalizes to zero, so every stored character written
+   * before this existed reads as somebody who has not begun sleeping. Capped
+   * at QUALIFYING_SLEEP_HOURS once the benefit has been paid, so that a
+   * twelve-hour sleep pays it once rather than five times; a positive-duration
+   * waking segment resets it and makes the next completed sleep count again.
+   */
+  readonly consecutiveSleepHours?: number;
 }
 
 /** A character who has just woken fully rested. */
 export function restedWakefulness(): CharacterWakefulnessState {
-  return { hoursAwake: 0 };
+  return { hoursAwake: 0, consecutiveSleepHours: 0 };
 }
 
 /*

@@ -71,14 +71,6 @@ import type {
 } from "./types";
 
 
-/*
- * How much of an unawakened character's Current Aura becomes effective
- * internal Aura.
- *
- * A CONVERSION EFFICIENCY, not a cost. Nothing is deducted for it.
- */
-export const PSEUDO_CHU_EFFICIENCY = 0.20;
-
 /** The lowest effective Ten Mastery at which Ten is available at all. */
 const TEN_AVAILABLE_FROM = 1;
 
@@ -96,10 +88,15 @@ const TEN_AVAILABLE_FROM = 1;
  * So the coating arrives resolved, on the access input. See ten.ts.
  */
 
-const PSEUDO_CHU: PassiveInternalReinforcement = {
-  source: "unawakened-pseudo-chu",
-  efficiency: PSEUDO_CHU_EFFICIENCY,
-};
+/*
+ * There is deliberately no PSEUDO_CHU constant here any more either.
+ *
+ * The 20% was Aura's second-largest borrowed principle number, after the Ten
+ * coating, and it went the same way and for the same reason: an unawakened
+ * body's reinforcement efficiency is Chū's, and a copy here could only ever
+ * disagree with it. See nen/principles/chu.ts, which owns it, and
+ * character/nen/access.ts, which hands the result down.
+ */
 
 
 function invalidFraction(value: unknown): boolean {
@@ -182,6 +179,47 @@ function coatingIssues(
       actual: Number.isFinite(coating.outputFraction)
         ? coating.outputFraction
         : String(coating.outputFraction),
+    }];
+  }
+
+  return [];
+}
+
+
+/*
+ * What a supplied passive reinforcement has to look like to be usable.
+ *
+ * Checked for the same reason the coating is: this file cannot rebuild it, and
+ * a NaN efficiency would reach the density arithmetic as a whole-body internal
+ * allocation rather than as an error.
+ */
+function reinforcementIssues(
+  reinforcement: PassiveInternalReinforcement,
+): readonly EngineError[] {
+  if (
+    typeof reinforcement.source !== "string" ||
+    reinforcement.source.trim().length === 0
+  ) {
+    return [{
+      code: "aura.access.passive_reinforcement.source.missing",
+      message:
+        "Passive internal reinforcement must name the effect that produced it.",
+      audience: "developer",
+      required: "non-empty string",
+      actual: String(reinforcement.source),
+    }];
+  }
+
+  if (invalidFraction(reinforcement.efficiency)) {
+    return [{
+      code: "aura.access.passive_reinforcement.efficiency.invalid",
+      message:
+        "Passive internal reinforcement efficiency must be a finite fraction from 0 through 1.",
+      audience: "developer",
+      required: "finite number between 0 and 1",
+      actual: Number.isFinite(reinforcement.efficiency)
+        ? reinforcement.efficiency
+        : String(reinforcement.efficiency),
     }];
   }
 
@@ -408,6 +446,10 @@ export function resolveAuraAccess(
     });
   }
 
+  if (input.passiveInternalReinforcement !== undefined) {
+    errors.push(...reinforcementIssues(input.passiveInternalReinforcement));
+  }
+
   if (input.override !== undefined) {
     errors.push(...overrideIssues(input.override));
 
@@ -445,6 +487,17 @@ export function resolveAuraAccess(
    * does not reach.
    */
   const coating = tenAvailable ? input.tenCoating ?? null : null;
+
+  /*
+   * Passive internal reinforcement, or nothing.
+   *
+   * Only a body that has never been opened produces any, so an awakened
+   * character's is dropped here whatever was supplied — the same way the
+   * coating is dropped for a character with no Ten.
+   */
+  const reinforcement = input.awakened === true
+    ? null
+    : input.passiveInternalReinforcement ?? null;
 
   const payload: ResolvedAuraAccess = ((): ResolvedAuraAccess => {
     if (input.override !== undefined) {
@@ -485,7 +538,14 @@ export function resolveAuraAccess(
         deliberateInternalAccess: false,
         deliberateExternalAccess: false,
         automaticSurfaceCoating: null,
-        passiveInternalReinforcement: reverted ? null : PSEUDO_CHU,
+        /*
+         * Supplied by Chū, never manufactured here — and the `reverted` guard
+         * is belt and braces rather than the rule. The projection already
+         * returns nothing for a reverted character; this file states the same
+         * thing so that a caller who hand-built an input cannot accidentally
+         * give one their pseudo-Chū back.
+         */
+        passiveInternalReinforcement: reverted ? null : reinforcement,
 
         /*
          * Half-open nodes leak, but that leakage is what the pseudo-Chu is

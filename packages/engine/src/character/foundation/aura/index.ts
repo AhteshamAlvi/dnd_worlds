@@ -152,7 +152,6 @@ export {
   deliberateAccessError,
   findAuraPlacementIssues,
   hasDeliberateAuraAccess,
-  PSEUDO_CHU_EFFICIENCY,
   resolveAuraAccess,
 } from "./access";
 
@@ -203,7 +202,9 @@ export type {
 
 export {
   AURA_RECOVERY_MODES,
-  AURA_RECOVERY_MODE_MULTIPLIERS,
+  AURA_RECOVERY_ACCESS_CLASSES,
+  AURA_RECOVERY_COEFFICIENTS,
+  auraRecoveryColumn,
   AURA_RECOVERY_SOURCES,
   deriveAuraRegeneration,
   deriveAuraRegenerationCapacity,
@@ -249,10 +250,9 @@ export type {
 } from "./expenditure";
 
 export {
-  PHYSICAL_AURA_COST_COEFFICIENT,
+  PHYSICAL_CONSUMPTION_REGENERATION_MULTIPLE,
+  derivePhysicalConsumptionPerHour,
   derivePhysicalAuraCost,
-  deriveSustainedActivityAuraCost,
-  deriveSustainedPhysicalAuraCost,
   resolveActionAuraCostFor,
   resolveAuraActionCost,
 } from "./expenditure";
@@ -376,7 +376,6 @@ export {
   settleAuraTransition,
   spendActionAura,
   spendAura,
-  spendPhysicalAura,
   upsertAuraAllocation,
 } from "./transitions";
 

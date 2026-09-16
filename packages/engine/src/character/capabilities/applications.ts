@@ -335,12 +335,31 @@ export interface SkillApplicationCostProfile {
   /**
    * Required even when zero, so physical effort is a decision.
    *
-   * Aura may never infer whether an act was strenuous for the body performing
-   * it (foundation/body/endurance/types.ts says so), so an omitted load would
-   * have to be defaulted by whoever read it — and every reader would default
-   * it differently. Writing `0` says "this costs nothing physically" out loud.
+   * CLASSIFICATION, not a price. It says how strenuous this application is for
+   * the body performing it; no Aura cost is derived from it, and none has been
+   * since bodily effort became a continuous rate paid by the hour. It is kept
+   * required because the judgement is still one the author has to make and one
+   * the engine cannot — see foundation/body/endurance/exertion.ts.
    */
   readonly exertionLoad: PhysicalExertionLoad;
+
+  /**
+   * An extra share of Maximum Aura this application burns when it settles.
+   *
+   *   C = A_max x additionalPhysicalAuraCostRate
+   *
+   * OPTIONAL, and omitting it is the ordinary case: an application that does
+   * not declare one costs nothing discrete, and the effort it took is charged
+   * through the hour the character spent. Declare it for the things that are
+   * genuinely a burst rather than a stretch — a Sprint, a desperate leap. A
+   * Sprint declaring 0.02 costs a 100-Aura character 2 Aura.
+   *
+   * AUTHORED, never inferred. Nothing derives it from `exertionLoad`, from the
+   * Skill's category, or from whether the application looks physical. That
+   * inference is exactly what the removed per-action model did, and it is what
+   * made the resulting cost impossible to argue with.
+   */
+  readonly additionalPhysicalAuraCostRate?: number;
 
   /**
    * Deliberate Aura. REQUIRED, and a discriminated union rather than an
@@ -412,14 +431,14 @@ export type SkillAuraCostProjection =
       readonly kind: "settled";
       readonly fields: Pick<
         AuraCostRequest,
-        "exertionLoad" | "baseAuraCost" | "requiredOutput"
+        "additionalPhysicalCostRate" | "baseAuraCost" | "requiredOutput"
       >;
     }
   | {
       /* Not chargeable yet. Preparation must supply the declared power. */
       readonly kind: "request-derived";
       readonly profileId: string;
-      readonly fields: Pick<AuraCostRequest, "exertionLoad">;
+      readonly fields: Pick<AuraCostRequest, "additionalPhysicalCostRate">;
     };
 
 
@@ -436,7 +455,13 @@ export function projectSkillAuraCost(
     return {
       kind: "request-derived",
       profileId: cost.aura.profileId,
-      fields: { exertionLoad: cost.exertionLoad },
+      fields: {
+        ...(cost.additionalPhysicalAuraCostRate === undefined
+          ? {}
+          : {
+            additionalPhysicalCostRate: cost.additionalPhysicalAuraCostRate,
+          }),
+      },
     };
   }
 
@@ -445,7 +470,14 @@ export function projectSkillAuraCost(
   return {
     kind: "settled",
     fields: {
-      exertionLoad: cost.exertionLoad,
+      /*
+       * The exertion TIER is deliberately not projected. It classifies the
+       * application; it prices nothing, and handing it to an Aura cost request
+       * is how it would start pricing things again.
+       */
+      ...(cost.additionalPhysicalAuraCostRate === undefined
+        ? {}
+        : { additionalPhysicalCostRate: cost.additionalPhysicalAuraCostRate }),
       ...(aura?.baseAuraCost === undefined
         ? {}
         : { baseAuraCost: aura.baseAuraCost }),
@@ -780,6 +812,7 @@ export const SKILL_APPLICATION_NUMERIC_FIELDS = [
   "rangeMaximumMetres",
   "maximumTargets",
   "exertionLoad",
+  "additionalPhysicalAuraCostRate",
   "baseAuraCost",
   "requiredOutput",
 ] as const;
@@ -1060,6 +1093,14 @@ function readNumericField(
       return application.cost.exertionLoad;
 
     /*
+     * Absent when the application declares no surcharge, which a rank may not
+     * then adjust: there is no number to add to, and the field.absent rule
+     * says so rather than inventing a base of zero for a rank to build on.
+     */
+    case "additionalPhysicalAuraCostRate":
+      return application.cost.additionalPhysicalAuraCostRate;
+
+    /*
      * Readable only when the price is FIXED. There is no number to add five to
      * on a Skill that burns none, and none to add it to on one whose price the
      * request has not supplied yet — so a rank trying to move either is caught
@@ -1158,6 +1199,15 @@ function writeNumericField(
       return {
         ...application,
         cost: { ...application.cost, exertionLoad: value },
+      };
+
+    case "additionalPhysicalAuraCostRate":
+      return {
+        ...application,
+        cost: {
+          ...application.cost,
+          additionalPhysicalAuraCostRate: value,
+        },
       };
 
     case "baseAuraCost": {
@@ -2128,6 +2178,17 @@ function findCostProfileIssues(
       "A Skill's physical exertion load must be a finite, non-negative number — write 0 when it costs nothing.",
       "finite load >= 0",
       String(cost.exertionLoad),
+    ));
+  }
+
+  const rate = cost.additionalPhysicalAuraCostRate;
+
+  if (rate !== undefined && (!Number.isFinite(rate) || rate < 0)) {
+    errors.push(issue(
+      "capabilities.application.cost.additional_physical.invalid",
+      "An additional physical Aura cost rate must be a finite, non-negative share of Maximum Aura — omit it when the application costs nothing discrete.",
+      "finite rate >= 0, or omitted",
+      String(rate),
     ));
   }
 

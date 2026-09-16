@@ -1890,10 +1890,17 @@ describe("an available application projects into a neutral action profile", () =
       3,
     );
 
+    /*
+     * The exertion TIER is deliberately absent. It classifies the application
+     * and prices nothing; projecting it into an Aura cost request is how it
+     * would start pricing things again.
+     */
     expect(projectSkillAuraCost(effective.cost)).toEqual({
       kind: "settled",
-      fields: { exertionLoad: 2, baseAuraCost: 15, requiredOutput: 5 },
+      fields: { baseAuraCost: 15, requiredOutput: 5 },
     });
+
+    expect(effective.cost.exertionLoad).toBe(2);
 
     expect(skillAuraCostNeedsRequestContext(effective.cost)).toBe(false);
   });
@@ -1926,9 +1933,14 @@ describe("an available application projects into a neutral action profile", () =
 
     if (projection.kind !== "request-derived") return;
 
-    /* Exertion is charged for the act either way; the Aura price is not here. */
-    expect(projection.fields).toEqual({ exertionLoad: 2 });
+    /*
+     * Nothing at all, because this Skill declares no discrete surcharge and
+     * its deliberate price is not settled yet. Exertion is not here either —
+     * the act's effort is charged by the hour, through the activity.
+     */
+    expect(projection.fields).toEqual({});
     expect(projection.fields).not.toHaveProperty("baseAuraCost");
+    expect(projection.fields).not.toHaveProperty("exertionLoad");
     expect(projection.profileId).toBe("aura.declared-power");
   });
 
@@ -1942,10 +1954,63 @@ describe("an available application projects into a neutral action profile", () =
     expect(application.cost.aura).toEqual({ kind: "none" });
     expect(skillAuraCostNeedsRequestContext(application.cost)).toBe(false);
 
+    /*
+     * Empty, and that is the ordinary case rather than a gap. A punch burns no
+     * deliberate Aura and declares no discrete surcharge; the effort it took is
+     * charged through the hour the character spent swinging.
+     */
     expect(projectSkillAuraCost(application.cost)).toEqual({
       kind: "settled",
-      fields: { exertionLoad: 1 },
+      fields: {},
     });
+
+    expect(application.cost.exertionLoad).toBe(1);
+    expect(application.cost.additionalPhysicalAuraCostRate).toBeUndefined();
+  });
+
+  /*
+   * The replacement for the removed per-action pricing, end to end.
+   *
+   * An application that really is a burst rather than a stretch declares its
+   * own share of Maximum Aura, and that declaration — and only that — reaches
+   * the Aura cost request. Nothing infers it from the exertion tier beside it.
+   */
+  it("projects a declared physical surcharge, and only a declared one", () => {
+    const sprint = applicationOf({
+      cost: {
+        exertionLoad: 4,
+        additionalPhysicalAuraCostRate: 0.02,
+        aura: { kind: "none" },
+      },
+    });
+
+    expect(projectSkillAuraCost(sprint.cost)).toEqual({
+      kind: "settled",
+      fields: { additionalPhysicalCostRate: 0.02 },
+    });
+
+    /* The same application without the declaration projects nothing. */
+    const unpriced = applicationOf({
+      cost: {
+        exertionLoad: 4,
+        aura: { kind: "none" },
+      },
+    });
+
+    expect(projectSkillAuraCost(unpriced.cost)).toEqual({
+      kind: "settled",
+      fields: {},
+    });
+  });
+
+  it("refuses a surcharge that is not a share of Maximum Aura", () => {
+    expect(issuesFor(applicationOf({
+      cost: {
+        exertionLoad: 0,
+        additionalPhysicalAuraCostRate: -0.5,
+        aura: { kind: "none" },
+      },
+    }))).toContain("capabilities.application.cost.additional_physical.invalid");
   });
 
   it("derives the resolution approach rather than storing a second one", () => {

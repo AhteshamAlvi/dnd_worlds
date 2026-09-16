@@ -424,7 +424,7 @@ export function spendAura(
  *
  * The two costs have two different efficiency terms and are never mixed:
  *
- *   physical    = maximumAura x 0.001 x exertionLoad x staminaMultiplier
+ *   physical    = maximumAura x additionalPhysicalCostRate
  *   deliberate  = baseAuraCost x controlMultiplier
  *
  * Stamina touches only the first. Control touches only the second. A clumsy
@@ -450,7 +450,9 @@ export function spendActionAura(
     "aura.transition.action",
     "Spend Aura on an action",
     {
-      exertionLoad: { value: request.exertionLoad ?? 0 },
+      additionalPhysicalCostRate: {
+        value: request.additionalPhysicalCostRate ?? 0,
+      },
       baseAuraCost: { value: request.baseAuraCost ?? 0 },
       requiredOutput: { value: request.requiredOutput ?? 0 },
       currentAura: {
@@ -533,7 +535,9 @@ export function fundActionAura(
     "aura.transition.fund",
     "Fund an action's Aura cost",
     {
-      exertionLoad: { value: request.exertionLoad ?? 0 },
+      additionalPhysicalCostRate: {
+        value: request.additionalPhysicalCostRate ?? 0,
+      },
       baseAuraCost: { value: request.baseAuraCost ?? 0 },
       requiredOutput: { value: request.requiredOutput ?? 0 },
       shortfallPolicy: { value: policy?.kind ?? String(policy) },
@@ -667,21 +671,19 @@ export function fundActionAura(
 }
 
 
-/**
- * Pay for bodily effort alone.
+/*
+ * There is deliberately no spendPhysicalAura any more.
  *
- * Delegates, so an unenhanced swing is judged by exactly the same rules an
- * enhanced one is. Works before and after awakening: an unawakened character
- * has a real Aura pool and their body burns it the same way, because awakening
- * gates deliberate projection rather than metabolism.
+ * It existed to charge a character for one exertion — a swing, a leap — from
+ * an exertion tier and their Stamina, and the effort a body spends is now paid
+ * for by the HOUR, through the activity the character was in. A per-action
+ * charge alongside that would bill the same effort twice, which the old
+ * model's own comment asked callers to avoid by hand.
+ *
+ * An application that really is a discrete burst declares its own share of
+ * Maximum Aura and comes through spendActionAura like any other cost. See
+ * expenditure.ts.
  */
-export function spendPhysicalAura(
-  state: CharacterAuraState,
-  context: AuraTransitionContext,
-  exertionLoad: PhysicalExertionLoad,
-): EngineResult<AuraStateTransition> {
-  return spendActionAura(state, context, { exertionLoad });
-}
 
 
 /* ── Involuntary loss ───────────────────────────────────────────────────── */

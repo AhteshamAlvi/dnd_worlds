@@ -94,12 +94,21 @@ describe("the fresh-awakener leak, through the existing timeline", () => {
 
     expect(isNenUncontained(nen)).toBe(true);
 
-    const after = leak(nen, 5 * MINUTE, 100);
+    /*
+     * A shade over five minutes, not exactly five. The leak is 20 a minute and
+     * the projection is five — but an uncontained character also regenerates R
+     * an hour while they bleed, so the solver's collapse lands just past the
+     * no-recovery figure. Six minutes is given here so the interval contains
+     * the moment rather than ending on it.
+     */
+    const after = leak(nen, 6 * MINUTE, 100);
 
-    expect(after.current).toBe(0);
     expect(after.collapse).not.toBeNull();
-    expect(after.collapse!.at)
-      .toBeCloseTo(T0 + hoursToDuration(5 * MINUTE), 6);
+
+    const minutes = (after.collapse!.at - T0) / hoursToDuration(1) * 60;
+
+    expect(minutes).toBeGreaterThan(5);
+    expect(minutes).toBeLessThan(5.1);
   });
 
   it("preserves interval invariance across the leak", () => {

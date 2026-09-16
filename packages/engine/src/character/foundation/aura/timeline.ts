@@ -93,6 +93,24 @@ export interface AuraTimeActivity {
   /** Supplied by whatever is suppressing the character's Aura. */
   readonly suppression?: AuraSuppression;
 
+  /*
+   * Whether a non-passive Nen activity is operating over this window.
+   *
+   * A BOOLEAN, and generic. Natural regeneration is zero while it is true,
+   * because producing Aura and projecting it are the same faculty. Aura is
+   * told this rather than asking, so that no principle's name and no
+   * activity's definition id is ever read here — the character-time
+   * coordinator derives it from the active runtime's own generic query.
+   *
+   * Ten never sets it: Ten is passive derived state and does not appear in the
+   * active runtime at all. Suppression does not set it either; a suppressed
+   * character takes the suppression branch, and supplying both is refused.
+   *
+   * Omitted means false, so every existing caller keeps the behaviour they
+   * had.
+   */
+  readonly activeNenUse?: boolean;
+
   readonly exertionOverride?: ActivityExertionOverride;
 }
 
@@ -112,12 +130,16 @@ export interface AuraActivityChange {
  * — so a strike landing in the last minute of an eight-hour advance was
  * charged as though it had been happening all night.
  *
- * `amount` is ALREADY RESOLVED. Physical amounts have had Stamina applied and
- * deliberate ones Control, by whoever produced the event, because those
- * multipliers belong to the mechanic that knows what the action was.
+ * `amount` is ALREADY RESOLVED — deliberate ones have had Control applied by
+ * whoever produced the event, because that multiplier belongs to the mechanic
+ * that knows what the action was.
+ *
+ * THERE IS NO `physical` KIND. Bodily effort is a continuous rate resolved from
+ * the activity, not a charge anyone schedules: a scheduled physical event would
+ * be the per-action cost model arriving through a different door, and it would
+ * bill the same effort the containing hour already billed.
  */
 export const SCHEDULED_AURA_EVENT_KINDS = [
-  "physical",
   "deliberate",
   "forced-drain",
   "recovery",
@@ -265,6 +287,35 @@ function activityIssues(
     });
   }
 
+  if (
+    activity.activeNenUse !== undefined &&
+    typeof activity.activeNenUse !== "boolean"
+  ) {
+    errors.push({
+      code: "aura.activity.active_nen.invalid",
+      message:
+        "Whether a Nen activity is operating must be a boolean when supplied.",
+      audience: "developer",
+      required: "boolean",
+      actual: `${where}: ${String(activity.activeNenUse)}`,
+    });
+  }
+
+  /*
+   * An unawakened character has no technique to be running, and half-open
+   * nodes could not carry one. A caller saying otherwise has mixed up two
+   * characters.
+   */
+  if (activity.activeNenUse === true && !access.awakened) {
+    errors.push({
+      code: "aura.activity.active_nen.unawakened",
+      message: "An unawakened character has no active Nen to be using.",
+      audience: "developer",
+      required: "awakened character",
+      actual: `${where}: active Nen use`,
+    });
+  }
+
   const suppression = activity.suppression;
 
   if (suppression !== undefined) {
@@ -278,22 +329,29 @@ function activityIssues(
       });
     }
 
-    /*
-     * Left unchecked, a NaN multiplier did not produce NaN — the comparison it
-     * feeds is false for NaN, so the mode's own rate was used instead and the
-     * caller got a confidently wrong number rather than an error.
-     */
-    if (
-      !Number.isFinite(suppression.multiplier) ||
-      suppression.multiplier < 0
-    ) {
+    if (typeof suppression.forced !== "boolean") {
       errors.push({
-        code: "aura.recovery.multiplier.invalid",
-        message:
-          "An Aura suppression recovery multiplier must be a finite non-negative number.",
+        code: "aura.recovery.suppression.forced.invalid",
+        message: "Aura suppression must say whether the character chose it.",
         audience: "developer",
-        required: "finite number >= 0",
-        actual: `${where}: ${String(suppression.multiplier)}`,
+        required: "boolean",
+        actual: `${where}: ${String(suppression.forced)}`,
+      });
+    }
+
+    /*
+     * Shut nodes and a running technique are two states, not one character.
+     * They take different recovery branches, so absorbing the combination
+     * would silently pick one of them.
+     */
+    if (activity.activeNenUse === true) {
+      errors.push({
+        code: "aura.activity.suppression.active_nen.contradictory",
+        message:
+          "A character whose Aura is suppressed cannot also be running an active Nen technique.",
+        audience: "developer",
+        required: "suppression or active Nen use, not both",
+        actual: `${where}: ${String(suppression.source)} with active Nen use`,
       });
     }
 

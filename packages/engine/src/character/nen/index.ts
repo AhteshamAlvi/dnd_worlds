@@ -27,6 +27,8 @@ export {
   NEN_SUPPRESSION_ACCESS_SOURCE,
   isNenUncontained,
   nenAuraAccessInput,
+  withPassiveNen,
+  withPassiveReinforcement,
   withTenCoating,
 } from "./access";
 

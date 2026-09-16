@@ -2,10 +2,14 @@
  * Endurance: Stamina efficiency, wakefulness, and the Fatigue they produce.
  *
  * The claim the whole model rests on is that there is NO second bar. Stamina
- * is a multiplier on what physical effort costs out of the one reserve the
- * character has; wakefulness is a count of hours; Fatigue is derived from
- * wakefulness and from how drained that one reserve is. Nothing here has a
+ * is a derived score; wakefulness is a count of hours; Fatigue is derived from
+ * wakefulness and from how drained the one reserve is. Nothing here has a
  * current value, a maximum, or anything spent.
+ *
+ * Wakefulness now also remembers how much of a continuous sleep is behind the
+ * character, which is the one piece of MEMORY in this folder — a benefit that
+ * fires at an eight-hour threshold cannot be reconstructed from a running
+ * total, so the progress towards it has to survive between calls.
  *
  * Every cross-domain figure arrives as a plain number. This folder is what the
  * Aura domain depends on, and it depends on nothing but Time — so Maximum Aura
@@ -18,20 +22,23 @@ import {
   AURA_DEPLETION_FATIGUE_BANDS,
   MAXIMUM_FATIGUE,
   PHYSICAL_EXERTION_LOADS,
-  REFERENCE_STAMINA,
+  QUALIFYING_SLEEP_HOURS,
   SUSTAINED_ACTIVITY_LEVELS,
   SUSTAINED_ACTIVITY_LOADS_PER_HOUR,
   WAKING_HOURS_CLEARED_PER_HOUR_SLEPT,
   advanceWakefulness,
   deriveAuraDepletionFatigue,
   deriveFatigue,
+  consecutiveSleepHours,
   deriveMaximumWakefulHours,
-  deriveStaminaExpenditureMultiplier,
   deriveWakefulnessFatigue,
+  findWakefulnessStateIssues,
   findActivityCombinationIssues,
   resolveWakefulness,
   restedWakefulness,
 } from "../character/foundation/body/endurance";
+import * as enduranceModule from "../character/foundation/body/endurance";
+import * as expenditureModule from "../character/foundation/aura/expenditure";
 import { resolveStamina } from "../character/foundation/attributes/derived/resolution";
 import type { CharacterStats } from "../character/foundation/attributes/stats";
 
@@ -43,42 +50,35 @@ function statsWith(con: number, vit: number): CharacterStats {
 }
 
 
-describe("Stamina is efficiency, not a reserve", () => {
+describe("Stamina is a score, and no longer an Aura price", () => {
   it("stays the derived (CON + VIT) / 2 score", () => {
     expect(resolveStamina(statsWith(10, 10))).toBe(10);
     expect(resolveStamina(statsWith(20, 20))).toBe(20);
     expect(resolveStamina(statsWith(17, 19))).toBe(18);
   });
 
-  it("hits every multiplier checkpoint", () => {
-    expect(deriveStaminaExpenditureMultiplier(5)).toBe(2);
-    expect(deriveStaminaExpenditureMultiplier(10)).toBe(1);
-    expect(deriveStaminaExpenditureMultiplier(15)).toBeCloseTo(0.67, 2);
-    expect(deriveStaminaExpenditureMultiplier(20)).toBe(0.5);
-    expect(deriveStaminaExpenditureMultiplier(25)).toBe(0.4);
-    expect(deriveStaminaExpenditureMultiplier(30)).toBeCloseTo(0.33, 2);
-  });
-
   /*
-   * The Rulebook quotes x0.67 to two decimals for reading. Rounding to it
-   * would make a Stamina 15 character overpay by half a percent on every
-   * action they ever take, and that compounds across a session.
+   * Stamina used to be the efficiency term for physical Aura cost, through
+   * `M_Stamina = 10 / max(1, Stamina)`. There is no physical Aura cost for it
+   * to discount any longer — effort is a flat 2R an hour whoever you are — so
+   * the multiplier is gone rather than exported with nothing calling it.
+   *
+   * Stamina itself is untouched, which is what the first test above asserts.
+   * What it may do next is an open question; what it may not do is quietly
+   * start pricing Aura again.
    */
-  it("keeps full internal precision rather than the printed two decimals", () => {
-    expect(deriveStaminaExpenditureMultiplier(15)).toBe(10 / 15);
-    expect(deriveStaminaExpenditureMultiplier(15)).not.toBe(0.67);
-    expect(deriveStaminaExpenditureMultiplier(30)).toBe(10 / 30);
+  it("no longer exports an expenditure multiplier for anything to use", () => {
+    const endurance = enduranceModule as Record<string, unknown>;
+
+    expect(endurance["deriveStaminaExpenditureMultiplier"]).toBeUndefined();
+    expect(endurance["REFERENCE_STAMINA"]).toBeUndefined();
   });
 
-  it("treats ten as the reference that pays exactly the baseline", () => {
-    expect(REFERENCE_STAMINA).toBe(10);
-    expect(deriveStaminaExpenditureMultiplier(REFERENCE_STAMINA)).toBe(1);
-  });
+  it("is named by nothing in the Aura expenditure path", () => {
+    const expenditure = expenditureModule as Record<string, unknown>;
 
-  /* A division guard, not a rule. Stamina 1 already costs ten times baseline. */
-  it("does not divide by zero at the bottom of the scale", () => {
-    expect(deriveStaminaExpenditureMultiplier(0)).toBe(10);
-    expect(Number.isFinite(deriveStaminaExpenditureMultiplier(-5))).toBe(true);
+    expect(Object.keys(expenditure).filter((name) => /stamina/i.test(name)))
+      .toEqual([]);
   });
 });
 
@@ -292,6 +292,96 @@ describe("advancing wakefulness", () => {
       .toBe(false);
     expect(advanceWakefulness({ hoursAwake: Number.NaN }, "sleep", 1).success)
       .toBe(false);
+  });
+});
+
+
+describe("consecutive sleep progress", () => {
+  /*
+   * The one piece of memory in this folder, and it exists because eight
+   * one-hour advances have to be able to add up to one night.
+   */
+  it("accumulates across sleeping stretches", () => {
+    let state = restedWakefulness();
+
+    for (let hour = 0; hour < 5; hour += 1) {
+      const advanced = advanceWakefulness(state, "sleep", 1);
+
+      expect(advanced.success).toBe(true);
+      if (!advanced.success) return;
+
+      state = advanced.payload.state;
+    }
+
+    expect(consecutiveSleepHours(state)).toBe(5);
+  });
+
+  it("caps at the qualifying threshold rather than growing forever", () => {
+    expect(QUALIFYING_SLEEP_HOURS).toBe(8);
+
+    const advanced = advanceWakefulness(restedWakefulness(), "sleep", 20);
+
+    expect(advanced.success && consecutiveSleepHours(advanced.payload.state))
+      .toBe(QUALIFYING_SLEEP_HOURS);
+  });
+
+  it("resets on a waking stretch that actually lasted", () => {
+    const slept = advanceWakefulness(restedWakefulness(), "sleep", 4);
+
+    expect(slept.success).toBe(true);
+    if (!slept.success) return;
+
+    const woke = advanceWakefulness(slept.payload.state, "ordinary-waking", 1);
+
+    expect(woke.success && consecutiveSleepHours(woke.payload.state)).toBe(0);
+  });
+
+  /*
+   * Subdividing an interval creates zero-width boundaries wherever two
+   * segments meet. A reset there would make eight one-hour advances disagree
+   * with one eight-hour advance, which is the property the whole solver exists
+   * to preserve.
+   */
+  it("is not reset by a zero-length waking boundary", () => {
+    const slept = advanceWakefulness(restedWakefulness(), "sleep", 4);
+
+    expect(slept.success).toBe(true);
+    if (!slept.success) return;
+
+    const boundary = advanceWakefulness(
+      slept.payload.state,
+      "ordinary-waking",
+      0,
+    );
+
+    expect(boundary.success && consecutiveSleepHours(boundary.payload.state))
+      .toBe(4);
+  });
+
+  /*
+   * Absent normalizes to zero, so every character stored before the field
+   * existed reads as somebody who has not begun sleeping. A PRESENT and
+   * impossible value is refused instead of clamped: silently pulling a stored
+   * 12 back to 8 would hide whatever wrote it.
+   */
+  it("normalizes an absent value and refuses an impossible one", () => {
+    expect(consecutiveSleepHours({ hoursAwake: 3 })).toBe(0);
+    expect(findWakefulnessStateIssues({ hoursAwake: 3 })).toEqual([]);
+
+    for (const slept of [-1, 9, Number.NaN]) {
+      expect(findWakefulnessStateIssues({
+        hoursAwake: 3,
+        consecutiveSleepHours: slept,
+      }).map((issue) => issue.code))
+        .toContain("body.wakefulness.consecutive_sleep.invalid");
+    }
+  });
+
+  it("returns a normalized state from every successful advance", () => {
+    const advanced = advanceWakefulness({ hoursAwake: 3 }, "ordinary-waking", 1);
+
+    expect(advanced.success && advanced.payload.state.consecutiveSleepHours)
+      .toBe(0);
   });
 });
 

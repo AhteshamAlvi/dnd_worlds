@@ -21,9 +21,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   findAuraPlacementIssues,
-  PSEUDO_CHU_EFFICIENCY,
   resolveAuraAccess,
 } from "../character/foundation/aura/access";
+import {
+  PSEUDO_CHU_EFFICIENCY,
+  PSEUDO_CHU_SOURCE,
+} from "../character/foundation/nen/principles/chu";
 import {
   TEN_MINIMUM_COATING_OUTPUT_FRACTION,
 } from "../character/foundation/nen/principles/ten";
@@ -34,7 +37,13 @@ import type {
   ResolvedAuraAccess,
 } from "../character/foundation/aura/types";
 
-import { UNAWAKENED, UNCONTAINED, WITH_TEN, withTen } from "./fixtures/aura";
+import {
+  REVERTED,
+  UNAWAKENED,
+  UNCONTAINED,
+  WITH_TEN,
+  withTen,
+} from "./fixtures/aura";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -77,11 +86,47 @@ describe("the unawakened state", () => {
     expect(resolved.accessFraction).toBe(0);
   });
 
-  it("receives passive internal reinforcement instead", () => {
+  /*
+   * Supplied by Chū and carried through unread. This file owns neither the
+   * efficiency nor the decision that a never-awakened body produces one; what
+   * it owns is that an awakened character's is dropped.
+   */
+  it("carries the passive internal reinforcement it was handed", () => {
     expect(resolved.passiveInternalReinforcement).toEqual({
-      source: "unawakened-pseudo-chu",
+      source: PSEUDO_CHU_SOURCE,
       efficiency: PSEUDO_CHU_EFFICIENCY,
     });
+  });
+
+  it("gives a reverted character none, though their nodes are just as shut", () => {
+    const reverted = access(REVERTED);
+
+    expect(reverted.state).toBe("reverted");
+    expect(reverted.nodeState).toBe("half-open");
+    expect(reverted.passiveInternalReinforcement).toBeNull();
+  });
+
+  it("drops a reinforcement handed to an awakened character", () => {
+    const odd = access({
+      ...WITH_TEN,
+      passiveInternalReinforcement: {
+        source: PSEUDO_CHU_SOURCE,
+        efficiency: PSEUDO_CHU_EFFICIENCY,
+      },
+    });
+
+    expect(odd.passiveInternalReinforcement).toBeNull();
+  });
+
+  it("refuses a malformed reinforcement rather than spreading it", () => {
+    expect(errorCodes(resolveAuraAccess({
+      awakened: false,
+      effectiveTenMastery: 0,
+      passiveInternalReinforcement: {
+        source: PSEUDO_CHU_SOURCE,
+        efficiency: Number.NaN,
+      },
+    }))).toContain("aura.access.passive_reinforcement.efficiency.invalid");
   });
 
   it("has no surface coating", () => {

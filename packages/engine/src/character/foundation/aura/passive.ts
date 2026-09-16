@@ -16,10 +16,17 @@
  * have, and would make awakening look like a loss of capacity rather than a
  * change of kind.
  *
- * THE 20% IS A CONVERSION EFFICIENCY, NOT A COST. Nothing is deducted for it.
- * The reinforcement is drawn from the reserve continuously, so it weakens as
- * the character is drained and strengthens as they recover — a character at
- * half Aura is half as reinforced, without ever having spent anything.
+ * THE EFFICIENCY IS A CONVERSION RATE, NOT A COST. Nothing is deducted for it,
+ * and ALL of the reserve is what circulates — the efficiency says how much of
+ * that does any good, not how much is used. The reinforcement is drawn from the
+ * reserve continuously, so it weakens as the character is drained and
+ * strengthens as they recover, without anything having been spent.
+ *
+ * THE NUMBER IS NOT THIS FILE'S. nen/principles/chu.ts owns pseudo-Chū's 20%
+ * and hands it down on the access input; what happens here is the spreading,
+ * which is one problem with one answer whoever produces the Aura. A second
+ * effect that reinforces a body passively plugs in here without this file
+ * learning its name.
  *
  * IT ENDS AT AWAKENING. Open nodes stop producing it, and nothing replaces it:
  * an awakened character's internal Density is zero until an access override
@@ -119,7 +126,16 @@ export function resolvePassiveInternalAura(
     allocations: [],
     automatic: [{
       id: PSEUDO_CHU_ALLOCATION_ID,
-      source: reinforcement.source,
+
+      /*
+       * Aura's OWN label for this kind of allocation, not the descriptor's.
+       *
+       * The allocation source is a closed reporting vocabulary — "where did
+       * the Aura on this Body Part come from" — and it has to stay closed for
+       * anything downstream to switch on it. The descriptor's `source` is free
+       * text naming the effect, and travels on the payload below instead.
+       */
+      source: PSEUDO_CHU_ALLOCATION_ID,
       coverage: "whole-body",
       placement: "internal",
       aura: effectiveAura,

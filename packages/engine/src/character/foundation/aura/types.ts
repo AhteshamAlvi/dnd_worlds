@@ -333,18 +333,25 @@ export type AuraAccessState = typeof AURA_ACCESS_STATES[number];
 
 
 /*
- * Passive internal reinforcement an unawakened body produces on its own.
+ * Passive internal reinforcement a body produces without being asked.
  *
- * NOT Output. Half-open nodes do not project Aura deliberately; they hold a
- * fraction of the reserve inside the body as a matter of physiology, which is
- * why this bypasses the Output budget entirely and why `efficiency` is a
- * conversion rate against CURRENT AURA rather than a share of anything.
+ * NOT Output. The nodes that produce it do not project Aura deliberately, which
+ * is why this bypasses the Output budget entirely and why `efficiency` is a
+ * conversion rate against CURRENT AURA rather than a share of anything: ALL of
+ * the reserve circulates, and this is how much of it does any good.
+ *
+ * GENERIC, and resolved elsewhere. Pseudo-Chū is the only producer today and
+ * its coefficient is nen/principles/chu.ts's — stating it here would make Aura
+ * the second owner of a principle's number, which is the defect the Ten
+ * correction removed from the coating. Aura spreads a supplied amount over a
+ * body at equal density and asks nothing about where it came from.
  */
 export interface PassiveInternalReinforcement {
-  readonly source: "unawakened-pseudo-chu";
+  /** Provenance. Nothing branches on it; it names the resolved allocation. */
+  readonly source: string;
 
   /** Fraction of Current Aura that becomes effective internal Aura. */
-  readonly efficiency: 0.20;
+  readonly efficiency: number;
 }
 
 
@@ -479,6 +486,20 @@ export interface AuraAccessInput {
    * the awakened character whose effective Ten is 0.
    */
   readonly tenCoating?: AutomaticSurfaceCoating;
+
+  /*
+   * What this body passively reinforces itself with, supplied by Chū.
+   *
+   * Absent for everybody but the never-awakened, which is the only state that
+   * produces any. Supplied rather than inferred for the same reason the Ten
+   * coating is: the efficiency is a principle's number, and a fallback stated
+   * here would be a second one.
+   *
+   * Unlike the coating, an ABSENT one is not an error. There is no rank to
+   * contradict it — a body either makes this or does not, and Aura can tell
+   * which from awakening alone, so a missing value and "none" agree.
+   */
+  readonly passiveInternalReinforcement?: PassiveInternalReinforcement;
 
   readonly override?: AuraAccessOverride;
 }
@@ -651,8 +672,10 @@ export interface ResolvedAuraDistribution {
  * it covers, the Volume it covers, and the internal Density that results.
  */
 export interface ResolvedPassiveInternalAura {
-  readonly source: "unawakened-pseudo-chu";
-  readonly efficiency: 0.20;
+  /** The descriptor's own provenance, carried through unread. */
+  readonly source: string;
+
+  readonly efficiency: number;
   readonly sourceAura: number;
   readonly effectiveAura: number;
   readonly allocations: readonly ResolvedInternalAuraAllocation[];
@@ -728,22 +751,82 @@ export type AuraRecoveryMode = WakefulnessMode;
 /*
  * Aura suppression, as recovery is told about it.
  *
- * Zetsu is what will supply this, and the shape is deliberately ignorant of
- * that: a source label for provenance, a resolved multiplier, and whether the
- * character chose it. Nothing branches on the label.
+ * Zetsu is what supplies this, and the shape is deliberately ignorant of that:
+ * a source label for provenance, and whether the character chose it. Nothing
+ * branches on the label.
+ *
+ * IT NO LONGER CARRIES A MULTIPLIER, and that is the point of the field being
+ * gone rather than zeroed. The old one was Zetsu Mastery, x1 through x5, which
+ * made a Zetsu X recover five times as fast as a Zetsu I for doing exactly the
+ * same thing — and it could not be replaced by an activity-aware number here,
+ * because the things that SUPPLY suppression (the Nen access projection, a
+ * collapse) do not know whether the character is asleep. Recovery resolves the
+ * coefficient itself, from what the character is doing.
  */
 export interface AuraSuppression {
   readonly source: string;
 
-  /** The resolved multiplier. Zetsu I-X supply 1.0 through 5.0. */
-  readonly multiplier: number;
-
-  /** Forced suppression applies whatever the character is doing. */
+  /*
+   * Forced suppression is the body shutting the nodes, not the character.
+   *
+   * It recovers at its own flat rate whatever the character was doing, because
+   * a character who blacked out is not choosing an activity. Voluntary
+   * suppression follows the ordinary activity table.
+   */
   readonly forced: boolean;
 }
 
+/*
+ * What the character's Aura state is doing to their recovery, generically.
+ *
+ * FOUR CLASSES, NO PRINCIPLE NAMES. Recovery must never ask whether Ten, Zetsu
+ * or Chū is running — that question has a different answer every time a
+ * principle is added, and the answer is always one of these four:
+ *
+ *   half-open    nodes never opened, or closed again by reversion
+ *   uncontained  open nodes with nothing holding them shut
+ *   contained    open nodes held, by Ten or by any override that contains
+ *   suppressed   nodes shut, voluntarily or by collapse
+ *
+ * Derived from ResolvedAuraAccess and the resolved suppression fact together,
+ * because neither settles it alone: a suppressed character's access still
+ * reports open, contained nodes.
+ */
+export const AURA_RECOVERY_ACCESS_CLASSES = [
+  "half-open",
+  "uncontained",
+  "contained",
+  "suppressed",
+] as const;
+
+export type AuraRecoveryAccessClass =
+  typeof AURA_RECOVERY_ACCESS_CLASSES[number];
+
 export interface AuraRecoveryContext {
   readonly mode: AuraRecoveryMode;
+
+  /** Which of the four states the character's Aura is in. */
+  readonly accessClass: AuraRecoveryAccessClass;
+
+  /*
+   * Whether the body is working, as opposed to going about a day.
+   *
+   * Ordinary waking already covers walking, talking and a day's work and is
+   * not exertion. This is the sustained-activity fact resolved to a boolean,
+   * because the MAGNITUDE of the effort no longer changes anything: physical
+   * consumption is one flat rate, and recovery has one physical column.
+   */
+  readonly exerting?: boolean;
+
+  /*
+   * Whether a non-passive Nen activity is operating.
+   *
+   * Natural regeneration is zero while it is. Generic on purpose: the runtime
+   * that answers this treats every activity's definition as opaque, and Ten is
+   * absent from it entirely because Ten is passive derived state rather than
+   * something a character is doing.
+   */
+  readonly activeNenUse?: boolean;
 
   /** Absent when nothing is suppressing the character's Aura. */
   readonly suppression?: AuraSuppression;
@@ -771,6 +854,16 @@ export interface AuraRecoveryContext {
 export const AURA_RECOVERY_SOURCES = [
   "natural-regeneration",
   "scheduled-event",
+
+  /*
+   * The one-off top-off a completed sleep pays.
+   *
+   * Its own source rather than more natural regeneration, because it is not a
+   * RATE: it has no hours and no multiplier, it fires once at a threshold, and
+   * folding it into the regeneration figure would make a night that restored
+   * 80 by rate and 20 by completion report 100 at a rate that never held.
+   */
+  "sleep-completion",
 ] as const;
 
 export type AuraRecoverySource = typeof AURA_RECOVERY_SOURCES[number];

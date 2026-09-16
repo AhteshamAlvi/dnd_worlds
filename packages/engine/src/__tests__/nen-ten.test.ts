@@ -320,9 +320,8 @@ describe("Ten costs nothing", () => {
 
   /*
    * An hour of ordinary waking life with Ten up, and nothing leaves the
-   * reserve. No upkeep, no passive leak, and no reduction of what regeneration
-   * puts back — an awake character regenerates nothing by design, so the
-   * balance being empty in BOTH directions is the assertion.
+   * reserve. No upkeep and no leak — the character GAINS, because a contained
+   * ordinary hour recovers 2R, and the point here is that Ten took none of it.
    */
   it("charges no upkeep and leaks nothing over an hour", () => {
     for (const mastery of RANKS) {
@@ -343,8 +342,12 @@ describe("Ten costs nothing", () => {
         mastery,
         result.payload.balance.upkeep,
         result.payload.balance.leakage,
-        result.payload.state.current,
-      ]).toEqual([mastery, 0, 0, 20_000]);
+        result.payload.balance.physical,
+      ]).toEqual([mastery, 0, 0, 0]);
+
+      /* And the reserve moved only by what regeneration put in. */
+      expect(result.payload.currentChange)
+        .toBe(result.payload.balance.recovery);
     }
   });
 

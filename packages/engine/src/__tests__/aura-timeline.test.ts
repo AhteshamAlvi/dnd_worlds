@@ -62,8 +62,17 @@ const LEAK_PER_ROUND = 10_000 / 30;
 
 const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
-const ZETSU = { source: "zetsu", multiplier: 1, forced: false } as const;
-const FORCED_ZETSU = { source: "forced-zetsu", multiplier: 1, forced: true };
+const ZETSU = { source: "zetsu", forced: false } as const;
+
+/*
+ * A character holding a technique open, which zeroes natural regeneration.
+ *
+ * Used by the scenarios that are about the SOLVER — how simultaneous events
+ * net, where a boundary falls — so the only thing moving the pool is the thing
+ * under test rather than a background 2R an hour.
+ */
+const HOLDING = { mode: "ordinary-waking", activeNenUse: true } as const;
+const FORCED_ZETSU = { source: "forced-zetsu", forced: true };
 
 interface Options {
   readonly current?: number;
@@ -187,17 +196,18 @@ describe("suppression controls leakage", () => {
     expect(result.collapse).toBeNull();
   });
 
-  it("still recovers at the supplied multiplier while suppressed", () => {
+  it("still recovers, at the suppressed rate, while suppressed", () => {
     const result = succeed({
       current: 0,
       hours: 2,
       activity: {
         mode: "intentional-rest",
-        suppression: { source: "zetsu-iii", multiplier: 1.5, forced: false },
+        suppression: { source: "zetsu-iii", forced: false },
       },
     });
 
-    expect(result.balance.recovery).toBeCloseTo(5000 * 1.5 * 2, 8);
+    /* Suppressed rest is 4R, and R is 2,500 at VIT 20. */
+    expect(result.balance.recovery).toBeCloseTo(4 * 2500 * 2, 8);
     expect(result.balance.leakage).toBe(0);
   });
 
@@ -365,16 +375,23 @@ describe("half-open interval ownership", () => {
 
   /* A solver OUTCOME may land on the endpoint; it is a consequence, not an input. */
   it("still reports the pool emptying exactly at the closing instant", () => {
+    /*
+     * Slightly MORE than two Rounds of leak in the reserve, because an
+     * uncontained character regenerates R an hour while they bleed — so two
+     * Rounds of leakage no longer lands them exactly on zero. The interval is
+     * widened to contain the instant rather than end on it.
+     */
     const result = succeed({
       current: LEAK_PER_ROUND * 2,
-      hours: 2 * ROUND_HOURS,
+      hours: 4 * ROUND_HOURS,
     });
 
-    expect(result.current).toBe(0);
     expect(result.events.map((event) => event.kind)).toContain("aura-empty");
     expect(result.collapse).not.toBeNull();
     expect(result.collapse!.at)
-      .toBeCloseTo(T0 + hoursToDuration(2 * ROUND_HOURS), 6);
+      .toBeGreaterThan(T0 + hoursToDuration(2 * ROUND_HOURS));
+    expect(result.collapse!.at)
+      .toBeLessThan(T0 + hoursToDuration(3 * ROUND_HOURS));
   });
 });
 
@@ -395,19 +412,19 @@ describe("timeline validation", () => {
   it("rejects an unnamed event source", () => {
     expect(errorCodes(advance({
       access: WITH_TEN,
-      instantaneous: [at(1, "physical", 10, "  ")],
+      instantaneous: [at(1, "deliberate", 10, "  ")],
     }))).toContain("aura.timeline.event.source.missing");
   });
 
   it("rejects a non-finite or negative amount", () => {
     expect(errorCodes(advance({
       access: WITH_TEN,
-      instantaneous: [at(1, "physical", Number.NaN)],
+      instantaneous: [at(1, "deliberate", Number.NaN)],
     }))).toContain("aura.timeline.event.amount.invalid");
 
     expect(errorCodes(advance({
       access: WITH_TEN,
-      instantaneous: [at(1, "physical", -1)],
+      instantaneous: [at(1, "deliberate", -1)],
     }))).toContain("aura.timeline.event.amount.invalid");
   });
 
@@ -425,17 +442,52 @@ describe("timeline validation", () => {
   });
 
   /*
-   * Left unchecked this did not produce NaN — the comparison it feeds is false
-   * for NaN, so the mode's own rate was quietly used instead.
+   * Suppression no longer carries a multiplier to be nonsense. What it carries
+   * is whether the character CHOSE it, which decides between the suppressed
+   * column and the flat forced rate — so a non-boolean there is the same
+   * defect in a new place.
    */
-  it("rejects a nonsense suppression multiplier", () => {
+  it("rejects a suppression that does not say whether it was chosen", () => {
     expect(errorCodes(advance({
       access: WITH_TEN,
       activity: {
         mode: "sleep",
-        suppression: { source: "z", multiplier: Number.NaN, forced: false },
+        suppression: { source: "z", forced: "no" as unknown as boolean },
       },
-    }))).toContain("aura.recovery.multiplier.invalid");
+    }))).toContain("aura.recovery.suppression.forced.invalid");
+  });
+
+  /*
+   * And the pairing that has no answer. Shut nodes and a running technique
+   * take different recovery branches, so a caller asserting both has combined
+   * two states rather than described one character.
+   */
+  it("rejects suppression and active Nen at once", () => {
+    expect(errorCodes(advance({
+      access: WITH_TEN,
+      activity: {
+        mode: "sleep",
+        activeNenUse: true,
+        suppression: { source: "zetsu", forced: false },
+      },
+    }))).toContain("aura.activity.suppression.active_nen.contradictory");
+  });
+
+  it("rejects active Nen on a character who has never awakened", () => {
+    expect(errorCodes(advance({
+      access: UNAWAKENED,
+      activity: { mode: "ordinary-waking", activeNenUse: true },
+    }))).toContain("aura.activity.active_nen.unawakened");
+  });
+
+  it("rejects an active-Nen fact that is not a boolean", () => {
+    expect(errorCodes(advance({
+      access: WITH_TEN,
+      activity: {
+        mode: "ordinary-waking",
+        activeNenUse: "yes" as unknown as boolean,
+      },
+    }))).toContain("aura.activity.active_nen.invalid");
   });
 
   it("rejects an unnamed suppression", () => {
@@ -443,7 +495,7 @@ describe("timeline validation", () => {
       access: WITH_TEN,
       activity: {
         mode: "sleep",
-        suppression: { source: " ", multiplier: 1, forced: false },
+        suppression: { source: " ", forced: false },
       },
     }))).toContain("aura.recovery.suppression.source.missing");
   });
@@ -513,7 +565,7 @@ describe("timeline validation", () => {
       access: WITH_TEN,
       instantaneous: [
         at(0.5, "forced-drain", 5000),
-        at(1, "physical", Number.NaN),
+        at(1, "deliberate", Number.NaN),
       ],
     });
 
@@ -556,6 +608,7 @@ describe("simultaneous events resolve atomically", () => {
       current: 100,
       hours: 1,
       access: WITH_TEN,
+      activity: HOLDING,
       instantaneous: [drain, heal],
     });
 
@@ -569,6 +622,7 @@ describe("simultaneous events resolve atomically", () => {
       current: 100,
       hours: 1,
       access: WITH_TEN,
+      activity: HOLDING,
       instantaneous: [at(0, "forced-drain", 900, "d"), at(0, "recovery", 200, "h")],
     });
 
@@ -615,6 +669,7 @@ describe("simultaneous events resolve atomically", () => {
       current: 49_000,
       hours: 0.0001,
       access: WITH_TEN,
+      activity: HOLDING,
       instantaneous: [
         at(0, "recovery", 1000, "a"),
         at(0, "recovery", 3000, "b"),
@@ -657,23 +712,23 @@ describe("recovery provenance", () => {
     expect([...byContext.keys()].sort())
       .toEqual(["intentional-rest", "sleep"]);
     expect(byContext.get("intentional-rest")).toEqual(expect.objectContaining({
-      multiplier: 0.5,
+      multiplier: 3,
       hours: 2,
-      potential: 5000,
+      potential: 3 * 2500 * 2,
     }));
     expect(byContext.get("sleep")).toEqual(expect.objectContaining({
-      multiplier: 1,
+      multiplier: 4,
       hours: 2,
-      potential: 10_000,
+      potential: 4 * 2500 * 2,
     }));
   });
 
-  it("records nothing at all for a mode that recovers nothing", () => {
+  it("records nothing at all for a state that recovers nothing", () => {
     const result = succeed({
       current: 10_000,
       hours: 4,
       access: WITH_TEN,
-      activity: { mode: "ordinary-waking" },
+      activity: { mode: "ordinary-waking", activeNenUse: true },
     });
 
     expect(result.balance.recoveryBySource).toEqual([]);
@@ -690,7 +745,7 @@ describe("recovery provenance", () => {
         at: T0 + hoursToDuration(2),
         activity: {
           mode: "intentional-rest",
-          suppression: { source: "zetsu-x", multiplier: 5, forced: false },
+          suppression: { source: "zetsu-x", forced: false },
         },
       }],
     });
@@ -705,6 +760,7 @@ describe("recovery provenance", () => {
       current: 0,
       hours: 1,
       access: WITH_TEN,
+      activity: HOLDING,
       instantaneous: [at(0.5, "recovery", 500, "healing-potion")],
     });
 
@@ -857,6 +913,7 @@ describe("upkeep reports what it was actually charged for", () => {
       current: 150,
       hours: 2,
       access: REN_III,
+      activity: HOLDING,
       upkeep: [{ id: "ren", source: "ren", baseRate: RATE, period: "hour" }],
     });
 

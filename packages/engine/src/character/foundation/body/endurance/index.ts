@@ -25,6 +25,7 @@ export type {
 export {
   FATIGUE_STATES,
   PHYSICAL_EXERTION_LEVELS,
+  QUALIFYING_SLEEP_HOURS,
   SUSTAINED_ACTIVITY_LEVELS,
   WAKEFULNESS_MODES,
   restedWakefulness,
@@ -37,9 +38,7 @@ export type {
 
 export {
   PHYSICAL_EXERTION_LOADS,
-  REFERENCE_STAMINA,
   SUSTAINED_ACTIVITY_LOADS_PER_HOUR,
-  deriveStaminaExpenditureMultiplier,
   findActivityCombinationIssues,
   physicalExertionLoad,
   sustainedActivityLoadPerHour,
@@ -48,6 +47,7 @@ export {
 export {
   WAKING_HOURS_CLEARED_PER_HOUR_SLEPT,
   advanceWakefulness,
+  consecutiveSleepHours,
   deriveMaximumWakefulDays,
   deriveMaximumWakefulHours,
   findWakefulnessStateIssues,

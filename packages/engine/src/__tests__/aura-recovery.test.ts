@@ -1,25 +1,30 @@
 /*
  * Getting Aura back, and losing it to an open node.
  *
- * The rule that replaced unrestricted replenishment: recovery requires an
- * EXPLICIT context. An ordinary waking hour recovers nothing, and the Aura
- * domain never infers whether the character is resting or asks which principle
- * is suppressing them — suppression arrives as a multiplier something else
- * resolved.
+ * Recovery requires an EXPLICIT context, and the Aura domain never infers one.
+ * It does not ask whether the character is resting and it does not know the
+ * word Zetsu: what it reads is a wakefulness mode, one of four generic access
+ * classes, and two booleans.
  *
- * Leakage is the other direction, and only one state produces it: an awakened
- * character who never learned Ten, whose open nodes bleed a full reserve in
- * exactly as long as they could have stayed awake.
+ * Everything is expressed in R, the revised Regeneration unit — half the
+ * rounded VIT curve — because the table's coefficients are small integers and
+ * asserting them as raw numbers would hide which of the two moved.
+ *
+ * Leakage is the other direction, and there are now TWO of them: half-open
+ * pores lose 2R an hour and cannot empty anybody, while an awakened character
+ * who never learned Ten bleeds their Output every minute and can.
  */
 
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  AURA_RECOVERY_MODE_MULTIPLIERS,
+  auraRecoveryColumn,
   deriveAuraRegeneration,
+  deriveRawAuraRegeneration,
   recoverAura,
   resolveAuraRecoveryMultiplier,
 } from "../character/foundation/aura/recovery";
+import { roundToOneSignificantFigure } from "../infrastructure/rounding";
 import {
   AURA_COLLAPSE_REQUESTS,
   deriveUncontainedLeakage,
@@ -30,8 +35,9 @@ import { createAuraPool, deriveMaximumAura } from "../character/foundation/aura/
 import { deriveAuraOutputLimit } from "../character/foundation/aura/output";
 import { SECONDS_PER_COMBAT_ROUND } from "../time/duration";
 import { resolveAuraAccess } from "../character/foundation/aura/access";
-import { deriveZetsuReplenishmentMultiplier } from "../character/foundation/nen/principles/zetsu";
-import type { AuraSuppression } from "../character/foundation/aura/types";
+import * as zetsu from "../character/foundation/nen/principles/zetsu";
+import { ZETSU_MASTERY_PROFILES } from "../character/foundation/nen/principles/zetsu";
+import type { AuraRecoveryAccessClass } from "../character/foundation/aura/types";
 
 import {
   auraTestAttributes,
@@ -44,14 +50,6 @@ import {
 /* VIT 18 regenerates 700 Aura per hour at a x1.0 context. */
 const VIT_18 = auraTestAttributes({ con: 20, vit: 18 });
 const MAX_AURA = 20_000;
-
-function zetsu(mastery: 1 | 3 | 10, forced = false): AuraSuppression {
-  return {
-    source: `zetsu-${mastery}`,
-    multiplier: deriveZetsuReplenishmentMultiplier(mastery),
-    forced,
-  };
-}
 
 function recovered(
   current: number,
@@ -82,104 +80,260 @@ function errorCodes(
 }
 
 
-describe("recovery contexts", () => {
-  it("keeps the VIT-derived capacity unchanged", () => {
-    expect(deriveAuraRegeneration(VIT_18)).toBe(700);
+/*
+ * The table, row by row, in units of R.
+ *
+ * VIT 18's curve rounds to 700, so R is 350 and every expectation below is a
+ * small multiple of it. Written as coefficients rather than as raw numbers so
+ * that a changed unit fails in one place and a changed COEFFICIENT fails in
+ * the row that owns it.
+ */
+describe("the recovery table", () => {
+  const R = 350;
+
+  it("halves the rounded curve, and halves it AFTER rounding", () => {
+    expect(deriveAuraRegeneration(VIT_18)).toBe(R);
+
+    /* The old resolved figure, which R is exactly half of. */
+    expect(roundToOneSignificantFigure(deriveRawAuraRegeneration(VIT_18)))
+      .toBe(700);
+
+    /*
+     * Halving first would round a different number. VIT 13's curve is ~9.62:
+     * rounded then halved is 5, halved then rounded is 5 as well — but VIT 18's
+     * is ~661, where rounded-then-halved is 350 and halved-then-rounded is 300.
+     */
+    const vit18Raw = deriveRawAuraRegeneration(VIT_18);
+
+    expect(roundToOneSignificantFigure(vit18Raw / 2)).not.toBe(R);
   });
 
-  /*
-   * The whole reason unrestricted replenishment had to go. A character who
-   * walked around for eight hours used to come back full.
-   */
-  it("recovers nothing through an ordinary waking hour", () => {
-    expect(AURA_RECOVERY_MODE_MULTIPLIERS["ordinary-waking"]).toBe(0);
-    expect(recovered(10_000, { mode: "ordinary-waking" }, 8)).toBe(0);
+  it("gives VIT 13 an R of 5, which the worked examples assume", () => {
+    expect(deriveAuraRegeneration(auraTestAttributes({ con: 13, vit: 13 })))
+      .toBe(5);
   });
 
-  it("recovers at half rate through intentional rest", () => {
-    expect(recovered(10_000, { mode: "intentional-rest" }, 1)).toBe(350);
-  });
+  const rows: readonly (readonly [
+    AuraRecoveryAccessClass,
+    Record<"ordinary" | "physical" | "rest" | "sleep", number>,
+  ])[] = [
+    ["half-open", { ordinary: 2, physical: 1, rest: 3, sleep: 4 }],
+    ["uncontained", { ordinary: 1, physical: 1, rest: 2, sleep: 4 }],
+    ["contained", { ordinary: 2, physical: 1, rest: 3, sleep: 4 }],
+    ["suppressed", { ordinary: 3, physical: 1, rest: 4, sleep: 4 }],
+  ];
 
-  it("recovers at full rate through sleep", () => {
-    expect(recovered(10_000, { mode: "sleep" }, 1)).toBe(700);
-  });
+  for (const [accessClass, expected] of rows) {
+    const suppression = accessClass === "suppressed"
+      ? { suppression: { source: "zetsu", forced: false } }
+      : {};
 
-  /*
-   * The table says rest plus Zetsu I is x1.0, not x0.5. The suppression
-   * multiplier is the resolved answer for that character rather than a bonus
-   * on top of the ordinary rest rate.
-   */
-  it("makes rest behind Zetsu I equal to sleeping", () => {
-    expect(recovered(10_000, { mode: "intentional-rest", suppression: zetsu(1) }, 1))
-      .toBe(recovered(10_000, { mode: "sleep" }, 1));
-  });
+    it(`recovers ${expected.ordinary}R, ${expected.physical}R, ${expected.rest}R and ${expected.sleep}R as ${accessClass}`, () => {
+      expect(recovered(
+        0,
+        { mode: "ordinary-waking", accessClass, ...suppression },
+        1,
+      )).toBe(expected.ordinary * R);
 
-  it("scales with higher Zetsu", () => {
-    expect(deriveZetsuReplenishmentMultiplier(3)).toBe(1.5);
-    expect(deriveZetsuReplenishmentMultiplier(10)).toBe(5);
+      expect(recovered(
+        0,
+        { mode: "ordinary-waking", accessClass, exerting: true, ...suppression },
+        1,
+      )).toBe(expected.physical * R);
 
-    expect(recovered(0, { mode: "intentional-rest", suppression: zetsu(3) }, 1))
-      .toBe(1050);
-    expect(recovered(0, { mode: "intentional-rest", suppression: zetsu(10) }, 1))
-      .toBe(3500);
-  });
+      expect(recovered(
+        0,
+        { mode: "intentional-rest", accessClass, ...suppression },
+        1,
+      )).toBe(expected.rest * R);
 
-  /* Standing in a corridor holding Zetsu is not rest. */
-  it("gives voluntary suppression nothing to work with while awake", () => {
-    expect(recovered(10_000, { mode: "ordinary-waking", suppression: zetsu(10) }, 1))
-      .toBe(0);
-  });
-
-  /*
-   * A character whose Aura was slammed shut by collapse is not choosing
-   * anything, so forced suppression applies whatever they are doing.
-   */
-  it("applies forced suppression regardless of mode", () => {
-    expect(recovered(
-      10_000,
-      { mode: "ordinary-waking", suppression: zetsu(1, true) },
-      1,
-    )).toBe(700);
-  });
-
-  it("never lets suppression downgrade someone already asleep", () => {
-    const resolved = resolveAuraRecoveryMultiplier({
-      mode: "sleep",
-      suppression: { source: "weak", multiplier: 0.25, forced: false },
+      expect(recovered(
+        0,
+        { mode: "sleep", accessClass, ...suppression },
+        1,
+      )).toBe(expected.sleep * R);
     });
+  }
 
-    expect(resolved.multiplier).toBe(1);
-    expect(resolved.context).toBe("sleep");
+  /*
+   * The two shapes the table is worth reading FOR, asserted as relations so
+   * they survive a re-tuning of the numbers themselves.
+   */
+  it("makes working the body cost everyone the same recovery", () => {
+    const physical = rows.map(([accessClass, _]) => recovered(
+      0,
+      {
+        mode: "ordinary-waking",
+        accessClass,
+        exerting: true,
+        ...(accessClass === "suppressed"
+          ? { suppression: { source: "zetsu", forced: false } }
+          : {}),
+      },
+      1,
+    ));
+
+    expect(new Set(physical).size).toBe(1);
   });
 
-  it("names what produced the multiplier", () => {
-    expect(resolveAuraRecoveryMultiplier({ mode: "sleep" }).context)
-      .toBe("sleep");
-    expect(resolveAuraRecoveryMultiplier({
-      mode: "intentional-rest",
-      suppression: zetsu(3),
-    }).context).toBe("zetsu-3");
+  it("makes an uncontained character the worst at recovering, not merely the leakiest", () => {
+    const ordinary = (accessClass: AuraRecoveryAccessClass) =>
+      recovered(0, { mode: "ordinary-waking", accessClass }, 1);
+
+    expect(ordinary("uncontained")).toBeLessThan(ordinary("contained"));
+    expect(ordinary("uncontained")).toBeLessThan(ordinary("half-open"));
   });
 
   /*
-   * Falls out of the table rather than needing a rule: an unawakened character
-   * has no suppression to supply, and ordinary waking is x0.
+   * A closed system is a closed system. What separates an ordinary person from
+   * a character running Ten is the 2R their pores lose, which is leakage.ts's
+   * business and not this table's.
    */
-  it("lets an unawakened character recover only by resting or sleeping", () => {
-    const access = resolveAuraAccess(UNAWAKENED);
-
-    expect(access.success && access.payload.awakened).toBe(false);
-
-    expect(recovered(10_000, { mode: "ordinary-waking" }, 8)).toBe(0);
-    expect(recovered(10_000, { mode: "intentional-rest" }, 8)).toBeGreaterThan(0);
-    expect(recovered(10_000, { mode: "sleep" }, 8)).toBeGreaterThan(0);
+  it("treats half-open and contained identically", () => {
+    for (const mode of ["ordinary-waking", "intentional-rest", "sleep"] as const) {
+      expect(recovered(0, { mode, accessClass: "half-open" }, 1))
+        .toBe(recovered(0, { mode, accessClass: "contained" }, 1));
+    }
   });
 
+  /* Exertion displaces ordinary waking only; rest and sleep keep their rows. */
+  it("keeps the rest and sleep rows when something is moving a still body", () => {
+    expect(auraRecoveryColumn("ordinary-waking", true)).toBe("physical");
+    expect(auraRecoveryColumn("intentional-rest", true)).toBe("intentional-rest");
+    expect(auraRecoveryColumn("sleep", true)).toBe("sleep");
+
+    expect(recovered(
+      0,
+      { mode: "sleep", accessClass: "contained", exerting: true },
+      1,
+    )).toBe(4 * R);
+  });
+});
+
+
+describe("what overrides the table", () => {
+  const R = 350;
+
+  /*
+   * Producing Aura and projecting it are the same faculty. This is what makes
+   * an indefinite Ren a decision rather than a default.
+   */
+  it("recovers nothing at all while a Nen activity is running", () => {
+    for (const mode of ["ordinary-waking", "intentional-rest", "sleep"] as const) {
+      expect(recovered(
+        0,
+        { mode, accessClass: "contained", activeNenUse: true },
+        1,
+      )).toBe(0);
+    }
+
+    expect(recovered(
+      0,
+      {
+        mode: "ordinary-waking",
+        accessClass: "contained",
+        activeNenUse: true,
+        exerting: true,
+      },
+      1,
+    )).toBe(0);
+  });
+
+  it("names active Nen as what produced the zero", () => {
+    expect(resolveAuraRecoveryMultiplier({
+      mode: "sleep",
+      accessClass: "contained",
+      activeNenUse: true,
+    })).toEqual({ multiplier: 0, context: "active-nen" });
+  });
+
+  /*
+   * A character whose nodes were slammed shut by collapse is not choosing an
+   * activity, so the rate does not depend on what they were doing when the
+   * lights went out.
+   */
+  it("gives forced suppression a flat 3R whatever the character was doing", () => {
+    for (const mode of ["ordinary-waking", "intentional-rest", "sleep"] as const) {
+      expect(recovered(
+        0,
+        {
+          mode,
+          accessClass: "suppressed",
+          suppression: { source: "collapse", forced: true },
+        },
+        1,
+      )).toBe(3 * R);
+    }
+
+    expect(recovered(
+      0,
+      {
+        mode: "ordinary-waking",
+        accessClass: "suppressed",
+        exerting: true,
+        suppression: { source: "collapse", forced: true },
+      },
+      1,
+    )).toBe(3 * R);
+  });
+
+  /*
+   * The defect the old model had: Zetsu Mastery supplied x1 through x5, so a
+   * Zetsu X in a corridor out-recovered a Zetsu I in bed. Rank buys
+   * concealment and the ability to hold the state; it does not buy metabolism.
+   */
+  it("gives Zetsu no rank-scaled recovery to supply any more", () => {
+    const zetsuModule = zetsu as Record<string, unknown>;
+
+    expect(zetsuModule["deriveZetsuReplenishmentMultiplier"]).toBeUndefined();
+    expect(zetsuModule["resolveZetsuReplenishment"]).toBeUndefined();
+
+    for (const profile of Object.values(ZETSU_MASTERY_PROFILES)) {
+      expect(Object.keys(profile).sort())
+        .toEqual(["auraConcealmentModifier", "rank"]);
+    }
+  });
+
+  it("recovers identically behind a Zetsu I and a Zetsu X", () => {
+    const behind = (source: string) => recovered(
+      0,
+      {
+        mode: "intentional-rest",
+        accessClass: "suppressed",
+        suppression: { source, forced: false },
+      },
+      1,
+    );
+
+    expect(behind("zetsu-1")).toBe(behind("zetsu-10"));
+  });
+
+  /*
+   * And the replacement rule, stated positively: suppression is worth MORE in
+   * bed than in a corridor, which is what the old `max(mode, rank)` destroyed.
+   */
+  it("makes a Zetsu held in bed worth more than one held in a corridor", () => {
+    const held = (mode: "ordinary-waking" | "sleep") => recovered(
+      0,
+      {
+        mode,
+        accessClass: "suppressed",
+        suppression: { source: "zetsu", forced: false },
+      },
+      1,
+    );
+
+    expect(held("sleep")).toBeGreaterThan(held("ordinary-waking"));
+  });
+});
+
+
+describe("recovery, reported and refused", () => {
   it("caps recovery at the Aura actually missing", () => {
     const result = recoverAura(
       createAuraPool(19_800, MAX_AURA),
       VIT_18,
-      { mode: "sleep" },
+      { mode: "sleep", accessClass: "contained" },
       8,
     );
 
@@ -187,16 +341,20 @@ describe("recovery contexts", () => {
     if (!result.success) return;
 
     expect(result.payload.pool.current).toBe(MAX_AURA);
-    expect(result.payload.contribution.potential).toBe(5600);
+    expect(result.payload.contribution.potential).toBe(11_200);
     expect(result.payload.contribution.used).toBe(200);
-    expect(result.payload.contribution.discarded).toBe(5400);
+    expect(result.payload.contribution.discarded).toBe(11_000);
   });
 
   it("reports what it restored, with provenance", () => {
     const result = recoverAura(
       createAuraPool(0, MAX_AURA),
       VIT_18,
-      { mode: "intentional-rest", suppression: zetsu(3) },
+      {
+        mode: "intentional-rest",
+        accessClass: "suppressed",
+        suppression: { source: "zetsu-3", forced: false },
+      },
       2,
     );
 
@@ -206,51 +364,98 @@ describe("recovery contexts", () => {
     expect(result.payload.contribution).toEqual({
       source: "natural-regeneration",
       context: "zetsu-3",
-      ratePerHour: 700,
-      multiplier: 1.5,
+      ratePerHour: 350,
+      multiplier: 4,
       hours: 2,
-      potential: 2100,
-      used: 2100,
+      potential: 2800,
+      used: 2800,
       discarded: 0,
     });
   });
 
-  it("rejects an invalid duration, mode or multiplier", () => {
+  it("rejects an invalid duration, mode, class or activity fact", () => {
     const pool = createAuraPool(1000, MAX_AURA);
-
-    expect(errorCodes(recoverAura(pool, VIT_18, { mode: "sleep" }, -1)))
-      .toContain("aura.recovery.duration.invalid");
 
     expect(errorCodes(recoverAura(
       pool,
       VIT_18,
-      { mode: "napping" as "sleep" },
+      { mode: "sleep", accessClass: "contained" },
+      -1,
+    ))).toContain("aura.recovery.duration.invalid");
+
+    expect(errorCodes(recoverAura(
+      pool,
+      VIT_18,
+      { mode: "napping" as "sleep", accessClass: "contained" },
       1,
     ))).toContain("aura.recovery.mode.invalid");
 
     expect(errorCodes(recoverAura(
       pool,
       VIT_18,
-      {
-        mode: "sleep",
-        suppression: { source: "broken", multiplier: Number.NaN, forced: false },
-      },
+      { mode: "sleep", accessClass: "shut" as AuraRecoveryAccessClass },
       1,
-    ))).toContain("aura.recovery.multiplier.invalid");
+    ))).toContain("aura.recovery.access_class.invalid");
 
     expect(errorCodes(recoverAura(
       pool,
       VIT_18,
-      { mode: "sleep", suppression: { source: " ", multiplier: 1, forced: false } },
+      {
+        mode: "sleep",
+        accessClass: "contained",
+        exerting: "yes" as unknown as boolean,
+      },
+      1,
+    ))).toContain("aura.recovery.activity_fact.invalid");
+
+    expect(errorCodes(recoverAura(
+      pool,
+      VIT_18,
+      {
+        mode: "sleep",
+        accessClass: "suppressed",
+        suppression: { source: " ", forced: false },
+      },
       1,
     ))).toContain("aura.recovery.suppression.source.missing");
+  });
+
+  /*
+   * Two states, not one character. They take different branches, so absorbing
+   * the combination would silently pick one.
+   */
+  it("refuses suppression and active Nen together", () => {
+    expect(errorCodes(recoverAura(
+      createAuraPool(0, MAX_AURA),
+      VIT_18,
+      {
+        mode: "sleep",
+        accessClass: "suppressed",
+        activeNenUse: true,
+        suppression: { source: "zetsu", forced: false },
+      },
+      1,
+    ))).toContain("aura.recovery.suppression.active_nen.contradictory");
+  });
+
+  it("refuses a suppression that disagrees with the class", () => {
+    expect(errorCodes(recoverAura(
+      createAuraPool(0, MAX_AURA),
+      VIT_18,
+      {
+        mode: "sleep",
+        accessClass: "contained",
+        suppression: { source: "zetsu", forced: false },
+      },
+      1,
+    ))).toContain("aura.recovery.suppression.class.contradictory");
   });
 
   it("does not mutate the pool it was given", () => {
     const pool = createAuraPool(1000, MAX_AURA);
     const taken = JSON.stringify(pool);
 
-    recoverAura(pool, VIT_18, { mode: "sleep" }, 4);
+    recoverAura(pool, VIT_18, { mode: "sleep", accessClass: "contained" }, 4);
 
     expect(JSON.stringify(pool)).toBe(taken);
   });

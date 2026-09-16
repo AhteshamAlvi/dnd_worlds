@@ -40,11 +40,17 @@
  * right at Mastery I with no Ren and wrong everywhere else.
  *
  * This is the only file that imports a principle to build an access input, and
- * it imports the only principle that is not something a character DOES. Ten is
- * passive, automatic and free; it is a property of the state, which is what
- * makes resolving it here the same kind of act as reading effective Mastery.
- * The active resolvers — Ren, Zetsu, Hatsu — stay out, and an architecture
- * test holds that line.
+ * it imports only the principles that are not something a character DOES. Ten
+ * is passive, automatic and free; pseudo-Chū is not even learned. Both are
+ * properties of the state, which is what makes resolving them here the same
+ * kind of act as reading effective Mastery. The active resolvers — Ren, Zetsu,
+ * Hatsu — stay out, and an architecture test holds that line.
+ *
+ * Pseudo-Chū comes through the same door for the same reason: its 20% is
+ * nen/principles/chu.ts's, Aura owned a copy of it, and the copy was attached
+ * to a claim Aura had no business making — that a fifth of an ordinary
+ * person's reserve is what circulates. All of it circulates; a fifth of it is
+ * what lands.
  */
 
 import { NO_MASTERY } from "../capabilities/mastery";
@@ -58,6 +64,7 @@ import {
   isNenAwakened,
 } from "../foundation/nen/nen";
 import { isSuppressed } from "../foundation/nen/awakening/state";
+import { pseudoChuReinforcement } from "../foundation/nen/principles/chu";
 import { tenSurfaceCoating } from "../foundation/nen/principles/ten";
 import type { NenState } from "../foundation/nen/types";
 
@@ -73,7 +80,8 @@ export const NEN_SUPPRESSION_ACCESS_SOURCE = "nen-suppression";
 
 
 /** An access input before Ten's coating has been resolved onto it. */
-export type UncoatedAuraAccessInput = Omit<AuraAccessInput, "tenCoating">;
+export type UncoatedAuraAccessInput =
+  Omit<AuraAccessInput, "tenCoating" | "passiveInternalReinforcement">;
 
 
 /*
@@ -143,6 +151,62 @@ export function withTenCoating(
 
 
 /**
+ * Attach whatever this body passively reinforces itself with.
+ *
+ * Pseudo-Chū's counterpart to withTenCoating, and deliberately a separate
+ * function: the two apply to disjoint characters — the never-awakened get the
+ * reinforcement and nothing else, the awakened get the coating and nothing
+ * else — so folding them together would produce one function whose body is two
+ * unrelated halves under an `if`.
+ */
+export function withPassiveReinforcement(
+  input: UncoatedAuraAccessInput,
+): AuraAccessInput {
+  const reinforcement = pseudoChuReinforcement(
+    input.awakened,
+    input.previouslyAwakened ?? false,
+  );
+
+  return reinforcement === null
+    ? input
+    : { ...input, passiveInternalReinforcement: reinforcement };
+}
+
+
+/**
+ * Both passive projections, which is what a real access input carries.
+ *
+ * Built in ONE construction rather than by chaining the two above, because
+ * chaining them would pass an already-resolved input back through a parameter
+ * typed as unresolved — which type-checks, carries the first field through at
+ * runtime, and quietly stops saying so.
+ */
+export function withPassiveNen(
+  input: UncoatedAuraAccessInput,
+): AuraAccessInput {
+  const coating = input.awakened
+    ? tenSurfaceCoating(
+      input.effectiveTenMastery,
+      renAccessFraction(input.override),
+    )
+    : null;
+
+  const reinforcement = pseudoChuReinforcement(
+    input.awakened,
+    input.previouslyAwakened ?? false,
+  );
+
+  return {
+    ...input,
+    ...(coating === null ? {} : { tenCoating: coating }),
+    ...(reinforcement === null
+      ? {}
+      : { passiveInternalReinforcement: reinforcement }),
+  };
+}
+
+
+/**
  * What Aura should be told about this character.
  *
  * Every existing caller that built this object by hand should route through
@@ -166,10 +230,10 @@ export function nenAuraAccessInput(nen: NenState): AuraAccessInput {
    * reversion already cleared) from ever producing an invalid input.
    */
   if (!base.awakened || !isSuppressed(nen.awakening)) {
-    return withTenCoating(base);
+    return withPassiveNen(base);
   }
 
-  return withTenCoating({
+  return withPassiveNen({
     ...base,
     override: { kind: "suppressed", source: NEN_SUPPRESSION_ACCESS_SOURCE },
   });

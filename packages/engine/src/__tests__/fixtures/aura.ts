@@ -21,7 +21,7 @@ import {
   resolveMorphology,
 } from "../../character/foundation/body/morphology/resolution";
 import { NEUTRAL_MORPHOLOGY } from "../../character/foundation/body/types";
-import { withTenCoating } from "../../character/nen/access";
+import { withPassiveNen } from "../../character/nen/access";
 import type { CharacterStats } from "../../character/foundation/attributes/stats";
 import type {
   Anatomy,
@@ -90,17 +90,30 @@ export function auraTestAttributes(
   };
 }
 
-/** The ordinary unawakened state: a real pool, no deliberate access. */
-export const UNAWAKENED: AuraAccessInput = {
+/*
+ * The ordinary unawakened state: a real pool, no deliberate access.
+ *
+ * Built through the same projection production uses, so the pseudo-Chū
+ * efficiency in these suites is Chū's own rather than a literal that would
+ * keep agreeing with it until the day it changed.
+ */
+export const UNAWAKENED: AuraAccessInput = withPassiveNen({
   awakened: false,
   effectiveTenMastery: 0,
-};
+});
+
+/** Awakened and reverted: half-open nodes, and no pseudo-Chū ever again. */
+export const REVERTED: AuraAccessInput = withPassiveNen({
+  awakened: false,
+  previouslyAwakened: true,
+  effectiveTenMastery: 0,
+});
 
 /** Awakened with nothing contained yet. */
-export const UNCONTAINED: AuraAccessInput = {
+export const UNCONTAINED: AuraAccessInput = withPassiveNen({
   awakened: true,
   effectiveTenMastery: 0,
-};
+});
 
 /*
  * Awakened with Ten learned, which is Ten running.
@@ -112,7 +125,7 @@ export const UNCONTAINED: AuraAccessInput = {
  * Ten I with no Ren is the 5% floor, which is what every suite that is not
  * about Ten specifically has always assumed.
  */
-export const WITH_TEN: AuraAccessInput = withTenCoating({
+export const WITH_TEN: AuraAccessInput = withPassiveNen({
   awakened: true,
   effectiveTenMastery: 1,
 });
@@ -122,7 +135,7 @@ export function withTen(
   effectiveTenMastery: number,
   override?: AuraAccessOverride,
 ): AuraAccessInput {
-  return withTenCoating({
+  return withPassiveNen({
     awakened: true,
     effectiveTenMastery,
     ...(override === undefined ? {} : { override }),

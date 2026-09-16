@@ -320,7 +320,10 @@ describe("live projection", () => {
 
     expect(projection.projected).toBe(false);
     expect(projection.aura.current).toBe(10_000);
-    expect(projection.wakefulness).toEqual(subject.wakefulness);
+    expect(projection.wakefulness).toEqual({
+      ...subject.wakefulness,
+      consecutiveSleepHours: 0,
+    });
   });
 
   it("refuses to project backwards", () => {

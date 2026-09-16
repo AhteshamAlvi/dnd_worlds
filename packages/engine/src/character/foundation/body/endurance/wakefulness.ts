@@ -45,6 +45,7 @@ import type {
 } from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 
+import { QUALIFYING_SLEEP_HOURS } from "./types";
 import type {
   CharacterWakefulnessState,
   ResolvedWakefulness,
@@ -133,17 +134,53 @@ export function resolveWakefulness(
 export function findWakefulnessStateIssues(
   state: CharacterWakefulnessState,
 ): readonly EngineError[] {
-  if (Number.isFinite(state.hoursAwake) && state.hoursAwake >= 0) return [];
+  const errors: EngineError[] = [];
 
-  return [{
-    code: "body.wakefulness.hours_awake.invalid",
-    message: "Accumulated waking hours must be a finite non-negative number.",
-    audience: "developer",
-    required: "finite number >= 0",
-    actual: Number.isFinite(state.hoursAwake)
-      ? state.hoursAwake
-      : String(state.hoursAwake),
-  }];
+  if (!Number.isFinite(state.hoursAwake) || state.hoursAwake < 0) {
+    errors.push({
+      code: "body.wakefulness.hours_awake.invalid",
+      message: "Accumulated waking hours must be a finite non-negative number.",
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: Number.isFinite(state.hoursAwake)
+        ? state.hoursAwake
+        : String(state.hoursAwake),
+    });
+  }
+
+  const slept = state.consecutiveSleepHours;
+
+  /*
+   * ABSENT is fine and means zero; PRESENT AND WRONG is refused rather than
+   * clamped. A stored character written before this field existed has simply
+   * not begun a sleep, which is true. A stored 12 or a NaN is a record that
+   * disagrees with the rule, and silently pulling it back to 8 would hide
+   * whatever produced it — including a caller that had started keeping its own
+   * count.
+   */
+  if (
+    slept !== undefined &&
+    (!Number.isFinite(slept) || slept < 0 || slept > QUALIFYING_SLEEP_HOURS)
+  ) {
+    errors.push({
+      code: "body.wakefulness.consecutive_sleep.invalid",
+      message:
+        `Consecutive sleep progress must be a finite number from 0 through ${QUALIFYING_SLEEP_HOURS}.`,
+      audience: "developer",
+      required: `finite number between 0 and ${QUALIFYING_SLEEP_HOURS}`,
+      actual: Number.isFinite(slept) ? slept : String(slept),
+    });
+  }
+
+  return errors;
+}
+
+
+/** Consecutive sleep progress as a number, with absence normalized to zero. */
+export function consecutiveSleepHours(
+  state: CharacterWakefulnessState,
+): number {
+  return state.consecutiveSleepHours ?? 0;
 }
 
 
@@ -221,12 +258,32 @@ export function advanceWakefulness(
     )
     : state.hoursAwake + elapsedHours;
 
-  const next: CharacterWakefulnessState = { hoursAwake };
+  /*
+   * Accumulate while asleep; reset on a waking stretch that actually lasted.
+   *
+   * A ZERO-LENGTH non-sleep segment does not reset it. Subdividing an interval
+   * puts zero-width boundaries wherever two segments meet, and a reset there
+   * would make eight one-hour calls disagree with one eight-hour call — which
+   * is the one property the whole solver exists to preserve.
+   */
+  const slept = consecutiveSleepHours(state);
+
+  const consecutive = mode === "sleep"
+    ? Math.min(QUALIFYING_SLEEP_HOURS, slept + elapsedHours)
+    : elapsedHours > 0
+      ? 0
+      : slept;
+
+  const next: CharacterWakefulnessState = {
+    hoursAwake,
+    consecutiveSleepHours: consecutive,
+  };
 
   traceNode.output = {
     mode,
     previousHoursAwake: state.hoursAwake,
     hoursAwake,
+    consecutiveSleepHours: consecutive,
   };
 
   return {

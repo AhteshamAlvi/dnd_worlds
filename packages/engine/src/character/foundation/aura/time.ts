@@ -81,16 +81,16 @@ import {
 import { GAME_MILLISECONDS_PER_HOUR } from "../../../time/duration";
 import type { GameTimestamp } from "../../../time/types";
 import {
+  consecutiveSleepHours,
   deriveFatigue,
-  deriveStaminaExpenditureMultiplier,
   findWakefulnessStateIssues,
+  QUALIFYING_SLEEP_HOURS,
   sustainedActivityLoadPerHour,
   WAKING_HOURS_CLEARED_PER_HOUR_SLEPT,
   type CharacterWakefulnessState,
   type ResolvedFatigue,
   type WakefulnessMode,
 } from "../body/endurance";
-import { resolveStamina } from "../attributes/derived/resolution";
 
 import { hasDeliberateAuraAccess } from "./access";
 import { resolveAuraTimeline } from "./timeline";
@@ -103,8 +103,12 @@ import type {
 } from "./timeline";
 import { resolveAuraBudget, type AuraTransitionContext } from "./budget";
 import { deriveAuraControl } from "./control";
-import { PHYSICAL_AURA_COST_COEFFICIENT } from "./expenditure";
-import { deriveUncontainedLeakage, uncontainedCollapse } from "./leakage";
+import { derivePhysicalConsumptionPerHour } from "./expenditure";
+import {
+  deriveHalfOpenLeakage,
+  deriveUncontainedLeakage,
+  uncontainedCollapse,
+} from "./leakage";
 import type { AuraCollapse } from "./leakage";
 import {
   deriveAuraRegeneration,
@@ -124,8 +128,10 @@ import type {
 } from "./upkeep";
 import type {
   AuraBalance,
+  AuraRecoveryAccessClass,
   AuraRecoveryContribution,
   AuraRecoverySource,
+  AuraSuppression,
 } from "./types";
 
 
@@ -221,6 +227,7 @@ export const AURA_TIMELINE_EVENT_KINDS = [
   "upkeep-expired",
   "upkeep-shutdown",
   "collapse",
+  "sleep-completed",
   "activity-changed",
   "instantaneous",
   "interval-end",
@@ -261,6 +268,19 @@ export interface AuraRecoverySummary {
   readonly used: number;
   readonly discarded: number;
 }
+
+/*
+ * The provenance a collapse's own suppression carries.
+ *
+ * Distinguishable from an ordinary Zetsu's in a trace, because they are not
+ * the same event: one is a character choosing to shut their nodes and the
+ * other is a body doing it for them at the moment they ran out.
+ */
+export const COLLAPSE_SUPPRESSION_SOURCE = "aura-collapse-forced-zetsu";
+
+/** The provenance the completed-sleep top-off is reported under. */
+export const SLEEP_COMPLETION_CONTEXT = "completed-sleep";
+
 
 /** One stretch of the interval over which every rate was constant. */
 export interface AuraTimeSegment {
@@ -463,9 +483,11 @@ export function advanceAuraTime(
   /* ── Fixed figures ────────────────────────────────────────────────── */
 
   const maximumAura = pool.maximum;
-  const stamina = resolveStamina(context.attributes);
-  const staminaMultiplier = deriveStaminaExpenditureMultiplier(stamina);
   const regenerationPerHour = deriveAuraRegeneration(context.attributes);
+
+  /* Flat while the body is working, and denominated in R rather than in A_max. */
+  const physicalRatePerHour =
+    derivePhysicalConsumptionPerHour(regenerationPerHour);
 
   /*
    * Whether this character bleeds AT ALL, from their resolved access.
@@ -491,6 +513,18 @@ export function advanceAuraTime(
       .ratePerHour
     : 0;
 
+  /*
+   * What a body that never opened its nodes loses, which is a different thing.
+   *
+   * Denominated in Regeneration rather than Output, applies to the
+   * never-awakened and the reverted alike, and CANNOT collapse anybody — see
+   * leakage.ts. Constant across the interval for the same reason the other
+   * rate is.
+   */
+  const halfOpenRatePerHour = access.nodeState === "half-open"
+    ? deriveHalfOpenLeakage(regenerationPerHour).ratePerHour
+    : 0;
+
   const commitments = timeline.payload.upkeep;
 
   /*
@@ -503,6 +537,7 @@ export function advanceAuraTime(
 
   let current = pool.current;
   let hoursAwake = input.wakefulness.hoursAwake;
+  let sleptHours = consecutiveSleepHours(input.wakefulness);
   let activity: AuraTimeActivity = timeline.payload.activities[0].activity;
 
   let potentialRecovery = 0;
@@ -522,6 +557,15 @@ export function advanceAuraTime(
    * the instant it lifts if the character is still fundamentally uncontained.
    */
   let collapse: AuraCollapse | null = null;
+
+  /*
+   * Whether this interval has already paid the completed-sleep benefit.
+   *
+   * Within one interval a streak capped at eight would otherwise re-trigger on
+   * every subsequent sleep segment, since it stays AT eight. The cap stops it
+   * growing; this stops it paying twice.
+   */
+  let sleepCompleted = false;
 
   const chargedById = new Map<string, number>();
   const chargedHoursById = new Map<string, number>();
@@ -592,6 +636,22 @@ export function advanceAuraTime(
     events.push({ at, kind, detail, current });
   };
 
+  /*
+   * Whether the reserve has reached zero, to the same tolerance the event log
+   * uses for the same question.
+   *
+   * An EXACT `<= 0` was a real bug, and it was invisible until recovery and
+   * leakage stopped being the only two rates. Solving for the instant the pool
+   * empties divides by a net rate; when that rate was a round -120 the
+   * arithmetic landed exactly on zero, and when it became -119.5 it landed on
+   * 1.6e-12 instead. A character who had unambiguously bled out was then
+   * carried to the end of the interval before collapsing, because 1.6e-12 is
+   * not `<= 0` — so the collapse timestamp depended on how the caller had
+   * subdivided the night.
+   */
+  const isEmpty = (value: number): boolean =>
+    value <= Math.max(1, maximumAura) * POOL_BOUNDARY_TOLERANCE;
+
   /* The upkeep running at an instant, minus anything already shut down. */
   const runningAt = (at: GameTimestamp): readonly RunningUpkeep[] =>
     sheddingOrder
@@ -611,18 +671,92 @@ export function advanceAuraTime(
    * Per instant, not once: a Zetsu beginning at hour one and lifting at hour
    * three leaves the character leaking either side of it and not in between.
    */
-  const suppressedNow = (): boolean => activity.suppression !== undefined;
+  /*
+   * Suppression, from either of the two places it can arrive.
+   *
+   * The caller's activity supplies a voluntary Zetsu. A collapse supplies its
+   * own, and has to: the body shut the nodes part-way through an interval the
+   * caller described before it happened, so the remainder of that interval is
+   * suppressed whatever the caller said. Resolving both here is what makes the
+   * post-collapse rates change at the collapse instant instead of at the next
+   * call.
+   */
+  const suppressionNow = (): AuraSuppression | undefined =>
+    collapse === null
+      ? activity.suppression
+      : { source: COLLAPSE_SUPPRESSION_SOURCE, forced: true };
+
+  const suppressedNow = (): boolean => suppressionNow() !== undefined;
+
+  /*
+   * Which of the four states the character's Aura is in, right now.
+   *
+   * The ONE place the class is decided, and it reads only generic facts:
+   * whether something is suppressing them, what their nodes are doing, and
+   * whether anything is holding those nodes shut. No principle is named, and
+   * none can be — the resolved access carries no principle either.
+   */
+  const accessClassNow = (): AuraRecoveryAccessClass => {
+    if (suppressedNow()) return "suppressed";
+    if (access.nodeState === "half-open") return "half-open";
+
+    return uncontainedByDefault ? "uncontained" : "contained";
+  };
+
+  /*
+   * Whether the body is working.
+   *
+   * A boolean rather than a magnitude, because the magnitude no longer buys
+   * anything: one flat rate, one physical recovery column. The named level and
+   * the raw load are still both accepted, still validated against each other,
+   * and still say the same thing — this just stops asking how much.
+   *
+   * Blackout ends it. A collapsed character is not sprinting, whatever the
+   * caller said they were doing before the lights went out.
+   */
+  const exertingNow = (): boolean =>
+    collapse === null && sustainedLoadPerHour(activity) > 0;
 
   const leakageNow = (): boolean =>
     uncontainedByDefault && collapse === null && !suppressedNow();
 
-  const recoveryNow = () =>
-    resolveAuraRecoveryMultiplier({
+  /*
+   * Whether this segment counts towards a completed sleep.
+   *
+   * A blackout does. The character is unconscious for as long as it lasts —
+   * that is what the collapse asked the Condition layer for — and refusing to
+   * count it would mean a character who collapsed at hour one and lay there
+   * all night woke with an empty reserve, which is the opposite of what the
+   * forced Zetsu is for.
+   *
+   * Keyed on FORCED SUPPRESSION rather than on this call's own `collapse`, and
+   * that is not a detail. `collapse` lasts one call; forced suppression is a
+   * fact the character carries, so it is the half that survives subdivision. A
+   * host advancing the night in one step gets the collapse's own suppression
+   * from `suppressionNow()`; a host advancing it hourly applies the
+   * `forced-zetsu` the collapse asked for and hands it back on the next
+   * activity. Reading the in-call flag made those two disagree about whether
+   * an eight-hour blackout had been a night's sleep.
+   *
+   * It counts for the SLEEP STREAK only. `hoursAwake` still follows the mode
+   * the caller stated, because clearing sleep debt is a different benefit with
+   * a different rule, and nothing in this ticket settled whether a blackout
+   * rests you.
+   */
+  const sleepingNow = (): boolean =>
+    activity.mode === "sleep" || suppressionNow()?.forced === true;
+
+  const recoveryNow = () => {
+    const suppression = suppressionNow();
+
+    return resolveAuraRecoveryMultiplier({
       mode: activity.mode,
-      ...(activity.suppression === undefined
-        ? {}
-        : { suppression: activity.suppression }),
+      accessClass: accessClassNow(),
+      exerting: exertingNow(),
+      activeNenUse: activity.activeNenUse === true && !suppressedNow(),
+      ...(suppression === undefined ? {} : { suppression }),
     });
+  };
 
   const ratesFor = (): SegmentRates => {
     const resolvedRecovery = recoveryNow();
@@ -635,13 +769,18 @@ export function advanceAuraTime(
        */
       recovery: regenerationPerHour * resolvedRecovery.multiplier,
 
-      physical:
-        maximumAura *
-        PHYSICAL_AURA_COST_COEFFICIENT *
-        sustainedLoadPerHour(activity) *
-        staminaMultiplier,
+      physical: exertingNow() ? physicalRatePerHour : 0,
 
-      leakage: leakageNow() ? leakageRatePerHour : 0,
+      /*
+       * The two leaks are alternatives, never a sum: a character's nodes are
+       * either half-open or open, and the half-open rate is zero for anybody
+       * whose are open. Suppression stops both, and so does a collapse.
+       */
+      leakage: suppressedNow()
+        ? 0
+        : leakageNow()
+          ? leakageRatePerHour
+          : halfOpenRatePerHour,
     };
   };
 
@@ -772,8 +911,14 @@ export function advanceAuraTime(
           continue;
         }
 
-        if (event.kind === "physical") physicalTotal += event.amount;
-        else if (event.kind === "deliberate") deliberateTotal += event.amount;
+        /*
+         * No `physical` kind reaches here any more. Bodily effort is a RATE
+         * integrated over the segments below, and a scheduled one-off physical
+         * charge would be the per-action model coming back through the
+         * timeline. An application's own declared surcharge is a deliberate
+         * cost and arrives as one.
+         */
+        if (event.kind === "deliberate") deliberateTotal += event.amount;
         else forcedDrainTotal += event.amount;
       }
 
@@ -829,7 +974,7 @@ export function advanceAuraTime(
      * would cause it. A character in Zetsu at zero Aura is empty, not
      * collapsing.
      */
-    if (collapse === null && leakageNow() && current <= 0) {
+    if (collapse === null && leakageNow() && isEmpty(current)) {
       const unavoidable = ratesFor();
 
       if (
@@ -861,7 +1006,7 @@ export function advanceAuraTime(
      * maintained effect goes first and keeps going until the continuous
      * balance is sustainable or there is nothing left to drop.
      */
-    if (current <= 0) {
+    if (isEmpty(current)) {
       let upkeepRate = running.reduce(
         (sum, entry) => sum + entry.ratePerHour,
         0,
@@ -917,6 +1062,21 @@ export function advanceAuraTime(
 
     if (net < 0 && current > 0) {
       boundaries.push(at + hoursToDuration(current / -net));
+    }
+
+    /*
+     * The instant a continuous sleep becomes a COMPLETED one.
+     *
+     * Solved for like every other boundary rather than tested for at segment
+     * ends, because a caller advancing a nine-hour night in one step must land
+     * on the same eighth hour as one advancing it in nine. The segment ends
+     * there, the ordinary rates are applied up to it, and the top-off happens
+     * at the boundary itself.
+     */
+    if (sleepingNow() && sleptHours < QUALIFYING_SLEEP_HOURS) {
+      boundaries.push(
+        at + hoursToDuration(QUALIFYING_SLEEP_HOURS - sleptHours),
+      );
     }
 
     const endsAt = Math.min(
@@ -977,6 +1137,59 @@ export function advanceAuraTime(
       ? Math.max(0, hoursAwake - WAKING_HOURS_CLEARED_PER_HOUR_SLEPT * hours)
       : hoursAwake + hours;
 
+    /*
+     * The streak, then the benefit it earns.
+     *
+     * A waking segment that actually lasted resets it; a zero-width one cannot,
+     * for the same reason the standalone transition refuses to — subdivision
+     * creates those boundaries and they must not change the answer.
+     */
+    if (sleepingNow()) {
+      sleptHours = Math.min(QUALIFYING_SLEEP_HOURS, sleptHours + hours);
+    } else if (hours > 0) {
+      sleptHours = 0;
+    }
+
+    /*
+     * Eight hours of continuous sleep fills the reserve, once.
+     *
+     * Applied AFTER the segment's own arithmetic, so the hours leading up to
+     * it are paid for at their ordinary rates and the top-off is only ever the
+     * remainder. Reported as its own recovery source rather than folded into
+     * natural regeneration, because a sheet showing "you regenerated 100" for
+     * a night that regenerated 80 and was completed to full would be lying
+     * about both numbers.
+     *
+     * The streak is CAPPED at eight rather than reset, so a twelve-hour sleep
+     * pays this once and the ninth through twelfth hours are ordinary. Waking
+     * resets it and makes the next completed sleep count again.
+     */
+    if (
+      sleepingNow() &&
+      sleptHours >= QUALIFYING_SLEEP_HOURS &&
+      !sleepCompleted
+    ) {
+      sleepCompleted = true;
+
+      const toppedUp = Math.max(0, maximumAura - current);
+
+      if (toppedUp > 0) {
+        current = maximumAura;
+
+        contribute(
+          "sleep-completion",
+          SLEEP_COMPLETION_CONTEXT,
+          toppedUp,
+          1,
+          0,
+          toppedUp,
+          0,
+        );
+      }
+
+      emit(endsAt, "sleep-completed", SLEEP_COMPLETION_CONTEXT);
+    }
+
     segments.push({
       startedAt: at,
       endedAt: endsAt,
@@ -1010,7 +1223,7 @@ export function advanceAuraTime(
 
     if (filled && !wasFull) emit(at, "aura-full", "");
 
-    if (current <= scale && startingAura > scale) emit(at, "aura-empty", "");
+    if (isEmpty(current) && !isEmpty(startingAura)) emit(at, "aura-empty", "");
   }
 
   emit(interval.endedAt, "interval-end", "");
@@ -1071,7 +1284,17 @@ export function advanceAuraTime(
 
   if (!settled.success) return fail(settled.errors);
 
-  const wakefulness: CharacterWakefulnessState = { hoursAwake };
+  /*
+   * NORMALIZED on the way out, always.
+   *
+   * A caller who handed in a state with no sleep progress gets one back that
+   * has it, so chaining advances is deterministic without the caller having to
+   * know the field exists.
+   */
+  const wakefulness: CharacterWakefulnessState = {
+    hoursAwake,
+    consecutiveSleepHours: sleptHours,
+  };
 
   const fatigue = deriveFatigue({
     wakefulness,

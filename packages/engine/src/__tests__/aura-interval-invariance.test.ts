@@ -20,7 +20,10 @@
 
 import { describe, expect, it } from "vitest";
 
-import { advanceAuraTime } from "../character/foundation/aura/time";
+import {
+  advanceAuraTime,
+  COLLAPSE_SUPPRESSION_SOURCE,
+} from "../character/foundation/aura/time";
 import type {
   AuraActivityChange,
   AuraTimeActivity,
@@ -99,8 +102,16 @@ function run(scenario: Case, steps: number) {
    * A host driving the clock in small steps carries the activity forward and
    * hands each sub-interval only the changes and events it OWNS —
    * `[startedAt, endedAt)`, so nothing is applied twice at a boundary.
+   *
+   * It also APPLIES THE COLLAPSE. A collapse hands back a `forced-zetsu`
+   * request, and the domains that own suppression act on it; inside one long
+   * advance the solver does that for itself, from the same instant. A harness
+   * that ignored the request would not be comparing one advance against many —
+   * it would be comparing a character whose nodes were shut against one whose
+   * host had declined to shut them, and the two genuinely differ.
    */
-  let activity = scenario.activity ?? { mode: "ordinary-waking" as const };
+  let activity: AuraTimeActivity =
+    scenario.activity ?? { mode: "ordinary-waking" as const };
 
   for (let index = 0; index < steps; index += 1) {
     at = bound(index);
@@ -135,6 +146,13 @@ function run(scenario: Case, steps: number) {
 
     state = result.payload.state;
     wakefulness = result.payload.wakefulness;
+
+    if (result.payload.collapse !== null && activity.suppression === undefined) {
+      activity = {
+        ...activity,
+        suppression: { source: COLLAPSE_SUPPRESSION_SOURCE, forced: true },
+      };
+    }
 
     totals.recovery += result.payload.balance.recovery;
     totals.physical += result.payload.balance.physical;
@@ -339,7 +357,7 @@ describe("one advance equals many", () => {
         at: T0 + hoursToDuration(3),
         activity: {
           mode: "intentional-rest",
-          suppression: { source: "zetsu", multiplier: 1, forced: false },
+          suppression: { source: "zetsu", forced: false },
         },
       }],
     },
@@ -353,7 +371,7 @@ describe("one advance equals many", () => {
           at: T0 + hoursToDuration(2),
           activity: {
             mode: "intentional-rest",
-            suppression: { source: "zetsu", multiplier: 2, forced: false },
+            suppression: { source: "zetsu", forced: false },
           },
         },
         {
@@ -383,7 +401,7 @@ describe("one advance equals many", () => {
           at: T0 + hoursToDuration(2 * ROUND_HOURS),
           activity: {
             mode: "ordinary-waking",
-            suppression: { source: "zetsu", multiplier: 1, forced: true },
+            suppression: { source: "zetsu", forced: true },
           },
         },
         {
@@ -440,7 +458,7 @@ describe("one advance equals many", () => {
         },
         {
           at: T0 + hoursToDuration(3.5),
-          kind: "physical",
+          kind: "deliberate",
           source: "swing",
           amount: 2000,
         },
@@ -472,7 +490,7 @@ describe("one advance equals many", () => {
         },
         {
           at: T0 + hoursToDuration(2),
-          kind: "physical",
+          kind: "deliberate",
           source: "swing",
           amount: 500,
         },

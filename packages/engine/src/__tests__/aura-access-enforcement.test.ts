@@ -22,7 +22,6 @@ import {
   drainAura,
   spendActionAura,
   spendAura,
-  spendPhysicalAura,
 } from "../character/foundation/aura/transitions";
 import { payAuraUpkeep } from "../character/foundation/aura/upkeep";
 import {
@@ -100,10 +99,18 @@ describe("the predicate the gate is built on", () => {
 
 
 describe("what access does not gate", () => {
-  /* The body burns Aura moving whether or not it can direct any of it. */
-  it("lets physical exertion spend Aura in every state", () => {
+  /*
+   * The body burns Aura whether or not it can direct any of it, and a declared
+   * physical surcharge is the body's half of a cost rather than the
+   * character's projection — so access does not gate it in any state.
+   */
+  it("lets a declared physical surcharge be paid in every state", () => {
     for (const [name, access] of [...CLOSED, ...OPEN]) {
-      const result = spendPhysicalAura(STATE, context(access), 2);
+      const result = spendActionAura(
+        STATE,
+        context(access),
+        { additionalPhysicalCostRate: 0.001 },
+      );
 
       expect([name, result.success]).toEqual([name, true]);
       if (!result.success) continue;
@@ -161,7 +168,7 @@ describe("deliberate expenditure", () => {
     for (const request of [
       { baseAuraCost: 100 },
       { baseAuraCost: 100, requiredOutput: 0 },
-      { exertionLoad: 1, baseAuraCost: 100 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 100 },
     ]) {
       expect(errorCodes(spendActionAura(STATE, context(ZETSU), request)))
         .toContain("aura.access.deliberate.not_permitted");
@@ -173,7 +180,7 @@ describe("deliberate expenditure", () => {
     const result = spendActionAura(
       STATE,
       context(UNAWAKENED),
-      { exertionLoad: 2, baseAuraCost: 0 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 0 },
     );
 
     expect(result.success).toBe(true);
@@ -187,7 +194,7 @@ describe("deliberate expenditure", () => {
     const result = spendActionAura(
       STATE,
       context(REN_III),
-      { exertionLoad: 2, baseAuraCost: 100 },
+      { additionalPhysicalCostRate: 0.001, baseAuraCost: 100 },
     );
 
     expect(result.success).toBe(true);
@@ -267,7 +274,7 @@ describe("deliberate upkeep", () => {
         at: T0 + hoursToDuration(1),
         activity: {
           mode: "intentional-rest",
-          suppression: { source: "zetsu", multiplier: 1, forced: false },
+          suppression: { source: "zetsu", forced: false },
         },
       }],
       upkeep: COMMITMENT,
@@ -299,7 +306,7 @@ describe("deliberate upkeep", () => {
         at: T0 + hoursToDuration(1),
         activity: {
           mode: "intentional-rest",
-          suppression: { source: "zetsu", multiplier: 1, forced: false },
+          suppression: { source: "zetsu", forced: false },
         },
       }],
       instantaneous: [{
@@ -316,7 +323,13 @@ describe("deliberate upkeep", () => {
 });
 
 
-describe("uncontained leakage against access", () => {
+describe("leakage against access", () => {
+  /*
+   * TWO leaks, not one, and only the second can collapse anybody. Half-open
+   * pores lose 2R an hour whether or not the character ever awakened; open
+   * nodes with nothing holding them shut lose the whole Output Capacity every
+   * minute. Suppression and containment both stop the bleeding entirely.
+   */
   it("applies only to the awakened character who never learned Ten", () => {
     const leaked = ([...CLOSED, ...OPEN] as const).map(([name, access]) => {
       const result = advanceAuraTime({
@@ -333,11 +346,33 @@ describe("uncontained leakage against access", () => {
     });
 
     expect(leaked).toEqual([
-      ["unawakened", false],
+      /* Half-open pores, which leak — and recover exactly as much. */
+      ["unawakened", true],
       ["suppressed", false],
       ["with Ten", false],
       ["under Ren", false],
       ["uncontained", true],
     ]);
+  });
+
+  /*
+   * And the difference between the two, which the flags above cannot show: the
+   * ordinary person is not losing ground, and cannot be collapsed by it.
+   */
+  it("nets an unawakened character to zero and collapses nobody", () => {
+    const result = advanceAuraTime({
+      state: STATE,
+      wakefulness: restedWakefulness(),
+      context: context(UNAWAKENED),
+      interval: gameTimeIntervalOf(T0, hoursToDuration(8)),
+      activity: { mode: "ordinary-waking" },
+    });
+
+    if (!result.success) throw new Error("Expected the interval to resolve.");
+
+    expect(result.payload.balance.leakage)
+      .toBeCloseTo(result.payload.balance.recovery, 8);
+    expect(result.payload.currentChange).toBeCloseTo(0, 8);
+    expect(result.payload.collapse).toBeNull();
   });
 });

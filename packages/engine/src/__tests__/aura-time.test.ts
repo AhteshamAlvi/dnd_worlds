@@ -17,7 +17,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { advanceAuraTime } from "../character/foundation/aura/time";
+import {
+  advanceAuraTime,
+  SCHEDULED_AURA_EVENT_KINDS,
+} from "../character/foundation/aura/time";
+import { deriveUncontainedLeakage } from "../character/foundation/aura/leakage";
 import type { AdvanceAuraTimeInput } from "../character/foundation/aura/time";
 import { deriveMaximumAura } from "../character/foundation/aura/pool";
 import { restedWakefulness } from "../character/foundation/body/endurance";
@@ -26,7 +30,6 @@ import {
   hoursToDuration,
 } from "../time/interval";
 import type { GameTimestamp } from "../time/types";
-import { deriveZetsuReplenishmentMultiplier } from "../character/foundation/nen/principles/zetsu";
 import type { AuraAccessInput } from "../character/foundation/aura/types";
 import type { CharacterAuraState } from "../character/foundation/aura/state";
 
@@ -39,8 +42,30 @@ import {
   withTen,
 } from "./fixtures/aura";
 
-/* CON 20 / VIT 20: Maximum Aura 50,000, Stamina 20, regeneration 5,000/hour. */
+/*
+ * CON 20 / VIT 20: Maximum Aura 50,000, Physiological Output 10,000.
+ *
+ * VIT 20's curve rounds to 5,000, so R — half of it — is 2,500. Every rate in
+ * this suite is a small multiple of R, and asserting the multiples rather than
+ * the products is what makes a changed UNIT and a changed COEFFICIENT fail in
+ * different places.
+ */
 const STRONG = { con: 20, vit: 20, dex: 22 } as const;
+
+const R = 2500;
+
+/*
+ * A character holding a technique open, which is what most of the upkeep and
+ * boundary scenarios below actually describe.
+ *
+ * Active Nen zeroes natural regeneration, and these suites want it zeroed:
+ * they are testing the SOLVER — where a boundary falls, what is shed first,
+ * how simultaneous events settle — and a background 2R an hour would make
+ * every expectation a sum of the thing under test and an unrelated rate. It is
+ * not a convenience switch; a character paying Ren upkeep is running an active
+ * Nen activity, and the recovery table says such a character recovers nothing.
+ */
+const HOLDING = { mode: "ordinary-waking", activeNenUse: true } as const;
 
 const REN_III: AuraAccessInput = withTen(1, { kind: "output-access", source: "ren-iii", accessFraction: 0.3 });
 
@@ -84,7 +109,7 @@ function advance(options: Options = {}) {
 /** One instantaneous event, at an offset in hours from the interval start. */
 function at(
   hours: number,
-  kind: "physical" | "deliberate" | "forced-drain" | "recovery",
+  kind: "deliberate" | "forced-drain" | "recovery",
   amount: number,
   source: string = kind,
 ) {
@@ -113,34 +138,32 @@ function errorCodes(
 
 describe("an ordinary waking hour", () => {
   const result = succeed({
-    state: { current: 25_000, allocations: [] },
+    state: { current: 0, allocations: [] },
     hours: 8,
     activity: { mode: "ordinary-waking" },
   });
 
   /*
-   * Nothing in, nothing out. A model in which merely being awake drains Aura
-   * makes every character a clock running down; the cost of time passing is
-   * carried by wakefulness, which is a different axis.
+   * An ordinary day RECOVERS, and that is the correction. It used to restore
+   * nothing at all, which made a character who did not sleep never recover —
+   * so every long scene without a bed was a one-way ratchet. A contained
+   * character going about their day now regains 2R an hour, and spends
+   * nothing, because merely being awake is not effort.
    */
-  it("neither recovers nor spends anything", () => {
-    expect(result.current).toBe(25_000);
-    expect(result.currentChange).toBe(0);
-    expect(result.balance).toEqual({
-      recovery: 0,
-      recoveryBySource: [],
-      physical: 0,
-      deliberate: 0,
-      upkeep: 0,
-      leakage: 0,
-      forcedDrain: 0,
-      net: 0,
-    });
+  it("recovers at 2R an hour and spends nothing", () => {
+    expect(result.balance.recovery).toBe(2 * R * 8);
+    expect(result.balance.physical).toBe(0);
+    expect(result.balance.leakage).toBe(0);
+    expect(result.balance.upkeep).toBe(0);
+    expect(result.balance.deliberate).toBe(0);
+    expect(result.balance.forcedDrain).toBe(0);
   });
 
-  it("still accumulates wakefulness", () => {
-    expect(result.previousWakefulness).toEqual({ hoursAwake: 0 });
-    expect(result.wakefulness).toEqual({ hoursAwake: 8 });
+  it("still accumulates wakefulness, which recovery does not touch", () => {
+    expect(result.previousWakefulness)
+      .toEqual({ hoursAwake: 0, consecutiveSleepHours: 0 });
+    expect(result.wakefulness)
+      .toEqual({ hoursAwake: 8, consecutiveSleepHours: 0 });
   });
 });
 
@@ -156,19 +179,23 @@ describe("the balance keeps every contribution apart", () => {
   });
 
   it("reports each term separately", () => {
-    /* Strenuous: 50,000 x 0.001 x 50 x 0.5 x 2 hours. */
-    expect(result.balance.physical).toBe(2500);
+    /* Working the body: 2R an hour for two hours, whatever the level. */
+    expect(result.balance.physical).toBe(2 * R * 2);
     expect(result.balance.deliberate).toBe(500);
     expect(result.balance.upkeep).toBe(200);
     expect(result.balance.forcedDrain).toBe(250);
-    expect(result.balance.recovery).toBe(0);
+
+    /* And the physical recovery column, which is R rather than 2R. */
+    expect(result.balance.recovery).toBe(R * 2);
     expect(result.balance.leakage).toBe(0);
   });
 
   it("sums them into the net change it actually applied", () => {
-    expect(result.balance.net).toBe(-3450);
-    expect(result.current).toBe(36_550);
-    expect(result.currentChange).toBe(-3450);
+    const expected = R * 2 - 2 * R * 2 - 500 - 200 - 250;
+
+    expect(result.balance.net).toBe(expected);
+    expect(result.currentChange).toBe(expected);
+    expect(result.current).toBe(40_000 + expected);
   });
 
   /*
@@ -191,11 +218,16 @@ describe("the balance keeps every contribution apart", () => {
 
 
 describe("recovery through an interval", () => {
-  it("restores nothing while awake and everything while asleep", () => {
+  it("restores twice as much asleep as awake, rather than all or nothing", () => {
     const awake = succeed({
       state: { current: 10_000, allocations: [] },
       hours: 4,
       activity: { mode: "ordinary-waking" },
+    });
+    const resting = succeed({
+      state: { current: 10_000, allocations: [] },
+      hours: 4,
+      activity: { mode: "intentional-rest" },
     });
     const asleep = succeed({
       state: { current: 10_000, allocations: [] },
@@ -203,9 +235,11 @@ describe("recovery through an interval", () => {
       activity: { mode: "sleep" },
     });
 
-    expect(awake.balance.recovery).toBe(0);
-    expect(asleep.balance.recovery).toBe(20_000);
-    expect(asleep.current).toBe(30_000);
+    expect(awake.balance.recovery).toBe(2 * R * 4);
+    expect(resting.balance.recovery).toBe(3 * R * 4);
+    expect(asleep.balance.recovery).toBe(4 * R * 4);
+
+    expect(asleep.current).toBe(50_000);
   });
 
   it("names the source of everything it restored", () => {
@@ -219,11 +253,11 @@ describe("recovery through an interval", () => {
       expect.objectContaining({
         source: "natural-regeneration",
         context: "intentional-rest",
-        ratePerHour: 5000,
-        multiplier: 0.5,
+        ratePerHour: R,
+        multiplier: 3,
         hours: 1,
-        potential: 2500,
-        used: 2500,
+        potential: 3 * R,
+        used: 3 * R,
         discarded: 0,
       }),
     ]);
@@ -237,6 +271,12 @@ describe("recovery through an interval", () => {
     });
 
     expect(result.current).toBe(50_000);
+
+    /*
+     * 1,000 was all there was room for, and every point of it arrived before
+     * the eight-hour completion boundary — so the top-off, which fires at that
+     * boundary, has nothing left to add.
+     */
     expect(result.balance.recovery).toBe(1000);
   });
 
@@ -251,16 +291,13 @@ describe("recovery through an interval", () => {
       hours: 4,
       activity: {
         mode: "intentional-rest",
-        suppression: {
-          source: "zetsu-3",
-          multiplier: deriveZetsuReplenishmentMultiplier(3),
-          forced: false,
-        },
+        suppression: { source: "zetsu-3", forced: false },
       },
       access: REN_III,
     });
 
-    expect(result.balance.recovery).toBe(30_000);
+    /* Suppressed rest is 4R, against the 3R an unsuppressed rest earns. */
+    expect(result.balance.recovery).toBe(4 * R * 4);
     expect(result.wakefulness.hoursAwake).toBe(34);
     expect(result.fatigue.components.wakefulnessRaw)
       .toBeGreaterThan(result.previousFatigue.components.wakefulnessRaw);
@@ -271,7 +308,7 @@ describe("recovery through an interval", () => {
       access: UNAWAKENED,
       activity: {
         mode: "intentional-rest",
-        suppression: { source: "zetsu-1", multiplier: 1, forced: false },
+        suppression: { source: "zetsu-1", forced: false },
       },
     }))).toContain("aura.time.suppression.unawakened");
   });
@@ -317,12 +354,12 @@ describe("intentional rest is not sleep", () => {
       activity: { mode: "intentional-rest" },
     });
 
-    expect(result.balance.recovery).toBe(15_000);
+    expect(result.balance.recovery).toBe(3 * R * 6);
     expect(result.wakefulness.hoursAwake).toBe(26);
   });
 
   it("lowers only the depletion half of Fatigue", () => {
-    /* Half rate, so refilling 50,000 from empty takes twenty hours of it. */
+    /* 3R an hour, so refilling 50,000 from empty takes under seven hours. */
     const result = succeed({
       state: { current: 0, allocations: [] },
       wakefulness: { hoursAwake: 24 },
@@ -336,25 +373,54 @@ describe("intentional rest is not sleep", () => {
 
     /* And twenty more hours awake, which the other half duly charges for. */
     expect(result.wakefulness.hoursAwake).toBe(44);
+
     expect(result.fatigue.components.wakefulnessRaw)
       .toBeGreaterThan(result.previousFatigue.components.wakefulnessRaw);
   });
 });
 
 
-describe("sustained activity and discrete actions", () => {
-  it("charges an activity level per hour", () => {
+describe("working the body costs time, not swings", () => {
+  it("charges a flat 2R an hour whenever the body is working", () => {
     const result = succeed({
       state: { current: 50_000, allocations: [] },
       hours: 3,
       activity: { mode: "ordinary-waking", activity: "moderate" },
     });
 
-    /* 50,000 x 0.001 x 15 x 0.5 x 3. */
-    expect(result.balance.physical).toBe(1125);
+    expect(result.balance.physical).toBe(2 * R * 3);
   });
 
-  it("accepts a raw per-hour load for a caller with a finer figure", () => {
+  /*
+   * The magnitude of the effort buys nothing any more. A "moderate" hour and
+   * an "extreme" one cost the same, because what is being modelled is the body
+   * running hot rather than how many times it moved — and because the old
+   * scaling made a superhuman's ordinary hour cost thousands of times an
+   * ordinary person's.
+   */
+  it("charges the same for every level above ordinary waking", () => {
+    const charged = (activity: "light" | "moderate" | "strenuous" | "extreme") =>
+      succeed({
+        state: { current: 50_000, allocations: [] },
+        activity: { mode: "ordinary-waking", activity },
+      }).balance.physical;
+
+    expect(new Set([
+      charged("light"),
+      charged("moderate"),
+      charged("strenuous"),
+      charged("extreme"),
+    ]).size).toBe(1);
+  });
+
+  it("charges nothing at all for an ordinary waking hour", () => {
+    expect(succeed({
+      state: { current: 50_000, allocations: [] },
+      activity: { mode: "ordinary-waking" },
+    }).balance.physical).toBe(0);
+  });
+
+  it("still reads a raw per-hour load as exertion", () => {
     const named = succeed({
       state: { current: 50_000, allocations: [] },
       activity: { mode: "ordinary-waking", activity: "strenuous" },
@@ -365,33 +431,36 @@ describe("sustained activity and discrete actions", () => {
     });
 
     expect(raw.balance.physical).toBe(named.balance.physical);
+    expect(raw.balance.physical).toBeGreaterThan(0);
   });
 
   /*
-   * An hour described as "strenuous" already includes the swinging. A caller
-   * resolving individual blows inside it describes the hour as quieter, and
-   * the two never overlap because the caller chooses which to supply.
+   * Exertion costs Aura AND costs recovery, and the two are separate terms.
+   * A working hour earns R instead of 2R and spends 2R, which nets a
+   * contained character R an hour down whoever they are.
    */
-  it("does not charge sustained and discrete effort for the same work", () => {
-    const sustainedOnly = succeed({
-      state: { current: 50_000, allocations: [] },
+  it("halves the recovery as well as adding the cost", () => {
+    const working = succeed({
+      state: { current: 25_000, allocations: [] },
       activity: { mode: "ordinary-waking", activity: "strenuous" },
     });
-    const discreteOnly = succeed({
-      state: { current: 50_000, allocations: [] },
-      activity: { mode: "ordinary-waking" },
-      instantaneous: [at(0.5, "physical", sustainedOnly.balance.physical)],
-    });
 
-    expect(discreteOnly.balance.physical).toBe(sustainedOnly.balance.physical);
+    expect(working.balance.recovery).toBe(R);
+    expect(working.balance.physical).toBe(2 * R);
+    expect(working.balance.net).toBe(-R);
+  });
 
-    const both = succeed({
-      state: { current: 50_000, allocations: [] },
-      activity: { mode: "ordinary-waking", activity: "strenuous" },
-      instantaneous: [at(0.5, "physical", 100)],
-    });
+  /*
+   * There is no per-action physical charge to double up with. The `physical`
+   * scheduled-event kind is gone, which is what makes "charged twice for one
+   * swing" unrepresentable rather than merely discouraged.
+   */
+  it("has no scheduled physical event to charge effort twice", () => {
+    expect(SCHEDULED_AURA_EVENT_KINDS).not.toContain("physical");
 
-    expect(both.balance.physical).toBe(sustainedOnly.balance.physical + 100);
+    expect(errorCodes(advance({
+      instantaneous: [at(0.5, "physical" as "deliberate", 100)],
+    }))).toContain("aura.timeline.event.kind.invalid");
   });
 
   it("rejects a nonsense load or contribution", () => {
@@ -400,7 +469,7 @@ describe("sustained activity and discrete actions", () => {
     }))).toContain("aura.exertion.load.invalid");
 
     expect(errorCodes(advance({
-      instantaneous: [at(0.5, "physical", Number.NaN)],
+      instantaneous: [at(0.5, "deliberate", Number.NaN)],
     }))).toContain("aura.timeline.event.amount.invalid");
 
     expect(errorCodes(advance({
@@ -442,6 +511,7 @@ describe("upkeep across an interval", () => {
       state: { current: 150, allocations: [] },
       hours: 2,
       access: REN_III,
+      activity: HOLDING,
       upkeep: [{ id: "ren", source: "ren", baseRate: 100, period: "hour" }],
     });
 
@@ -462,8 +532,9 @@ describe("upkeep across an interval", () => {
   });
 
   /*
-   * Shedding stops as soon as what remains is sustainable. Recovery of 2,500
-   * an hour cannot carry 4,000 of upkeep, and can comfortably carry 2,000.
+   * Shedding stops as soon as what remains is sustainable. A contained rest
+   * recovers 3R — 7,500 an hour — which cannot carry 20,000 of upkeep and can
+   * comfortably carry 4,000.
    */
   it("sheds the lowest priority first and keeps what the balance sustains", () => {
     const result = succeed({
@@ -472,8 +543,8 @@ describe("upkeep across an interval", () => {
       access: REN_III,
       activity: { mode: "intentional-rest" },
       upkeep: [
-        { id: "expendable", source: "in", baseRate: 2000, period: "hour", priority: 0 },
-        { id: "essential", source: "ren", baseRate: 2000, period: "hour", priority: 5 },
+        { id: "expendable", source: "in", baseRate: 16_000, period: "hour", priority: 0 },
+        { id: "essential", source: "ren", baseRate: 4000, period: "hour", priority: 5 },
       ],
     });
 
@@ -492,6 +563,7 @@ describe("upkeep across an interval", () => {
       state: { current: 250, allocations: [] },
       hours: 1,
       access: REN_III,
+      activity: HOLDING,
       upkeep: [
         { id: "aaa", source: "in", baseRate: 200, period: "hour" },
         { id: "zzz", source: "ren", baseRate: 400, period: "hour" },
@@ -501,6 +573,7 @@ describe("upkeep across an interval", () => {
       state: { current: 250, allocations: [] },
       hours: 1,
       access: REN_III,
+      activity: HOLDING,
       upkeep: [
         { id: "zzz", source: "ren", baseRate: 400, period: "hour" },
         { id: "aaa", source: "in", baseRate: 200, period: "hour" },
@@ -516,6 +589,12 @@ describe("upkeep across an interval", () => {
    * Baseline Ten occupies Output and costs nothing, so an awakened character
    * doing nothing pays nothing. Pseudo-Chu likewise.
    */
+  /*
+   * Neither is an upkeep commitment, so neither appears in the charges. The
+   * reserve still MOVES for both — an ordinary day recovers 2R, and an
+   * unawakened character's pores lose 2R against that same 2R — but nothing
+   * that moved it was upkeep.
+   */
   it("charges nothing for baseline Ten or pseudo-Chu", () => {
     for (const access of [WITH_TEN, UNAWAKENED]) {
       const result = succeed({
@@ -525,8 +604,25 @@ describe("upkeep across an interval", () => {
       });
 
       expect(result.balance.upkeep).toBe(0);
-      expect(result.currentChange).toBe(0);
+      expect(result.upkeepCharges).toEqual([]);
+      expect(result.upkeepShutdowns).toEqual([]);
     }
+  });
+
+  /*
+   * And the specific claim that used to be made by asserting no net change at
+   * all: an ordinary person breaks even. 2R in, 2R out, all day.
+   */
+  it("leaves an unawakened character exactly where they started", () => {
+    const result = succeed({
+      state: { current: 25_000, allocations: [] },
+      hours: 24,
+      access: UNAWAKENED,
+    });
+
+    expect(result.balance.recovery).toBe(2 * R * 24);
+    expect(result.balance.leakage).toBe(2 * R * 24);
+    expect(result.currentChange).toBeCloseTo(0, 8);
   });
 });
 
@@ -547,19 +643,39 @@ describe("uncontained leakage over time", () => {
    */
   const MINUTE = 1 / 60;
 
-  it("empties a standard full reserve in exactly five minutes", () => {
+  /*
+   * The five minutes is the NO-RECOVERY projection, and the solver takes a
+   * shade longer — because an uncontained character still regenerates R an
+   * hour while they bleed 60O. The projection is what a GM asks for ("how long
+   * has this person got"); the solver composes the leak with everything else,
+   * and the two are deliberately not the same number.
+   *
+   * At CON 10 / VIT 10: 10 Maximum Aura, 2 Output, so 120 an hour out against
+   * R = 0.5 an hour in.
+   */
+  const STANDARD_LEAK_PER_HOUR = 120;
+  const STANDARD_R = 0.5;
+  const STANDARD_NET = STANDARD_LEAK_PER_HOUR - STANDARD_R;
+
+  it("projects exactly five minutes, and takes slightly longer in practice", () => {
+    expect(deriveUncontainedLeakage(2, 10).minutesToExhaustion).toBe(5);
+
     const result = succeed({
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: deriveMaximumAura(auraTestAttributes(STANDARD)), allocations: [] },
-      hours: 5 * MINUTE,
+      hours: 10 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
-    expect(result.balance.leakage).toBeCloseTo(10, 10);
-    expect(result.current).toBe(0);
     expect(result.collapse).not.toBeNull();
-    expect(result.collapse!.at).toBeCloseTo(T0 + hoursToDuration(5 * MINUTE), 6);
+    const minutes = (result.collapse!.at - T0) / hoursToDuration(1) * 60;
+
+    expect(minutes).toBeCloseTo(60 * 10 / STANDARD_NET, 6);
+
+    /* Which is five minutes and a fraction, not five and a half. */
+    expect(minutes).toBeGreaterThan(5);
+    expect(minutes).toBeLessThan(5.1);
   });
 
   it("leaves something at four minutes", () => {
@@ -575,18 +691,20 @@ describe("uncontained leakage over time", () => {
     expect(result.collapse).toBeNull();
   });
 
-  it("collapses a partially depleted character sooner", () => {
+  it("collapses a partially depleted character sooner, proportionally", () => {
     const result = succeed({
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: 5, allocations: [] },
-      hours: 5 * MINUTE,
+      hours: 10 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
     expect(result.collapse).not.toBeNull();
-    expect(result.collapse!.at)
-      .toBeCloseTo(T0 + hoursToDuration(2.5 * MINUTE), 6);
+
+    const minutes = (result.collapse!.at - T0) / hoursToDuration(1) * 60;
+
+    expect(minutes).toBeCloseTo(60 * 5 / STANDARD_NET, 6);
   });
 
   /*
@@ -596,17 +714,32 @@ describe("uncontained leakage over time", () => {
    * character has 50,000 Aura and 10,000 Output — five minutes, exactly like
    * the ordinary one.
    */
-  it("gives a far larger pool exactly the same five minutes", () => {
-    const result = succeed({
+  it("gives a far larger pool exactly the same time", () => {
+    const ordinary = succeed({
+      attributes: STANDARD,
       access: UNCONTAINED,
-      state: { current: 50_000, allocations: [] },
-      hours: 5 * MINUTE,
+      state: { current: 10, allocations: [] },
+      hours: 10 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
-    expect(result.current).toBe(0);
-    expect(result.collapse!.at)
-      .toBeCloseTo(T0 + hoursToDuration(5 * MINUTE), 6);
+    const superhuman = succeed({
+      access: UNCONTAINED,
+      state: { current: 50_000, allocations: [] },
+      hours: 10 * MINUTE,
+      activity: { mode: "ordinary-waking" },
+    });
+
+    expect(superhuman.collapse).not.toBeNull();
+
+    /*
+     * Identical to the last significant figure, and not by luck: reserve,
+     * Output and Regeneration all scale on curves whose ratios are the same at
+     * every power level, so the recovery term shifts both characters by
+     * exactly the same proportion.
+     */
+    expect(superhuman.collapse!.at - T0)
+      .toBeCloseTo(ordinary.collapse!.at - T0, -1);
   });
 
   /* Leakage is not something the character is doing. */
@@ -628,7 +761,7 @@ describe("uncontained leakage over time", () => {
       attributes: STANDARD,
       access: UNCONTAINED,
       state: { current: 10, allocations: [] },
-      hours: 5 * MINUTE,
+      hours: 10 * MINUTE,
       activity: { mode: "ordinary-waking" },
     });
 
@@ -639,7 +772,12 @@ describe("uncontained leakage over time", () => {
       "blackout",
       "clear-usable-output",
     ]);
-    expect(result.fatigue.components.auraDepletion).toBe(5);
+    /*
+     * The reserve does not stay at zero: forced suppression stops the leak and
+     * pays 3R, so the character starts coming back the instant they go down.
+     * What is asserted is the collapse, not an empty pool at the end.
+     */
+    expect(result.current).toBeGreaterThan(0);
   });
 
   /*
@@ -649,8 +787,8 @@ describe("uncontained leakage over time", () => {
   it("does not collapse a character who merely spent everything", () => {
     const result = succeed({
       state: { current: 500, allocations: [] },
-      activity: { mode: "ordinary-waking" },
-      instantaneous: [at(0.5, "physical", 500)],
+      activity: { mode: "ordinary-waking", activeNenUse: true },
+      instantaneous: [at(0.5, "deliberate", 500)],
     });
 
     expect(result.current).toBe(0);
@@ -672,8 +810,8 @@ describe("uncontained leakage over time", () => {
         activity: { mode: "ordinary-waking" },
       });
 
-      expect(result.balance.leakage).toBe(0);
       expect(result.collapse).toBeNull();
+      expect(result.current).toBeGreaterThan(0);
     }
   });
 });
@@ -807,9 +945,9 @@ describe("boundaries inside one interval", () => {
 
     const full = result.events.find((event) => event.kind === "aura-full");
 
+    /* 4R while asleep is 10,000 an hour, so 5,000 short takes half of one. */
     expect(full).toBeDefined();
-    expect(full!.at).toBeCloseTo(T0 + hoursToDuration(1), 6);
-    expect(result.segments).toHaveLength(2);
+    expect(full!.at).toBeCloseTo(T0 + hoursToDuration(0.5), 6);
   });
 
   it("marks the moment the pool empties", () => {
@@ -817,6 +955,7 @@ describe("boundaries inside one interval", () => {
       state: { current: 2500, allocations: [] },
       hours: 4,
       access: REN_III,
+      activity: HOLDING,
       upkeep: [{ id: "ren", source: "ren", baseRate: 1000, period: "hour" }],
     });
 
@@ -853,18 +992,18 @@ describe("boundaries inside one interval", () => {
       state: { current: 1000, allocations: [] },
       hours: 4,
       activity: { mode: "intentional-rest" },
-      instantaneous: [at(2, "forced-drain", 5000)],
+      instantaneous: [at(2, "forced-drain", 20_000)],
     });
 
     /*
-     * Resting recovers 2,500 an hour. The drain lands at hour two, by which
-     * point there is 6,000 to take it from — so it lands in full and the last
-     * two hours refill. Smeared across the interval it would have emptied the
-     * pool instead.
+     * Resting recovers 3R — 7,500 an hour. The drain lands at hour two, by
+     * which point there is 16,000 to take it from, so 16,000 of it lands and
+     * 4,000 goes unmet; the last two hours then refill. Smeared across the
+     * interval it would have emptied the pool at a different moment entirely.
      */
-    expect(result.balance.forcedDrain).toBe(5000);
-    expect(result.unmetDrain).toBe(0);
-    expect(result.current).toBeCloseTo(6000, 6);
+    expect(result.balance.forcedDrain).toBe(20_000);
+    expect(result.unmetDrain).toBeCloseTo(4000, 6);
+    expect(result.current).toBeCloseTo(3 * R * 2, 6);
   });
 
   it("reports every segment it cut the interval into", () => {
@@ -901,9 +1040,9 @@ describe("recovery is netted before the pool is clamped", () => {
     });
 
     expect(result.current).toBe(50_000);
-    expect(result.recovery.potential).toBe(5000);
+    expect(result.recovery.potential).toBe(4 * R);
     expect(result.recovery.used).toBe(100);
-    expect(result.recovery.discarded).toBe(4900);
+    expect(result.recovery.discarded).toBe(4 * R - 100);
     expect(result.balance.upkeep).toBe(100);
   });
 
@@ -1048,6 +1187,12 @@ describe("immutability and determinism", () => {
  */
 describe("simultaneous recovery and drain settle together", () => {
   /*
+   * Every scenario here holds a technique open, which zeroes natural
+   * regeneration — so the only thing moving the pool is the events under test.
+   * A background 2R an hour would make each expectation a sum of the netting
+   * rule and an unrelated rate.
+   */
+  /*
    * The reported case. 49,000 of 50,000, taking 3,000 of each at one instant:
    * the recovery overflows only if the drain that makes room for it is held
    * back until afterwards.
@@ -1056,6 +1201,7 @@ describe("simultaneous recovery and drain settle together", () => {
     const result = succeed({
       state: { current: 49_000, allocations: [] },
       hours: 1,
+      activity: HOLDING,
       instantaneous: [at(0.5, "recovery", 3000), at(0.5, "forced-drain", 3000)],
     });
 
@@ -1070,6 +1216,7 @@ describe("simultaneous recovery and drain settle together", () => {
     const scenario = {
       state: { current: 49_000, allocations: [] },
       hours: 1,
+      activity: HOLDING,
     } as const;
 
     const healFirst = succeed({
@@ -1095,6 +1242,7 @@ describe("simultaneous recovery and drain settle together", () => {
     const result = succeed({
       state: { current: 49_000, allocations: [] },
       hours: 1,
+      activity: HOLDING,
       instantaneous: [at(0.5, "recovery", 3000), at(0.5, "forced-drain", 500)],
     });
 
@@ -1107,6 +1255,7 @@ describe("simultaneous recovery and drain settle together", () => {
     const result = succeed({
       state: { current: 1000, allocations: [] },
       hours: 1,
+      activity: HOLDING,
       instantaneous: [at(0.5, "recovery", 500), at(0.5, "forced-drain", 3000)],
     });
 
@@ -1123,6 +1272,7 @@ describe("simultaneous recovery and drain settle together", () => {
     const result = succeed({
       state: { current: 49_000, allocations: [] },
       hours: 1,
+      activity: HOLDING,
       instantaneous: [
         at(0.5, "recovery", 1000, "elixir"),
         at(0.5, "recovery", 3000, "healer"),

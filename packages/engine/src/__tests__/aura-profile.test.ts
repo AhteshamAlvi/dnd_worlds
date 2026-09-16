@@ -718,13 +718,18 @@ describe("the profile a character resolves with", () => {
       .toBe(profile({ attributes: { dex: resolved.stats.dex } }).control.multiplier);
   });
 
-  it("carries the VIT-derived Regeneration Capacity forward unchanged", () => {
+  /*
+   * R, the revised unit: half the rounded VIT curve. VIT 20 rounds to 5,000,
+   * so the profile carries 2,500 — and every recovery rate in the engine is a
+   * small integer multiple of it.
+   */
+  it("carries the VIT-derived Regeneration Capacity forward as R", () => {
     const resolved = resolveTestCharacter(createTestCharacter({
       attributes: { con: 20, vit: 20 },
       aura: { current: 0, allocations: [] },
     }));
 
-    expect(resolved.aura.regeneration.perHour).toBe(5000);
+    expect(resolved.aura.regeneration.perHour).toBe(2500);
   });
 });
 
@@ -808,7 +813,6 @@ describe("the Aura subsystem's public surface", () => {
       "AURA_PLACEMENTS",
       "BASELINE_TEN_ALLOCATION_ID",
       "PSEUDO_CHU_ALLOCATION_ID",
-      "PSEUDO_CHU_EFFICIENCY",
       "findAuraPlacementIssues",
 
       /*
@@ -818,15 +822,15 @@ describe("the Aura subsystem's public surface", () => {
       "deriveEffectiveNenMastery",
 
       /* Expenditure, recovery, upkeep, leakage and the time transition. */
-      "PHYSICAL_AURA_COST_COEFFICIENT",
       "derivePhysicalAuraCost",
-      "deriveSustainedActivityAuraCost",
+      "derivePhysicalConsumptionPerHour",
+      "PHYSICAL_CONSUMPTION_REGENERATION_MULTIPLE",
       "resolveAuraActionCost",
       "spendActionAura",
-      "spendPhysicalAura",
       "recoverAura",
       "resolveAuraRecoveryMultiplier",
-      "AURA_RECOVERY_MODE_MULTIPLIERS",
+      "AURA_RECOVERY_ACCESS_CLASSES",
+      "AURA_RECOVERY_COEFFICIENTS",
       "deriveAuraUpkeep",
       "payAuraUpkeep",
       "deriveUncontainedLeakage",
@@ -854,7 +858,6 @@ describe("the Aura subsystem's public surface", () => {
       "characterTemporalState",
 
       /* The Body-owned half, through the Body barrel. */
-      "deriveStaminaExpenditureMultiplier",
       "deriveMaximumWakefulHours",
       "advanceWakefulness",
       "deriveFatigue",
