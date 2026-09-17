@@ -45,15 +45,17 @@ function sourceFilesUnder(directory: string): readonly string[] {
 }
 
 /*
- * Every `from "..."` specifier in a file, import and re-export alike.
+ * Every module specifier in a file: import and re-export alike, and the bare
+ * side-effect `import "..."`.
  *
  * A barrel's `export ... from` reaches the same module an import would and
- * creates the same edge, so both forms are collected.
+ * creates the same edge, so both forms are collected. So does a side-effect
+ * import, which has no `from` at all and used to slip past every import guard.
  */
 function moduleSpecifiers(path: string): readonly string[] {
   const source = readFileSync(path, "utf8");
 
-  return [...source.matchAll(/\bfrom\s+"([^"]+)"/g)].map((match) => match[1]!);
+  return [...source.matchAll(/\b(?:from|import)\s+"([^"]+)"/g)].map((match) => match[1]!);
 }
 
 function resolvesInto(fromPath: string, specifier: string, segment: string): boolean {
@@ -2504,12 +2506,13 @@ describe("Nen awakening stays inside its own domain", () => {
    * the way effective Mastery is. They are resolved in the one projection that
    * turns Nen state into an Aura access input, and pinned there below.
    *
-   * Hatsu and Zetsu remain barred outright. Ren is barred everywhere but ONE
-   * adapter: Ren is something a character does, it lives in the generic
-   * activity runtime, and the adapter is the single place that knows which
-   * activity is a Ren and translates it into a generic outward flow.
+   * Hatsu remains barred outright. Ren and Zetsu are each barred everywhere
+   * but ONE adapter: both are things a character does, both live in the
+   * generic activity runtime, and each adapter is the single place that knows
+   * which activity is its principle and translates it into generic Aura terms
+   * — an outward flow for Ren, a voluntary suppression for Zetsu.
    */
-  const BARRED_PRINCIPLES = ["hatsu", "zetsu"];
+  const BARRED_PRINCIPLES = ["hatsu"];
 
   it("imports no active-principle resolver", () => {
     const offenders = nenFiles.filter((path) =>
@@ -2531,6 +2534,16 @@ describe("Nen awakening stays inside its own domain", () => {
     );
 
     expect(reaching).toEqual([join(SRC, "character", "nen", "ren.ts")]);
+  });
+
+  it("reaches the Zetsu principle from the Zetsu adapter alone", () => {
+    const reaching = nenFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles", "zetsu")),
+      ),
+    );
+
+    expect(reaching).toEqual([join(SRC, "character", "nen", "zetsu.ts")]);
   });
 
   /*
@@ -3724,5 +3737,116 @@ describe("Nen progression keeps unlock, mastery and attribute rules apart", () =
     expect(readsUnlocks("rules[id].unlockPrerequisites ?? []")).toBe(true);
     expect(/minimum(?:Dex|Con)\b|meets\w*Requirement/.test("readonly minimumCon: number;")).toBe(true);
     expect(/minimum(?:Dex|Con)\b|meets\w*Requirement/.test("export function meetsTenDexRequirement(")).toBe(true);
+  });
+});
+
+
+/*
+ * ZET-1 — ordinary Zetsu is an activity behind one adapter.
+ *
+ * The regressions guarded here are the cheap ways the principle could leak
+ * back out of it: Aura or the generic runtime learning the word, a second file
+ * producing learned-Zetsu suppression, the time coordinator restating its
+ * Mastery table, or the ordinary activity blurring into the stored forced and
+ * involuntary states.
+ */
+describe("Ordinary Zetsu stays behind its adapter", () => {
+  const production = sourceFilesUnder(SRC).filter(
+    (path) => !path.startsWith(join(SRC, "__tests__")),
+  );
+
+  const ADAPTER = join(SRC, "character", "nen", "zetsu.ts");
+  const PRINCIPLE = join(SRC, "character", "foundation", "nen", "principles", "zetsu.ts");
+  const ADVANCE = join(SRC, "character", "time", "advance.ts");
+
+  const code = (path: string): string =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const importsAdapter = (path: string): boolean =>
+    moduleSpecifiers(path).some((specifier) =>
+      resolvesInto(path, specifier, join("character", "nen", "zetsu")),
+    );
+
+  const importsPrinciple = (path: string): boolean =>
+    moduleSpecifiers(path).some((specifier) =>
+      resolvesInto(path, specifier, join("nen", "principles", "zetsu")),
+    );
+
+  /* Voluntary suppression, or the learned-Zetsu concealment figure. */
+  const producesVoluntarySuppression = (source: string): boolean =>
+    /\bforced\s*:\s*false\b/.test(source);
+
+  const restatesZetsuMastery = (source: string): boolean =>
+    /auraConcealmentModifier|deriveZetsuAuraConcealmentModifier|ZETSU_MASTERY_PROFILES|deriveEffectiveNenMastery/.test(source);
+
+  it("finds the sources it is checking", () => {
+    expect(production).toContain(ADAPTER);
+    expect(production).toContain(PRINCIPLE);
+    expect(production).toContain(ADVANCE);
+  });
+
+  it("keeps Aura and the generic runtime from importing the adapter or the principle", () => {
+    const generic = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "aura")),
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "nen", "runtime")),
+      ...sourceFilesUnder(join(SRC, "character", "nen", "runtime")),
+    ];
+
+    expect(generic.length).toBeGreaterThan(20);
+
+    const offenders = generic.filter((path) => importsAdapter(path) || importsPrinciple(path));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("lets only the adapter import the Zetsu principle", () => {
+    expect(production.filter(importsPrinciple)).toEqual([ADAPTER]);
+  });
+
+  it("makes the adapter the only producer of voluntary suppression", () => {
+    expect(producesVoluntarySuppression(code(ADAPTER))).toBe(true);
+    expect(production.filter((path) => producesVoluntarySuppression(code(path)))).toEqual([ADAPTER]);
+  });
+
+  it("keeps character time consuming the projection, not restating Zetsu", () => {
+    const source = code(ADVANCE);
+
+    expect(source).toMatch(/zetsuSuppression\(/);
+    expect(restatesZetsuMastery(source)).toBe(false);
+    expect(producesVoluntarySuppression(source)).toBe(false);
+    expect(/"zetsu"/.test(source)).toBe(false);
+  });
+
+  it("keeps the ordinary activity out of the stored suppression states", () => {
+    const awakening = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "nen", "awakening")),
+      join(SRC, "character", "nen", "collapse.ts"),
+      join(SRC, "character", "nen", "settlement.ts"),
+      join(SRC, "character", "nen", "access.ts"),
+    ];
+
+    expect(awakening.filter(importsAdapter)).toEqual([]);
+
+    /* The adapter reads whether a stored state exists; it never names or writes one. */
+    expect(/forced-zetsu|involuntary-zetsu|NenSuppressionState|suppression\s*:\s*\[/.test(code(ADAPTER)))
+      .toBe(false);
+
+    const kinds = readFileSync(
+      join(SRC, "character", "foundation", "nen", "awakening", "types.ts"),
+      "utf8",
+    ).match(/NEN_SUPPRESSION_KINDS = \[([^\]]*)\]/)?.[1];
+
+    expect(kinds?.replace(/\s/g, "")).toBe('"forced-zetsu","involuntary-zetsu",');
+  });
+
+  /* The predicates, exercised so none of them passes vacuously. */
+  it("would catch each regression", () => {
+    expect(producesVoluntarySuppression('suppression: { source: "zetsu", forced: false }')).toBe(true);
+    expect(producesVoluntarySuppression("forced: true")).toBe(false);
+    expect(restatesZetsuMastery("const bonus = ZETSU_MASTERY_PROFILES[rank].auraConcealmentModifier;")).toBe(true);
+    expect(restatesZetsuMastery('deriveEffectiveNenMastery(character.nen, "zetsu")')).toBe(true);
+    expect(importsAdapter(join(SRC, "character", "time", "advance.ts"))).toBe(true);
   });
 });

@@ -24,10 +24,12 @@ import type { GameTimestamp } from "../../../../time/types";
 
 import {
   NEN_ACTIVITY_CONDITIONS,
+  NEN_ACTIVITY_CONSTRAINT_KINDS,
   NEN_ACTIVITY_RELATIONS,
   NEN_ACTIVITY_STOP_CAUSES,
   type NenActivity,
   type NenActivityCondition,
+  type NenActivityConstraintKind,
   type NenActivityDefinition,
   type NenActivityProgress,
   type NenActivityRuntime,
@@ -449,6 +451,8 @@ export function findNenActivityIssues(
 
   errors.push(...findProgressIssues(activity, at));
 
+  errors.push(...findRevokedKindIssues(activity.revokes, at));
+
   if (
     !Number.isFinite(activity.funding?.committed) ||
     activity.funding.committed < 0
@@ -729,6 +733,99 @@ export function findNenActivityRuntimeIssues(
     seen.add(activity.id);
   }
 
+  errors.push(...findRevokedConstraintContradictions(runtime.activities));
+
+  return errors;
+}
+
+
+/*
+ * A revoked kind list, if one is present, must name known constraint kinds.
+ *
+ * Shared by the stored activity and the authored definition, so one cannot
+ * carry a shape the other refuses.
+ */
+function findRevokedKindIssues(
+  revokes: unknown,
+  at: string,
+): readonly EngineError[] {
+  if (revokes === undefined) return [];
+
+  if (
+    !Array.isArray(revokes) ||
+    revokes.some((kind) =>
+      !(NEN_ACTIVITY_CONSTRAINT_KINDS as readonly unknown[]).includes(kind)
+    )
+  ) {
+    return [{
+      code: "nen.activity.revokes.invalid",
+      message: `${at} must revoke only known constraint kinds.`,
+      audience: "developer",
+      required: NEN_ACTIVITY_CONSTRAINT_KINDS.join(" | "),
+      actual: describeDiagnosticValue(revokes),
+    }];
+  }
+
+  return [];
+}
+
+
+/**
+ * The constraint kinds the active activities of a runtime make unsatisfiable.
+ *
+ * Generic: read off each activity's own stored declaration, never off its
+ * definition id.
+ */
+export function revokedNenConstraintKinds(
+  activities: readonly NenActivity[],
+): ReadonlySet<NenActivityConstraintKind> {
+  const kinds = new Set<NenActivityConstraintKind>();
+
+  for (const activity of activities) {
+    if (activity?.condition !== "active") continue;
+    if (!Array.isArray(activity.revokes)) continue;
+
+    for (const kind of activity.revokes) kinds.add(kind);
+  }
+
+  return kinds;
+}
+
+
+/*
+ * Two active activities, one carrying a kind the other revokes.
+ *
+ * Unreachable through the transitions, which end or refuse the carrier. A
+ * host-assembled runtime can still say it, and it is two descriptions of one
+ * character that cannot both be true.
+ */
+function findRevokedConstraintContradictions(
+  activities: readonly NenActivity[],
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  for (const activity of activities) {
+    if (activity?.condition !== "active") continue;
+    if (!Array.isArray(activity.constraints)) continue;
+
+    const others = activities.filter((one) => one !== activity);
+    const revoked = revokedNenConstraintKinds(others);
+
+    const clash = activity.constraints.find((one) => revoked.has(one?.kind));
+
+    if (clash === undefined) continue;
+
+    errors.push({
+      code: "nen.activity.constraint.revoked",
+      message:
+        `activity ${describeDiagnosticValue(activity.id)} is active while ` +
+        `another active activity revokes its "${clash.kind}" constraint.`,
+      audience: "developer",
+      required: `no active activity revoking "${clash.kind}"`,
+      actual: describeDiagnosticValue(activity.id),
+    });
+  }
+
   return errors;
 }
 
@@ -806,6 +903,31 @@ export function findNenActivityDefinitionIssues(
         actual: describeDiagnosticValue(relation.condition),
       });
     }
+  }
+
+  errors.push(...findRevokedKindIssues(
+    definition.revokes,
+    `definition ${describeDiagnosticValue(definition.id)}`,
+  ));
+
+  const selfRevoked = (definition.constraints ?? []).find((one) =>
+    Array.isArray(definition.revokes) &&
+    definition.revokes.includes(one?.kind)
+  );
+
+  /*
+   * An activity that revoked a constraint it carries would end itself the
+   * instant it started, or never be allowed to.
+   */
+  if (selfRevoked !== undefined) {
+    errors.push({
+      code: "nen.activity.definition.invalid",
+      message:
+        "A Nen activity definition cannot revoke a constraint it carries itself.",
+      audience: "developer",
+      required: `no "${selfRevoked.kind}" constraint`,
+      actual: selfRevoked.kind,
+    });
   }
 
   /* A composite that lists no components is not composite. */

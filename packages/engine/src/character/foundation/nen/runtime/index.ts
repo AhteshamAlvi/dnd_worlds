@@ -9,6 +9,7 @@
 
 export {
   NEN_ACTIVITY_CONDITIONS,
+  NEN_ACTIVITY_CONSTRAINT_KINDS,
   NEN_ACTIVITY_RELATIONS,
   NEN_ACTIVITY_STOP_CAUSES,
 } from "./types";
@@ -18,6 +19,7 @@ export type {
   NenActivityCondition,
   NenActivityConfiguration,
   NenActivityConstraint,
+  NenActivityConstraintKind,
   NenActivityDefinition,
   NenActivityFunding,
   NenActivityProgress,
@@ -27,6 +29,7 @@ export type {
   NenActivityRuntime,
   NenActivityStop,
   NenActivityStopCause,
+  NenActivitySuppression,
 } from "./types";
 
 export {
@@ -43,5 +46,6 @@ export {
   nenActivityExpiryAt,
   nenActivityProgressAt,
   orderNenActivities,
+  revokedNenConstraintKinds,
   wasNenActivityRunningAt,
 } from "./state";

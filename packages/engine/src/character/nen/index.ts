@@ -57,6 +57,27 @@ export type {
 } from "./ren";
 
 export {
+  ZETSU_ACTIVITY_DEFINITION,
+  ZETSU_ACTIVITY_DEFINITION_ID,
+  ZETSU_AURA_CONCEALMENT_SCOPE,
+  ZETSU_SUPPRESSION_SOURCE,
+  activeZetsuActivity,
+  isZetsuActivity,
+  resolveZetsuAuraConcealment,
+  startZetsu,
+  stopZetsu,
+  withZetsuAccess,
+  zetsuStopCauseFor,
+  zetsuSuppression,
+} from "./zetsu";
+
+export type {
+  StartZetsuRequest,
+  StopZetsuRequest,
+  ZetsuAuraConcealmentContribution,
+} from "./zetsu";
+
+export {
   appliedOverrides,
   declaredOverrideFields,
   findExceptionalSourceIssues,

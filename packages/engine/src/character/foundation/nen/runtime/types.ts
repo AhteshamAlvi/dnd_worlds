@@ -46,6 +46,10 @@ import type { ContributionSourceRef } from "../../../../infrastructure/contribut
 import type { GameTimestamp } from "../../../../time/types";
 
 import type { AuraFundingStatus } from "../../aura/funding";
+import type {
+  AuraSuppressedAccessOverride,
+  AuraSuppression,
+} from "../../aura/types";
 
 
 /* ── Condition ──────────────────────────────────────────────────────────── */
@@ -176,6 +180,16 @@ export type NenActivityConstraint =
   }
   | { readonly kind: "component"; readonly activityId: string }
   | { readonly kind: "host"; readonly factId: string };
+
+export const NEN_ACTIVITY_CONSTRAINT_KINDS = [
+  "deliberate-access",
+  "minimum-mastery",
+  "component",
+  "host",
+] as const satisfies readonly NenActivityConstraint["kind"][];
+
+export type NenActivityConstraintKind =
+  typeof NEN_ACTIVITY_CONSTRAINT_KINDS[number];
 
 
 /* ── Configuration and funding ──────────────────────────────────────────── */
@@ -320,6 +334,15 @@ export interface NenActivity {
   /** `null` while active. Preserved through a suspension and a resume. */
   readonly stop: NenActivityStop | null;
 
+  /**
+   * Constraint kinds this activity makes unsatisfiable while it runs.
+   *
+   * Copied from the definition at activation, so the runtime can enforce it
+   * against later transitions without being handed the definition again.
+   * Absent means none.
+   */
+  readonly revokes?: readonly NenActivityConstraintKind[];
+
   /** Accumulated exertion. Absent reads as none, as of `startedAt`. */
   readonly progress?: NenActivityProgress;
 }
@@ -337,6 +360,25 @@ export interface NenActivityRuntime {
   readonly owner: string;
   readonly at: GameTimestamp;
   readonly activities: readonly NenActivity[];
+}
+
+
+/* ── Projections ────────────────────────────────────────────────────────── */
+
+/*
+ * A running activity that holds the character's nodes shut, as generic facts.
+ *
+ * Produced by the one principle adapter that knows which activity does that,
+ * and consumed by the time coordinator without asking which principle it was.
+ * Everything a consumer needs is here: the suppression Aura's recovery reads,
+ * the access override that closes Output, and the activity to exclude from the
+ * active-Nen fact and to trace a stop back to.
+ */
+export interface NenActivitySuppression {
+  readonly activityId: string;
+  readonly source: ContributionSourceRef;
+  readonly suppression: AuraSuppression;
+  readonly override: AuraSuppressedAccessOverride;
 }
 
 
@@ -405,4 +447,16 @@ export interface NenActivityDefinition {
 
   /** Applied to every activity created from this definition. */
   readonly constraints?: readonly NenActivityConstraint[];
+
+  /*
+   * Constraint kinds this activity makes unsatisfiable while it runs.
+   *
+   * Matched against CONSTRAINTS, never against definition ids, so content that
+   * shuts something off does not have to list what it shuts off. Activating
+   * one ends every active activity carrying a revoked kind, at the same
+   * instant, as `replaced` and with no permission to resume; while it runs, an
+   * activation or resumption carrying a revoked kind is refused. A definition
+   * may not revoke a kind it carries itself.
+   */
+  readonly revokes?: readonly NenActivityConstraintKind[];
 }

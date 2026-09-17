@@ -67,6 +67,7 @@ import {
   nenActivityExpiryAt,
   nenActivityProgressAt,
   orderNenActivities,
+  revokedNenConstraintKinds,
 } from "../../foundation/nen/runtime/state";
 import type {
   NenActivity,
@@ -334,7 +335,13 @@ export function activateNenActivity(
     if (definitionIssues.length > 0) return fail(root, definitionIssues);
   }
 
-  const blocked = findCompatibilityIssues(runtime, request, definitions);
+  const blocked = [
+    ...findCompatibilityIssues(runtime, request, definitions),
+    ...findRevokedConstraintIssues(runtime.activities, [
+      ...(definition?.constraints ?? []),
+      ...(request.constraints ?? []),
+    ], request.activityId),
+  ];
 
   if (blocked.length > 0) return fail(root, blocked);
 
@@ -363,6 +370,29 @@ export function activateNenActivity(
 
   /* 6. The transition. */
   const replaced = activitiesReplacedBy(runtime, request, definitions);
+
+  /*
+   * An activity that ran out before this instant is not running at it, and
+   * replacing it would record exertion past its own duration. Advancing to the
+   * instant first is what records the expiry — the rule adjustment follows.
+   */
+  const expired = replaced.find((one) => {
+    const expiresAt = nenActivityExpiryAt(one);
+
+    return expiresAt !== null && expiresAt <= request.at;
+  });
+
+  if (expired !== undefined) {
+    return fail(root, [{
+      code: "nen.activity.replace.expired",
+      message:
+        `"${expired.id}" had already expired before this activation replaced it.`,
+      audience: "developer",
+      required: `an activation before ${nenActivityExpiryAt(expired)}`,
+      actual: request.at,
+      resolution: "Advance the runtime to the activation instant first.",
+    }]);
+  }
 
   const stopped = replaced.map((one) =>
     stoppedActivity(one, {
@@ -402,6 +432,9 @@ export function activateNenActivity(
       ...(request.constraints ?? []),
     ],
     stop: null,
+    ...(definition?.revokes === undefined
+      ? {}
+      : { revokes: definition.revokes }),
 
     /* A fresh activity has spent none of its endurance. */
     progress: { exertionSeconds: 0, resolvedAt: request.at },
@@ -595,22 +628,65 @@ function findCompatibilityIssues(
 }
 
 
-/** Active activities this activation declares it replaces. */
+/*
+ * Constraints that an already-active activity makes unsatisfiable.
+ *
+ * Read from the running activities' own stored declarations, so the caller
+ * does not have to hand over the definition of whatever is shutting access
+ * off — and a refusal here names the kind, never a principle.
+ */
+function findRevokedConstraintIssues(
+  activities: readonly NenActivity[],
+  constraints: readonly NenActivityConstraint[],
+  activityId: string,
+): readonly EngineError[] {
+  const revoked = revokedNenConstraintKinds(activities);
+  const clash = constraints.find((one) => revoked.has(one.kind));
+
+  if (clash === undefined) return [];
+
+  return [{
+    code: "nen.activity.constraint.revoked",
+    message:
+      `"${activityId}" needs "${clash.kind}", which an active activity has ` +
+      "made unavailable.",
+    audience: "player",
+    required: `no active activity revoking "${clash.kind}"`,
+    actual: clash.kind,
+    resolution: "Stop the activity that revokes it first.",
+  }];
+}
+
+
+/*
+ * Active activities this activation takes the place of.
+ *
+ * Two generic sources, and neither reads a principle: the definition's own
+ * `replaces` relations, by definition id, and its `revokes` declaration, by
+ * the constraint kinds the running activities carry.
+ */
 function activitiesReplacedBy(
   runtime: NenActivityRuntime,
   request: NenActivationRequest,
   definitions: ReadonlyMap<string, NenActivityDefinition>,
 ): readonly NenActivity[] {
+  const definition = definitions.get(request.definitionId);
+
   const replaces = new Set(
-    (definitions.get(request.definitionId)?.relations ?? [])
+    (definition?.relations ?? [])
       .filter((one) => one.relation === "replaces")
       .map((one) => one.other),
   );
 
-  if (replaces.size === 0) return [];
+  const revokes = new Set(definition?.revokes ?? []);
+
+  if (replaces.size === 0 && revokes.size === 0) return [];
 
   return runtime.activities.filter(
-    (one) => one.condition === "active" && replaces.has(one.definitionId),
+    (one) =>
+      one.condition === "active" &&
+      (replaces.has(one.definitionId) ||
+        one.constraints.some((constraint) => revokes.has(constraint.kind))),
   );
 }
 
@@ -932,6 +1008,14 @@ export function resumeNenActivity(
       actual: describeDiagnosticValue(request.at),
     }]);
   }
+
+  const revoked = findRevokedConstraintIssues(
+    runtime.activities,
+    activity.constraints,
+    activity.id,
+  );
+
+  if (revoked.length > 0) return fail(root, revoked);
 
   if (!auraFundingSucceeded(request.funding?.status)) {
     return fail(root, [{

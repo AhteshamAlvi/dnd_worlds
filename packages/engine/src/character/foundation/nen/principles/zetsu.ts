@@ -83,10 +83,11 @@
  * checks/modifiers.ts's resolveCheckModifier for where the two are added.
  *
  * The value is derived from Mastery rather than authored as an Effect, so it
- * is not currently wired through the Effect pipeline; a caller resolving an
- * aura-concealment check supplies it alongside whatever check modifiers the
- * character's content contributed. Formalizing that connection waits on the
- * Detection/Concealment mechanics being rebuilt.
+ * is not wired through the Effect pipeline. It applies only while ordinary
+ * Zetsu is actually running, which is runtime state this file cannot see:
+ * character/nen/zetsu.ts's resolveZetsuAuraConcealment projects it, with its
+ * provenance, from the running activity and the effective rank. Consuming that
+ * contribution in a check waits on the Detection/Concealment contest.
  *
  * Zetsu does NOT conceal ordinary physical presence through:
  *
@@ -105,8 +106,10 @@
  *
  * Ordinary Zetsu is incompatible with ordinary active Ten and Ren.
  *
- * Those rules do NOT belong here. Cross-Principle runtime compatibility will
- * be owned centrally by Nen compatibility mechanics.
+ * Those rules do NOT belong here. Ordinary Zetsu is a runtime activity whose
+ * adapter, character/nen/zetsu.ts, declares that it revokes deliberate Aura
+ * access; the generic runtime ends whatever needs that access, and Aura's
+ * suppressed override sets Ten's coating aside while it runs.
  *
  *
  * This file owns:

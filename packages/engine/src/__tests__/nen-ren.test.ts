@@ -813,13 +813,19 @@ describe("Ren stops at its exact boundaries", () => {
     expect(hour.aura.unmetDrain).toBeCloseTo(0, 6);
   });
 
-  /* Ten I under Ren X: the two ranks are independent. */
+  /*
+   * Ten I under Ren X: the two ranks are independent.
+   *
+   * A GENERIC suppression beginning mid-interval, which is a solver path and
+   * not learned Zetsu — ordinary Zetsu is a runtime activity started between
+   * advances, and it ends Ren at its own activation instant (nen-zetsu.test.ts).
+   */
   it("stops at suppression, keeps Ten out while it lasts, and lets it back after", () => {
     const character = subject({ ten: 1, ren: 10 });
     const hour = advanceFor(character, started(character, 100), T0, hoursToDuration(1), {
       initial: { mode: "ordinary-waking" },
       changes: [
-        { at: T0 + 30 * MINUTE, activity: { mode: "ordinary-waking", suppression: { source: "zetsu", forced: false } } },
+        { at: T0 + 30 * MINUTE, activity: { mode: "ordinary-waking", suppression: { source: "test-suppression", forced: false } } },
         { at: T0 + 45 * MINUTE, activity: { mode: "ordinary-waking" } },
       ],
     });
