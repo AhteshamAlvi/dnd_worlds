@@ -9,6 +9,7 @@
  *
  *   the runtime    sees an activity committing nothing, with no upkeep and no
  *                  duration, that revokes the `deliberate-access` constraint
+ *                  and imposes suppression
  *   Aura           sees a voluntary suppression and a suppressed access
  *                  override, both labelled with a provenance nothing branches on
  *   the time loop  sees a generic suppression projection it passes through
@@ -17,12 +18,13 @@
  * ENTERING IS A SHUTDOWN, NOT A PAUSE
  * -----------------------------------
  *
- * Closing the nodes ends everything that needs deliberate access — Ren, and any
- * other activity carrying that constraint — at the activation instant, as
- * `replaced`, with no permission to resume. The runtime does that from the
- * declaration below; no list of techniques is written here. An activity
- * authored to function without deliberate access carries no such constraint
- * and is left alone.
+ * Closing the nodes ends every activity at the activation instant, as
+ * `replaced`, with no permission to resume — Ren and anything else needing
+ * deliberate access, and anything else at all that is not EXPLICITLY authorized
+ * to function through suppression. The runtime does that from the declaration
+ * below; no list of techniques is written here. Only an activity authored with
+ * that authorization is left running, and not carrying `deliberate-access` is
+ * not that authorization.
  *
  * Leaving Zetsu restores only what is passive. Ten is derived state rather than
  * an activity, so it is simply what access resolves to again once the override
@@ -92,13 +94,16 @@ export const ZETSU_ACTIVITY_DEFINITION_ID = "zetsu";
  * Zetsu's declaration to the runtime.
  *
  * It REVOKES deliberate access rather than requiring it: closing the nodes is
- * its effect, so carrying the constraint would have it stop itself. No
- * relations, because what it ends is chosen by constraint, not by name.
+ * its effect, so carrying the constraint would have it stop itself. It
+ * IMPOSES suppression, so everything not authorized to function through that
+ * ends with it and cannot start beside it. No relations, because what it ends
+ * is chosen by declaration, not by name.
  */
 export const ZETSU_ACTIVITY_DEFINITION: NenActivityDefinition = {
   id: ZETSU_ACTIVITY_DEFINITION_ID,
   relations: [],
   revokes: ["deliberate-access"],
+  imposesSuppression: true,
 };
 
 /** The provenance ordinary Zetsu's suppression carries into Aura. */
@@ -226,8 +231,9 @@ export interface StartZetsuRequest {
  *
  * Atomic. Every refusal — malformed input, an unawakened, sealed or externally
  * suppressed character, a Zetsu already running — leaves the runtime exactly
- * as it was. On success, every activity needing deliberate access ends at `at`
- * as `replaced`, and the Zetsu begins at that same instant.
+ * as it was. On success, every activity not explicitly authorized to function
+ * through suppression ends at `at` as `replaced`, together with whatever was
+ * composed of it, and the Zetsu begins at that same instant.
  *
  * Costs nothing and commits nothing, so it starts at zero Current Aura too.
  */
@@ -417,7 +423,8 @@ export function stopZetsu(
  * The running Zetsu as generic suppression, or null when none is running.
  *
  * The only producer of ordinary learned-Zetsu suppression. Voluntary, so Aura
- * resolves recovery from the activity table; Mastery plays no part in it.
+ * resolves recovery from the activity table; Mastery plays no part in it. It
+ * permits explicitly authorized activities to keep running through it.
  */
 export function zetsuSuppression(
   runtime: NenActivityRuntime,
@@ -429,7 +436,11 @@ export function zetsuSuppression(
   return {
     activityId: activity.id,
     source: activity.source,
-    suppression: { source: ZETSU_SUPPRESSION_SOURCE, forced: false },
+    suppression: {
+      source: ZETSU_SUPPRESSION_SOURCE,
+      forced: false,
+      exemptions: "authorized",
+    },
     override: { kind: "suppressed", source: ZETSU_SUPPRESSION_SOURCE },
   };
 }

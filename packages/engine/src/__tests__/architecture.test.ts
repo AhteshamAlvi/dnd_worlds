@@ -53,8 +53,10 @@ function sourceFilesUnder(directory: string): readonly string[] {
  * import, which has no `from` at all and used to slip past every import guard.
  */
 function moduleSpecifiers(path: string): readonly string[] {
-  const source = readFileSync(path, "utf8");
+  return specifiersIn(readFileSync(path, "utf8"));
+}
 
+function specifiersIn(source: string): readonly string[] {
   return [...source.matchAll(/\b(?:from|import)\s+"([^"]+)"/g)].map((match) => match[1]!);
 }
 
@@ -3848,5 +3850,85 @@ describe("Ordinary Zetsu stays behind its adapter", () => {
     expect(restatesZetsuMastery("const bonus = ZETSU_MASTERY_PROFILES[rank].auraConcealmentModifier;")).toBe(true);
     expect(restatesZetsuMastery('deriveEffectiveNenMastery(character.nen, "zetsu")')).toBe(true);
     expect(importsAdapter(join(SRC, "character", "time", "advance.ts"))).toBe(true);
+  });
+});
+
+
+/*
+ * ZET-1A — suppression authorization is declared, never inferred, and the
+ * generic layers stay ignorant of every principle adapter.
+ */
+describe("Suppression authorization stays explicit and generic", () => {
+  const production = sourceFilesUnder(SRC).filter(
+    (path) => !path.startsWith(join(SRC, "__tests__")),
+  );
+
+  const code = (path: string): string =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const ADAPTERS = join(SRC, "character", "nen");
+  const RUNTIME_TRANSITIONS = join(SRC, "character", "nen", "runtime");
+
+  /* Into character/nen/, but not into its generic runtime subfolder. */
+  const importsAdapter = (path: string, specifier: string): boolean => {
+    if (!specifier.startsWith(".")) return false;
+
+    const resolved = join(path, "..", specifier);
+
+    return resolved.startsWith(ADAPTERS) && !resolved.startsWith(RUNTIME_TRANSITIONS);
+  };
+
+  const adapterImporters = (files: readonly string[]) =>
+    files.filter((path) =>
+      moduleSpecifiers(path).some((specifier) => importsAdapter(path, specifier))
+    );
+
+  it("keeps Aura and the generic runtime from importing any character/Nen adapter", () => {
+    const generic = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "aura")),
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "nen", "runtime")),
+      ...sourceFilesUnder(RUNTIME_TRANSITIONS),
+    ];
+
+    expect(generic.length).toBeGreaterThan(20);
+    expect(adapterImporters(generic)).toEqual([]);
+  });
+
+  /*
+   * The inference this ticket forbids: reading a MISSING `deliberate-access`
+   * constraint as permission to run under suppression.
+   */
+  const infersAuthorization = (source: string): boolean =>
+    /!\s*[\w.?]*constraints\s*\??\.\s*some\([^\n]*"deliberate-access"/.test(source) ||
+    /constraints\s*\??\.\s*every\([^\n]*!==\s*"deliberate-access"/.test(source) ||
+    /\.kind\s*!==\s*"deliberate-access"/.test(source);
+
+  it("never treats a missing deliberate-access constraint as suppression authorization", () => {
+    const offenders = production.filter((path) => infersAuthorization(code(path)));
+
+    expect(offenders).toEqual([]);
+
+    const state = code(join(SRC, "character", "foundation", "nen", "runtime", "state.ts"));
+    const permitted = state.slice(
+      state.indexOf("export function nenActivityPermittedUnderSuppression("),
+      state.indexOf("export function nenActivityRunsUntil("),
+    );
+
+    expect(permitted).toMatch(/functionsThroughSuppression === true/);
+    expect(permitted).not.toMatch(/constraints|deliberate-access/);
+  });
+
+  it("would catch each regression, including a side-effect import", () => {
+    expect(infersAuthorization('!activity.constraints.some((one) => one.kind === "deliberate-access")')).toBe(true);
+    expect(infersAuthorization('one.constraints.every((c) => c.kind !== "deliberate-access")')).toBe(true);
+    expect(infersAuthorization('declared.constraints.some((one) => one?.kind === "deliberate-access")')).toBe(false);
+
+    const time = join(SRC, "character", "foundation", "aura", "time.ts");
+
+    expect(specifiersIn('import "../../nen/zetsu";')).toEqual(["../../nen/zetsu"]);
+    expect(importsAdapter(time, "../../nen/suppression")).toBe(true);
+    expect(importsAdapter(time, "../../nen/runtime/transitions")).toBe(false);
   });
 });

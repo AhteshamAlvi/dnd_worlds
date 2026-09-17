@@ -33,6 +33,7 @@ import {
   type NenActivityDefinition,
   type NenActivityProgress,
   type NenActivityRuntime,
+  type NenSuppressionExemptions,
 } from "./types";
 
 
@@ -452,6 +453,7 @@ export function findNenActivityIssues(
   errors.push(...findProgressIssues(activity, at));
 
   errors.push(...findRevokedKindIssues(activity.revokes, at));
+  errors.push(...findSuppressionDeclarationIssues(activity, at));
 
   if (
     !Number.isFinite(activity.funding?.committed) ||
@@ -740,6 +742,126 @@ export function findNenActivityRuntimeIssues(
 
 
 /*
+ * The two suppression declarations, on a definition or a stored activity.
+ *
+ * Booleans when present, and never an authorization that contradicts a
+ * `deliberate-access` constraint: suppression closes deliberate access by
+ * definition, so the pair describes an activity that stops the instant it is
+ * allowed to continue.
+ */
+function findSuppressionDeclarationIssues(
+  declared: Pick<
+    NenActivityDefinition,
+    "functionsThroughSuppression" | "imposesSuppression" | "constraints"
+  >,
+  at: string,
+): readonly EngineError[] {
+  const errors: EngineError[] = [];
+
+  for (const [name, value] of [
+    ["functionsThroughSuppression", declared.functionsThroughSuppression],
+    ["imposesSuppression", declared.imposesSuppression],
+  ] as const) {
+    if (value === undefined || typeof value === "boolean") continue;
+
+    errors.push({
+      code: "nen.activity.suppression_declaration.invalid",
+      message: `${at}'s ${name} must be a boolean when supplied.`,
+      audience: "developer",
+      required: "boolean",
+      actual: describeDiagnosticValue(value),
+    });
+  }
+
+  if (
+    declared.functionsThroughSuppression === true &&
+    Array.isArray(declared.constraints) &&
+    declared.constraints.some((one) => one?.kind === "deliberate-access")
+  ) {
+    errors.push({
+      code: "nen.activity.suppression_declaration.contradictory",
+      message:
+        `${at} cannot function through suppression while requiring deliberate access.`,
+      audience: "developer",
+      required: "no deliberate-access constraint",
+      actual: "functionsThroughSuppression with deliberate-access",
+    });
+  }
+
+  return errors;
+}
+
+
+/**
+ * Whether an activity may keep operating under a suppression.
+ *
+ * Only by EXPLICIT authorization, and only under a suppression whose policy
+ * permits authorized activities. The activity's constraints are not consulted:
+ * lacking `deliberate-access` authorizes nothing.
+ */
+export function nenActivityPermittedUnderSuppression(
+  activity: Pick<NenActivity, "functionsThroughSuppression">,
+  exemptions: NenSuppressionExemptions,
+): boolean {
+  return (
+    exemptions === "authorized" &&
+    activity.functionsThroughSuppression === true
+  );
+}
+
+
+/**
+ * The instant an active activity stops on its own, if it will.
+ *
+ * Its declared expiry, or the earliest instant a component it is composed of
+ * stops — transitively, because a composite collapses the moment it loses a
+ * part. Null when nothing it depends on has an end.
+ */
+export function nenActivityRunsUntil(
+  runtime: NenActivityRuntime,
+  activity: NenActivity,
+): GameTimestamp | null {
+  const visiting = new Set<string>();
+
+  const until = (one: NenActivity): GameTimestamp | null => {
+    if (visiting.has(one.id)) return null;
+
+    visiting.add(one.id);
+
+    const ends = [nenActivityExpiryAt(one)];
+
+    for (const constraint of one.constraints) {
+      if (constraint.kind !== "component") continue;
+
+      const component = findNenActivity(runtime, constraint.activityId);
+
+      if (component !== undefined && component.condition === "active") {
+        ends.push(until(component));
+      }
+    }
+
+    visiting.delete(one.id);
+
+    const known = ends.filter((end): end is GameTimestamp => end !== null);
+
+    return known.length === 0 ? null : Math.min(...known);
+  };
+
+  return until(activity);
+}
+
+
+/** Whether any active activity in a runtime holds the Aura suppressed. */
+export function nenSuppressionImposed(
+  activities: readonly NenActivity[],
+): boolean {
+  return activities.some((one) =>
+    one?.condition === "active" && one.imposesSuppression === true
+  );
+}
+
+
+/*
  * A revoked kind list, if one is present, must name known constraint kinds.
  *
  * Shared by the stored activity and the authored definition, so one cannot
@@ -929,6 +1051,11 @@ export function findNenActivityDefinitionIssues(
       actual: selfRevoked.kind,
     });
   }
+
+  errors.push(...findSuppressionDeclarationIssues(
+    definition,
+    `definition ${describeDiagnosticValue(definition.id)}`,
+  ));
 
   /* A composite that lists no components is not composite. */
   const composite = (definition.relations ?? []).some(

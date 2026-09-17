@@ -106,6 +106,17 @@ export interface AuraUpkeepCommitment {
    */
   readonly startsAt?: GameTimestamp;
   readonly endsAt?: GameTimestamp;
+
+  /*
+   * Whether this maintained effect belongs to an activity EXPLICITLY
+   * authorized to function through suppression.
+   *
+   * Upkeep is deliberate expenditure, so a suppression closes it down by
+   * default. One that declares this keeps being charged — normally, and once —
+   * under a suppression whose exemptions are `authorized`. Absent means false;
+   * nothing infers it.
+   */
+  readonly functionsThroughSuppression?: boolean;
 }
 
 
@@ -303,6 +314,20 @@ export function findAuraUpkeepIssues(
      * A non-finite priority would make the shedding order depend on how the
      * sort happened to compare NaN, which is to say on nothing.
      */
+    if (
+      commitment.functionsThroughSuppression !== undefined &&
+      typeof commitment.functionsThroughSuppression !== "boolean"
+    ) {
+      errors.push({
+        code: "aura.upkeep.suppression_authorization.invalid",
+        message:
+          "Whether an upkeep functions through suppression must be a boolean when supplied.",
+        audience: "developer",
+        required: "boolean",
+        actual: String(commitment.functionsThroughSuppression),
+      });
+    }
+
     if (
       commitment.priority !== undefined &&
       !Number.isFinite(commitment.priority)

@@ -134,6 +134,13 @@ import type {
   AuraUpkeepCommitment,
   AuraUpkeepShutdown,
 } from "./upkeep";
+import {
+  findAuraActiveNenIssues,
+  type AuraActiveNenCommitment,
+} from "./timeline";
+import {
+  suppressionPermitsAuthorizedActiveNen,
+} from "./types";
 import type {
   AuraBalance,
   AuraRecoveryAccessClass,
@@ -193,6 +200,7 @@ const POOL_BOUNDARY_TOLERANCE = 1e-9;
  * and a stale timestamp was applied anyway.
  */
 export type {
+  AuraActiveNenCommitment,
   AuraActivityChange,
   AuraActivityWindow,
   AuraEventInstant,
@@ -232,6 +240,14 @@ export interface AdvanceAuraTimeInput {
    * at exactly its Output per minute. See flow.ts.
    */
   readonly outwardFlow?: AuraOutwardFlowCommitment;
+
+  /*
+   * Generic Nen activities running as the interval opens, with the instant
+   * the last of them stops. Natural recovery is zero while they run — under a
+   * suppression too, when they are explicitly authorized to function through
+   * one that permits it. See timeline.ts.
+   */
+  readonly activeNen?: AuraActiveNenCommitment;
 }
 
 
@@ -542,6 +558,43 @@ export function advanceAuraTime(
    * one, and the coating the flow sets aside is set aside by the override's
    * own resolution rather than by a branch here.
    */
+  /*
+   * The generic active-Nen commitment, judged against the whole timeline.
+   *
+   * A caller-supplied suppression that closes over activities NOT authorized
+   * to run through it is two descriptions of one instant: nothing would stop
+   * those activities, and recovery would have to pick a branch. Refused.
+   */
+  const activeNen = input.activeNen;
+
+  if (activeNen !== undefined) {
+    const activeNenIssues = [
+      ...findAuraActiveNenIssues(activeNen, interval, ordinaryAccess),
+      ...timeline.payload.activities
+        .filter((window) =>
+          window.activity.suppression !== undefined &&
+          (activeNen.endsAt === undefined || window.from < activeNen.endsAt) &&
+          !(
+            activeNen.functionsThroughSuppression === true &&
+            suppressionPermitsAuthorizedActiveNen(window.activity.suppression)
+          )
+        )
+        .map((window): EngineError => ({
+          code: "aura.activity.suppression.active_nen.contradictory",
+          message:
+            "A suppression closes over active Nen that is not authorized to function through it.",
+          audience: "developer",
+          required:
+            "active Nen explicitly authorized, under a suppression permitting it",
+          actual: `${String(window.activity.suppression?.source)} at ${window.from}`,
+        })),
+    ];
+
+    if (activeNenIssues.length > 0) {
+      return fail(activeNenIssues as NonEmptyArray<EngineError>);
+    }
+  }
+
   const flow = input.outwardFlow;
   let flowAccess: ResolvedAuraAccess | null = null;
 
@@ -904,16 +957,49 @@ export function advanceAuraTime(
   const sleepingNow = (): boolean =>
     activity.mode === "sleep" || suppressionNow()?.forced === true;
 
+  /*
+   * Whether the supplied generic activities are still running, and permitted
+   * to at this instant.
+   *
+   * Their own end is a boundary; so is a suppression that permits no
+   * exceptions — a collapse's, most obviously — beginning over them.
+   */
+  const activeNenRunningNow = (): boolean =>
+    activeNen !== undefined &&
+    (activeNen.endsAt === undefined ||
+      at < activeNen.endsAt - BOUNDARY_EPSILON_MS);
+
+  const activeNenThroughSuppressionNow = (): boolean => {
+    const suppression = suppressionNow();
+
+    return (
+      suppression !== undefined &&
+      activeNenRunningNow() &&
+      activeNen?.functionsThroughSuppression === true &&
+      suppressionPermitsAuthorizedActiveNen(suppression)
+    );
+  };
+
   const recoveryNow = () => {
     const suppression = suppressionNow();
+    const throughSuppression = activeNenThroughSuppressionNow();
 
     return resolveAuraRecoveryMultiplier({
       mode: activity.mode,
       accessClass: accessClassNow(),
       exerting: exertingNow(),
-      /* A running flow IS active Nen, whatever else the activity says. */
-      activeNenUse:
-        (activity.activeNenUse === true || flowRunning) && !suppressedNow(),
+      /*
+       * A running flow IS active Nen, whatever else the activity says, and so
+       * are the generic activities while they run. Under suppression only the
+       * explicitly authorized ones still count.
+       */
+      activeNenUse: throughSuppression ||
+        (
+          (activity.activeNenUse === true || flowRunning ||
+            activeNenRunningNow()) &&
+          !suppressedNow()
+        ),
+      ...(throughSuppression ? { activeNenThroughSuppression: true } : {}),
       ...(suppression === undefined ? {} : { suppression }),
     });
   };
@@ -1218,9 +1304,24 @@ export function advanceAuraTime(
     let running = runningAt(at);
 
     if (!deliberatePermittedNow()) {
-      for (const entry of running) shutDown(entry, at, "access-lost");
+      /*
+       * Closed access shuts deliberate upkeep down — except upkeep EXPLICITLY
+       * authorized to function through a suppression that permits it, which
+       * keeps being charged exactly as before.
+       */
+      const suppression = suppressionNow();
 
-      running = [];
+      const survives = (entry: RunningUpkeep): boolean =>
+        suppression !== undefined &&
+        ordinaryAccess.awakened &&
+        entry.commitment.functionsThroughSuppression === true &&
+        suppressionPermitsAuthorizedActiveNen(suppression);
+
+      for (const entry of running) {
+        if (!survives(entry)) shutDown(entry, at, "access-lost");
+      }
+
+      running = running.filter(survives);
     }
 
     const rates = ratesFor();
@@ -1262,6 +1363,10 @@ export function advanceAuraTime(
 
     if (flowRunning && flow?.endsAt !== undefined && flow.endsAt > at) {
       boundaries.push(flow.endsAt);
+    }
+
+    if (activeNen?.endsAt !== undefined && activeNen.endsAt > at) {
+      boundaries.push(activeNen.endsAt);
     }
 
     if (instantIndex < instants.length) {

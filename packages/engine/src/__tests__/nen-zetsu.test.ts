@@ -204,7 +204,10 @@ function zeroFunding(requestId: string): AuraFundingOutcome {
   };
 }
 
-/* A generic activity needing deliberate access, and one authored without it. */
+/*
+ * A generic activity needing deliberate access, one authored without it — which
+ * authorizes nothing — and one explicitly authorized through suppression.
+ */
 const SHROUD: NenActivityDefinition = {
   id: "test-shroud",
   relations: [],
@@ -212,6 +215,13 @@ const SHROUD: NenActivityDefinition = {
 };
 
 const VOW: NenActivityDefinition = { id: "test-vow", relations: [] };
+
+/* Explicitly authorized to function through suppression. */
+const WARD: NenActivityDefinition = {
+  id: "test-ward",
+  relations: [],
+  functionsThroughSuppression: true,
+};
 
 function withGeneric(runtime: NenActivityRuntime, definition: NenActivityDefinition, id: string): NenActivityRuntime {
   return expectSuccess(activateNenActivity(
@@ -376,18 +386,20 @@ describe("entering Zetsu", () => {
     expect(transition.consequences).toEqual([]);
   });
 
-  it("ends every deliberate-access activity atomically, and leaves one authored without it", () => {
+  it("ends every unauthorized activity atomically, and leaves only an explicitly authorized one", () => {
     const character = subject();
     let runtime = withRen(character);
     runtime = withGeneric(runtime, SHROUD, "shroud-1");
     runtime = withGeneric(runtime, VOW, "vow-1");
+    runtime = withGeneric(runtime, WARD, "ward-1");
 
     const transition = expectSuccess(startZetsu(runtime, zetsuRequest(character.nen)));
     const condition = (id: string) => findNenActivity(transition.runtime, id)!.condition;
 
-    expect([condition("ren-1"), condition("shroud-1"), condition("vow-1"), condition("zetsu-1")])
-      .toEqual(["ended", "ended", "active", "active"]);
-    expect(transition.consequences.map((one) => one.stop?.cause)).toEqual(["replaced", "replaced"]);
+    expect([condition("ren-1"), condition("shroud-1"), condition("vow-1"), condition("ward-1"), condition("zetsu-1")])
+      .toEqual(["ended", "ended", "ended", "active", "active"]);
+    expect(transition.consequences.map((one) => [one.id, one.stop?.cause, one.stop?.resume]))
+      .toEqual([["ren-1", "replaced", null], ["shroud-1", "replaced", null], ["vow-1", "replaced", null]]);
   });
 
   it("leaves every activity and commitment unchanged when the start is refused", () => {
@@ -407,7 +419,7 @@ describe("entering Zetsu", () => {
       .toEqual(["nen.zetsu.already_active"]);
   });
 
-  it("refuses Ren, or any deliberate-access activity, while it runs", () => {
+  it("refuses Ren, or any activity not authorized through suppression, while it runs", () => {
     const character = subject();
     const running = inZetsu(character.nen);
 
@@ -435,7 +447,21 @@ describe("entering Zetsu", () => {
       new Map([[SHROUD.id, SHROUD]]),
     ))).toEqual(["nen.activity.constraint.revoked"]);
 
-    expect(withGeneric(running, VOW, "vow-1").activities.map((one) => one.condition))
+    expect(codes(activateNenActivity(
+      running,
+      {
+        activityId: "vow-1",
+        definitionId: VOW.id,
+        source: SELF,
+        at: T0,
+        requested: { aura: 0 },
+        priority: 0,
+        funding: zeroFunding("vow-1"),
+      },
+      new Map([[VOW.id, VOW]]),
+    ))).toEqual(["nen.activity.suppression.not_permitted"]);
+
+    expect(withGeneric(running, WARD, "ward-1").activities.map((one) => one.condition))
       .toEqual(["active", "active"]);
   });
 
@@ -559,7 +585,7 @@ describe("the access a running Zetsu projects", () => {
     expect(zetsuSuppression(inZetsu())).toEqual({
       activityId: "zetsu-1",
       source: SELF,
-      suppression: { source: "zetsu", forced: false },
+      suppression: { source: "zetsu", forced: false, exemptions: "authorized" },
       override: { kind: "suppressed", source: "zetsu" },
     });
   });
@@ -734,8 +760,10 @@ describe("Zetsu across an interval", () => {
     }
   });
 
-  it("refuses an activity still running beside it, rather than inventing its recovery", () => {
-    const running = withGeneric(inZetsu(), VOW, "vow-1");
+  it("refuses an unauthorized activity manufactured beside it, rather than inventing its recovery", () => {
+    const vow = findNenActivity(withGeneric(runtimeFor(), VOW, "vow-1"), "vow-1")!;
+    const zetsu = inZetsu();
+    const running = { ...zetsu, activities: [vow, ...zetsu.activities] };
 
     expect(codes(advanceFor(subject(), running, T0, hoursToDuration(1))))
       .toEqual(["character.time.suppression.active_nen.unresolved"]);

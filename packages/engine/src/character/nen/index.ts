@@ -35,6 +35,12 @@ export {
 export type { UncoatedAuraAccessInput } from "./access";
 
 export {
+  NEN_FORCED_SUPPRESSION_SOURCE,
+  NEN_INVOLUNTARY_SUPPRESSION_SOURCE,
+  nenStoredSuppression,
+} from "./suppression";
+
+export {
   REN_ACTIVITY_DEFINITION,
   REN_ACTIVITY_DEFINITION_ID,
   REN_OUTWARD_FLOW_SOURCE,

@@ -30,6 +30,7 @@ export type {
   NenActivityStop,
   NenActivityStopCause,
   NenActivitySuppression,
+  NenSuppressionExemptions,
 } from "./types";
 
 export {
@@ -44,7 +45,10 @@ export {
   isNenActivityCondition,
   nenActivityExertionLoad,
   nenActivityExpiryAt,
+  nenActivityPermittedUnderSuppression,
   nenActivityProgressAt,
+  nenActivityRunsUntil,
+  nenSuppressionImposed,
   orderNenActivities,
   revokedNenConstraintKinds,
   wasNenActivityRunningAt,

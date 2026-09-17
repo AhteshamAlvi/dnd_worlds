@@ -343,6 +343,12 @@ export interface NenActivity {
    */
   readonly revokes?: readonly NenActivityConstraintKind[];
 
+  /** Copied from the definition at activation. Absent means false. */
+  readonly functionsThroughSuppression?: boolean;
+
+  /** Copied from the definition at activation. Absent means false. */
+  readonly imposesSuppression?: boolean;
+
   /** Accumulated exertion. Absent reads as none, as of `startedAt`. */
   readonly progress?: NenActivityProgress;
 }
@@ -361,6 +367,17 @@ export interface NenActivityRuntime {
   readonly at: GameTimestamp;
   readonly activities: readonly NenActivity[];
 }
+
+
+/* ── Suppression ────────────────────────────────────────────────────────── */
+
+/*
+ * Whether a suppression lets explicitly authorized activities keep running.
+ *
+ * The runtime's copy of Aura's policy vocabulary, typed against it so the two
+ * cannot drift.
+ */
+export type NenSuppressionExemptions = NonNullable<AuraSuppression["exemptions"]>;
 
 
 /* ── Projections ────────────────────────────────────────────────────────── */
@@ -459,4 +476,25 @@ export interface NenActivityDefinition {
    * may not revoke a kind it carries itself.
    */
   readonly revokes?: readonly NenActivityConstraintKind[];
+
+  /*
+   * EXPLICIT authorization to keep operating while the character's Aura is
+   * suppressed — voluntarily, or by a suppression that permits exceptions.
+   *
+   * Default-deny. An activity without it cannot run under any suppression, and
+   * NOT carrying `deliberate-access` is not this: the two are separate
+   * declarations, and nothing infers one from the other. A definition may not
+   * both carry `deliberate-access` and claim this, since suppression closes
+   * deliberate access by definition.
+   */
+  readonly functionsThroughSuppression?: boolean;
+
+  /*
+   * This activity holds the character's Aura suppressed while it runs.
+   *
+   * Activating one ends, as `replaced` and with no resume, every active
+   * activity not authorized to function through suppression; while it runs,
+   * activating or resuming such an activity is refused.
+   */
+  readonly imposesSuppression?: boolean;
 }

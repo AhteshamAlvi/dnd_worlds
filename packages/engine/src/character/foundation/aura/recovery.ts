@@ -90,12 +90,15 @@ import { createTraceNode } from "../../../infrastructure/trace";
 import {
   AURA_RECOVERY_ACCESS_CLASSES,
   AURA_RECOVERY_MODES,
+  AURA_SUPPRESSION_EXEMPTIONS,
+  suppressionPermitsAuthorizedActiveNen,
   type AuraPool,
   type AuraRecoveryAccessClass,
   type AuraRecoveryContext,
   type AuraRecoveryContribution,
   type AuraRecoveryMode,
   type AuraRegenerationCapacity,
+  type AuraSuppression,
 } from "./types";
 import { createAuraPool } from "./pool";
 
@@ -256,15 +259,29 @@ export const FORCED_SUPPRESSION_RECOVERY_COEFFICIENT = 3;
  * Exported because the time transition reports the provenance and should not
  * re-derive it from the same inputs a second time.
  *
- * Order is the whole of the rule. Forced suppression wins outright; then
- * active Nen, which zeroes everything; then the table. Voluntary suppression
- * is IN the table rather than above it, which is what stops a Zetsu held in a
- * corridor from being worth the same as a Zetsu held in bed.
+ * Order is the whole of the rule. Active Nen that is EXPLICITLY authorized to
+ * run through a suppression permitting it wins first, and zeroes recovery
+ * under voluntary and forced suppression alike; then forced suppression wins
+ * outright; then active Nen; then the table. Voluntary suppression is IN the
+ * table rather than above it, which is what stops a Zetsu held in a corridor
+ * from being worth the same as a Zetsu held in bed.
  */
 export function resolveAuraRecoveryMultiplier(
   context: AuraRecoveryContext,
 ): { readonly multiplier: number; readonly context: string } {
   const suppression = context.suppression;
+
+  if (
+    suppression !== undefined &&
+    context.activeNenUse === true &&
+    context.activeNenThroughSuppression === true &&
+    suppressionPermitsAuthorizedActiveNen(suppression)
+  ) {
+    return {
+      multiplier: ACTIVE_NEN_RECOVERY_COEFFICIENT,
+      context: "active-nen",
+    };
+  }
 
   if (suppression !== undefined && suppression.forced) {
     return {
@@ -286,6 +303,29 @@ export function resolveAuraRecoveryMultiplier(
     multiplier: AURA_RECOVERY_COEFFICIENTS[context.accessClass][column],
     context: suppression === undefined ? column : suppression.source,
   };
+}
+
+
+/** A suppression's exemption policy, when it states one, must be a known one. */
+export function findAuraSuppressionExemptionIssues(
+  suppression: AuraSuppression,
+  where: string,
+): readonly EngineError[] {
+  if (
+    suppression.exemptions === undefined ||
+    (AURA_SUPPRESSION_EXEMPTIONS as readonly unknown[])
+      .includes(suppression.exemptions)
+  ) {
+    return [];
+  }
+
+  return [{
+    code: "aura.recovery.suppression.exemptions.invalid",
+    message: "Aura suppression must state a known exemption policy, or none.",
+    audience: "developer",
+    required: AURA_SUPPRESSION_EXEMPTIONS.join(" | "),
+    actual: `${where}: ${String(suppression.exemptions)}`,
+  }];
 }
 
 
@@ -322,6 +362,7 @@ function invalidContextErrors(
   for (const [name, value] of [
     ["exerting", context.exerting],
     ["activeNenUse", context.activeNenUse],
+    ["activeNenThroughSuppression", context.activeNenThroughSuppression],
   ] as const) {
     if (value !== undefined && typeof value !== "boolean") {
       errors.push({
@@ -336,9 +377,30 @@ function invalidContextErrors(
 
   const suppression = context.suppression;
 
+  if (context.activeNenThroughSuppression === true) {
+    if (
+      context.activeNenUse !== true ||
+      suppression === undefined ||
+      !suppressionPermitsAuthorizedActiveNen(suppression)
+    ) {
+      errors.push({
+        code: "aura.recovery.suppression.exemption.refused",
+        message:
+          "Active Nen may only run through a suppression that permits authorized activities.",
+        audience: "developer",
+        required: "active Nen use beside a suppression with authorized exemptions",
+        actual: suppression === undefined
+          ? "no suppression"
+          : `${String(suppression.source)}: exemptions ${String(suppression.exemptions ?? "none")}`,
+      });
+    }
+  }
+
   if (suppression === undefined) {
     return errors;
   }
+
+  errors.push(...findAuraSuppressionExemptionIssues(suppression, "Aura suppression"));
 
   if (
     typeof suppression.source !== "string" ||
@@ -369,9 +431,14 @@ function invalidContextErrors(
    * Suppression zeroes Output; an active Nen activity is Output being spent.
    * Supplying both is a caller that has combined two states rather than an
    * exotic character, and it matters because the two take DIFFERENT recovery
-   * branches — absorbing it would silently pick one.
+   * branches — absorbing it would silently pick one. The one exception is
+   * explicit: an authorization, checked above against the suppression's own
+   * policy.
    */
-  if (context.activeNenUse === true) {
+  if (
+    context.activeNenUse === true &&
+    context.activeNenThroughSuppression !== true
+  ) {
     errors.push({
       code: "aura.recovery.suppression.active_nen.contradictory",
       message:

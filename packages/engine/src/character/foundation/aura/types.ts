@@ -800,6 +800,31 @@ export interface AuraSuppression {
    * suppression follows the ordinary activity table.
    */
   readonly forced: boolean;
+
+  /*
+   * Whether an active Nen activity EXPLICITLY authorized to function through
+   * suppression may keep operating under this one.
+   *
+   *   authorized   such an activity may run; recovery then follows active Nen
+   *   none         nothing runs through it, whatever it declares
+   *
+   * Absent means none. Default-deny, so a suppression that never said it
+   * permits exceptions permits none — and the policy is carried as a policy,
+   * never inferred from `source`.
+   */
+  readonly exemptions?: AuraSuppressionExemptions;
+}
+
+export const AURA_SUPPRESSION_EXEMPTIONS = ["authorized", "none"] as const;
+
+export type AuraSuppressionExemptions =
+  typeof AURA_SUPPRESSION_EXEMPTIONS[number];
+
+/** Whether a suppression lets an explicitly authorized activity run through it. */
+export function suppressionPermitsAuthorizedActiveNen(
+  suppression: AuraSuppression,
+): boolean {
+  return suppression.exemptions === "authorized";
 }
 
 /*
@@ -856,6 +881,15 @@ export interface AuraRecoveryContext {
 
   /** Absent when nothing is suppressing the character's Aura. */
   readonly suppression?: AuraSuppression;
+
+  /*
+   * The EXPLICIT authorization for active Nen and suppression to coexist.
+   *
+   * Only meaningful beside both `activeNenUse` and a suppression whose
+   * exemptions are `authorized`, and refused beside anything else. Without it
+   * the two facts are contradictory, however they were assembled.
+   */
+  readonly activeNenThroughSuppression?: boolean;
 }
 
 /*

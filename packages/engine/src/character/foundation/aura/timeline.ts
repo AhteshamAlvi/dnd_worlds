@@ -62,6 +62,7 @@ import {
 import { hasDeliberateAuraAccess } from "./access";
 import { findAuraUpkeepIssues } from "./upkeep";
 import type { AuraUpkeepCommitment } from "./upkeep";
+import { findAuraSuppressionExemptionIssues } from "./recovery";
 import type { AuraSuppression, ResolvedAuraAccess } from "./types";
 
 
@@ -113,6 +114,101 @@ export interface AuraTimeActivity {
 
   readonly exertionOverride?: ActivityExertionOverride;
 }
+
+/*
+ * Generic Nen activities running as the interval opens, other than a flow.
+ *
+ * What makes natural recovery zero while they run, with the instant they stop
+ * — so the solver changes the rate at that timestamp instead of holding the
+ * opening fact for the whole interval. Supplied by the time coordinator from
+ * the runtime; nothing here knows what any of the ids are.
+ *
+ * `functionsThroughSuppression` is the explicit authorization for these to
+ * keep operating — and keep recovery at zero — under a suppression whose
+ * exemptions are `authorized`. Without it they cannot run under suppression at
+ * all, and a timeline that suppresses them is refused.
+ */
+export interface AuraActiveNenCommitment {
+  /** The activities, by id. Provenance only; never parsed. */
+  readonly ids: readonly string[];
+
+  /** When the last of them stops on its own. Absent: not within this interval. */
+  readonly endsAt?: GameTimestamp;
+
+  readonly functionsThroughSuppression: boolean;
+}
+
+
+/** Everything wrong with a supplied active-Nen commitment. */
+export function findAuraActiveNenIssues(
+  activeNen: AuraActiveNenCommitment,
+  interval: GameTimeInterval,
+  access: ResolvedAuraAccess,
+): readonly EngineError[] {
+  if (activeNen === null || typeof activeNen !== "object") {
+    return [{
+      code: "aura.active_nen.malformed",
+      message: "An active-Nen commitment must be an object.",
+      audience: "developer",
+      required: "AuraActiveNenCommitment",
+      actual: String(activeNen),
+    }];
+  }
+
+  const errors: EngineError[] = [];
+
+  if (
+    !Array.isArray(activeNen.ids) ||
+    activeNen.ids.length === 0 ||
+    activeNen.ids.some((id) => !nonEmpty(id))
+  ) {
+    errors.push({
+      code: "aura.active_nen.ids.invalid",
+      message: "An active-Nen commitment must name the activities it stands for.",
+      audience: "developer",
+      required: "one or more non-empty ids",
+      actual: String(activeNen.ids),
+    });
+  }
+
+  if (typeof activeNen.functionsThroughSuppression !== "boolean") {
+    errors.push({
+      code: "aura.active_nen.suppression_authorization.invalid",
+      message:
+        "An active-Nen commitment must state whether it functions through suppression.",
+      audience: "developer",
+      required: "boolean",
+      actual: String(activeNen.functionsThroughSuppression),
+    });
+  }
+
+  if (
+    activeNen.endsAt !== undefined &&
+    (!Number.isFinite(activeNen.endsAt) || activeNen.endsAt <= interval.startedAt)
+  ) {
+    errors.push({
+      code: "aura.active_nen.ends_at.invalid",
+      message:
+        "An active-Nen commitment's end must be a finite instant after the interval opens.",
+      audience: "developer",
+      required: `> ${interval.startedAt}`,
+      actual: String(activeNen.endsAt),
+    });
+  }
+
+  if (!access.awakened) {
+    errors.push({
+      code: "aura.activity.active_nen.unawakened",
+      message: "An unawakened character has no active Nen to be using.",
+      audience: "developer",
+      required: "awakened character",
+      actual: "active-Nen commitment",
+    });
+  }
+
+  return errors;
+}
+
 
 /** The character starts doing something else, at an exact moment. */
 export interface AuraActivityChange {
@@ -338,6 +434,8 @@ function activityIssues(
         actual: `${where}: ${String(suppression.forced)}`,
       });
     }
+
+    errors.push(...findAuraSuppressionExemptionIssues(suppression, where));
 
     /*
      * Shut nodes and a running technique are two states, not one character.

@@ -47,15 +47,19 @@
  * instants, applied between advances, exactly like every other transition.
  *
  *
- * ZETSU, AS GENERIC SUPPRESSION
- * -----------------------------
+ * SUPPRESSION, FROM ONE OWNER
+ * ---------------------------
  *
- * A running ordinary Zetsu is projected by its own adapter into a generic
- * suppression: a voluntary suppression every activity window carries, and a
- * suppressed access override. This coordinator passes both through and keeps
- * the Zetsu activity out of the active-Nen fact; the recovery that follows is
- * Aura's table, and nothing about Zetsu's Mastery is read here. A caller does
- * not restate it through the activity, and is refused if they try.
+ * Stored forced or involuntary suppression is projected by the Nen suppression
+ * adapter; a running ordinary Zetsu by its own. Stored wins — it ended any
+ * Zetsu at the opening instant — and the one result is laid on every activity
+ * window. A caller does not restate either, and is refused if they try.
+ *
+ * Other running activities reach Aura as one generic active-Nen commitment
+ * with the exact instant the last of them stops, so recovery changes there.
+ * Under suppression only those EXPLICITLY authorized to function through it
+ * may still be running; the rest were stopped by the path that suppressed the
+ * character, or were assembled outside it and are refused.
  */
 
 import type { EngineError } from "../../infrastructure/diagnostics";
@@ -73,9 +77,12 @@ import {
 import { advanceAuraTime } from "../foundation/aura/time";
 import {
   activeNenActivities,
+  nenActivityPermittedUnderSuppression,
+  nenActivityRunsUntil,
   type NenActivityRuntime,
   type NenActivityStopCause,
 } from "../foundation/nen/runtime";
+import { nenStoredSuppression } from "../nen/suppression";
 import {
   activeRenActivity,
   renOutwardFlow,
@@ -220,10 +227,24 @@ export function advanceCharacterTime(
    */
   const runtimeSteps: NenActivityTransition[] = [];
 
+  /*
+   * Suppression stored on the character, as generic Aura vocabulary. It drives
+   * recovery on its own; a caller never restates it.
+   */
+  const stored = nenStoredSuppression(character.nen);
+
   if (openingActivities !== undefined) {
+    /*
+     * A stored suppression was in force before the interval opened, so what it
+     * does not permit stops at the opening instant — everything under an
+     * involuntary one, everything not explicitly authorized under a forced one.
+     */
     const opened = advanceNenActivities(openingActivities, {
       to: interval.startedAt,
       by: self,
+      ...(stored === null
+        ? {}
+        : { suppression: { exemptions: stored.exemptions ?? "none" } }),
     });
 
     root.children.push(opened.trace.root);
@@ -279,37 +300,39 @@ export function advanceCharacterTime(
     : renOutwardFlow(openingActivities);
 
   /*
-   * A running activity holding the nodes shut, as generic suppression. Null
-   * when none is.
+   * What holds the nodes shut for this interval, from ONE owner.
+   *
+   * Stored suppression first — involuntary over forced, which the Nen adapter
+   * decides — and ordinary Zetsu only when nothing is stored, since a stored
+   * state ended any Zetsu at the opening instant above. Null when the
+   * character is unsuppressed as the interval opens.
    */
-  const suppressing = openingActivities === undefined
+  const zetsu = openingActivities === undefined
     ? null
     : zetsuSuppression(openingActivities);
 
+  const suppression = stored ?? zetsu?.suppression ?? null;
+
   /*
-   * Whether some OTHER Nen activity is running as the interval opens.
+   * Every OTHER Nen activity running as the interval opens.
    *
    * Generic, and asked of the runtime's own query — nothing here reads a
    * `definitionId`. Ten never appears, because passive derived state is not an
    * activity. Ren is excluded because its flow already makes the solver treat
-   * every segment it runs across as active Nen, and stop doing so at the exact
-   * instant it stops. A suppressing activity is excluded because shutting the
-   * nodes is not using Nen; its recovery is the suppression branch.
-   *
-   * The opening fact only, for these others: a caller who wants the rest of
-   * the hour resolved differently says so with an activity change.
+   * every segment it runs across as active Nen. A suppressing activity is
+   * excluded because shutting the nodes is not using Nen.
    */
-  const activeNenUse = openingActivities !== undefined &&
-    activeNenActivities(openingActivities)
-      .some((activity) =>
-        activity.id !== flow?.id && activity.id !== suppressing?.activityId
-      );
+  const users = openingActivities === undefined
+    ? []
+    : activeNenActivities(openingActivities)
+      .filter((one) => one.id !== flow?.id && one.id !== zetsu?.activityId);
 
-  if (suppressing !== null) {
+  if (suppression !== null) {
     /*
      * One owner of the suppression. A caller restating it through the
-     * activity — voluntary or forced — is describing the same closed nodes a
-     * second time, and the two could disagree about when they opened.
+     * activity — duplicating the stored or running one, or contradicting it —
+     * is describing the same closed nodes a second time, and the two could
+     * disagree about when they opened.
      */
     const restated = [
       activity.initial,
@@ -320,50 +343,76 @@ export function advanceCharacterTime(
       return fail([{
         code: "character.time.suppression.contradictory",
         message:
-          "This character's nodes are already held shut by a running activity; the interval's activity cannot supply suppression as well.",
+          "This character's nodes are already held shut by their stored or running suppression; the interval's activity cannot supply suppression as well.",
         audience: "developer",
         subject: { kind: "character", id: character.id },
-        required: "no activity suppression while a suppressing activity runs",
-        actual: suppressing.activityId,
+        required: "no activity suppression while a suppression is derived",
+        actual: suppression.source,
         resolution:
-          "Drop the activity's suppression; the running activity supplies it.",
+          "Drop the activity's suppression; the character's state supplies it.",
       }]);
     }
 
     /*
-     * An activity that runs without deliberate access may outlast the
-     * shutdown, but nothing yet says what recovering while shut AND using it
-     * is. Refused rather than resolved by picking one branch. (A caller's own
-     * `activeNenUse` beside the suppression is refused by Aura's timeline.)
+     * Only what is EXPLICITLY authorized, under a suppression that permits it,
+     * may still be running here. The legal paths — activation beside a
+     * suppressing activity, and the opening advance under a stored one — never
+     * leave anything else, so anything else was assembled outside them.
      */
-    if (activeNenUse) {
+    const exemptions = suppression.exemptions ?? "none";
+
+    if (
+      users.some((one) =>
+        !nenActivityPermittedUnderSuppression(one, exemptions)
+      )
+    ) {
       return fail([{
         code: "character.time.suppression.active_nen.unresolved",
         message:
-          "A Nen activity is still running while the character's nodes are held shut, and no recovery rule covers that combination.",
+          "A Nen activity not authorized to function through suppression is still running while the character's nodes are held shut.",
         audience: "developer",
         subject: { kind: "character", id: character.id },
-        required: "no active Nen use while a suppressing activity runs",
-        actual: suppressing.activityId,
+        required: "only explicitly authorized activities under a suppression permitting them",
+        actual: suppression.source,
       }]);
     }
   }
 
+  /*
+   * The generic activities as Aura's active-Nen commitment, with the instant
+   * the last of them stops on its own — so recovery changes at that timestamp,
+   * not at the next advance. Authorized only when EVERY one of them is.
+   */
+  const ends = openingActivities === undefined
+    ? []
+    : users.map((one) => nenActivityRunsUntil(openingActivities!, one));
+
+  const activeNen = users.length === 0
+    ? null
+    : {
+      ids: users.map((one) => one.id),
+      functionsThroughSuppression: users.every((one) =>
+        nenActivityPermittedUnderSuppression(one, "authorized")
+      ),
+      ...(ends.some((end) => end === null)
+        ? {}
+        : { endsAt: Math.max(...(ends as number[])) }),
+    };
+
   const suppressedActivity = <T extends { readonly suppression?: unknown }>(
     one: T,
-  ): T =>
-    suppressing === null ? one : { ...one, suppression: suppressing.suppression };
+  ): T => suppression === null ? one : { ...one, suppression };
 
   /*
-   * The suppressed override replaces nothing: a stored forced state would have
-   * ended the suppressing activity at the opening instant above, so the
-   * ordinary access arrives here without an override of its own.
+   * A stored suppression already arrives on the access input as an override;
+   * a running Zetsu lays its own, and only when nothing is stored, so the two
+   * never stack.
    */
-  const context = suppressing === null
+  const context = zetsu === null || stored !== null
     ? ordinaryContext
     : {
       ...ordinaryContext,
-      access: { ...ordinaryContext.access, override: suppressing.override },
+      access: { ...ordinaryContext.access, override: zetsu.override },
     };
 
   const aura = advanceAuraTime({
@@ -371,9 +420,7 @@ export function advanceCharacterTime(
     wakefulness: character.wakefulness,
     context,
     interval,
-    activity: activeNenUse
-      ? { ...activity.initial, activeNenUse: true }
-      : suppressedActivity(activity.initial),
+    activity: suppressedActivity(activity.initial),
     ...(activity.changes === undefined
       ? {}
       : {
@@ -389,6 +436,7 @@ export function advanceCharacterTime(
       ? {}
       : { instantaneous: input.activeEffects.instantaneous }),
     ...(flow === null ? {} : { outwardFlow: flow }),
+    ...(activeNen === null ? {} : { activeNen }),
   });
 
   root.children.push(aura.trace.root);
@@ -466,6 +514,14 @@ export function advanceCharacterTime(
         by: self,
         deliberateAccess: aura.payload.collapse === null &&
           hasDeliberateAuraAccess(access.payload),
+
+        /*
+         * A collapse inside the interval is an involuntary suppression from
+         * its own instant, and nothing runs through one.
+         */
+        ...(aura.payload.collapse === null
+          ? {}
+          : { suppression: { exemptions: "none", since: aura.payload.collapse.at } }),
       },
     );
 

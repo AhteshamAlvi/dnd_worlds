@@ -64,8 +64,11 @@ import {
   findNenActivityDefinitionIssues,
   findNenActivityRuntimeIssues,
   findNenActivity,
+  findNenActivityIssues,
   nenActivityExpiryAt,
+  nenActivityPermittedUnderSuppression,
   nenActivityProgressAt,
+  nenSuppressionImposed,
   orderNenActivities,
   revokedNenConstraintKinds,
 } from "../../foundation/nen/runtime/state";
@@ -77,6 +80,7 @@ import type {
   NenActivityRuntime,
   NenActivityStop,
   NenActivityStopCause,
+  NenSuppressionExemptions,
 } from "../../foundation/nen/runtime/types";
 
 
@@ -337,10 +341,15 @@ export function activateNenActivity(
 
   const blocked = [
     ...findCompatibilityIssues(runtime, request, definitions),
-    ...findRevokedConstraintIssues(runtime.activities, [
-      ...(definition?.constraints ?? []),
-      ...(request.constraints ?? []),
-    ], request.activityId),
+    ...findSuppressionAdmissionIssues(runtime.activities, {
+      constraints: [
+        ...(definition?.constraints ?? []),
+        ...(request.constraints ?? []),
+      ],
+      ...(definition?.functionsThroughSuppression === undefined
+        ? {}
+        : { functionsThroughSuppression: definition.functionsThroughSuppression }),
+    }, request.activityId),
   ];
 
   if (blocked.length > 0) return fail(root, blocked);
@@ -394,6 +403,11 @@ export function activateNenActivity(
     }]);
   }
 
+  /*
+   * Replacement is a stop, and takes the same consequences as one: whatever
+   * was composed of a replaced activity collapses with it, once, at the same
+   * instant.
+   */
   const stopped = replaced.map((one) =>
     stoppedActivity(one, {
       cause: "replaced",
@@ -403,6 +417,8 @@ export function activateNenActivity(
       detail: `replaced by ${request.activityId}`,
     })
   );
+
+  const collapsed = collapseDependents(runtime, stopped, request.source);
 
   const activity: NenActivity = {
     id: request.activityId,
@@ -435,12 +451,28 @@ export function activateNenActivity(
     ...(definition?.revokes === undefined
       ? {}
       : { revokes: definition.revokes }),
+    ...(definition?.functionsThroughSuppression === undefined
+      ? {}
+      : { functionsThroughSuppression: definition.functionsThroughSuppression }),
+    ...(definition?.imposesSuppression === undefined
+      ? {}
+      : { imposesSuppression: definition.imposesSuppression }),
 
     /* A fresh activity has spent none of its endurance. */
     progress: { exertionSeconds: 0, resolvedAt: request.at },
   };
 
-  const stoppedById = new Map(stopped.map((one) => [one.id, one]));
+  /*
+   * The instance as it will be stored, judged by the stored-activity rules —
+   * so a request-level constraint cannot combine with a definition-level
+   * declaration into a shape the validator would refuse later.
+   */
+  const instanceIssues = findNenActivityIssues(activity, runtime.owner);
+
+  if (instanceIssues.length > 0) return fail(root, instanceIssues);
+
+  const ended = [...stopped, ...collapsed];
+  const stoppedById = new Map(ended.map((one) => [one.id, one]));
 
   const activities = [
     ...runtime.activities.map((one) => stoppedById.get(one.id) ?? one),
@@ -451,9 +483,9 @@ export function activateNenActivity(
     runtime: { ...runtime, at: request.at, activities },
     before: null,
     after: activity,
-    consequences: stopped,
+    consequences: ended,
     events: [
-      ...stopped.map((one) => stopEvent(one, runtime.owner)),
+      ...ended.map((one) => stopEvent(one, runtime.owner)),
       {
         kind: "nen-activity-started" as const,
         activityId: activity.id,
@@ -635,15 +667,36 @@ function findCompatibilityIssues(
  * does not have to hand over the definition of whatever is shutting access
  * off — and a refusal here names the kind, never a principle.
  */
-function findRevokedConstraintIssues(
+function findSuppressionAdmissionIssues(
   activities: readonly NenActivity[],
-  constraints: readonly NenActivityConstraint[],
+  incoming: Pick<NenActivity, "constraints" | "functionsThroughSuppression">,
   activityId: string,
 ): readonly EngineError[] {
   const revoked = revokedNenConstraintKinds(activities);
-  const clash = constraints.find((one) => revoked.has(one.kind));
+  const clash = incoming.constraints.find((one) => revoked.has(one.kind));
 
-  if (clash === undefined) return [];
+  if (clash === undefined) {
+    /*
+     * An activity holding the Aura suppressed admits only what is explicitly
+     * authorized to function through it.
+     */
+    if (
+      nenSuppressionImposed(activities) &&
+      !nenActivityPermittedUnderSuppression(incoming, "authorized")
+    ) {
+      return [{
+        code: "nen.activity.suppression.not_permitted",
+        message:
+          `"${activityId}" is not authorized to function while an active activity holds the Aura suppressed.`,
+        audience: "player",
+        required: "functionsThroughSuppression",
+        actual: "not authorized",
+        resolution: "Stop the activity that suppresses Aura first.",
+      }];
+    }
+
+    return [];
+  }
 
   return [{
     code: "nen.activity.constraint.revoked",
@@ -661,9 +714,11 @@ function findRevokedConstraintIssues(
 /*
  * Active activities this activation takes the place of.
  *
- * Two generic sources, and neither reads a principle: the definition's own
- * `replaces` relations, by definition id, and its `revokes` declaration, by
- * the constraint kinds the running activities carry.
+ * Three generic sources, and none reads a principle: the definition's own
+ * `replaces` relations, by definition id; its `revokes` declaration, by the
+ * constraint kinds the running activities carry; and `imposesSuppression`, by
+ * whether each running activity is EXPLICITLY authorized to function through
+ * suppression. Returned in runtime order.
  */
 function activitiesReplacedBy(
   runtime: NenActivityRuntime,
@@ -679,14 +734,17 @@ function activitiesReplacedBy(
   );
 
   const revokes = new Set(definition?.revokes ?? []);
+  const suppresses = definition?.imposesSuppression === true;
 
-  if (replaces.size === 0 && revokes.size === 0) return [];
+  if (replaces.size === 0 && revokes.size === 0 && !suppresses) return [];
 
   return runtime.activities.filter(
     (one) =>
       one.condition === "active" &&
       (replaces.has(one.definitionId) ||
-        one.constraints.some((constraint) => revokes.has(constraint.kind))),
+        one.constraints.some((constraint) => revokes.has(constraint.kind)) ||
+        (suppresses &&
+          !nenActivityPermittedUnderSuppression(one, "authorized"))),
   );
 }
 
@@ -841,12 +899,7 @@ export function stopNenActivity(
    * the component ending rather than a separate thing somebody has to remember
    * to call, which is what stops a composite outliving its parts.
    */
-  const collapsed = collapseDependents(
-    runtime,
-    stopped,
-    request.at,
-    request.by,
-  );
+  const collapsed = collapseDependents(runtime, [stopped], request.by);
 
   const changed = new Map<string, NenActivity>([
     [stopped.id, stopped],
@@ -871,19 +924,24 @@ export function stopNenActivity(
 
 
 /*
- * Activities that cannot survive one of theirs ending.
+ * Activities that cannot survive theirs ending — the ONE consequence path.
  *
- * Transitive, because a composite built from a composite is legal and a single
- * pass would leave the outer one standing on a part that is gone. Bounded by
- * the number of activities, since each can only collapse once.
+ * Every way activities stop goes through here: a stop, a replacement, an
+ * advance. Transitive, because a composite built from a composite is legal and
+ * a single pass would leave the outer one standing on a part that is gone.
+ * Each activity collapses at most once however many of its components ended,
+ * and is dated at the earliest of those components' stops — the instant it
+ * lost one. Reported in dependency order: every collapse follows the stops it
+ * depends on, and ties keep runtime order.
  */
 function collapseDependents(
   runtime: NenActivityRuntime,
-  stopped: NenActivity,
-  at: GameTimestamp,
+  stopped: readonly NenActivity[],
   by: ContributionSourceRef,
 ): readonly NenActivity[] {
-  const gone = new Set<string>([stopped.id]);
+  const endedAt = new Map<string, GameTimestamp>(
+    stopped.map((one) => [one.id, one.stop!.at]),
+  );
   const collapsed: NenActivity[] = [];
 
   let changed = true;
@@ -893,15 +951,17 @@ function collapseDependents(
 
     for (const activity of runtime.activities) {
       if (activity.condition !== "active") continue;
-      if (gone.has(activity.id)) continue;
+      if (endedAt.has(activity.id)) continue;
 
-      const depends = activity.constraints.some(
-        (one) => one.kind === "component" && gone.has(one.activityId),
-      );
+      const lost = activity.constraints
+        .filter((one) => one.kind === "component" && endedAt.has(one.activityId))
+        .map((one) => endedAt.get((one as { activityId: string }).activityId)!);
 
-      if (!depends) continue;
+      if (lost.length === 0) continue;
 
-      gone.add(activity.id);
+      const at = Math.min(...lost);
+
+      endedAt.set(activity.id, at);
       collapsed.push(stoppedActivity(activity, {
         cause: "collapsed",
         at,
@@ -1009,9 +1069,9 @@ export function resumeNenActivity(
     }]);
   }
 
-  const revoked = findRevokedConstraintIssues(
+  const revoked = findSuppressionAdmissionIssues(
     runtime.activities,
-    activity.constraints,
+    activity,
     activity.id,
   );
 
@@ -1257,6 +1317,20 @@ export interface NenAdvanceRequest {
 
   /** Effective ranks now, for `minimum-mastery` constraints. */
   readonly effectiveMastery?: ReadonlyMap<string, number>;
+
+  /*
+   * A suppression holding the character's Aura shut during this advance.
+   *
+   * Supplied, never derived: the stored state it comes from is not an input to
+   * the runtime. Every active activity it does not permit — everything, under
+   * `none`; everything not explicitly authorized, under `authorized` — stops as
+   * `suppressed` at `since`, or at `to` when the suppression was already in
+   * force. An activity that itself imposes suppression is judged the same way.
+   */
+  readonly suppression?: {
+    readonly exemptions: NenSuppressionExemptions;
+    readonly since?: GameTimestamp;
+  };
 }
 
 
@@ -1301,6 +1375,10 @@ export function advanceNenActivities(
 
   if (timeIssues.length > 0) return fail(root, timeIssues);
 
+  const suppressionIssues = findAdvanceSuppressionIssues(runtime, request);
+
+  if (suppressionIssues.length > 0) return fail(root, suppressionIssues);
+
   const stopped: NenActivity[] = [];
   const changed = new Map<string, NenActivity>();
 
@@ -1330,19 +1408,19 @@ export function advanceNenActivities(
     changed.set(next.id, next);
   }
 
-  /* Composites whose components just stopped go with them. */
-  for (const one of stopped) {
-    for (const dependent of collapseDependents(
-      { ...runtime, activities: runtime.activities.map((a) => changed.get(a.id) ?? a) },
-      one,
-      request.to,
-      request.by,
-    )) {
-      if (changed.has(dependent.id)) continue;
-
-      stopped.push(dependent);
-      changed.set(dependent.id, dependent);
-    }
+  /*
+   * Composites whose components just stopped go with them — at the instant
+   * they lost one, which is what keeps a composite's end subdivision-invariant.
+   * Judged against the opening runtime with every stop above already applied,
+   * so an activity stopped on its own merits is not collapsed a second time.
+   */
+  for (const dependent of collapseDependents(
+    { ...runtime, activities: runtime.activities.map((a) => changed.get(a.id) ?? a) },
+    stopped,
+    request.by,
+  )) {
+    stopped.push(dependent);
+    changed.set(dependent.id, dependent);
   }
 
   return succeed(root, {
@@ -1356,6 +1434,47 @@ export function advanceNenActivities(
     consequences: stopped,
     events: stopped.map((one) => stopEvent(one, runtime.owner)),
   });
+}
+
+
+/* A supplied suppression must be a known policy, dated inside the advance. */
+function findAdvanceSuppressionIssues(
+  runtime: NenActivityRuntime,
+  request: NenAdvanceRequest,
+): readonly EngineError[] {
+  const suppression = request.suppression;
+
+  if (suppression === undefined) return [];
+
+  if (
+    suppression === null || typeof suppression !== "object" ||
+    (suppression.exemptions !== "authorized" && suppression.exemptions !== "none")
+  ) {
+    return [{
+      code: "nen.activity.advance.suppression.invalid",
+      message: "An advance's suppression must state a known exemption policy.",
+      audience: "developer",
+      required: "{ exemptions: authorized | none }",
+      actual: describeDiagnosticValue(suppression),
+    }];
+  }
+
+  const since = suppression.since;
+
+  if (
+    since !== undefined &&
+    (!Number.isFinite(since) || since < runtime.at || since > request.to)
+  ) {
+    return [{
+      code: "nen.activity.advance.suppression.since.invalid",
+      message: "A suppression beginning inside an advance must be dated inside it.",
+      audience: "developer",
+      required: `${runtime.at} <= since <= ${request.to}`,
+      actual: describeDiagnosticValue(since),
+    }];
+  }
+
+  return [];
 }
 
 
@@ -1381,13 +1500,38 @@ function advanceVerdictFor(
    */
   const expiresAt = nenActivityExpiryAt(activity);
 
-  if (expiresAt !== null && request.to >= expiresAt) {
-    return {
-      cause: "expired",
+  const expiry = expiresAt !== null && request.to >= expiresAt
+    ? {
+      cause: "expired" as const,
       at: expiresAt,
       detail: "its declared duration ran out",
-    };
+    }
+    : null;
+
+  /*
+   * A suppression is dated at its own start, so an activity it closes over
+   * inside the advance stops there rather than at the advance's end. The
+   * earlier of the two wins; an exact tie is reported as the expiry.
+   */
+  const suppression = request.suppression;
+
+  const suppressed = suppression !== undefined &&
+      !nenActivityPermittedUnderSuppression(activity, suppression.exemptions)
+    ? {
+      cause: "suppressed" as const,
+      at: Math.max(
+        suppression.since ?? request.to,
+        activity.progress?.resolvedAt ?? activity.startedAt,
+      ),
+      detail: "suppression closed over it",
+    }
+    : null;
+
+  if (expiry !== null && (suppressed === null || expiry.at <= suppressed.at)) {
+    return expiry;
   }
+
+  if (suppressed !== null) return suppressed;
 
   for (const constraint of activity.constraints) {
     switch (constraint.kind) {
