@@ -807,13 +807,9 @@ describe("Ren stops at its exact boundaries", () => {
     expect(hour.aura.unmetDrain).toBeCloseTo(0, 6);
   });
 
-  /*
-   * Ten X under Ren X: Ren's prerequisite graph requires Ten at the rank used,
-   * which is progression gating rather than arithmetic, and is not this
-   * ticket's to change.
-   */
+  /* Ten I under Ren X: the two ranks are independent. */
   it("stops at suppression, keeps Ten out while it lasts, and lets it back after", () => {
-    const character = subject({ ten: 10, ren: 10 });
+    const character = subject({ ten: 1, ren: 10 });
     const hour = advanceFor(character, started(character, 100), T0, hoursToDuration(1), {
       initial: { mode: "ordinary-waking" },
       changes: [

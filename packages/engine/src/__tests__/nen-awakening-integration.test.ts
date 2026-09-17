@@ -390,8 +390,9 @@ describe("the required invariants hold across every reachable state", () => {
         overrides: {
           eligibility: { requirements: [], summary: "Waived." },
           masteryGrant: {
-            grants: [{ principleId: "ren", rank: 1 }],
-            summary: "Skips Ten.",
+            /* Zetsu requires Ren; Ten and Ren are independent roots. */
+            grants: [{ principleId: "zetsu", rank: 1 }],
+            summary: "Skips Ren.",
           },
         },
       },

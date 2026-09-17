@@ -122,14 +122,19 @@ export const NEN_PRINCIPLE_GRAPH:
   },
 
 
+  /*
+   * Ten and Ren are independent roots.
+   *
+   * They are alternative operating states — Ren replaces Ten while it runs —
+   * and neither's learned or effective mastery may cap, unlock or otherwise
+   * modify the other's. A narrative training order is not a mechanical
+   * dependency, so there is deliberately no edge between them in either
+   * direction.
+   */
   ren: {
     id: "ren",
 
-    prerequisites: [
-      {
-        principleId: "ten",
-      },
-    ],
+    prerequisites: [],
   },
 
 
@@ -629,11 +634,11 @@ export function deriveMaximumNenMastery(
  *
  * Example:
  *
- *   Ten permanent = V
- *   Ren permanent = V
+ *   Ren permanent   = V
+ *   Zetsu permanent = V
  *
- * If Ten is temporarily sealed to III, Ren cannot currently function above
- * III even though the character permanently retains Ren V.
+ * If Ren is temporarily sealed to III, Zetsu cannot currently function above
+ * III even though the character permanently retains Zetsu V.
  *
  * Contextual prerequisites are not included.
  */
@@ -693,6 +698,20 @@ export function deriveEffectiveNenMastery(
         state,
         currentId,
       );
+
+
+    /*
+     * A malformed stored rank or seal is passed through untouched rather than
+     * resolved. The rank loop below never breaks on NaN, so a principle with no
+     * prerequisites would otherwise read an unreadable rank as Mastery X — and
+     * the validators downstream can only refuse what they are shown.
+     */
+    if (!isMasteryValue(localMaximum)) {
+      visiting.delete(currentId);
+      memo.set(currentId, localMaximum);
+
+      return localMaximum;
+    }
 
 
     if (localMaximum === NO_MASTERY) {
