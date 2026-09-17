@@ -173,32 +173,34 @@ const RECOVERY_CLOCK_EPSILON_MS = 1e-3;
 
 
 /**
- * An active collapse recovery as a clock, read from an instant — or null when
- * no recovery is in progress.
+ * An active collapse recovery, read against the ONE restoration streak — or
+ * null when no recovery is in progress.
  *
- * `completesAt` is when the remaining qualifying hours run out if the
- * character stays unconscious from `from`, which a recovery in progress
- * always is.
+ * `completesAt` is where that streak reaches the restoration requirement, not
+ * a second count of the recovery's own: sleep and a blackout are the same
+ * eight hours, so the recovery ends exactly where the reserve is restored.
+ * `remainingRestorationHours` is what the caller's streak still owes, which
+ * only the caller can know; this file supplies the stored half.
  */
 export function nenCollapseRecoveryClock(
   nen: NenState,
   from: GameTimestamp,
+  remainingRestorationHours: number,
 ): {
   readonly recoveryId: string;
   readonly beganAt: GameTimestamp;
   readonly source: string;
+  readonly accumulatedSleepHours: number;
+  readonly requiredSleepHours: number;
   readonly completesAt: GameTimestamp;
 } | null {
   const recovery = nen.awakening.collapseRecovery;
 
   if (recovery === null || recovery.completedAt !== null) return null;
 
-  const remaining = Math.max(
-    0,
-    recovery.requiredSleepHours - recovery.accumulatedSleepHours,
-  );
+  const projected = from +
+    Math.max(0, remainingRestorationHours) * GAME_MILLISECONDS_PER_HOUR;
 
-  const projected = from + remaining * GAME_MILLISECONDS_PER_HOUR;
   const nominal =
     recovery.beganAt + recovery.requiredSleepHours * GAME_MILLISECONDS_PER_HOUR;
 
@@ -206,6 +208,14 @@ export function nenCollapseRecoveryClock(
     recoveryId: recovery.id,
     beganAt: recovery.beganAt,
     source: NEN_COLLAPSE_RECOVERY_SOURCE,
+    accumulatedSleepHours: recovery.accumulatedSleepHours,
+    requiredSleepHours: recovery.requiredSleepHours,
+
+    /*
+     * Snapped to the recovery's own instant when the streak lands within a
+     * microsecond of it, which is what keeps sliced advances agreeing with a
+     * single one about the timestamp.
+     */
     completesAt: Math.abs(projected - nominal) <= RECOVERY_CLOCK_EPSILON_MS
       ? nominal
       : projected,

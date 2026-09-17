@@ -76,6 +76,10 @@ import {
 } from "../foundation/aura/access";
 import { deriveMaximumAura } from "../foundation/aura/pool";
 import { advanceAuraTime } from "../foundation/aura/time";
+import {
+  QUALIFYING_SLEEP_HOURS,
+  consecutiveSleepHours,
+} from "../foundation/body/endurance";
 import { COLLAPSE_RECOVERY_SLEEP_HOURS } from "../foundation/nen/awakening/types";
 import {
   advanceNenCollapseRecovery,
@@ -272,8 +276,25 @@ export function advanceCharacterTime(
   ): NenSuppressionPolicy | null =>
     nenStoredSuppressionPolicy(character.nen, activeNenActivities(runtime));
 
-  /* A collapse recovery in progress is unconsciousness, and counts as sleep. */
-  const clock = nenCollapseRecoveryClock(character.nen, interval.startedAt);
+  /*
+   * ONE restoration streak, for sleep and for a blackout alike.
+   *
+   * Eight continuous qualifying hours restore the reserve, whether they were
+   * slept or blacked out, and a collapse recovery ends exactly where that
+   * happens. The streak the character already carries is what says how much of
+   * it is behind them, so a character who collapses mid-sleep — or sleeps
+   * through a blackout — continues one process instead of starting a second.
+   */
+  const restorationRemaining = Math.max(
+    0,
+    QUALIFYING_SLEEP_HOURS - consecutiveSleepHours(character.wakefulness),
+  );
+
+  const clock = nenCollapseRecoveryClock(
+    character.nen,
+    interval.startedAt,
+    restorationRemaining,
+  );
 
   const unconsciousness = clock === null || clock.completesAt <= interval.startedAt
     ? null
@@ -729,31 +750,44 @@ export function advanceCharacterTime(
     awakeningRequests.push(...settled.payload.requests);
   }
 
+  /*
+   * A collapse begins the restoration where the character stood: they cannot
+   * have been sleeping, since a qualifying sleeper does not collapse, so the
+   * streak reset when they woke and the blackout starts it from there.
+   */
   const recoveryClock = nenCollapseRecoveryClock(
     nen,
     collapse?.at ?? interval.startedAt,
+    collapse === null ? restorationRemaining : QUALIFYING_SLEEP_HOURS,
   );
 
   if (recoveryClock !== null) {
-    const recovery = nen.awakening.collapseRecovery!;
     const from = Math.max(interval.startedAt, recoveryClock.beganAt);
     const completes = recoveryClock.completesAt <= interval.endedAt;
     const to = completes
       ? Math.max(from, recoveryClock.completesAt)
       : interval.endedAt;
 
-    const remaining = recovery.requiredSleepHours - recovery.accumulatedSleepHours;
+    const remaining =
+      recoveryClock.requiredSleepHours - recoveryClock.accumulatedSleepHours;
 
     /*
-     * Completing hands over exactly what is owed — or, if float residue would
-     * leave the sum a hair short, the whole requirement, which the transition
-     * caps.
+     * The recovery's stored hours MIRROR the restoration streak rather than
+     * counting separately: what it takes on is however much of the streak this
+     * interval added. Completing hands over exactly what is owed — or, if
+     * float residue would leave the sum a hair short, the whole requirement,
+     * which the transition caps.
      */
     const hours = completes
-      ? (recovery.accumulatedSleepHours + remaining >= recovery.requiredSleepHours
+      ? (recoveryClock.accumulatedSleepHours + remaining >=
+          recoveryClock.requiredSleepHours
         ? remaining
-        : recovery.requiredSleepHours)
-      : (to - from) / GAME_MILLISECONDS_PER_HOUR;
+        : recoveryClock.requiredSleepHours)
+      : Math.max(
+        0,
+        consecutiveSleepHours(aura.payload.wakefulness) -
+          recoveryClock.accumulatedSleepHours,
+      );
 
     const advancedRecovery = advanceNenCollapseRecovery(
       awakeningContext("collapse-recovery", to),

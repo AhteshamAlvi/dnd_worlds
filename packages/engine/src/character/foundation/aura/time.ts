@@ -188,6 +188,9 @@ const MAX_SEGMENTS = 1_000;
  */
 const POOL_BOUNDARY_TOLERANCE = 1e-9;
 
+/* The boundary tolerance, in the hours the sleep streak is counted in. */
+const STREAK_EPSILON_HOURS = BOUNDARY_EPSILON_MS / GAME_MILLISECONDS_PER_HOUR;
+
 
 /* ── Input ──────────────────────────────────────────────────────────────── */
 
@@ -1404,8 +1407,15 @@ export function advanceAuraTime(
      * Suppression prevents it, because suppression stops the leakage that
      * would cause it. A character in Zetsu at zero Aura is empty, not
      * collapsing.
+     *
+     * So does QUALIFYING SLEEP, and for a different reason: a sleeper emptying
+     * their reserve is already inside the eight-hour restoration a collapse
+     * would start. Collapsing them would open a second one — a second blackout,
+     * a second suppression instance, a second timer — beside the one already
+     * running. They are asleep and empty, which is the state the restoration
+     * already answers.
      */
-    if (collapse === null && leakageNow() && isEmpty(current)) {
+    if (collapse === null && leakageNow() && !sleepingNow() && isEmpty(current)) {
       const unavoidable = ratesFor();
 
       if (
@@ -1642,6 +1652,19 @@ export function advanceAuraTime(
      */
     if (sleepingNow()) {
       sleptHours = Math.min(QUALIFYING_SLEEP_HOURS, sleptHours + hours);
+
+      /*
+       * Landing ON the requirement, to the same tolerance every other boundary
+       * uses. The segment that ends at the solved completion instant adds a
+       * span converted back out of milliseconds, so the sum can sit one ulp
+       * short of eight — and an exact `>=` would then carry the restoration
+       * past its own boundary and pay it out at the end of the interval
+       * instead. A streak resumed part-way through, which is what a sleeper
+       * continuing a blackout has, is where that shows up.
+       */
+      if (QUALIFYING_SLEEP_HOURS - sleptHours <= STREAK_EPSILON_HOURS) {
+        sleptHours = QUALIFYING_SLEEP_HOURS;
+      }
     } else if (hours > 0) {
       sleptHours = 0;
       sleepCompleted = false;

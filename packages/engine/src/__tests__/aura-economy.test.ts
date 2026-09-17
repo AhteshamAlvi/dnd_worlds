@@ -442,8 +442,8 @@ describe("collapse changes the rates from the instant it happens", () => {
     expect(after!.recoveryRatePerHour).toBe(3 * R);
   });
 
-  it("pays 3R whatever the character was doing beforehand", () => {
-    for (const mode of ["ordinary-waking", "intentional-rest", "sleep"] as const) {
+  it("pays 3R whatever the WAKING character was doing beforehand", () => {
+    for (const mode of ["ordinary-waking", "intentional-rest"] as const) {
       const result = collapsing(mode);
 
       expect([mode, result.collapse === null]).toEqual([mode, false]);
@@ -452,6 +452,21 @@ describe("collapse changes the rates from the instant it happens", () => {
 
       expect([mode, after.recoveryRatePerHour]).toEqual([mode, 3 * R]);
     }
+  });
+
+  /*
+   * A SLEEPER does not collapse. They are already inside the eight-hour
+   * restoration a collapse would begin, and a second one beside it would be a
+   * second blackout and a second timer. They empty, and stay asleep.
+   */
+  it("never collapses a character who is already in qualifying sleep", () => {
+    const result = collapsing("sleep");
+
+    expect(result.collapse).toBeNull();
+    expect(result.events.map((one) => one.kind)).not.toContain("collapse");
+    expect(result.current).toBe(0);
+    expect(result.segments[result.segments.length - 1]!.leakageRatePerHour)
+      .toBe(UNCONTAINED_LEAK_PER_HOUR);
   });
 
   it("names its own suppression rather than borrowing a Zetsu's", () => {
