@@ -50,7 +50,7 @@
  *
  * This file owns:
  *
- * - Ten's I-X Mastery profile and DEX eligibility gates;
+ * - Ten's I-X Mastery track;
  * - the fixed coating fraction;
  * - the residual-leakage formula;
  * - the projection of both that Aura consumes.
@@ -64,7 +64,10 @@
  * - recovery, reserve mutation, or collapse settlement;
  * - uncontained leakage, which belongs to the character who never learned Ten;
  * - Growth Point costs or breakthrough requirements;
- * - the universal Nen dependency graph or temporary mastery seals.
+ * - the universal Nen progression rules or temporary mastery seals.
+ *
+ * Ten has NO attribute requirement. As one of the Four Major Principles it is
+ * gated only by its place in the unlock sequence, which nen/nen.ts owns.
  */
 
 import {
@@ -92,24 +95,6 @@ import type { AutomaticSurfaceCoating } from "../../aura/types";
 /* Mastery                                                                    */
 /* -------------------------------------------------------------------------- */
 
-export interface TenMasteryProfile {
-  readonly rank: MasteryRank;
-  readonly minimumDex: number;
-}
-
-export const TEN_MASTERY_PROFILES = {
-  1: { rank: 1, minimumDex: 12 },
-  2: { rank: 2, minimumDex: 12 },
-  3: { rank: 3, minimumDex: 13 },
-  4: { rank: 4, minimumDex: 13 },
-  5: { rank: 5, minimumDex: 14 },
-  6: { rank: 6, minimumDex: 14 },
-  7: { rank: 7, minimumDex: 15 },
-  8: { rank: 8, minimumDex: 15 },
-  9: { rank: 9, minimumDex: 16 },
-  10: { rank: 10, minimumDex: 16 },
-} as const satisfies Readonly<Record<MasteryRank, TenMasteryProfile>>;
-
 export const TEN_MASTERY_TRACK = {
   maximumMastery: STANDARD_MASTERY_MAX,
   ranks: MASTERY_RANKS.map((rank) => ({
@@ -121,27 +106,6 @@ export const TEN_MASTERY_TRACK = {
   })),
 } satisfies MasteryTrack;
 
-export function getTenMasteryProfile(
-  mastery: MasteryRank,
-): TenMasteryProfile {
-  return TEN_MASTERY_PROFILES[mastery];
-}
-
-export function deriveTenMinimumDex(
-  mastery: MasteryRank,
-): number {
-  return TEN_MASTERY_PROFILES[mastery].minimumDex;
-}
-
-export function meetsTenDexRequirement(
-  baseDex: number,
-  mastery: MasteryRank,
-): boolean {
-  return (
-    Number.isFinite(baseDex) &&
-    baseDex >= deriveTenMinimumDex(mastery)
-  );
-}
 
 
 /* -------------------------------------------------------------------------- */

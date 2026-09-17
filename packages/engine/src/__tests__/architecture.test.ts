@@ -3630,3 +3630,99 @@ describe("Ten and Ren stay independent, with one producer per rule", () => {
     expect(REMOVED.test("const renAccessFraction = 0;")).toBe(true);
   });
 });
+
+
+/*
+ * NPR-1 — unlock prerequisites, mastery prerequisites and attribute
+ * requirements are different concepts with different consumers.
+ *
+ * The regression this guards is the old single graph coming back in one of its
+ * cheap forms: an unlock list read by the effective-mastery resolver (which
+ * turns a learning order into a rank cap), a stat gate reappearing on a Major
+ * Principle, or the ambiguous graph vocabulary returning under its old name.
+ */
+describe("Nen progression keeps unlock, mastery and attribute rules apart", () => {
+  const NEN = join(SRC, "character", "foundation", "nen", "nen.ts");
+  const TYPES = join(SRC, "character", "foundation", "nen", "types.ts");
+
+  const production = sourceFilesUnder(SRC).filter(
+    (path) => !path.startsWith(join(SRC, "__tests__")),
+  );
+
+  const stripComments = (source: string): string =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+
+  /* The body of one exported function, up to the next top-level declaration. */
+  const functionBody = (source: string, name: string): string => {
+    const start = source.indexOf(`export function ${name}(`);
+
+    expect([name, start]).not.toEqual([name, -1]);
+
+    const rest = source.slice(start + 1);
+    const next = rest.search(/\n(?:export |function |const |interface |\/\*\s*──)/);
+
+    return next === -1 ? rest : rest.slice(0, next);
+  };
+
+  const readsUnlocks = (code: string): boolean =>
+    /unlock/i.test(code);
+
+  it("never lets an unlock prerequisite reach a mastery resolver", () => {
+    const source = stripComments(readFileSync(NEN, "utf8"));
+
+    for (const name of [
+      "deriveEffectiveNenMastery",
+      "deriveMaximumNenMastery",
+      "getNenMasteryPrerequisitesForRank",
+      "getLocalEffectiveMasteryRank",
+    ]) {
+      expect([name, readsUnlocks(functionBody(source, name))]).toEqual([name, false]);
+    }
+  });
+
+  it("consults unlock prerequisites only where Mastery I is learned", () => {
+    const source = stripComments(readFileSync(NEN, "utf8"));
+
+    const callers = [...source.matchAll(/export function (\w+)\(/g)]
+      .map((match) => match[1]!)
+      .filter((name) => name !== "getNenUnlockPrerequisites")
+      .filter((name) => /getNenUnlockPrerequisites\(/.test(functionBody(source, name)));
+
+    expect(callers.sort()).toEqual(["isNenPrincipleUnlocked", "validateNenAdvancement"]);
+
+    const elsewhere = production
+      .filter((path) => path !== NEN && path !== TYPES)
+      .filter((path) => /unlockPrerequisites|getNenUnlockPrerequisites/.test(stripComments(readFileSync(path, "utf8"))));
+
+    expect(elsewhere).toEqual([]);
+  });
+
+  it("declares no attribute gate in the four Major Principle files", () => {
+    const gate = /minimum(?:Dex|Con|Agi|Vit|Int|Wis|Per|Spi|Cha)\b|meets\w*Requirement|attributeRequirements/;
+
+    for (const principle of ["ten", "ren", "zetsu", "hatsu"]) {
+      const path = join(SRC, "character", "foundation", "nen", "principles", `${principle}.ts`);
+
+      expect([principle, gate.test(stripComments(readFileSync(path, "utf8")))])
+        .toEqual([principle, false]);
+    }
+  });
+
+  it("leaves none of the ambiguous graph vocabulary behind", () => {
+    const old = /NEN_PRINCIPLE_GRAPH|getNenPrerequisitesForRank|NenPrincipleNode|conditionalPrerequisites|\bNenPrerequisite\b|NenConditionalPrerequisite/;
+
+    const offenders = production.filter((path) =>
+      old.test(stripComments(readFileSync(path, "utf8")))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /* The predicates, exercised so none of them passes vacuously. */
+  it("would catch each regression", () => {
+    expect(readsUnlocks("const ids = getNenUnlockPrerequisites(principleId, rules);")).toBe(true);
+    expect(readsUnlocks("rules[id].unlockPrerequisites ?? []")).toBe(true);
+    expect(/minimum(?:Dex|Con)\b|meets\w*Requirement/.test("readonly minimumCon: number;")).toBe(true);
+    expect(/minimum(?:Dex|Con)\b|meets\w*Requirement/.test("export function meetsTenDexRequirement(")).toBe(true);
+  });
+});

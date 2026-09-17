@@ -38,7 +38,6 @@ import {
   deriveTenLeakageRegenerationMultiple,
   resolveTenContainment,
   TEN_COATING_OUTPUT_FRACTION,
-  TEN_MASTERY_PROFILES,
   tenSurfaceCoating,
 } from "../character/foundation/nen/principles/ten";
 import type { MasteryRank } from "../character/capabilities/mastery";
@@ -255,12 +254,17 @@ describe("bad input is refused rather than absorbed", () => {
 
 
 describe("the surface of the file", () => {
-  it("keeps the DEX gates and nothing else in the Mastery profile", () => {
-    expect(Object.values(TEN_MASTERY_PROFILES).map((profile) => profile.minimumDex))
-      .toEqual([12, 12, 13, 13, 14, 14, 15, 15, 16, 16]);
+  /* A Major Principle: unlock-gated only, with no attribute requirement. */
+  it("declares no attribute gate", () => {
+    const surface = Object.keys(ten);
 
-    for (const profile of Object.values(TEN_MASTERY_PROFILES)) {
-      expect(Object.keys(profile).sort()).toEqual(["minimumDex", "rank"]);
+    for (const removed of [
+      "TEN_MASTERY_PROFILES",
+      "getTenMasteryProfile",
+      "deriveTenMinimumDex",
+      "meetsTenDexRequirement",
+    ]) {
+      expect(surface).not.toContain(removed);
     }
   });
 

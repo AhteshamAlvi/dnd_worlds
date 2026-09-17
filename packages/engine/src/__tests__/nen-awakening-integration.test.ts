@@ -390,7 +390,7 @@ describe("the required invariants hold across every reachable state", () => {
         overrides: {
           eligibility: { requirements: [], summary: "Waived." },
           masteryGrant: {
-            /* Zetsu requires Ren; Ten and Ren are independent roots. */
+            /* Zetsu is unlocked by Ren, which this character has not learned. */
             grants: [{ principleId: "zetsu", rank: 1 }],
             summary: "Skips Ren.",
           },
@@ -402,7 +402,7 @@ describe("the required invariants hold across every reachable state", () => {
     if (refused.success) return;
 
     expect(refused.errors.map((error) => error.code))
-      .toContain("nen.mastery.prerequisite_not_met");
+      .toContain("nen.mastery.unlock_prerequisite_not_met");
   });
 
   it("leaves every reachable state valid and re-readable", () => {

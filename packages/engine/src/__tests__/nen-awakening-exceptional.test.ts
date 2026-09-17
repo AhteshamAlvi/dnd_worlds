@@ -377,7 +377,8 @@ describe("exceptional awakening", () => {
       }),
     });
 
-    expect(codes(refused)).toContain("nen.mastery.prerequisite_not_met");
+    /* Hatsu is unlocked by Zetsu, which this character has not learned. */
+    expect(codes(refused)).toContain("nen.mastery.unlock_prerequisite_not_met");
   });
 
   it("refuses a grant naming a principle or rank that does not exist", () => {

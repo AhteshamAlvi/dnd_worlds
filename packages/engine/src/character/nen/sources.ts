@@ -163,7 +163,7 @@ export interface NenNaturalAbilityOverride {
  * an exceptional source may grant nothing, may grant Ten I as the standard
  * route does, or may hand the character mastery from outside themselves.
  * Whatever it declares still passes through the ordinary mastery path and is
- * still validated against the Nen graph — an override of this field changes
+ * still validated against the Nen progression rules — an override of this field changes
  * what is granted, never whether the graph applies.
  */
 export interface NenMasteryGrantOverride {

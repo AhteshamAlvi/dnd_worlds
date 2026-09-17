@@ -184,24 +184,30 @@ function deepFreeze<T>(value: T): T {
 /* ── 10.4 Output ceiling and selection ──────────────────────────────────── */
 
 describe("Ren's Mastery tables", () => {
-  it("keeps every ceiling, CON gate and full-output duration", () => {
+  it("keeps every ceiling and full-output duration, and no attribute gate", () => {
     expect(Object.values(REN_MASTERY_PROFILES).map((one) => [
       one.rank,
       one.accessFraction,
-      one.minimumCon,
       one.fullOutputDurationMinutes,
     ])).toEqual([
-      [1, 0.1, 12, 1],
-      [2, 0.2, 12, 2],
-      [3, 0.3, 13, 5],
-      [4, 0.4, 13, 10],
-      [5, 0.5, 14, 20],
-      [6, 0.6, 14, 30],
-      [7, 0.7, 15, 60],
-      [8, 0.8, 15, 120],
-      [9, 0.9, 16, 240],
-      [10, 1, 16, null],
+      [1, 0.1, 1],
+      [2, 0.2, 2],
+      [3, 0.3, 5],
+      [4, 0.4, 10],
+      [5, 0.5, 20],
+      [6, 0.6, 30],
+      [7, 0.7, 60],
+      [8, 0.8, 120],
+      [9, 0.9, 240],
+      [10, 1, null],
     ]);
+
+    for (const profile of Object.values(REN_MASTERY_PROFILES)) {
+      expect(Object.keys(profile).sort()).toEqual(["accessFraction", "fullOutputDurationMinutes", "rank"]);
+    }
+
+    expect(Object.keys(ren)).not.toContain("meetsRenConRequirement");
+    expect(Object.keys(ren)).not.toContain("deriveRenMinimumCon");
   });
 
   it("resolves the exact 10%-100% ceiling at every rank", () => {

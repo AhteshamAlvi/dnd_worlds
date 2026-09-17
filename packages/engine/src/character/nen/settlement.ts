@@ -274,7 +274,7 @@ export interface MasteryGrantOutcome {
 /**
  * Grant Mastery through validateNenAdvancement, one rank at a time.
  *
- * NOT by writing the rank in. The Nen graph decides what a character may hold,
+ * NOT by writing the rank in. The Nen progression rules decide what a character may hold,
  * and an awakening that set `mastery.ten = 1` directly would be a second route
  * into the mastery system with none of its checks — which is exactly how an
  * exceptional source would end up granting Hatsu to somebody with no Ten.

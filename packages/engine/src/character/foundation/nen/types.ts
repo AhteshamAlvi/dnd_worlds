@@ -16,7 +16,8 @@
  */
 
 
-import type { MasteryValue } from "../../capabilities/mastery";
+import type { MasteryRank, MasteryValue } from "../../capabilities/mastery";
+import type { AttributeKey } from "../attributes/types";
 
 import type { NenAwakeningState } from "./awakening/types";
 
@@ -116,30 +117,37 @@ export interface NenState {
 }
 
 
-/**
- * A prerequisite that always applies to a principle.
+/*
+ * NEN PROGRESSION: THREE DIFFERENT KINDS OF DEPENDENCY
  *
- * To reach Mastery N in the child principle, this prerequisite must also
- * possess at least Mastery N.
+ * A single "prerequisite" used to mean all of these at once, and every edge was
+ * therefore a continuing rank cap. That was wrong for the Four Major
+ * Principles, whose order is a learning sequence rather than a ceiling, so the
+ * kinds are now separate types with separate consumers:
+ *
+ *   unlock      gates learning Mastery I, and nothing after it
+ *   mastery     caps effective and permanent mastery, continuously
+ *   attribute   gates learning or advancing a rank; never a runtime debuff
+ *
+ * Contextual prerequisites are a fourth, usage-only kind and affect neither
+ * learning nor mastery.
  */
-export interface NenPrerequisite {
+
+
+/**
+ * A principle whose mastery continuously caps this one.
+ *
+ * To hold Mastery N here, the prerequisite must hold at least Mastery N — at
+ * every rank, or only from `fromRank` onward when that is stated. Several
+ * mastery prerequisites cap at their minimum.
+ *
+ * Example: Chū caps Kō only from Kō VI; below that it plays no part.
+ */
+export interface NenMasteryPrerequisite {
   readonly principleId: NenPrincipleId;
-}
 
-
-/**
- * A prerequisite that begins applying only from a specific mastery rank.
- *
- * Example:
- *
- * Chū is not required for Ko I-V.
- *
- * From Ko VI onward, Chū becomes a mastery prerequisite and must be at least
- * equal to the desired Ko mastery.
- */
-export interface NenConditionalPrerequisite
-  extends NenPrerequisite {
-  readonly fromRank: NenMasteryRank;
+  /** The first rank this cap applies to. Absent means every rank. */
+  readonly fromRank?: NenMasteryRank;
 }
 
 
@@ -152,38 +160,53 @@ export interface NenConditionalPrerequisite
  * Shū is relevant when Ko or Ryū is being used through a weapon, but Shū
  * does not prevent the character from learning ordinary unarmed Ko or Ryū.
  */
-export interface NenContextualPrerequisite
-  extends NenPrerequisite {
+export interface NenContextualPrerequisite {
+  readonly principleId: NenPrincipleId;
   readonly context: "weapon";
 }
 
 
 /**
- * Structural definition of one Nen-principle node.
+ * An attribute threshold for LEARNING or ADVANCING a rank.
  *
- * Principle-specific mechanics and advancement requirements do not belong
- * here. Those belong in the individual principle file.
+ * Judged when a rank is acquired, never re-applied to mastery the character
+ * already holds: a later drop in the attribute does not seal anything.
  */
-export interface NenPrincipleNode {
-  readonly id: NenPrincipleId;
+export interface NenAttributeRequirement {
+  readonly attribute: AttributeKey;
 
-  readonly prerequisites:
-    readonly NenPrerequisite[];
+  /** The minimum attribute value for each Mastery rank I-X. */
+  readonly minimumByRank: Readonly<Record<MasteryRank, number>>;
+}
 
-  readonly conditionalPrerequisites?:
-    readonly NenConditionalPrerequisite[];
 
-  readonly contextualPrerequisites?:
-    readonly NenContextualPrerequisite[];
+/**
+ * How one principle is learned, advanced and capped.
+ *
+ * Principle-specific mechanics do not belong here; those belong in the
+ * individual principle file.
+ */
+export interface NenProgressionRules {
+  /** Principles that must be learned (Mastery I+) before Mastery I here. */
+  readonly unlockPrerequisites?: readonly NenPrincipleId[];
+
+  /** Principles whose effective mastery continuously caps this one. */
+  readonly masteryPrerequisites?: readonly NenMasteryPrerequisite[];
+
+  /** Usage-context prerequisites. Affect neither learning nor mastery. */
+  readonly contextualPrerequisites?: readonly NenContextualPrerequisite[];
+
+  /** Attribute thresholds judged when a rank is learned or advanced. */
+  readonly attributeRequirements?: readonly NenAttributeRequirement[];
 }
 
 
 /**
  * Result of evaluating a proposed mastery advancement against the universal
- * Nen graph.
+ * Nen progression rules: unlock and mastery prerequisites.
  *
- * This does not include principle-specific stat, training, Growth Point,
- * breakthrough, or other requirements.
+ * This does not include attribute, training, Growth Point, breakthrough, or
+ * other requirements.
  */
 export interface NenAdvancementEvaluation {
   readonly principleId: NenPrincipleId;
@@ -195,4 +218,7 @@ export interface NenAdvancementEvaluation {
   readonly maximumAllowedByGraph: NenMasteryRank;
 
   readonly allowedByGraph: boolean;
+
+  /** Unlock prerequisites judged for this step; empty unless learning Mastery I. */
+  readonly unlockPrerequisites: readonly NenPrincipleId[];
 }

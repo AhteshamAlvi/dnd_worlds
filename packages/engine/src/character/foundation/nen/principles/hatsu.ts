@@ -77,7 +77,7 @@
  * - Aura costs;
  * - cooldowns;
  * - restrictions or vows;
- * - the universal Nen dependency graph;
+ * - the universal Nen progression rules;
  * - cross-Principle compatibility;
  * - Growth Point costs or breakthrough requirements.
  *
@@ -219,10 +219,12 @@ export const HATSU_MASTERY_PROFILES = {
 
 
 /*
- * No Hatsu-specific attribute gate has been finalized.
+ * Hatsu has no attribute requirement.
  *
- * If Hatsu later receives an attribute requirement, that progression should
- * be added deliberately rather than inferred from another Nen Principle.
+ * As one of the Four Major Principles it is gated only by its place in the
+ * unlock sequence (Zetsu before Hatsu), which nen/nen.ts owns — and once
+ * unlocked it advances independently of Zetsu. Individual Nen Abilities may
+ * still set their own requirements.
  */
 export const HATSU_MASTERY_TRACK = {
   maximumMastery: STANDARD_MASTERY_MAX,

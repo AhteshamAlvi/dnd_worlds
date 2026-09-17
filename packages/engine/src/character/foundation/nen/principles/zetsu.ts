@@ -119,7 +119,7 @@
  *
  * - Aura replenishment while suppressed, which is activity-dependent and lives
  *   in aura/recovery.ts;
- * - the universal Nen dependency graph or temporary seals;
+ * - the universal Nen progression rules or temporary seals;
  * - cross-Principle compatibility;
  * - Aura Pool derivation;
  * - Physiological Aura Output derivation;
@@ -220,11 +220,11 @@ export const ZETSU_MASTERY_PROFILES = {
 
 
 /*
- * No Zetsu-specific attribute gate has been finalized.
+ * Zetsu has no attribute requirement.
  *
- * Do not invent one merely for symmetry with Ten's DEX requirement or Ren's
- * CON requirement. If Zetsu later receives an attribute requirement, that
- * progression belongs here.
+ * As one of the Four Major Principles it is gated only by its place in the
+ * unlock sequence (Ren before Zetsu), which nen/nen.ts owns — and once
+ * unlocked it advances independently of Ren.
  */
 export const ZETSU_MASTERY_TRACK = {
   maximumMastery: STANDARD_MASTERY_MAX,

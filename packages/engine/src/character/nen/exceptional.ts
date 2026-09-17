@@ -381,12 +381,13 @@ export function awakenNenInstinctive(
 /* ── Exceptional ────────────────────────────────────────────────────────── */
 
 /*
- * Turn a declared mastery-grant override into grants the Nen graph can judge.
+ * Turn a declared mastery-grant override into grants the Nen progression
+ * rules can judge.
  *
  * The principle ids and ranks arrive as loose strings and numbers, because the
  * override contract is content-facing and content cannot be trusted to have
  * spelled either correctly. Anything unrecognised is refused here rather than
- * being written into a state the graph would later have to reject.
+ * being written into a state the rules would later have to reject.
  */
 function readMasteryGrants(
   overrides: NenExceptionalOverrides,
@@ -663,9 +664,9 @@ export function awakenNenExceptional(
 
   /*
    * Through the ordinary mastery path, whatever the source declared. An
-   * override changes WHAT is granted; it does not excuse the Nen graph, so a
-   * source granting Hatsu to a character with no Ten is refused here exactly
-   * as any other route would be.
+   * override changes WHAT is granted; it does not excuse the Nen progression
+   * rules, so a source granting Hatsu to a character who has not unlocked it
+   * is refused here exactly as any other route would be.
    */
   const granted = grantNenMastery(draft, mastery.grants);
 

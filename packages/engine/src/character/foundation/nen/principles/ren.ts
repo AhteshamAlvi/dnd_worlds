@@ -36,7 +36,7 @@
  *
  * This file owns:
  *
- * - Ren's I-X Mastery profile, CON gates and full-output durations;
+ * - Ren's I-X Mastery profile: Output ceilings and full-output durations;
  * - the Output ceiling and the validation of a selected Output;
  * - the expenditure-rate conversions;
  * - load, exertion and remaining-endurance arithmetic;
@@ -47,7 +47,9 @@
  * - runtime lifecycle, funding records, or when an activity stops;
  * - the time solver that integrates the flow;
  * - Body measurements, which it reads and never derives;
- * - Ten, Zetsu, or any other principle.
+ * - Ten, Zetsu, or any other principle;
+ * - progression: Ren has NO attribute requirement, and its place in the
+ *   unlock sequence belongs to nen/nen.ts.
  */
 
 import {
@@ -81,7 +83,6 @@ import type { ResolvedBodyMeasurements } from "../../body/measurements/types";
 
 export interface RenMasteryProfile {
   readonly rank: MasteryRank;
-  readonly minimumCon: number;
   readonly accessFraction: number;
 
   /*
@@ -92,16 +93,16 @@ export interface RenMasteryProfile {
 }
 
 export const REN_MASTERY_PROFILES = {
-  1: { rank: 1, minimumCon: 12, accessFraction: 0.10, fullOutputDurationMinutes: 1 },
-  2: { rank: 2, minimumCon: 12, accessFraction: 0.20, fullOutputDurationMinutes: 2 },
-  3: { rank: 3, minimumCon: 13, accessFraction: 0.30, fullOutputDurationMinutes: 5 },
-  4: { rank: 4, minimumCon: 13, accessFraction: 0.40, fullOutputDurationMinutes: 10 },
-  5: { rank: 5, minimumCon: 14, accessFraction: 0.50, fullOutputDurationMinutes: 20 },
-  6: { rank: 6, minimumCon: 14, accessFraction: 0.60, fullOutputDurationMinutes: 30 },
-  7: { rank: 7, minimumCon: 15, accessFraction: 0.70, fullOutputDurationMinutes: 60 },
-  8: { rank: 8, minimumCon: 15, accessFraction: 0.80, fullOutputDurationMinutes: 120 },
-  9: { rank: 9, minimumCon: 16, accessFraction: 0.90, fullOutputDurationMinutes: 240 },
-  10: { rank: 10, minimumCon: 16, accessFraction: 1.00, fullOutputDurationMinutes: null },
+  1: { rank: 1, accessFraction: 0.10, fullOutputDurationMinutes: 1 },
+  2: { rank: 2, accessFraction: 0.20, fullOutputDurationMinutes: 2 },
+  3: { rank: 3, accessFraction: 0.30, fullOutputDurationMinutes: 5 },
+  4: { rank: 4, accessFraction: 0.40, fullOutputDurationMinutes: 10 },
+  5: { rank: 5, accessFraction: 0.50, fullOutputDurationMinutes: 20 },
+  6: { rank: 6, accessFraction: 0.60, fullOutputDurationMinutes: 30 },
+  7: { rank: 7, accessFraction: 0.70, fullOutputDurationMinutes: 60 },
+  8: { rank: 8, accessFraction: 0.80, fullOutputDurationMinutes: 120 },
+  9: { rank: 9, accessFraction: 0.90, fullOutputDurationMinutes: 240 },
+  10: { rank: 10, accessFraction: 1.00, fullOutputDurationMinutes: null },
 } as const satisfies Readonly<Record<MasteryRank, RenMasteryProfile>>;
 
 export const REN_MASTERY_TRACK = {
@@ -119,22 +120,6 @@ export function getRenMasteryProfile(
   mastery: MasteryRank,
 ): RenMasteryProfile {
   return REN_MASTERY_PROFILES[mastery];
-}
-
-export function deriveRenMinimumCon(
-  mastery: MasteryRank,
-): number {
-  return REN_MASTERY_PROFILES[mastery].minimumCon;
-}
-
-export function meetsRenConRequirement(
-  baseCon: number,
-  mastery: MasteryRank,
-): boolean {
-  return (
-    Number.isFinite(baseCon) &&
-    baseCon >= deriveRenMinimumCon(mastery)
-  );
 }
 
 export function deriveRenAccessFraction(
