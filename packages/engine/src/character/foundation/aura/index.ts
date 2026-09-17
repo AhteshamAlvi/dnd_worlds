@@ -263,6 +263,7 @@ export {
 export type {
   AuraUpkeepCharge,
   AuraUpkeepCommitment,
+  AuraUpkeepProvenance,
   AuraUpkeepPayment,
   AuraUpkeepPeriod,
   AuraUpkeepShutdown,

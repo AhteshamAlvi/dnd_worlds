@@ -74,9 +74,21 @@ import {
   hasDeliberateAuraAccess,
   resolveAuraAccess,
 } from "../foundation/aura/access";
+import { deriveMaximumAura } from "../foundation/aura/pool";
 import { advanceAuraTime } from "../foundation/aura/time";
+import { COLLAPSE_RECOVERY_SLEEP_HOURS } from "../foundation/nen/awakening/types";
+import {
+  advanceNenCollapseRecovery,
+  settleNenCollapse,
+} from "../nen/collapse";
+import { projectNenUpkeep } from "../nen/upkeep";
+import { NEN_AURA_RESTORE_REQUEST } from "../nen/protocol";
+import type { RuntimeEvent } from "../../runtime/events";
+import type { RuntimeRequest } from "../../runtime/requests";
+import { GAME_MILLISECONDS_PER_HOUR } from "../../time/duration";
 import {
   activeNenActivities,
+  findNenActivity,
   nenActivityPermittedUnderSuppression,
   nenActivityRunsUntil,
   type NenActivityRuntime,
@@ -85,7 +97,7 @@ import {
 } from "../foundation/nen/runtime";
 import {
   findNenStoredSuppressionIssues,
-  nenQualifyingUnconsciousness,
+  nenCollapseRecoveryClock,
   nenStoredSuppression,
   nenStoredSuppressionPolicy,
 } from "../nen/suppression";
@@ -261,7 +273,16 @@ export function advanceCharacterTime(
     nenStoredSuppressionPolicy(character.nen, activeNenActivities(runtime));
 
   /* A collapse recovery in progress is unconsciousness, and counts as sleep. */
-  const unconsciousness = nenQualifyingUnconsciousness(character.nen);
+  const clock = nenCollapseRecoveryClock(character.nen, interval.startedAt);
+
+  const unconsciousness = clock === null || clock.completesAt <= interval.startedAt
+    ? null
+    : {
+      source: clock.source,
+      ...(clock.completesAt < interval.endedAt
+        ? { endsAt: clock.completesAt }
+        : {}),
+    };
 
   if (openingActivities !== undefined) {
     /*
@@ -341,7 +362,37 @@ export function advanceCharacterTime(
     ? null
     : zetsuSuppression(openingActivities);
 
-  const suppression = stored ?? zetsu?.suppression ?? null;
+  /*
+   * Upkeep, judged against its stated owners and projected: inherited
+   * capability, ends clipped to the owner's, and — under a stored forced
+   * suppression — which commitments this instance exempts.
+   */
+  const upkeep = input.activeEffects?.upkeep === undefined
+    ? null
+    : projectNenUpkeep({
+      nen: character.nen,
+      upkeep: input.activeEffects.upkeep,
+      suppliedRuntime: input.activeEffects.nenActivities,
+      openingRuntime: openingActivities,
+      storedPolicy: stored === null
+        ? null
+        : nenStoredSuppressionPolicy(
+          character.nen,
+          openingActivities === undefined ? [] : activeNenActivities(openingActivities),
+        ),
+      startedAt: interval.startedAt,
+    });
+
+  if (upkeep !== null && !upkeep.ok) return fail(upkeep.errors);
+
+  const exemptUpkeepIds = upkeep?.ok ? upkeep.exemptUpkeepIds : undefined;
+
+  const suppression = stored === null
+    ? zetsu?.suppression ?? null
+    : {
+      ...stored,
+      ...(exemptUpkeepIds === undefined ? {} : { exemptUpkeepIds }),
+    };
 
   /*
    * Every OTHER Nen activity running as the interval opens.
@@ -464,9 +515,7 @@ export function advanceCharacterTime(
           activity: suppressedActivity(change.activity),
         })),
       }),
-    ...(input.activeEffects?.upkeep === undefined
-      ? {}
-      : { upkeep: input.activeEffects.upkeep }),
+    ...(upkeep?.ok ? { upkeep: upkeep.commitments } : {}),
     ...(input.activeEffects?.instantaneous === undefined
       ? {}
       : { instantaneous: input.activeEffects.instantaneous }),
@@ -475,6 +524,9 @@ export function advanceCharacterTime(
     ...(unconsciousness === null
       ? {}
       : { qualifyingUnconsciousness: unconsciousness }),
+
+    /* A collapse inside the interval blacks out for exactly its recovery. */
+    collapseBlackout: { hours: COLLAPSE_RECOVERY_SLEEP_HOURS },
   });
 
   root.children.push(aura.trace.root);
@@ -499,27 +551,85 @@ export function advanceCharacterTime(
     let carried = openingActivities;
 
     /*
-     * Ren stopped inside the interval for a reason only the solver could see:
-     * the reserve could not pay for it, or suppression closed over it. The
-     * stop is recorded at the solver's instant, once. An expiry is left to the
-     * lifecycle advance below, which dates it at the same instant from the
-     * same function.
+     * Activities that stopped inside the interval for a reason only the solver
+     * could see, each at the solver's own instant:
+     *
+     *   the flow     the reserve could not pay for it, or suppression closed
+     *                over it (an expiry is left to the lifecycle advance below,
+     *                which dates it at the same instant from the same function)
+     *   an upkeep    the upkeep an activity is paid through shut down, so the
+     *                activity stops with it — unfunded, or closed out by the
+     *                suppression that shut the upkeep
+     *
+     * Applied in time order, each after carrying the runtime to its instant,
+     * and each owner at most once. An `owner-stopped` shutdown is the
+     * CONSEQUENCE of one of these and stops nothing of its own.
      */
+    const stops: {
+      readonly at: number;
+      readonly activityId: string;
+      readonly cause: NenActivityStopCause;
+      readonly detail: string;
+    }[] = [];
+
     const flowStop = aura.payload.outwardFlowStop;
 
     if (flowStop !== null && flowStop.reason !== "ended") {
-      const cause: NenActivityStopCause = flowStop.reason === "unfunded"
-        ? "unfunded"
-        : "suppressed";
-
-      const stopped = stopNenActivity(carried, {
-        activityId: flowStop.id,
-        cause,
+      stops.push({
         at: flowStop.at,
-        by: self,
+        activityId: flowStop.id,
+        cause: flowStop.reason === "unfunded" ? "unfunded" : "suppressed",
         detail: flowStop.reason === "unfunded"
           ? "the reserve could no longer fund the selected Output"
           : "suppression closed the nodes",
+      });
+    }
+
+    const projected = new Map(
+      (upkeep?.ok ? upkeep.commitments : []).map((one) => [one.id, one]),
+    );
+
+    for (const shutdown of aura.payload.upkeepShutdowns) {
+      if (shutdown.reason === "owner-stopped") continue;
+
+      const provenance = projected.get(shutdown.id)?.provenance;
+
+      if (provenance?.kind !== "activity") continue;
+
+      stops.push({
+        at: shutdown.at,
+        activityId: provenance.activityId,
+        cause: shutdown.reason === "insufficient-aura"
+          ? "unfunded"
+          : suppression !== null || aura.payload.collapse !== null
+            ? "suppressed"
+            : "access-lost",
+        detail: `its upkeep ${shutdown.id} shut down`,
+      });
+    }
+
+    stops.sort((left, right) => left.at - right.at);
+
+    for (const stop of stops) {
+      if (stop.at > carried.at) {
+        const caughtUp = advanceNenActivities(carried, { to: stop.at, by: self });
+
+        root.children.push(caughtUp.trace.root);
+
+        if (!caughtUp.success) return fail(caughtUp.errors);
+
+        carried = caughtUp.payload.runtime;
+        runtimeSteps.push(caughtUp.payload);
+      }
+
+      if (findNenActivity(carried, stop.activityId)?.condition !== "active") continue;
+
+      const stopped = stopNenActivity(carried, {
+        activityId: stop.activityId,
+        cause: stop.cause,
+        at: stop.at,
+        by: self,
+        detail: stop.detail,
       });
 
       root.children.push(stopped.trace.root);
@@ -580,10 +690,105 @@ export function advanceCharacterTime(
     };
   }
 
+  /*
+   * The collapse-recovery clock, owned here.
+   *
+   * A collapse the solver found is settled into the stored state at its own
+   * instant — an involuntary Zetsu and an eight-hour recovery beginning there.
+   * Any recovery in progress then accumulates exactly the unconscious hours
+   * this interval covered, and completes at its exact instant: the same one
+   * the solver ended the unconsciousness at, and the one the stored clock
+   * snaps sliced advances to. A host never advances the recovery separately.
+   */
+  let nen = character.nen;
+  const awakeningEvents: RuntimeEvent[] = [];
+  const awakeningRequests: RuntimeRequest[] = [];
+
+  const awakeningContext = (operation: string, at: number) => ({
+    owner: { domain: "character", id: character.id } as const,
+    operationId: `${character.id}:${operation}@${at}`,
+    occurredAt: at,
+    nen,
+    requirements: resolved.payload.requirementContext,
+  });
+
+  const collapse = aura.payload.collapse;
+
+  if (collapse !== null) {
+    const settled = settleNenCollapse(
+      awakeningContext("collapse", collapse.at),
+      { collapse },
+    );
+
+    root.children.push(settled.trace.root);
+
+    if (!settled.success) return fail(settled.errors);
+
+    nen = settled.payload.state;
+    awakeningEvents.push(...settled.payload.events);
+    awakeningRequests.push(...settled.payload.requests);
+  }
+
+  const recoveryClock = nenCollapseRecoveryClock(
+    nen,
+    collapse?.at ?? interval.startedAt,
+  );
+
+  if (recoveryClock !== null) {
+    const recovery = nen.awakening.collapseRecovery!;
+    const from = Math.max(interval.startedAt, recoveryClock.beganAt);
+    const completes = recoveryClock.completesAt <= interval.endedAt;
+    const to = completes
+      ? Math.max(from, recoveryClock.completesAt)
+      : interval.endedAt;
+
+    const remaining = recovery.requiredSleepHours - recovery.accumulatedSleepHours;
+
+    /*
+     * Completing hands over exactly what is owed — or, if float residue would
+     * leave the sum a hair short, the whole requirement, which the transition
+     * caps.
+     */
+    const hours = completes
+      ? (recovery.accumulatedSleepHours + remaining >= recovery.requiredSleepHours
+        ? remaining
+        : recovery.requiredSleepHours)
+      : (to - from) / GAME_MILLISECONDS_PER_HOUR;
+
+    const advancedRecovery = advanceNenCollapseRecovery(
+      awakeningContext("collapse-recovery", to),
+      {
+        qualifyingSleepHours: hours,
+        maximumAura: deriveMaximumAura(resolved.payload.stats),
+        at: to,
+      },
+    );
+
+    root.children.push(advancedRecovery.trace.root);
+
+    if (!advancedRecovery.success) return fail(advancedRecovery.errors);
+
+    nen = advancedRecovery.payload.state;
+    awakeningEvents.push(...advancedRecovery.payload.events);
+
+    /*
+     * The restore-to-maximum the completion asks Aura for is already applied:
+     * the unconsciousness it ended was qualifying sleep, and the solver topped
+     * the reserve off at that same instant. Reporting it again would invite a
+     * second restore.
+     */
+    awakeningRequests.push(
+      ...advancedRecovery.payload.requests.filter((request) =>
+        request.kind !== NEN_AURA_RESTORE_REQUEST
+      ),
+    );
+  }
+
   const advanced: Character = {
     ...character,
     aura: aura.payload.state,
     wakefulness: aura.payload.wakefulness,
+    nen,
   };
 
   root.output = {
@@ -605,6 +810,9 @@ export function advanceCharacterTime(
       wakefulness: aura.payload.wakefulness,
       fatigue: aura.payload.fatigue,
       ...(nenActivities === undefined ? {} : { nenActivities }),
+      ...(awakeningEvents.length === 0 && awakeningRequests.length === 0
+        ? {}
+        : { awakening: { events: awakeningEvents, requests: awakeningRequests } }),
     },
     trace: { root },
     warnings: aura.warnings,

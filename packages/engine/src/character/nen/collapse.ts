@@ -354,6 +354,11 @@ export interface NenCollapseRecoveryRequest {
 /**
  * Add qualifying sleep to a collapse recovery, and complete it at eight hours.
  *
+ * The LOWER-LEVEL transition. Character time owns the recovery clock: an
+ * ordinary `advanceCharacterTime` settles a collapse, accumulates the recovery
+ * and completes it at its exact instant. A caller who advances character time
+ * must NOT also call this for the same period, or the hours are counted twice.
+ *
  * Returns a SUCCESS whether or not the threshold was reached — accumulating
  * three of the eight hours is a real thing that happened, not a failed
  * attempt. `changes.collapseRecoveryCompleted` is what says which it was.
@@ -472,8 +477,15 @@ export function advanceNenCollapseRecovery(
     }]);
   }
 
-  const accumulated =
-    recovery.accumulatedSleepHours + request.qualifyingSleepHours;
+  /*
+   * Capped at the requirement. Hours past it complete nothing more, and a
+   * recovery reached in several advances must store the same figure as one
+   * reached in a single advance.
+   */
+  const accumulated = Math.min(
+    recovery.requiredSleepHours,
+    recovery.accumulatedSleepHours + request.qualifyingSleepHours,
+  );
 
   const complete = accumulated >= recovery.requiredSleepHours;
 

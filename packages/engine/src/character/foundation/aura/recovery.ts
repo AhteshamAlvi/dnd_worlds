@@ -311,6 +311,24 @@ export function findAuraSuppressionExemptionIssues(
   suppression: AuraSuppression,
   where: string,
 ): readonly EngineError[] {
+  const ids = suppression.exemptUpkeepIds;
+
+  if (
+    ids !== undefined &&
+    (!Array.isArray(ids) ||
+      ids.some((id) => typeof id !== "string" || id.trim().length === 0) ||
+      (suppression.exemptions !== "authorized" && ids.length > 0))
+  ) {
+    return [{
+      code: "aura.recovery.suppression.exempt_upkeep.invalid",
+      message:
+        "A suppression's exempt upkeep must be listed by id, and only under a policy permitting exemptions.",
+      audience: "developer",
+      required: "non-empty ids, with exemptions: authorized",
+      actual: `${where}: ${String(ids)}`,
+    }];
+  }
+
   if (
     suppression.exemptions === undefined ||
     (AURA_SUPPRESSION_EXEMPTIONS as readonly unknown[])

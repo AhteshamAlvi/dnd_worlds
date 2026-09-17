@@ -256,7 +256,19 @@ export interface AdvanceAuraTimeInput {
    * A generic fact with a provenance label nothing branches on. Supplied by
    * whoever owns the unconsciousness; never inferred here from suppression.
    */
-  readonly qualifyingUnconsciousness?: { readonly source: string };
+  readonly qualifyingUnconsciousness?: {
+    readonly source: string;
+
+    /** When it ends inside the interval. Absent: it lasts the whole of it. */
+    readonly endsAt?: GameTimestamp;
+  };
+
+  /*
+   * How long a collapse beginning INSIDE this interval blacks the character
+   * out, from its own instant. Absent: to the end of the interval. Supplied by
+   * whoever owns the recovery that ends the blackout; never derived here.
+   */
+  readonly collapseBlackout?: { readonly hours: number };
 }
 
 
@@ -610,14 +622,34 @@ export function advanceAuraTime(
     unconsciousness !== undefined &&
     (unconsciousness === null || typeof unconsciousness !== "object" ||
       typeof unconsciousness.source !== "string" ||
-      unconsciousness.source.trim().length === 0)
+      unconsciousness.source.trim().length === 0 ||
+      (unconsciousness.endsAt !== undefined &&
+        (!Number.isFinite(unconsciousness.endsAt) ||
+          unconsciousness.endsAt <= interval.startedAt)))
   ) {
     return fail([{
       code: "aura.time.unconsciousness.invalid",
-      message: "Qualifying unconsciousness must name what supplied it.",
+      message:
+        "Qualifying unconsciousness must name what supplied it, and end after the interval opens.",
       audience: "developer",
-      required: "{ source: non-empty string }",
+      required: "{ source: non-empty string, endsAt?: > startedAt }",
       actual: String(unconsciousness),
+    }]);
+  }
+
+  const blackout = input.collapseBlackout;
+
+  if (
+    blackout !== undefined &&
+    (blackout === null || typeof blackout !== "object" ||
+      !Number.isFinite(blackout.hours) || blackout.hours <= 0)
+  ) {
+    return fail([{
+      code: "aura.time.collapse_blackout.invalid",
+      message: "A collapse blackout must last a finite positive number of hours.",
+      audience: "developer",
+      required: "{ hours: finite number > 0 }",
+      actual: String(blackout),
     }]);
   }
 
@@ -911,6 +943,35 @@ export function advanceAuraTime(
 
   const suppressedNow = (): boolean => suppressionNow() !== undefined;
 
+  /* When the in-call collapse's blackout ends, if it was given a length. */
+  const blackoutEndsAt = (): GameTimestamp | null =>
+    collapse === null || !collapse.requests.includes("blackout") ||
+      input.collapseBlackout === undefined
+      ? null
+      : collapse.at + hoursToDuration(input.collapseBlackout.hours);
+
+  /*
+   * Whether the character is unconscious in a way that counts as sleep, at
+   * this instant. See sleepingNow.
+   */
+  const unconsciousNow = (): boolean => {
+    if (
+      unconsciousness !== undefined &&
+      (unconsciousness.endsAt === undefined ||
+        at < unconsciousness.endsAt - BOUNDARY_EPSILON_MS)
+    ) {
+      return true;
+    }
+
+    if (collapse === null || !collapse.requests.includes("blackout")) {
+      return false;
+    }
+
+    const ends = blackoutEndsAt();
+
+    return ends === null || at < ends - BOUNDARY_EPSILON_MS;
+  };
+
   /*
    * The access in force right now: the flow's while it runs, the character's
    * own before it starts and after it stops. Every per-instant question below
@@ -943,11 +1004,12 @@ export function advanceAuraTime(
    * the raw load are still both accepted, still validated against each other,
    * and still say the same thing — this just stops asking how much.
    *
-   * Blackout ends it. A collapsed character is not sprinting, whatever the
-   * caller said they were doing before the lights went out.
+   * Unconsciousness ends it. A blacked-out character is not sprinting,
+   * whatever the caller said they were doing before the lights went out — and
+   * once the blackout ends, the stated activity applies again.
    */
   const exertingNow = (): boolean =>
-    collapse === null && sustainedLoadPerHour(activity) > 0;
+    !unconsciousNow() && sustainedLoadPerHour(activity) > 0;
 
   /*
    * Whether the character is bleeding through open, uncontained nodes.
@@ -968,14 +1030,16 @@ export function advanceAuraTime(
    * nodes are.
    *
    * Unconsciousness arrives from two generic places, and neither is inferred
-   * from what suppressed the character:
+   *   from what suppressed the character:
    *
    *   in this call   a collapse whose requests include a blackout, from the
-   *                  collapse's own instant
-   *   carried        `qualifyingUnconsciousness`, a fact the host supplies for
-   *                  the whole interval — which is what a host advancing a
-   *                  blackout in slices hands back after the collapse, so both
-   *                  agree about whether the night was a night's sleep
+   *                  collapse's own instant for `collapseBlackout.hours`
+   *   carried        `qualifyingUnconsciousness`, a fact the host supplies from
+   *                  the interval's start until its own `endsAt` — which is
+   *                  what a host advancing a blackout in slices hands back
+   *                  after the collapse, so both agree about the night
+   *
+   * Each ends at an exact instant, which is a rate boundary.
    *
    * It counts for the SLEEP STREAK only. `hoursAwake` still follows the mode
    * the caller stated, because clearing sleep debt is a different benefit with
@@ -983,9 +1047,7 @@ export function advanceAuraTime(
    * rests you.
    */
   const sleepingNow = (): boolean =>
-    activity.mode === "sleep" ||
-    input.qualifyingUnconsciousness !== undefined ||
-    (collapse !== null && collapse.requests.includes("blackout"));
+    activity.mode === "sleep" || unconsciousNow();
 
   /*
    * Whether the supplied generic activities are still running, and permitted
@@ -1091,6 +1153,9 @@ export function advanceAuraTime(
     flowRunning = false;
     flowStop = { id: flow.id, source: flow.source, reason, at };
     emit(at, "outward-flow-stopped", flow.id);
+
+    /* The flow's activity has stopped, and so has any upkeep it was paying. */
+    stopOwner(flow.id, at);
   };
 
   const shutDown = (
@@ -1098,6 +1163,8 @@ export function advanceAuraTime(
     at: GameTimestamp,
     reason: AuraUpkeepShutdown["reason"],
   ): void => {
+    if (shutdownIds.has(entry.commitment.id)) return;
+
     shutdownIds.add(entry.commitment.id);
     shutdowns.push({
       id: entry.commitment.id,
@@ -1108,6 +1175,47 @@ export function advanceAuraTime(
       availableAura: current,
     });
     emit(at, "upkeep-shutdown", entry.commitment.id);
+
+    /*
+     * An activity whose upkeep dropped has stopped, and so has everything
+     * paid for it or built on it — at this instant, once each.
+     */
+    const provenance = entry.commitment.provenance;
+
+    if (provenance?.kind === "activity") stopOwner(provenance.activityId, at);
+  };
+
+  /*
+   * End every upkeep paid for an owner, or for anything composed of it, that
+   * has not already ended. Opaque ids only: the owner is whatever the
+   * commitment's provenance named.
+   */
+  const stopOwner = (ownerId: string, at: GameTimestamp): void => {
+    for (const commitment of sheddingOrder) {
+      if (shutdownIds.has(commitment.id)) continue;
+      if (commitment.endsAt !== undefined && commitment.endsAt <= at) continue;
+
+      const provenance = commitment.provenance;
+
+      if (provenance?.kind !== "activity") continue;
+      if (
+        provenance.activityId !== ownerId &&
+        !(provenance.dependsOn ?? []).includes(ownerId)
+      ) {
+        continue;
+      }
+
+      shutDown(
+        {
+          commitment,
+          ratePerHour:
+            upkeepRatePerHour(commitment.baseRate, commitment.period) *
+            control.payload.multiplier,
+        },
+        at,
+        "owner-stopped",
+      );
+    }
   };
 
   /* ── The loop ─────────────────────────────────────────────────────── */
@@ -1345,7 +1453,9 @@ export function advanceAuraTime(
         suppression !== undefined &&
         ordinaryAccess.awakened &&
         entry.commitment.functionsThroughSuppression === true &&
-        suppressionPermitsAuthorizedActiveNen(suppression);
+        suppressionPermitsAuthorizedActiveNen(suppression) &&
+        (suppression.exemptUpkeepIds === undefined ||
+          suppression.exemptUpkeepIds.includes(entry.commitment.id));
 
       for (const entry of running) {
         if (!survives(entry)) shutDown(entry, at, "access-lost");
@@ -1398,6 +1508,14 @@ export function advanceAuraTime(
     if (activeNen?.endsAt !== undefined && activeNen.endsAt > at) {
       boundaries.push(activeNen.endsAt);
     }
+
+    if (unconsciousness?.endsAt !== undefined && unconsciousness.endsAt > at) {
+      boundaries.push(unconsciousness.endsAt);
+    }
+
+    const blackoutEnd = blackoutEndsAt();
+
+    if (blackoutEnd !== null && blackoutEnd > at) boundaries.push(blackoutEnd);
 
     if (instantIndex < instants.length) {
       boundaries.push(instants[instantIndex]!.at);

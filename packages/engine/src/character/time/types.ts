@@ -29,6 +29,8 @@ import type {
 } from "../foundation/body/endurance";
 import type { GameTimeInterval } from "../../time/interval";
 import type { GameTimestamp } from "../../time/types";
+import type { RuntimeEvent } from "../../runtime/events";
+import type { RuntimeRequest } from "../../runtime/requests";
 
 
 /*
@@ -148,6 +150,21 @@ export interface CharacterTimeTransition {
    * state they had forgotten about.
    */
   readonly nenActivities?: NenActivityTransition;
+
+  /*
+   * What this interval did to the stored awakening state — a collapse settled,
+   * a collapse recovery advanced or completed — as the events that happened
+   * and the requests other owners still have to resolve (the Unconscious
+   * Condition, the Leaking one). `character.nen` already carries the state.
+   *
+   * Absent when nothing happened. The restore-to-maximum a completed recovery
+   * asks for is not repeated here: the advance already applied it as the
+   * completed sleep's top-off.
+   */
+  readonly awakening?: {
+    readonly events: readonly RuntimeEvent[];
+    readonly requests: readonly RuntimeRequest[];
+  };
 }
 
 

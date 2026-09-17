@@ -367,7 +367,7 @@ describe("authorized active Nen under suppression recovers nothing", () => {
 
   it("adds explicit authorized upkeep once, and shuts unauthorized upkeep down", () => {
     const upkeep: readonly AuraUpkeepCommitment[] = [
-      { id: "ward-upkeep", source: "test-ward", baseRate: 600, period: "hour", functionsThroughSuppression: true },
+      { id: "ward-upkeep", source: "test-ward", baseRate: 600, period: "hour", functionsThroughSuppression: true, provenance: { kind: "standalone", source: { type: "ability", id: "ability-a" } } },
       { id: "plain-upkeep", source: "test-plain", baseRate: 600, period: "hour" },
     ];
     const hour = advanced(subject(), underZetsu(), T0, HOUR, WORKING, upkeep);

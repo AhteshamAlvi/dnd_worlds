@@ -40,10 +40,19 @@ export {
   NEN_FORCED_SUPPRESSION_SOURCE,
   NEN_INVOLUNTARY_SUPPRESSION_SOURCE,
   findNenStoredSuppressionIssues,
+  nenCollapseRecoveryClock,
   nenQualifyingUnconsciousness,
   nenStoredSuppression,
+  nenStoredSuppressionExemptsSource,
   nenStoredSuppressionPolicy,
 } from "./suppression";
+
+export { projectNenUpkeep } from "./upkeep";
+
+export type {
+  NenUpkeepProjection,
+  NenUpkeepProjectionInput,
+} from "./upkeep";
 
 export {
   REN_ACTIVITY_DEFINITION,

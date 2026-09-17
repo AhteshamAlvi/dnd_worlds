@@ -3961,10 +3961,16 @@ describe("Sleep qualification and suppression exemptions stay generic", () => {
     /suppression|forced|zetsu|exemptions/i.test(body);
 
   it("decides sleep without reading suppression", () => {
-    const body = arrowBody(code(TIME), "sleepingNow");
+    const source = code(TIME);
+    const sleeping = arrowBody(source, "sleepingNow");
+    const start = source.indexOf("const unconsciousNow = ");
+    const unconscious = source.slice(start, source.indexOf("\n  };", start));
 
-    expect(body).toMatch(/qualifyingUnconsciousness/);
-    expect(infersSleepFromSuppression(body)).toBe(false);
+    expect(start).toBeGreaterThan(-1);
+    expect(sleeping).toMatch(/unconsciousNow\(\)/);
+    expect(unconscious).toMatch(/unconsciousness\.endsAt/);
+    expect(infersSleepFromSuppression(sleeping)).toBe(false);
+    expect(infersSleepFromSuppression(unconscious)).toBe(false);
   });
 
   it("requires capability and the instance list together", () => {
@@ -3995,5 +4001,74 @@ describe("Sleep qualification and suppression exemptions stay generic", () => {
   it("would catch each regression", () => {
     expect(infersSleepFromSuppression('activity.mode === "sleep" || suppressionNow()?.forced === true')).toBe(true);
     expect(infersSleepFromSuppression('activity.mode === "sleep" || input.qualifyingUnconsciousness !== undefined')).toBe(false);
+  });
+});
+
+
+/*
+ * ZET-1C — one exemption matcher, one owner of the recovery clock, and Aura
+ * still ignorant of both.
+ */
+describe("Upkeep authorization and the recovery clock have one owner each", () => {
+  const production = sourceFilesUnder(SRC).filter(
+    (path) => !path.startsWith(join(SRC, "__tests__")),
+  );
+
+  const code = (path: string): string =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const AWAKENING_STATE = join(SRC, "character", "foundation", "nen", "awakening", "state.ts");
+  const AWAKENING_VALIDATION = join(SRC, "character", "foundation", "nen", "awakening", "validation.ts");
+  const SUPPRESSION = join(SRC, "character", "nen", "suppression.ts");
+  const ADVANCE = join(SRC, "character", "time", "advance.ts");
+
+  /* Reading an exemption's bindings directly is matching one. */
+  const matchesExemptions = (source: string): boolean =>
+    /exemptions\s*\.\s*some\s*\(|exemption\s*\.\s*abilityId\s*===/.test(source);
+
+  it("matches Ability exemptions in the awakening state alone, reached through one adapter", () => {
+    const matchers = production.filter((path) => matchesExemptions(code(path)));
+
+    expect(matchers.every((path) => path === AWAKENING_STATE || path === AWAKENING_VALIDATION)).toBe(true);
+
+    const callers = production.filter((path) =>
+      /abilityFunctions(?:Despite|Through)Suppression\(/.test(code(path)) && path !== AWAKENING_STATE
+    );
+
+    expect(callers).toEqual([SUPPRESSION]);
+  });
+
+  it("advances collapse recovery from character time alone", () => {
+    const callers = production.filter((path) =>
+      /advanceNenCollapseRecovery\(/.test(code(path)) &&
+      !/export function advanceNenCollapseRecovery\(/.test(code(path))
+    );
+
+    expect(callers).toEqual([ADVANCE]);
+  });
+
+  /*
+   * `"ten"` is legitimately an Aura access-state name; what must stay out is
+   * Zetsu, and the Ability source-type rule that decides who may borrow an
+   * exemption.
+   */
+  it("keeps Aura free of Nen adapters, Zetsu and the Ability source rule while it links upkeep to owners", () => {
+    const aura = sourceFilesUnder(join(SRC, "character", "foundation", "aura"));
+
+    const offenders = aura.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        specifier.startsWith(".") && join(path, "..", specifier).startsWith(join(SRC, "character", "nen"))
+      ) || /"(?:zetsu|ability)"/.test(code(path))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("would catch each regression", () => {
+    expect(matchesExemptions("held.exemptions.some((one) => one.abilityId === id)")).toBe(true);
+    expect(matchesExemptions("exemption.abilityId === abilityId &&")).toBe(true);
+    expect(matchesExemptions("nenStoredSuppressionExemptsSource(nen, source)")).toBe(false);
   });
 });

@@ -266,10 +266,14 @@ describe("suppression alone never counts as sleep", () => {
 
     expect(nenQualifyingUnconsciousness(stored.nen)).toEqual({ source: NEN_COLLAPSE_RECOVERY_SOURCE });
 
-    const result = sliced(stored, Array.from({ length: 9 }, () => [HOUR, AWAKE] as [number, CharacterTimeActivity]));
+    const result = sliced(stored, Array.from({ length: 8 }, () => [HOUR, AWAKE] as [number, CharacterTimeActivity]));
 
     expect(result.character.wakefulness.consecutiveSleepHours).toBe(QUALIFYING_SLEEP_HOURS);
     expect(result.events.filter((one) => one.kind === "sleep-completed")).toHaveLength(1);
+
+    /* Character time completed the recovery at hour eight, so the ninth awake hour is not sleep. */
+    expect(result.character.nen.awakening.collapseRecovery?.completedAt).toBe(T0 + hoursToDuration(8));
+    expect(advanced(result.character, T0 + hoursToDuration(8), HOUR).wakefulness.consecutiveSleepHours).toBe(0);
   });
 
   it("does not count an awake involuntary suppression after the recovery has completed", () => {

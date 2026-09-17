@@ -813,6 +813,16 @@ export interface AuraSuppression {
    * never inferred from `source`.
    */
   readonly exemptions?: AuraSuppressionExemptions;
+
+  /*
+   * The upkeep commitments THIS suppression instance exempts, by id.
+   *
+   * The second layer, beside each commitment's own
+   * `functionsThroughSuppression`. Absent: capability alone is enough, which is
+   * a suppression the character chose. Present: a commitment must be capable
+   * AND listed. Meaningless — and refused — beside `exemptions: none`.
+   */
+  readonly exemptUpkeepIds?: readonly string[];
 }
 
 export const AURA_SUPPRESSION_EXEMPTIONS = ["authorized", "none"] as const;

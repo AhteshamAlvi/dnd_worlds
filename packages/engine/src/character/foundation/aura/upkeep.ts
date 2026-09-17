@@ -55,6 +55,7 @@ import type {
 import { createTraceNode } from "../../../infrastructure/trace";
 import { COMBAT_ROUNDS_PER_HOUR } from "../../../time/duration";
 import type { GameTimestamp } from "../../../time/types";
+import type { ContributionSourceRef } from "../../../infrastructure/contribution-source";
 
 import {
   deliberateAccessError,
@@ -117,7 +118,41 @@ export interface AuraUpkeepCommitment {
    * nothing infers it.
    */
   readonly functionsThroughSuppression?: boolean;
+
+  /*
+   * Who this upkeep belongs to, stated rather than inferred from `source`.
+   *
+   * Required whenever `functionsThroughSuppression` is claimed, because an
+   * authorization with no owner is one nothing can check. See
+   * AuraUpkeepProvenance.
+   */
+  readonly provenance?: AuraUpkeepProvenance;
 }
+
+
+/*
+ * Explicit ownership for one upkeep commitment.
+ *
+ *   activity     paid for a running activity, by its stable instance id.
+ *                `dependsOn` lists the activities that owner is composed of,
+ *                transitively. When the owner or anything it depends on stops
+ *                — including by another of its own upkeep shutting down, or by
+ *                its outward flow stopping — this upkeep ends at that instant.
+ *   standalone   not paid for any activity; `source` is the content that
+ *                asked for it, as a structured reference.
+ *
+ * Opaque ids and references only. Nothing here knows what the owner is.
+ */
+export type AuraUpkeepProvenance =
+  | {
+    readonly kind: "activity";
+    readonly activityId: string;
+    readonly dependsOn?: readonly string[];
+  }
+  | {
+    readonly kind: "standalone";
+    readonly source: ContributionSourceRef;
+  };
 
 
 /**
@@ -180,6 +215,8 @@ export interface AuraUpkeepCharge {
  *   insufficient-aura  the reserve could no longer carry it
  *   access-lost        the character can no longer project deliberately at
  *                      all — Zetsu closing over a running effect is the case
+ *   owner-stopped      the activity it is paid for, or one that activity is
+ *                      composed of, stopped at this instant
  *
  * Expiry is deliberately absent: an effect reaching its own endsAt ended as
  * intended, and calling that a shutdown would tell a player something failed.
@@ -187,6 +224,7 @@ export interface AuraUpkeepCharge {
 export const AURA_UPKEEP_SHUTDOWN_REASONS = [
   "insufficient-aura",
   "access-lost",
+  "owner-stopped",
 ] as const;
 
 export type AuraUpkeepShutdownReason =
@@ -224,6 +262,61 @@ export function upkeepRatePerHour(
   period: AuraUpkeepPeriod,
 ): number {
   return period === "round" ? baseRate * COMBAT_ROUNDS_PER_HOUR : baseRate;
+}
+
+
+/*
+ * What an upkeep's stated ownership has to look like.
+ *
+ * Shape only — whether the owner exists, is running, or may borrow an
+ * exemption is for whoever owns activities to judge. What IS judged here: an
+ * upkeep claiming to function through suppression with no owner at all.
+ */
+function findUpkeepProvenanceIssues(
+  commitment: AuraUpkeepCommitment,
+): readonly EngineError[] {
+  const provenance = commitment.provenance;
+  const at = `upkeep ${String(commitment.id)}`;
+
+  if (provenance === undefined) {
+    return commitment.functionsThroughSuppression === true
+      ? [{
+        code: "aura.upkeep.provenance.missing",
+        message:
+          "An upkeep functioning through suppression must state who it belongs to.",
+        audience: "developer",
+        required: "provenance",
+        actual: at,
+      }]
+      : [];
+  }
+
+  const nonEmpty = (value: unknown): boolean =>
+    typeof value === "string" && value.trim().length > 0;
+
+  const valid = provenance !== null && typeof provenance === "object" && (
+    provenance.kind === "activity"
+      ? nonEmpty(provenance.activityId) &&
+        (provenance.dependsOn === undefined ||
+          (Array.isArray(provenance.dependsOn) &&
+            provenance.dependsOn.every(nonEmpty) &&
+            !provenance.dependsOn.includes(provenance.activityId)))
+      : provenance.kind === "standalone" &&
+        provenance.source !== null && typeof provenance.source === "object" &&
+        nonEmpty(provenance.source.type) && nonEmpty(provenance.source.id)
+  );
+
+  return valid
+    ? []
+    : [{
+      code: "aura.upkeep.provenance.invalid",
+      message:
+        "An upkeep's provenance must name an owning activity or a structured source.",
+      audience: "developer",
+      required:
+        "{ kind: activity, activityId, dependsOn? } | { kind: standalone, source: { type, id } }",
+      actual: at,
+    }];
 }
 
 
@@ -327,6 +420,8 @@ export function findAuraUpkeepIssues(
         actual: String(commitment.functionsThroughSuppression),
       });
     }
+
+    errors.push(...findUpkeepProvenanceIssues(commitment));
 
     if (
       commitment.priority !== undefined &&

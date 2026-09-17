@@ -14,6 +14,8 @@
  */
 
 import type { EngineError } from "../../infrastructure/diagnostics";
+import { GAME_MILLISECONDS_PER_HOUR } from "../../time/duration";
+import type { GameTimestamp } from "../../time/types";
 
 import type { AuraSuppression } from "../foundation/aura/types";
 import {
@@ -96,12 +98,30 @@ export function nenStoredSuppressionPolicy(
   return {
     exemptions: "authorized",
     exemptActivityIds: activities
-      .filter((activity) =>
-        activity.source?.type === NEN_ABILITY_SOURCE_TYPE &&
-        abilityFunctionsDespiteSuppression(nen.awakening, activity.source.id)
-      )
+      .filter((activity) => nenStoredSuppressionExemptsSource(nen, activity.source))
       .map((activity) => activity.id),
   };
+}
+
+
+/**
+ * Whether every stored suppression exempts the Ability this source names.
+ *
+ * THE matcher — activities and standalone upkeep both come through here, so
+ * there is one answer to "may this borrow an exemption". Only an Ability
+ * source can: an exemption names an Ability, and a Skill, an Item or the
+ * character sharing an id with one is not it. The binding to the instance and
+ * to its granting source is abilityFunctionsDespiteSuppression's.
+ */
+export function nenStoredSuppressionExemptsSource(
+  nen: NenState,
+  source: { readonly type: string; readonly id: string } | undefined,
+): boolean {
+  return (
+    source?.type === NEN_ABILITY_SOURCE_TYPE &&
+    typeof source.id === "string" &&
+    abilityFunctionsDespiteSuppression(nen.awakening, source.id)
+  );
 }
 
 
@@ -136,4 +156,58 @@ export function nenQualifyingUnconsciousness(
   return recovery !== null && recovery.completedAt === null
     ? { source: NEN_COLLAPSE_RECOVERY_SOURCE }
     : null;
+}
+
+
+/*
+ * How close a recovery's projected completion must be to its own nominal
+ * instant — `beganAt` plus the required hours — to be that instant.
+ *
+ * A recovery the coordinator drives is unconscious the whole time, so its
+ * completion IS the nominal instant; hours accumulated across sliced advances
+ * only drift from it by float residue. Snapping to the stored clock is what
+ * makes one long advance and many short ones agree on the timestamp. The same
+ * microsecond the Aura solver treats as one instant.
+ */
+const RECOVERY_CLOCK_EPSILON_MS = 1e-3;
+
+
+/**
+ * An active collapse recovery as a clock, read from an instant — or null when
+ * no recovery is in progress.
+ *
+ * `completesAt` is when the remaining qualifying hours run out if the
+ * character stays unconscious from `from`, which a recovery in progress
+ * always is.
+ */
+export function nenCollapseRecoveryClock(
+  nen: NenState,
+  from: GameTimestamp,
+): {
+  readonly recoveryId: string;
+  readonly beganAt: GameTimestamp;
+  readonly source: string;
+  readonly completesAt: GameTimestamp;
+} | null {
+  const recovery = nen.awakening.collapseRecovery;
+
+  if (recovery === null || recovery.completedAt !== null) return null;
+
+  const remaining = Math.max(
+    0,
+    recovery.requiredSleepHours - recovery.accumulatedSleepHours,
+  );
+
+  const projected = from + remaining * GAME_MILLISECONDS_PER_HOUR;
+  const nominal =
+    recovery.beganAt + recovery.requiredSleepHours * GAME_MILLISECONDS_PER_HOUR;
+
+  return {
+    recoveryId: recovery.id,
+    beganAt: recovery.beganAt,
+    source: NEN_COLLAPSE_RECOVERY_SOURCE,
+    completesAt: Math.abs(projected - nominal) <= RECOVERY_CLOCK_EPSILON_MS
+      ? nominal
+      : projected,
+  };
 }
