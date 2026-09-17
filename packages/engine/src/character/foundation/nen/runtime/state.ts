@@ -33,7 +33,7 @@ import {
   type NenActivityDefinition,
   type NenActivityProgress,
   type NenActivityRuntime,
-  type NenSuppressionExemptions,
+  type NenSuppressionPolicy,
 } from "./types";
 
 
@@ -800,13 +800,64 @@ function findSuppressionDeclarationIssues(
  * lacking `deliberate-access` authorizes nothing.
  */
 export function nenActivityPermittedUnderSuppression(
-  activity: Pick<NenActivity, "functionsThroughSuppression">,
-  exemptions: NenSuppressionExemptions,
+  activity: Pick<NenActivity, "id" | "functionsThroughSuppression">,
+  policy: NenSuppressionPolicy,
 ): boolean {
   return (
-    exemptions === "authorized" &&
-    activity.functionsThroughSuppression === true
+    policy.exemptions === "authorized" &&
+    activity.functionsThroughSuppression === true &&
+    (policy.exemptActivityIds === undefined ||
+      policy.exemptActivityIds.includes(activity.id))
   );
+}
+
+
+/** Everything wrong with a supplied suppression policy. */
+export function findNenSuppressionPolicyIssues(
+  policy: NenSuppressionPolicy,
+): readonly EngineError[] {
+  if (
+    policy === null || typeof policy !== "object" ||
+    (policy.exemptions !== "authorized" && policy.exemptions !== "none")
+  ) {
+    return [{
+      code: "nen.activity.suppression_policy.invalid",
+      message: "A suppression policy must state a known exemption policy.",
+      audience: "developer",
+      required: "{ exemptions: authorized | none }",
+      actual: describeDiagnosticValue(policy),
+    }];
+  }
+
+  const ids = policy.exemptActivityIds;
+
+  if (ids === undefined) return [];
+
+  if (
+    !Array.isArray(ids) ||
+    ids.some((id) => typeof id !== "string" || id.trim().length === 0)
+  ) {
+    return [{
+      code: "nen.activity.suppression_policy.exemptions.invalid",
+      message: "A suppression instance's exempt activities must be listed by id.",
+      audience: "developer",
+      required: "an array of non-empty activity ids",
+      actual: describeDiagnosticValue(ids),
+    }];
+  }
+
+  /* An instance list on a policy permitting nothing is two answers at once. */
+  if (policy.exemptions === "none" && ids.length > 0) {
+    return [{
+      code: "nen.activity.suppression_policy.contradictory",
+      message: "A suppression permitting nothing cannot exempt activities.",
+      audience: "developer",
+      required: "no exempt activities under exemptions: none",
+      actual: describeDiagnosticValue(ids),
+    }];
+  }
+
+  return [];
 }
 
 

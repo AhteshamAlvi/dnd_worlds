@@ -66,6 +66,7 @@ import {
   findNenActivity,
   findNenActivityIssues,
   nenActivityExpiryAt,
+  findNenSuppressionPolicyIssues,
   nenActivityPermittedUnderSuppression,
   nenActivityProgressAt,
   nenSuppressionImposed,
@@ -80,8 +81,15 @@ import type {
   NenActivityRuntime,
   NenActivityStop,
   NenActivityStopCause,
-  NenSuppressionExemptions,
+  NenSuppressionPolicy,
 } from "../../foundation/nen/runtime/types";
+
+
+/*
+ * The policy a suppressing ACTIVITY imposes: the character chose it, so an
+ * activity's own capability is enough and no instance list applies.
+ */
+const VOLUNTARY_SUPPRESSION: NenSuppressionPolicy = { exemptions: "authorized" };
 
 
 /* ── What a transition reports ──────────────────────────────────────────── */
@@ -682,7 +690,10 @@ function findSuppressionAdmissionIssues(
      */
     if (
       nenSuppressionImposed(activities) &&
-      !nenActivityPermittedUnderSuppression(incoming, "authorized")
+      !nenActivityPermittedUnderSuppression(
+        { id: activityId, ...incoming },
+        VOLUNTARY_SUPPRESSION,
+      )
     ) {
       return [{
         code: "nen.activity.suppression.not_permitted",
@@ -744,7 +755,7 @@ function activitiesReplacedBy(
       (replaces.has(one.definitionId) ||
         one.constraints.some((constraint) => revokes.has(constraint.kind)) ||
         (suppresses &&
-          !nenActivityPermittedUnderSuppression(one, "authorized"))),
+          !nenActivityPermittedUnderSuppression(one, VOLUNTARY_SUPPRESSION))),
   );
 }
 
@@ -1327,8 +1338,7 @@ export interface NenAdvanceRequest {
    * `suppressed` at `since`, or at `to` when the suppression was already in
    * force. An activity that itself imposes suppression is judged the same way.
    */
-  readonly suppression?: {
-    readonly exemptions: NenSuppressionExemptions;
+  readonly suppression?: NenSuppressionPolicy & {
     readonly since?: GameTimestamp;
   };
 }
@@ -1446,18 +1456,9 @@ function findAdvanceSuppressionIssues(
 
   if (suppression === undefined) return [];
 
-  if (
-    suppression === null || typeof suppression !== "object" ||
-    (suppression.exemptions !== "authorized" && suppression.exemptions !== "none")
-  ) {
-    return [{
-      code: "nen.activity.advance.suppression.invalid",
-      message: "An advance's suppression must state a known exemption policy.",
-      audience: "developer",
-      required: "{ exemptions: authorized | none }",
-      actual: describeDiagnosticValue(suppression),
-    }];
-  }
+  const policyIssues = findNenSuppressionPolicyIssues(suppression);
+
+  if (policyIssues.length > 0) return policyIssues;
 
   const since = suppression.since;
 
@@ -1516,7 +1517,7 @@ function advanceVerdictFor(
   const suppression = request.suppression;
 
   const suppressed = suppression !== undefined &&
-      !nenActivityPermittedUnderSuppression(activity, suppression.exemptions)
+      !nenActivityPermittedUnderSuppression(activity, suppression)
     ? {
       cause: "suppressed" as const,
       at: Math.max(

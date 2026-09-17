@@ -35,9 +35,14 @@ export {
 export type { UncoatedAuraAccessInput } from "./access";
 
 export {
+  NEN_ABILITY_SOURCE_TYPE,
+  NEN_COLLAPSE_RECOVERY_SOURCE,
   NEN_FORCED_SUPPRESSION_SOURCE,
   NEN_INVOLUNTARY_SUPPRESSION_SOURCE,
+  findNenStoredSuppressionIssues,
+  nenQualifyingUnconsciousness,
   nenStoredSuppression,
+  nenStoredSuppressionPolicy,
 } from "./suppression";
 
 export {

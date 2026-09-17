@@ -80,6 +80,9 @@ const HOUR = hoursToDuration(1);
 const SELF = { type: "character", id: "subject" } as const;
 const GM = { type: "gm", id: "table-ruling" } as const;
 
+/* The Ability the instinctive awakening's forced Zetsu exempts. */
+const ABILITY_A = { type: "ability", id: "ability-a" } as const;
+
 const AWAKE: CharacterTimeActivity = { initial: { mode: "ordinary-waking" } };
 const WORKING: CharacterTimeActivity = { initial: { mode: "ordinary-waking", activity: "moderate" } };
 
@@ -256,8 +259,8 @@ describe("only explicit authorization functions through suppression", () => {
     expect(findNenActivity(running, "ward-1")!).toMatchObject({ condition: "active", functionsThroughSuppression: true });
   });
 
-  it("lets the same authored activity run through forced suppression, and ends the unauthorized one", () => {
-    const runtime = withActivity(withActivity(runtimeFor(), WARD, "ward-1"), VOW, "vow-1");
+  it("lets the same authored activity run through forced suppression when its instance exempts it, and ends the unauthorized one", () => {
+    const runtime = withActivity(withActivity(runtimeFor(), WARD, "ward-1", { source: ABILITY_A }), VOW, "vow-1");
     const hour = advanced(subject(forcedNen()), runtime, T0, HOUR);
 
     expect(findNenActivity(hour.nenActivities!.runtime, "ward-1")!.condition).toBe("active");
@@ -377,7 +380,7 @@ describe("authorized active Nen under suppression recovers nothing", () => {
   });
 
   it("wins over forced suppression's 3R too", () => {
-    const hour = advanced(subject(forcedNen()), withActivity(runtimeFor(), WARD, "ward-1"), T0, HOUR);
+    const hour = advanced(subject(forcedNen()), withActivity(runtimeFor(), WARD, "ward-1", { source: ABILITY_A }), T0, HOUR);
 
     expect([hour.aura.balance.recovery, hour.aura.balance.leakage]).toEqual([0, 0]);
   });
@@ -404,9 +407,12 @@ describe("authorized active Nen under suppression recovers nothing", () => {
 
   /* Ward lasts 30 minutes; its composite has no end of its own and goes with it. */
   const timed = (base: NenActivityRuntime = runtimeFor()) => {
-    const ward = withActivity(base, WARD, "ward-1", { requested: { aura: 0, durationSeconds: 1800 } });
+    const ward = withActivity(base, WARD, "ward-1", { source: ABILITY_A, requested: { aura: 0, durationSeconds: 1800 } });
 
-    return withActivity(ward, WARD, "ward-composite", { constraints: [{ kind: "component", activityId: "ward-1" }] });
+    return withActivity(ward, WARD, "ward-composite", {
+      source: ABILITY_A,
+      constraints: [{ kind: "component", activityId: "ward-1" }],
+    });
   };
 
   it("restores Zetsu's recovery at the exact instant the authorized activity expires", () => {

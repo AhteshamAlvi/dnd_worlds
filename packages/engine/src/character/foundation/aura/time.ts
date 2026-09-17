@@ -248,6 +248,15 @@ export interface AdvanceAuraTimeInput {
    * one that permits it. See timeline.ts.
    */
   readonly activeNen?: AuraActiveNenCommitment;
+
+  /*
+   * The character is unconscious in a way that counts as sleep, for the whole
+   * interval — a blackout already in progress as it opens.
+   *
+   * A generic fact with a provenance label nothing branches on. Supplied by
+   * whoever owns the unconsciousness; never inferred here from suppression.
+   */
+  readonly qualifyingUnconsciousness?: { readonly source: string };
 }
 
 
@@ -595,6 +604,23 @@ export function advanceAuraTime(
     }
   }
 
+  const unconsciousness = input.qualifyingUnconsciousness;
+
+  if (
+    unconsciousness !== undefined &&
+    (unconsciousness === null || typeof unconsciousness !== "object" ||
+      typeof unconsciousness.source !== "string" ||
+      unconsciousness.source.trim().length === 0)
+  ) {
+    return fail([{
+      code: "aura.time.unconsciousness.invalid",
+      message: "Qualifying unconsciousness must name what supplied it.",
+      audience: "developer",
+      required: "{ source: non-empty string }",
+      actual: String(unconsciousness),
+    }]);
+  }
+
   const flow = input.outwardFlow;
   let flowAccess: ResolvedAuraAccess | null = null;
 
@@ -754,13 +780,15 @@ export function advanceAuraTime(
   let containedLeakageTotal = 0;
 
   /*
-   * Whether this interval has already paid the completed-sleep benefit.
+   * Whether the CURRENT uninterrupted sleep has already paid its completion.
    *
-   * Within one interval a streak capped at eight would otherwise re-trigger on
-   * every subsequent sleep segment, since it stays AT eight. The cap stops it
-   * growing; this stops it paying twice.
+   * The streak only reaches eight by completing, and stays capped there until
+   * waking resets it — so a stored streak already at eight IS the latch,
+   * carried between calls with no second field to disagree with it. Without
+   * reading it, the slice after an eight-hour slice re-emitted the completion.
+   * Reset together with the streak.
    */
-  let sleepCompleted = false;
+  let sleepCompleted = sleptHours >= QUALIFYING_SLEEP_HOURS;
 
   const chargedById = new Map<string, number>();
   const chargedHoursById = new Map<string, number>();
@@ -934,20 +962,20 @@ export function advanceAuraTime(
   /*
    * Whether this segment counts towards a completed sleep.
    *
-   * A blackout does. The character is unconscious for as long as it lasts —
-   * that is what the collapse asked the Condition layer for — and refusing to
-   * count it would mean a character who collapsed at hour one and lay there
-   * all night woke with an empty reserve, which is the opposite of what the
-   * forced Zetsu is for.
+   * Sleep does, and QUALIFYING UNCONSCIOUSNESS does — nothing else.
+   * Suppression by itself never does: a conscious character held in a forced
+   * Zetsu, or sitting awake in their own, is not asleep however shut their
+   * nodes are.
    *
-   * Keyed on FORCED SUPPRESSION rather than on this call's own `collapse`, and
-   * that is not a detail. `collapse` lasts one call; forced suppression is a
-   * fact the character carries, so it is the half that survives subdivision. A
-   * host advancing the night in one step gets the collapse's own suppression
-   * from `suppressionNow()`; a host advancing it hourly applies the
-   * `forced-zetsu` the collapse asked for and hands it back on the next
-   * activity. Reading the in-call flag made those two disagree about whether
-   * an eight-hour blackout had been a night's sleep.
+   * Unconsciousness arrives from two generic places, and neither is inferred
+   * from what suppressed the character:
+   *
+   *   in this call   a collapse whose requests include a blackout, from the
+   *                  collapse's own instant
+   *   carried        `qualifyingUnconsciousness`, a fact the host supplies for
+   *                  the whole interval — which is what a host advancing a
+   *                  blackout in slices hands back after the collapse, so both
+   *                  agree about whether the night was a night's sleep
    *
    * It counts for the SLEEP STREAK only. `hoursAwake` still follows the mode
    * the caller stated, because clearing sleep debt is a different benefit with
@@ -955,7 +983,9 @@ export function advanceAuraTime(
    * rests you.
    */
   const sleepingNow = (): boolean =>
-    activity.mode === "sleep" || suppressionNow()?.forced === true;
+    activity.mode === "sleep" ||
+    input.qualifyingUnconsciousness !== undefined ||
+    (collapse !== null && collapse.requests.includes("blackout"));
 
   /*
    * Whether the supplied generic activities are still running, and permitted
@@ -1496,6 +1526,7 @@ export function advanceAuraTime(
       sleptHours = Math.min(QUALIFYING_SLEEP_HOURS, sleptHours + hours);
     } else if (hours > 0) {
       sleptHours = 0;
+      sleepCompleted = false;
     }
 
     /*

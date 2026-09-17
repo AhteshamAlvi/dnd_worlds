@@ -380,6 +380,25 @@ export interface NenActivityRuntime {
 export type NenSuppressionExemptions = NonNullable<AuraSuppression["exemptions"]>;
 
 
+/*
+ * What one suppression lets keep running, as the runtime judges it.
+ *
+ * Two layers, both required when both are stated:
+ *
+ *   capability   the activity declares `functionsThroughSuppression`
+ *   instance     `exemptActivityIds`, when present, lists the activities THIS
+ *                suppression instance has exempted
+ *
+ * A voluntary suppression states no instance list — capability is enough. A
+ * forced one states the list its own exemptions produced, which may be empty.
+ * `none` permits nothing, whatever is listed.
+ */
+export interface NenSuppressionPolicy {
+  readonly exemptions: NenSuppressionExemptions;
+  readonly exemptActivityIds?: readonly string[];
+}
+
+
 /* ── Projections ────────────────────────────────────────────────────────── */
 
 /*

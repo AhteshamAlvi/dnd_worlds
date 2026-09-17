@@ -3932,3 +3932,68 @@ describe("Suppression authorization stays explicit and generic", () => {
     expect(importsAdapter(time, "../../nen/runtime/transitions")).toBe(false);
   });
 });
+
+
+/*
+ * ZET-1B — sleep is decided from generic sleep and unconsciousness facts, and
+ * a forced suppression's exemption is a second layer, never a replacement for
+ * an activity's own capability.
+ */
+describe("Sleep qualification and suppression exemptions stay generic", () => {
+  const code = (path: string): string =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const TIME = join(SRC, "character", "foundation", "aura", "time.ts");
+  const STATE = join(SRC, "character", "foundation", "nen", "runtime", "state.ts");
+
+  /* The body of one `const name = ...;` arrow, up to its terminating `;`. */
+  const arrowBody = (source: string, name: string): string => {
+    const start = source.indexOf(`const ${name} = `);
+
+    expect([name, start]).not.toEqual([name, -1]);
+
+    return source.slice(start, source.indexOf(";", start));
+  };
+
+  const infersSleepFromSuppression = (body: string): boolean =>
+    /suppression|forced|zetsu|exemptions/i.test(body);
+
+  it("decides sleep without reading suppression", () => {
+    const body = arrowBody(code(TIME), "sleepingNow");
+
+    expect(body).toMatch(/qualifyingUnconsciousness/);
+    expect(infersSleepFromSuppression(body)).toBe(false);
+  });
+
+  it("requires capability and the instance list together", () => {
+    const source = code(STATE);
+    const body = source.slice(
+      source.indexOf("export function nenActivityPermittedUnderSuppression("),
+      source.indexOf("export function findNenSuppressionPolicyIssues("),
+    );
+
+    expect(body).toMatch(/functionsThroughSuppression === true &&/);
+    expect(body).toMatch(/exemptActivityIds\.includes\(activity\.id\)/);
+    expect(body).not.toMatch(/\|\|\s*activity\.functionsThroughSuppression/);
+  });
+
+  it("keeps Aura from importing the suppression adapter", () => {
+    const aura = sourceFilesUnder(join(SRC, "character", "foundation", "aura"));
+
+    const offenders = aura.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("character", "nen", "suppression")) ||
+        resolvesInto(path, specifier, join("character", "nen", "zetsu"))
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("would catch each regression", () => {
+    expect(infersSleepFromSuppression('activity.mode === "sleep" || suppressionNow()?.forced === true')).toBe(true);
+    expect(infersSleepFromSuppression('activity.mode === "sleep" || input.qualifyingUnconsciousness !== undefined')).toBe(false);
+  });
+});

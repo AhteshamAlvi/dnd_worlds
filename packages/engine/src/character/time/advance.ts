@@ -81,8 +81,14 @@ import {
   nenActivityRunsUntil,
   type NenActivityRuntime,
   type NenActivityStopCause,
+  type NenSuppressionPolicy,
 } from "../foundation/nen/runtime";
-import { nenStoredSuppression } from "../nen/suppression";
+import {
+  findNenStoredSuppressionIssues,
+  nenQualifyingUnconsciousness,
+  nenStoredSuppression,
+  nenStoredSuppressionPolicy,
+} from "../nen/suppression";
 import {
   activeRenActivity,
   renOutwardFlow,
@@ -105,6 +111,13 @@ import type {
   AdvanceCharacterTimeInput,
   CharacterTimeTransition,
 } from "./types";
+
+
+/*
+ * What a running ordinary Zetsu lets keep running: the character chose it, so
+ * an activity's own declared capability is enough.
+ */
+const VOLUNTARY_POLICY: NenSuppressionPolicy = { exemptions: "authorized" };
 
 
 /**
@@ -231,7 +244,24 @@ export function advanceCharacterTime(
    * Suppression stored on the character, as generic Aura vocabulary. It drives
    * recovery on its own; a caller never restates it.
    */
+  const storedIssues = findNenStoredSuppressionIssues(character.nen);
+
+  if (storedIssues.length > 0) return fail(storedIssues);
+
   const stored = nenStoredSuppression(character.nen);
+
+  /*
+   * What the stored suppression lets keep running among some activities —
+   * capability AND this instance's exemption, or nothing at all. Null when
+   * nothing is stored.
+   */
+  const storedPolicy = (
+    runtime: NenActivityRuntime,
+  ): NenSuppressionPolicy | null =>
+    nenStoredSuppressionPolicy(character.nen, activeNenActivities(runtime));
+
+  /* A collapse recovery in progress is unconsciousness, and counts as sleep. */
+  const unconsciousness = nenQualifyingUnconsciousness(character.nen);
 
   if (openingActivities !== undefined) {
     /*
@@ -242,9 +272,9 @@ export function advanceCharacterTime(
     const opened = advanceNenActivities(openingActivities, {
       to: interval.startedAt,
       by: self,
-      ...(stored === null
+      ...(storedPolicy(openingActivities) === null
         ? {}
-        : { suppression: { exemptions: stored.exemptions ?? "none" } }),
+        : { suppression: storedPolicy(openingActivities)! }),
     });
 
     root.children.push(opened.trace.root);
@@ -359,12 +389,13 @@ export function advanceCharacterTime(
      * suppressing activity, and the opening advance under a stored one — never
      * leave anything else, so anything else was assembled outside them.
      */
-    const exemptions = suppression.exemptions ?? "none";
+    const policy = openingActivities === undefined
+      ? null
+      : storedPolicy(openingActivities) ?? VOLUNTARY_POLICY;
 
     if (
-      users.some((one) =>
-        !nenActivityPermittedUnderSuppression(one, exemptions)
-      )
+      policy !== null &&
+      users.some((one) => !nenActivityPermittedUnderSuppression(one, policy))
     ) {
       return fail([{
         code: "character.time.suppression.active_nen.unresolved",
@@ -392,7 +423,11 @@ export function advanceCharacterTime(
     : {
       ids: users.map((one) => one.id),
       functionsThroughSuppression: users.every((one) =>
-        nenActivityPermittedUnderSuppression(one, "authorized")
+        nenActivityPermittedUnderSuppression(
+          one,
+          (openingActivities === undefined ? null : storedPolicy(openingActivities)) ??
+            VOLUNTARY_POLICY,
+        )
       ),
       ...(ends.some((end) => end === null)
         ? {}
@@ -437,6 +472,9 @@ export function advanceCharacterTime(
       : { instantaneous: input.activeEffects.instantaneous }),
     ...(flow === null ? {} : { outwardFlow: flow }),
     ...(activeNen === null ? {} : { activeNen }),
+    ...(unconsciousness === null
+      ? {}
+      : { qualifyingUnconsciousness: unconsciousness }),
   });
 
   root.children.push(aura.trace.root);

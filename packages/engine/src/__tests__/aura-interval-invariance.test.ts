@@ -103,6 +103,9 @@ function run(scenario: Case, steps: number) {
   const chargedHours = new Map<string, number>();
   let collapsed = false;
 
+  /* The blackout a collapse asked for, carried into the steps after it. */
+  let unconscious = false;
+
   /*
    * Sub-interval endpoints are computed from the index rather than accumulated,
    * so a boundary that should coincide exactly with a scheduled timestamp does,
@@ -116,9 +119,9 @@ function run(scenario: Case, steps: number) {
    * hands each sub-interval only the changes and events it OWNS —
    * `[startedAt, endedAt)`, so nothing is applied twice at a boundary.
    *
-   * It also APPLIES THE COLLAPSE. A collapse hands back a `forced-zetsu`
-   * request, and the domains that own suppression act on it; inside one long
-   * advance the solver does that for itself, from the same instant. A harness
+   * It also APPLIES THE COLLAPSE. A collapse hands back `forced-zetsu` and
+   * `blackout` requests, and the domains that own them act on both; inside one
+   * long advance the solver does that for itself, from the same instant. A harness
    * that ignored the request would not be comparing one advance against many —
    * it would be comparing a character whose nodes were shut against one whose
    * host had declined to shut them, and the two genuinely differ.
@@ -148,6 +151,7 @@ function run(scenario: Case, steps: number) {
       ...(changes.length === 0 ? {} : { activityChanges: changes }),
       ...(events.length === 0 ? {} : { instantaneous: events }),
       upkeep,
+      ...(unconscious ? { qualifyingUnconsciousness: { source: "blackout" } } : {}),
     });
 
     if (!result.success) {
@@ -165,6 +169,7 @@ function run(scenario: Case, steps: number) {
         ...activity,
         suppression: { source: COLLAPSE_SUPPRESSION_SOURCE, forced: true },
       };
+      unconscious = true;
     }
 
     totals.recovery += result.payload.balance.recovery;
