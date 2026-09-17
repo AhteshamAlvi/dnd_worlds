@@ -4072,3 +4072,193 @@ describe("Upkeep authorization and the recovery clock have one owner each", () =
     expect(matchesExemptions("nenStoredSuppressionExemptsSource(nen, source)")).toBe(false);
   });
 });
+
+
+/*
+ * DCI-1 — the Detection/Concealment contest stays principle-neutral, and
+ * Combat stays sensory-neutral.
+ *
+ * Four domains meet in the Reaction Gate, and each of them is one careless
+ * import away from absorbing another's job:
+ *
+ *   - `foundation/senses/` resolves routes, totals and a binary comparison. It
+ *     must not learn what Zetsu is. The moment it branches on a principle id,
+ *     every future principle needs a branch there too and the generic contest
+ *     becomes a switch statement over the Nen chapter.
+ *
+ *   - `gameplay/combat/` consumes a Gate RESULT. It already may not import
+ *     Character content; the rules below add the specific temptations this
+ *     ticket created — recomputing a sensory score, or reading a Zetsu rank to
+ *     decide whether somebody noticed the attack.
+ *
+ *   - `character/nen/zetsu.ts` remains the ONE producer of learned-Zetsu
+ *     concealment, and `character/senses/` the one place that re-states it in
+ *     generic terms.
+ *
+ *   - `foundation/aura/` must not reach for the sensory domain. Aura is a
+ *     resource; being hard to notice is something the senses decide about it.
+ */
+describe("the sensory contest and Combat stay neutral", () => {
+  const sensesFiles = sourceFilesUnder(
+    join(SRC, "character", "foundation", "senses"),
+  );
+  const combatFiles = sourceFilesUnder(join(SRC, "gameplay", "combat"));
+  const auraFiles = sourceFilesUnder(join(SRC, "character", "foundation", "aura"));
+  const characterSensesFiles = sourceFilesUnder(join(SRC, "character", "senses"));
+  const gameplaySensesFiles = sourceFilesUnder(join(SRC, "gameplay", "senses"));
+
+  it("finds the sources it is checking", () => {
+    expect(sensesFiles.length).toBeGreaterThan(20);
+    expect(combatFiles.length).toBeGreaterThan(5);
+    expect(auraFiles.length).toBeGreaterThan(5);
+    expect(characterSensesFiles.length).toBeGreaterThan(1);
+    expect(gameplaySensesFiles.length).toBeGreaterThan(1);
+  });
+
+  it("keeps every Nen import out of the generic sensory domain", () => {
+    const offenders = sensesFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("character", "nen")) ||
+        resolvesInto(path, specifier, join("foundation", "nen")),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("branches on no principle id in the sensory domain or in Combat", () => {
+    /*
+     * The same predicate the Nen runtime rule uses, for the same reason: a
+     * helper can call its parameter anything it likes, so naming a PRINCIPLE in
+     * a comparison or a case label is the shape that dodges an import guard.
+     */
+    const pattern =
+      /definitionId\s*(?:===|!==)\s*"|(?:===|!==)\s*"(?:ren|ten|zetsu|hatsu|chu)"|case\s+"(?:ren|ten|zetsu|hatsu|chu)"/;
+
+    const branching = (code: string): boolean =>
+      code.split("\n").some(
+        (line) => pattern.test(line) && !line.includes("typeof"),
+      );
+
+    /* The predicate, exercised so it cannot stop matching in silence. */
+    expect(branching('if (activity.definitionId === "zetsu") {')).toBe(true);
+    expect(branching('      case "zetsu":')).toBe(true);
+    expect(branching("const scope = route.phenomenon;")).toBe(false);
+
+    const offenders = [...sensesFiles, ...combatFiles]
+      .filter((path) => branching(readFileSync(path, "utf8")));
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never lets Combat import the sensory domain or Zetsu", () => {
+    /*
+     * Combat is TOLD whether the Gate passed. Resolving it there would put a
+     * sensory authority inside the scheduler, and `gameplay/senses/` exists
+     * precisely so the composition has somewhere else to live.
+     */
+    const offenders = combatFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "senses") ||
+        resolvesInto(path, specifier, "zetsu"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("recomputes no sensory score inside Combat", () => {
+    const offenders = combatFiles.filter((path) =>
+      /\b(?:passiveDetection|concealment|detectionTotal|mastery)\b/i
+        .test(readFileSync(path, "utf8")),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never lets Aura import the sensory domain", () => {
+    const offenders = auraFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, "senses"),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("produces learned-Zetsu concealment from exactly one adapter", () => {
+    /*
+     * `deriveZetsuAuraConcealmentModifier` is the rank table, and
+     * `resolveZetsuAuraConcealment` the runtime projection of it. Exactly one
+     * file may call each: a second producer is how the value starts disagreeing
+     * with itself depending on which door a caller came through.
+     */
+    const everySource = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"));
+
+    /*
+     * External callers only. A file calling its own exported function is not a
+     * second producer, and `principles/zetsu.ts` legitimately uses its own rank
+     * table inside resolveZetsu().
+     */
+    const callersOutside = (name: string) =>
+      everySource.filter((path) => {
+        const code = readFileSync(path, "utf8");
+
+        return new RegExp(`\\b${name}\\s*\\(`).test(code) &&
+          !new RegExp(`export function ${name}\\b`).test(code);
+      });
+
+    expect(callersOutside("deriveZetsuAuraConcealmentModifier"))
+      .toEqual([join(SRC, "character", "nen", "zetsu.ts")]);
+
+    expect(callersOutside("resolveZetsuAuraConcealment"))
+      .toEqual([join(SRC, "character", "senses", "nen-concealment.ts")]);
+  });
+
+  it("keeps the Concealment Lead table in exactly one place", () => {
+    /*
+     * The disadvantage derivation is the whole of what a passive failure buys.
+     * A second copy is how one caller starts charging three disadvantages where
+     * another charges two for the same margin.
+     */
+    const everySource = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"));
+
+    const declarers = everySource.filter((path) =>
+      /export function deriveConcealmentReactionDisadvantages/
+        .test(readFileSync(path, "utf8")),
+    );
+
+    expect(declarers).toEqual([
+      join(SRC, "character", "foundation", "senses", "detection", "outcome.ts"),
+    ]);
+
+    const openCoded = everySource.filter((path) =>
+      /1\s*\+\s*Math\.floor\(/.test(readFileSync(path, "utf8")),
+    );
+
+    expect(openCoded).toEqual([declarers[0]]);
+  });
+
+  it("exposes no Detection information-band API from the public barrel", () => {
+    /*
+     * Detection's bands are gone and Perception's and Investigation's are not,
+     * so the shared band module legitimately survives. What must not come back
+     * is a band-shaped Detection input or notification threshold.
+     */
+    const barrel = readFileSync(join(SRC, "index.ts"), "utf8");
+    const detection = readFileSync(
+      join(SRC, "character", "foundation", "senses", "detection", "types.ts"),
+      "utf8",
+    );
+    const candidates = readFileSync(
+      join(SRC, "character", "foundation", "senses", "detection", "candidates.ts"),
+      "utf8",
+    );
+
+    expect(barrel).not.toMatch(/minimumNotificationBand/);
+    expect(detection).not.toMatch(/\bInformationBand\b|\binformationOverride\b/);
+    expect(candidates).not.toMatch(/\bInformationBand\b|minimumNotificationBand/);
+  });
+});

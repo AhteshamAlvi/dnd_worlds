@@ -8,9 +8,15 @@ import {
   mismatchedSensoryRouteError,
   sensoryFailure,
 } from "../diagnostics";
-import { resolveInformationBand } from "../information";
+import { compareDetectionTotals } from "./outcome";
 import type { DetectionRequest, DetectionResolution } from "./types";
 
+/**
+ * Passive Detection: the permanent alertness total, compared once, never rolled.
+ *
+ * P > C detects. A tie leaves the subject concealed — see outcome.ts for why
+ * the rule is written once and imported rather than restated here.
+ */
 export function resolvePassiveDetection(
   request: DetectionRequest,
 ): EngineResult<DetectionResolution> {
@@ -54,28 +60,31 @@ export function resolvePassiveDetection(
   const modifier = resolveCheckModifier([
     { id: "passiveDetection.base", amount: sense.passiveDetectionBase },
   ], request.modifiers ?? [], scope);
-  const margin = modifier.finalModifier - request.concealment.total;
-  const band = resolveInformationBand(margin, request.informationOverride);
+  const { detected, margin } = compareDetectionTotals(
+    modifier.finalModifier,
+    request.concealment.total,
+  );
   const modifierTrace = createCheckModifierTraceNode(modifier);
 
   const trace = createTraceNode({
     id: `character.senses.detection.passive.${signature.id}`,
     label: "Resolve passive Detection",
-    formula: "passive Detection - Concealment",
+    formula: "detected when passive Detection > Concealment; a tie stays hidden",
     inputs: {
       detection: { value: modifier.finalModifier },
       concealment: { value: request.concealment.total },
     },
-    output: band,
+    output: detected,
     children: [modifierTrace, request.concealment.trace],
   });
 
   return engineSuccess({
     mode: "passive",
+    detected,
     observerTotal: modifier.finalModifier,
     concealmentTotal: request.concealment.total,
     margin,
-    band,
+    route,
     trace,
   }, { root: trace });
 }

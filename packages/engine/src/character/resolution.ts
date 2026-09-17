@@ -138,6 +138,7 @@ import { listDefinitions } from "./catalogs";
 import { resolveAuraProfile } from "./foundation/aura/resolution";
 import type { ResolvedAuraProfile } from "./foundation/aura/types";
 import type { AuraTransitionContext } from "./foundation/aura/budget";
+import { isNenAwakened } from "./foundation/nen/nen";
 import type { NenState } from "./foundation/nen/types";
 import { deriveFatigue } from "./foundation/body/endurance";
 import type { ResolvedFatigue } from "./foundation/body/endurance";
@@ -1314,7 +1315,27 @@ export function resolveCharacter(
     resolved.actionCapacity,
   );
 
-  const senses = resolveSensoryProfile(stats, { effects: resolved.sensory });
+  /*
+   * Awakening reaches the senses through the character's STORED Nen state,
+   * which is the only honest source for it.
+   *
+   * This used to be left off with a comment saying Character could not supply
+   * it, and by the time that stopped being true the comment had outlived the
+   * limitation: `character.nen` has held NenState for some while. Until now an
+   * awakened character resolved with no Nen perception at all unless a Trait
+   * happened to grant it, which made every awakened character sensory-blind to
+   * Aura by default.
+   *
+   * `isNenAwakened` and not `hasEverAwakenedNen`: a reverted character keeps
+   * their trained Mastery and loses the perception, which is the whole
+   * distinction those two readings exist for. Explicit content grants and
+   * suppressions still resolve on top, inside the profile resolver — there is
+   * deliberately no second awakening test down there.
+   */
+  const senses = resolveSensoryProfile(stats, {
+    effects: resolved.sensory,
+    nenAwakened: isNenAwakened(character.nen),
+  });
 
   /*
    * The CANONICAL Speed score, and nothing else.

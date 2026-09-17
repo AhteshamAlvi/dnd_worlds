@@ -24,6 +24,9 @@ import type {
 } from "../character/foundation/senses/investigation/types";
 import type { ConcealmentRating } from "../character/foundation/senses/concealment";
 
+import { INFORMATION_BANDS } from "../character/foundation/senses/information";
+import { NEN_PRESENCE_EVIDENCE_ID } from "../character/senses/nen-concealment";
+
 import { roll, route, sensoryProfile, sensoryStats, source } from "./fixtures/senses";
 
 /* Investigation: round((INT 18 + WIS 14 + PER 16) / 3) = 16 -> +3. */
@@ -279,5 +282,113 @@ describe("validation", () => {
 
   it("accepts a well-formed request", () => {
     expect(findInvestigationRequestIssues(request())).toEqual([]);
+  });
+});
+
+/*
+ * The boundary Detection's migration to a binary answer had to not cross.
+ *
+ * Detection stopped grading itself; Investigation did not. Analysis genuinely
+ * is a matter of degree — you can establish that there was a struggle without
+ * establishing who won it — so all five bands and every finding gate stay
+ * exactly as they were.
+ */
+describe("Investigation keeps its information bands", () => {
+  function atMargin(margin: number) {
+    return payloadOf(resolveInvestigationCheck(request({
+      dice: roll(10),
+      difficulty: { kind: "fixed", difficulty: 10 + INVESTIGATION_MODIFIER - margin },
+    })));
+  }
+
+  it.each([
+    [0, "none"],
+    [1, "minimal"],
+    [5, "partial"],
+    [10, "substantial"],
+    [15, "full"],
+  ] as const)("a margin of %i is %s", (margin, band) => {
+    expect(atMargin(margin).band).toBe(band);
+  });
+
+  it("can still reach every declared band", () => {
+    const reached = new Set(
+      [0, 1, 5, 10, 15].map((margin) => atMargin(margin).band),
+    );
+
+    expect([...INFORMATION_BANDS].every((band) => reached.has(band))).toBe(true);
+  });
+
+  it("still reveals findings only at or above their required band", () => {
+    const withEverything = request({
+      evidence: [{ id: "scorch-mark" }],
+      skillIds: ["forensics"],
+      knowledgeIds: ["nen-categories"],
+    });
+
+    const partial = payloadOf(resolveInvestigationCheck({
+      ...withEverything,
+      difficulty: { kind: "fixed", difficulty: 10 + INVESTIGATION_MODIFIER - 5 },
+    }));
+
+    expect(partial.band).toBe("partial");
+    expect(partial.revealedFindingIds)
+      .toEqual(["was-a-struggle", "attacker-was-left-handed"]);
+    expect(partial.revealedFindingIds).not.toContain("nen-residue-is-emitter");
+  });
+
+  it("still gates on evidence, Skill and knowledge at the highest band", () => {
+    const full = payloadOf(resolveInvestigationCheck(request({
+      difficulty: { kind: "fixed", difficulty: 10 + INVESTIGATION_MODIFIER - 15 },
+    })));
+
+    expect(full.band).toBe("full");
+    /* A perfect roll reveals nothing it lacks the prerequisites for. */
+    expect(full.revealedFindingIds).toEqual(["was-a-struggle"]);
+  });
+
+  it("cannot manufacture evidence it was not handed", () => {
+    /*
+     * Investigation analyses; it does not discover. A finding requiring the
+     * scorch mark stays sealed however well the check went, because nobody ever
+     * found a scorch mark.
+     */
+    const full = payloadOf(resolveInvestigationCheck(request({
+      skillIds: ["forensics"],
+      knowledgeIds: ["nen-categories"],
+      difficulty: { kind: "fixed", difficulty: 10 + INVESTIGATION_MODIFIER - 15 },
+    })));
+
+    expect(full.eligibleFindingIds).not.toContain("nen-residue-is-emitter");
+    expect(full.revealedFindingIds).not.toContain("nen-residue-is-emitter");
+  });
+
+  it("consumes generic Nen-presence evidence a Detection supplied", () => {
+    /*
+     * The one evidence id this ticket authors. Detection can report that live
+     * Aura is here; what that MEANS is Investigation's question, and it is
+     * answered only from findings somebody wrote.
+     */
+    const finding: InvestigationFinding = {
+      id: "somebody-nearby-is-using-nen",
+      requiredBand: "minimal",
+      requiredEvidenceIds: [NEN_PRESENCE_EVIDENCE_ID],
+    };
+
+    const withEvidence = payloadOf(resolveInvestigationCheck(request({
+      subject: "nen",
+      findings: [finding],
+      evidence: [{ id: NEN_PRESENCE_EVIDENCE_ID, phenomenon: "nen" }],
+    })));
+
+    expect(withEvidence.revealedFindingIds).toEqual([finding.id]);
+
+    const without = payloadOf(resolveInvestigationCheck(request({
+      subject: "nen",
+      findings: [finding],
+      evidence: [],
+    })));
+
+    expect(without.revealedFindingIds).toEqual([]);
   });
 });

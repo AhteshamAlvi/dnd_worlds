@@ -1028,13 +1028,22 @@ export type {
   ConcealmentRating,
   ConcealmentResolution,
   ConcealmentValidationIssue,
+  ConcealmentEndReason,
+  EstablishedConcealmentState,
 } from "./character/foundation/senses/concealment";
 
 export {
+  CONCEALMENT_END_REASONS,
   resolveConcealmentCheck,
   resolvePassiveConcealment,
   establishConcealment,
   shouldRerollEstablishedConcealment,
+  establishConcealmentState,
+  isConcealedFrom,
+  concealmentRatingForRoute,
+  recordConcealmentDetection,
+  endConcealmentAttempt,
+  replaceConcealmentAttempt,
   findConcealmentRequestIssues,
 } from "./character/foundation/senses/concealment";
 
@@ -1042,6 +1051,9 @@ export {
 export type {
   DetectionRequest,
   DetectionResolution,
+  DetectionComparison,
+  DetectionRouteCandidate,
+  PassiveDetectionSweep,
   DetectionImportance,
   DetectionCandidate,
   DetectionCandidateRoute,
@@ -1051,11 +1063,41 @@ export type {
 
 export {
   DETECTION_IMPORTANCE,
+  CONCEALMENT_LEAD_BAND_SIZE,
+  MAXIMUM_CONCEALMENT_REACTION_DISADVANTAGES,
   resolveDetectionCheck,
   resolvePassiveDetection,
   resolvePassiveDetectionCandidates,
+  compareDetectionTotals,
+  resolveConcealmentLead,
+  deriveConcealmentReactionDisadvantages,
+  reconcileDetectionAdvantage,
+  sweepPassiveDetectionRoutes,
   findDetectionRequestIssues,
 } from "./character/foundation/senses/detection";
+
+/* The character-facing sensory adapter: live state meets the pure contest. */
+export type {
+  ActiveSearchRequest,
+  ActiveSearchResolution,
+} from "./character/senses";
+
+export {
+  NEN_PRESENCE_EVIDENCE_ID,
+  resolveNenConcealmentModifiers,
+  resolveActiveSearch,
+} from "./character/senses";
+
+/* The Detection-based Reaction Gate, joining senses to the Combat queue. */
+export type {
+  ReactionGateBinding,
+  ReactionGatePreparation,
+  ReactionGateSettlement,
+  PrepareReactionGateInput,
+  SettleReactionGateInput,
+} from "./gameplay/senses";
+
+export { prepareReactionGate, settleReactionGate } from "./gameplay/senses";
 
 /* Investigation — analysis of submitted evidence. */
 export type {

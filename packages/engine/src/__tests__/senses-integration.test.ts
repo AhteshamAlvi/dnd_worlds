@@ -19,6 +19,7 @@ import { EFFECT_TYPES, type Effect } from "../character/rules/effects";
 import * as engine from "../index";
 
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
+import { AWAKENING_CAPABLE, standardAwakenedNen } from "./fixtures/nen";
 import { source } from "./fixtures/senses";
 
 afterEach(() => {
@@ -215,15 +216,62 @@ describe("ResolvedCharacter.senses", () => {
     ]);
   });
 
-  it("leaves Nen Perception off until content grants it", () => {
-    /*
-     * Deliberate, and documented in foundation/senses/README.md: Character
-     * does not store NenState yet, so resolveCharacter cannot report whether
-     * Nen is awakened. Content is the only route in for now.
-     */
+  it("leaves Nen Perception off for an unawakened character", () => {
     const resolved = resolveTestCharacter(createTestCharacter());
 
     expect(resolved.senses.nenPerception.available).toBe(false);
+  });
+
+  it("projects stored awakening into Nen Perception through real resolution", () => {
+    /*
+     * This used to be impossible and was documented as such. `character.nen`
+     * has held NenState for a while, and until this ticket resolveCharacter()
+     * still dropped it on the floor — so every awakened character resolved
+     * blind to Aura unless a Trait happened to grant them the perception.
+     *
+     * Asserted through resolveCharacter() rather than by calling
+     * resolveSensoryProfile({ nenAwakened: true }) directly, because the defect
+     * was entirely in the wiring and a direct call never saw it.
+     */
+    const resolved = resolveTestCharacter(createTestCharacter({
+      attributes: AWAKENING_CAPABLE,
+      nen: standardAwakenedNen(),
+    }));
+
+    expect(resolved.senses.nenPerception.available).toBe(true);
+  });
+
+  it("lets explicit suppression remove it from an awakened character", () => {
+    registerDefinition("trait", {
+      id: "aura-blind",
+      name: "Aura Blind",
+      description: "A test Trait that suppresses Nen Perception.",
+      effects: [{ type: "suppressNenPerception" }],
+    });
+
+    const resolved = resolveTestCharacter(createTestCharacter({
+      attributes: AWAKENING_CAPABLE,
+      nen: standardAwakenedNen(),
+      traits: [{ traitId: "aura-blind" }],
+    }));
+
+    expect(resolved.senses.nenPerception.available).toBe(false);
+    expect(resolved.senses.nenPerception.suppressedBy).toHaveLength(1);
+  });
+
+  it("still lets content grant it to somebody unawakened", () => {
+    registerDefinition("trait", {
+      id: "borrowed-sight",
+      name: "Borrowed Sight",
+      description: "A test Trait granting Nen Perception outright.",
+      effects: [{ type: "grantNenPerception" }],
+    });
+
+    const resolved = resolveTestCharacter(createTestCharacter({
+      traits: [{ traitId: "borrowed-sight" }],
+    }));
+
+    expect(resolved.senses.nenPerception.available).toBe(true);
   });
 });
 
@@ -239,6 +287,10 @@ describe("the public barrel", () => {
     "INVESTIGATION_SUBJECTS",
     "PERCEPTION_STATUSES",
     "DETECTION_IMPORTANCE",
+    "CONCEALMENT_LEAD_BAND_SIZE",
+    "MAXIMUM_CONCEALMENT_REACTION_DISADVANTAGES",
+    "CONCEALMENT_END_REASONS",
+    "NEN_PRESENCE_EVIDENCE_ID",
     "INFORMATION_BANDS",
     "DEFAULT_INFORMATION_THRESHOLDS",
     "NATURAL_EXTRASENSORY_PERCEPTION_REQUIREMENTS",
@@ -256,10 +308,25 @@ describe("the public barrel", () => {
     "resolveDetectionCheck",
     "resolvePassiveDetection",
     "resolvePassiveDetectionCandidates",
+    "compareDetectionTotals",
+    "resolveConcealmentLead",
+    "deriveConcealmentReactionDisadvantages",
+    "reconcileDetectionAdvantage",
+    "sweepPassiveDetectionRoutes",
+    "resolveActiveSearch",
+    "resolveNenConcealmentModifiers",
+    "prepareReactionGate",
+    "settleReactionGate",
     "resolveConcealmentCheck",
     "resolvePassiveConcealment",
     "establishConcealment",
     "shouldRerollEstablishedConcealment",
+    "establishConcealmentState",
+    "isConcealedFrom",
+    "concealmentRatingForRoute",
+    "recordConcealmentDetection",
+    "endConcealmentAttempt",
+    "replaceConcealmentAttempt",
     "resolveInvestigationCheck",
     "eligibleInvestigationFindings",
     "findingsRevealedAtBand",
@@ -283,8 +350,8 @@ describe("the public barrel", () => {
     /*
      * Detection, Concealment and Investigation are both Derived Attributes and
      * mechanics. resolveDetection() computes the score; resolveDetectionCheck()
-     * rolls it against Concealment and returns an information band. Two
-     * different things, so the barrel gives them two different names rather
+     * rolls it against Concealment and answers whether the subject was found.
+     * Two different things, so the barrel gives them two different names rather
      * than letting one shadow the other.
      */
     expect(engine.resolveDetection).not.toBe(engine.resolveDetectionCheck);

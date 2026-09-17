@@ -137,17 +137,32 @@ export type {
   ConcealmentValidationIssue,
 } from "./concealment";
 
+export type {
+  ConcealmentEndReason,
+  EstablishedConcealmentState,
+} from "./concealment";
+
 export {
+  CONCEALMENT_END_REASONS,
   resolveConcealmentCheck,
   resolvePassiveConcealment,
   establishConcealment,
   shouldRerollEstablishedConcealment,
+  establishConcealmentState,
+  isConcealedFrom,
+  concealmentRatingForRoute,
+  recordConcealmentDetection,
+  endConcealmentAttempt,
+  replaceConcealmentAttempt,
   findConcealmentRequestIssues,
 } from "./concealment";
 
 export type {
   DetectionRequest,
   DetectionResolution,
+  DetectionComparison,
+  DetectionRouteCandidate,
+  PassiveDetectionSweep,
   DetectionImportance,
   DetectionCandidate,
   DetectionCandidateRoute,
@@ -157,9 +172,16 @@ export type {
 
 export {
   DETECTION_IMPORTANCE,
+  CONCEALMENT_LEAD_BAND_SIZE,
+  MAXIMUM_CONCEALMENT_REACTION_DISADVANTAGES,
   resolveDetectionCheck,
   resolvePassiveDetection,
   resolvePassiveDetectionCandidates,
+  compareDetectionTotals,
+  resolveConcealmentLead,
+  deriveConcealmentReactionDisadvantages,
+  reconcileDetectionAdvantage,
+  sweepPassiveDetectionRoutes,
   findDetectionRequestIssues,
 } from "./detection";
 

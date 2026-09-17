@@ -1,3 +1,18 @@
+/*
+ * The passive sweep: everything an observer might passively notice, in one
+ * pass, ordered so a GM reads the assassin before the scenery.
+ *
+ * Binary now, like the rest of Detection. The old shape asked each candidate to
+ * clear an authored information band and reported the band it reached, which
+ * meant a hidden knife could be "partially" noticed — a state with no meaning
+ * once Detection stopped grading itself. A candidate is now included when any
+ * valid route DETECTS it, and excluded otherwise.
+ *
+ * What survives unchanged is the reason this file exists at all: crowd control.
+ * Grouping, importance and deterministic order are what stop a busy market from
+ * producing forty notifications, and none of that depended on bands.
+ */
+
 import type { CheckModifierContribution } from "../../../../checks/types";
 import {
   engineSuccess,
@@ -5,7 +20,6 @@ import {
 } from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 import type { ConcealmentRating } from "../concealment";
-import { compareInformationBands, highestInformationBand, type InformationBand } from "../information";
 import type { PerceivedCue } from "../signatures";
 import type { ResolvedSensoryProfile } from "../types";
 import { resolvePassiveDetection } from "./passive";
@@ -24,14 +38,15 @@ export interface DetectionCandidate {
   readonly importance: DetectionImportance;
   readonly routes: readonly DetectionCandidateRoute[];
   readonly groupId?: string;
-  readonly minimumNotificationBand?: Exclude<InformationBand, "none">;
 }
 
 export interface DetectionNotification {
   readonly key: string;
   readonly candidateIds: readonly string[];
   readonly importance: DetectionImportance;
-  readonly band: Exclude<InformationBand, "none">;
+  /** The clearest positive margin among this group's detecting routes. */
+  readonly bestMargin: number;
+  /** Only the routes that actually detected; a missed route notifies nothing. */
   readonly results: readonly DetectionResolution[];
 }
 
@@ -75,9 +90,9 @@ export function resolvePassiveDetectionCandidates(input: {
       results.push(result.payload);
     }
 
-    const best = highestInformationBand(results.map((result) => result.band));
-    const minimum = candidate.minimumNotificationBand ?? "minimal";
-    if (best === "none" || compareInformationBands(best, minimum) < 0) continue;
+    const detecting = results.filter((result) => result.detected);
+
+    if (detecting.length === 0) continue;
 
     const key = candidate.groupId ?? candidate.id;
     const entry = collected.get(key) ?? {
@@ -86,7 +101,7 @@ export function resolvePassiveDetectionCandidates(input: {
       results: [],
     };
     entry.candidateIds.push(candidate.id);
-    entry.results.push(...results.filter((result) => result.band !== "none"));
+    entry.results.push(...detecting);
     if (IMPORTANCE_WEIGHT[candidate.importance] > IMPORTANCE_WEIGHT[entry.importance]) {
       entry.importance = candidate.importance;
     }
@@ -97,20 +112,18 @@ export function resolvePassiveDetectionCandidates(input: {
     key,
     candidateIds: entry.candidateIds,
     importance: entry.importance,
-    band: highestInformationBand(entry.results.map((result) => result.band)) as Exclude<InformationBand, "none">,
+    bestMargin: Math.max(...entry.results.map((result) => result.margin)),
     results: entry.results,
   })).sort((left, right) =>
     IMPORTANCE_WEIGHT[right.importance] - IMPORTANCE_WEIGHT[left.importance] ||
-    compareInformationBands(right.band, left.band) ||
-    Math.max(...right.results.map((result) => result.margin)) -
-      Math.max(...left.results.map((result) => result.margin))
+    right.bestMargin - left.bestMargin
   );
 
   return engineSuccess(notifications, {
     root: createTraceNode({
       id: "character.senses.detection.passive.candidates",
       label: "Sweep passive Detection candidates",
-      formula: "notify per group at the highest band any of its routes reached",
+      formula: "notify per group when any of its routes passively detected it",
       inputs: { candidates: { value: input.candidates.length } },
       output: notifications.length,
     }),

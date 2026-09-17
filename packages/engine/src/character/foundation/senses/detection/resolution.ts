@@ -9,7 +9,7 @@ import {
   missingSensoryDiceError,
   sensoryFailure,
 } from "../diagnostics";
-import { resolveInformationBand } from "../information";
+import { compareDetectionTotals } from "./outcome";
 import type { DetectionRequest, DetectionResolution } from "./types";
 import { resolvePassiveDetection } from "./passive";
 
@@ -35,6 +35,19 @@ function routeMismatch(request: DetectionRequest): EngineResult<never> | undefin
   return undefined;
 }
 
+/**
+ * Rolled Detection — a deliberate search, or the Reaction Gate.
+ *
+ * The advantage level on the supplied dice is whatever the CALLER already
+ * reconciled. This resolver never adds disadvantages of its own, because by the
+ * time it is holding dice the number of them has already been decided; see
+ * outcome.ts's reconcileDetectionAdvantage() for the step that must happen
+ * first, and senses/reaction-gate.ts for the Gate that performs it.
+ *
+ * Active searching and the Gate therefore differ by exactly one thing — whether
+ * the Concealment Lead was folded in upstream — and not by two different
+ * resolvers that could drift apart.
+ */
 export function resolveDetectionCheck(
   request: DetectionRequest,
 ): EngineResult<DetectionResolution> {
@@ -74,24 +87,27 @@ export function resolveDetectionCheck(
   if (!checkResult.success) return checkResult;
 
   const check = checkResult.payload;
-  const margin = check.total - request.concealment.total;
-  const band = resolveInformationBand(margin, request.informationOverride);
+  const { detected, margin } = compareDetectionTotals(
+    check.total,
+    request.concealment.total,
+  );
 
   const trace = createTraceNode({
     id: `character.senses.detection.${request.mode}.${signature.id}`,
     label: `Resolve ${request.mode} Detection`,
-    formula: "Detection total - Concealment total",
+    formula: "detected when Detection total > Concealment total; a tie stays hidden",
     inputs: { detection: { value: check.total }, concealment: { value: request.concealment.total } },
-    output: band,
+    output: detected,
     children: [check.trace, request.concealment.trace],
   });
 
   return engineSuccess({
     mode: request.mode,
+    detected,
     observerTotal: check.total,
     concealmentTotal: request.concealment.total,
     margin,
-    band,
+    route: request.concealment.route,
     check,
     trace,
   }, { root: trace });
