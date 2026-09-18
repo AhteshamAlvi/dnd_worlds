@@ -2508,24 +2508,30 @@ describe("Nen awakening stays inside its own domain", () => {
    * the way effective Mastery is. They are resolved in the one projection that
    * turns Nen state into an Aura access input, and pinned there below.
    *
-   * Hatsu remains barred outright. Ren and Zetsu are each barred everywhere
-   * but ONE adapter: both are things a character does, both live in the
-   * generic activity runtime, and each adapter is the single place that knows
-   * which activity is its principle and translates it into generic Aura terms
-   * — an outward flow for Ren, a voluntary suppression for Zetsu.
+   * Ren, Zetsu and Hatsu are each barred everywhere but ONE adapter. Ren and
+   * Zetsu are things a character does, living in the generic activity runtime;
+   * each adapter is the single place that knows which activity is its
+   * principle and translates it into generic Aura terms — an outward flow for
+   * Ren, a voluntary suppression for Zetsu. Hatsu is not an activity at all:
+   * its adapter only reads effective mastery and converts already-funded Aura.
    */
-  const BARRED_PRINCIPLES = ["hatsu"];
+  it("reaches the Hatsu principle from the Hatsu adapter alone", () => {
+    /*
+     * Across the WHOLE engine, not only the Nen directories. The conversion
+     * curve has exactly one producer, and a second importer — a future Ability
+     * file reaching straight for the table — is how an Ability starts applying
+     * the efficiency to its own effect fields a second time.
+     */
+    const everySource = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"));
 
-  it("imports no active-principle resolver", () => {
-    const offenders = nenFiles.filter((path) =>
+    const reaching = everySource.filter((path) =>
       moduleSpecifiers(path).some((specifier) =>
-        BARRED_PRINCIPLES.some((principle) =>
-          resolvesInto(path, specifier, join("nen", "principles", principle)),
-        ),
+        resolvesInto(path, specifier, join("nen", "principles", "hatsu")),
       ),
     );
 
-    expect(offenders).toEqual([]);
+    expect(reaching).toEqual([join(SRC, "character", "nen", "hatsu.ts")]);
   });
 
   it("reaches the Ren principle from the Ren adapter alone", () => {
@@ -4260,5 +4266,79 @@ describe("the sensory contest and Combat stay neutral", () => {
     expect(barrel).not.toMatch(/minimumNotificationBand/);
     expect(detection).not.toMatch(/\bInformationBand\b|\binformationOverride\b/);
     expect(candidates).not.toMatch(/\bInformationBand\b|minimumNotificationBand/);
+  });
+});
+
+
+/*
+ * HAT-1 — Hatsu converts funded Aura once, and is not an activity.
+ *
+ * Hatsu used to be a universal multiplier a caller could lay over any numeric
+ * effect, which meant every authored field got it separately and a technique
+ * with three fields scaled as the cube. It is now one upstream conversion. The
+ * rules below keep the old shape from growing back under either of its names,
+ * and keep Hatsu out of the activity runtime it never belonged in.
+ */
+describe("Hatsu is one conversion, not a multiplier or an activity", () => {
+  const PRINCIPLE = join(SRC, "character", "foundation", "nen", "principles", "hatsu.ts");
+  const ADAPTER = join(SRC, "character", "nen", "hatsu.ts");
+
+  const productionSources = sourceFilesUnder(SRC)
+    .filter((path) => !path.includes("__tests__"));
+
+  it("finds the sources it is checking", () => {
+    expect(productionSources).toContain(PRINCIPLE);
+    expect(productionSources).toContain(ADAPTER);
+  });
+
+  it("keeps no universal-effect vocabulary in Hatsu", () => {
+    const retired =
+      /\beffectModifier\b|\beffectMultiplier\b|\bbaseEffect\b|\bfinalEffect\b|nen\.hatsu\.effect\b|applyHatsuEffect|deriveHatsuEffect|HATSU_EFFECT_/;
+
+    for (const path of [PRINCIPLE, ADAPTER]) {
+      expect([path.replace(SRC, ""), retired.test(readFileSync(path, "utf8"))])
+        .toEqual([path.replace(SRC, ""), false]);
+    }
+  });
+
+  it("gives Hatsu no runtime activity, start, upkeep or duration", () => {
+    const activity =
+      /\bstartHatsu\b|\bstopHatsu\b|HATSU_ACTIVITY|\bisHatsuActivity\b|hatsuUpkeep|hatsuDuration/i;
+
+    /* Comments may name the absence; code may not introduce the thing. */
+    const offenders = productionSources.filter((path) =>
+      activity.test(
+        readFileSync(path, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/.*$/gm, ""),
+      ),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("performs no Aura accounting in Hatsu", () => {
+    /*
+     * The funded amount is a hand-off. Importing Aura state, funding or the
+     * activity runtime would be the first step toward charging it twice.
+     */
+    for (const path of [PRINCIPLE, ADAPTER]) {
+      const reaching = moduleSpecifiers(path).filter((specifier) =>
+        resolvesInto(path, specifier, join("foundation", "aura")) ||
+        resolvesInto(path, specifier, join("nen", "runtime")),
+      );
+
+      expect([path.replace(SRC, ""), reaching]).toEqual([path.replace(SRC, ""), []]);
+    }
+  });
+
+  it("keeps the pure principle free of Character, combat and senses", () => {
+    const forbidden = ["character/types", "resolution", "gameplay", "senses", "skills", "nen/nen"];
+
+    const reaching = moduleSpecifiers(PRINCIPLE).filter((specifier) =>
+      forbidden.some((segment) => resolvesInto(PRINCIPLE, specifier, segment)),
+    );
+
+    expect(reaching).toEqual([]);
   });
 });

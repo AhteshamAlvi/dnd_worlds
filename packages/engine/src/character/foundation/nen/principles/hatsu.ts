@@ -1,84 +1,82 @@
 /*
  * Hatsu — the Nen principle of Aura expression.
  *
- * Hatsu governs the user's ability to express Aura as a supernatural effect.
+ * Hatsu answers exactly one question: how efficiently does Aura that has
+ * ALREADY been funded become effective Nen Ability power?
  *
- * Unlike Ten, Ren, or Zetsu, Hatsu does not directly define a particular Aura
- * state. Instead, it acts as a universal effectiveness multiplier for effects
- * produced through Hatsu.
+ *   P_Hatsu = A_funded × E_Hatsu
  *
- *
- * NEN ABILITY CREATION
- * --------------------
- *
- * Hatsu Mastery III is the minimum required to create a personal Nen Ability.
- *
- *   I-II  -> cannot create a personal Nen Ability
- *   III+  -> can create a personal Nen Ability
+ * One upstream conversion, applied once. What the Ability then does with that
+ * power — how much becomes damage, how much range, how long it lasts — is the
+ * Ability's own authored business.
  *
  *
- * EFFECT MULTIPLIER
- * -----------------
+ * WHY THIS IS NOT AN EFFECT MULTIPLIER ANY MORE
+ * ---------------------------------------------
  *
- * From Mastery III onward, Hatsu modifies the magnitude of eligible
- * Aura-produced effects.
+ * Hatsu used to be a universal multiplier (×0.60 at III up to ×2.00 at X) that
+ * a caller could apply to any numeric effect it liked: damage, range, duration,
+ * area, healing. The trouble is that "any effect it liked" meant "every effect
+ * separately". An Ability with damage, range and duration was multiplied three
+ * times, so a Hatsu X user's technique was not twice as strong but eight times
+ * as strong, and a technique with more authored fields scaled faster than one
+ * with fewer. The number that was supposed to measure expressive skill ended up
+ * measuring how many fields an author had written.
  *
- *   III   -> -40% -> x0.60
- *   IV    -> -20% -> x0.80
- *   V     ->   0% -> x1.00
- *   VI    -> +20% -> x1.20
- *   VII   -> +40% -> x1.40
- *   VIII  -> +60% -> x1.60
- *   IX    -> +80% -> x1.80
- *   X     -> +100% -> x2.00
+ * Converting Aura instead of effects closes that off by construction. There is
+ * one input — the funded Aura — and one output budget. An Ability can split the
+ * budget however its rules say, but it cannot be handed the efficiency twice.
  *
- * Formula:
+ * The curve also now tops out at 100%. Perfect Hatsu wastes nothing; it does not
+ * manufacture power the user never paid for.
  *
- *   finalEffect =
- *     baseEffect
- *     * Hatsu multiplier
  *
- * The multiplier is intentionally generic.
+ * FUNDED AURA IS A HAND-OFF
+ * -------------------------
  *
- * Hatsu does not need to know what the scaled value represents. The caller
- * determines whether a value is an eligible Hatsu-produced effect.
+ * `A_funded` arrives already paid for — by an immediate expenditure, a standing
+ * commitment, or whatever funding route the calling Ability legally used. This
+ * file deducts nothing, allocates nothing, enforces no Output limit and charges
+ * no upkeep. Doing any of that here would charge the same Aura twice.
  *
- * The same multiplier may therefore be applied to any appropriate numeric
- * effect such as:
  *
- * - force;
- * - speed;
- * - damage;
- * - range;
- * - duration;
- * - strength;
- * - healing;
- * - size;
- * - capacity;
- * - other effect magnitudes.
+ * HATSU IS NOT AN ACTIVITY
+ * ------------------------
  *
- * Costs, cooldowns, requirements, restrictions, and other non-effect values
- * are not automatically modified by Hatsu. The calling mechanic determines
- * which values constitute scalable effects.
+ * There is no Hatsu state to enter. Unlike Ten, Ren and Zetsu, nobody "is in
+ * Hatsu": individual Nen Abilities own activation, duration, upkeep, Output,
+ * targeting and effects. This file is a pure conversion table.
+ *
+ *
+ * NEN ABILITY CREATION AND MASTERY
+ * --------------------------------
+ *
+ * Hatsu III is the minimum to create a PERSONAL Nen Ability. Hatsu I–II still
+ * convert Aura — for primitive training expressions, and for natural or
+ * externally granted Abilities that were never created through Hatsu at all.
+ *
+ * A Nen Ability can never be used above the user's current Hatsu:
+ *
+ *   M_Ability,effective = min(M_Ability,stored, M_Hatsu,effective)
+ *
+ * The stored mastery is never lowered by that ceiling. A seal on Hatsu makes a
+ * trained Ability temporarily clumsier; lifting it restores the Ability exactly.
  *
  *
  * This file owns:
  *
- * - Hatsu's I-X Mastery profile;
- * - the minimum Mastery for Nen Ability creation;
- * - Hatsu effect multipliers;
- * - generic Hatsu effect scaling.
+ * - Hatsu's I–X conversion efficiencies;
+ * - the Mastery III personal Ability creation threshold;
+ * - pure funded-Aura → effective-power conversion;
+ * - the pure Ability-mastery ceiling.
  *
  * This file does NOT own:
  *
- * - Nen Ability definitions;
- * - individual effect definitions;
+ * - Nen Ability definitions, storage, acquisition or execution;
  * - Nen affinity/category efficiency;
- * - Aura costs;
- * - cooldowns;
- * - restrictions or vows;
- * - the universal Nen progression rules;
- * - cross-Principle compatibility;
+ * - conditions, restrictions and vows;
+ * - Aura funding, allocation, Output or upkeep;
+ * - the universal Nen progression rules or temporary seals;
  * - Growth Point costs or breakthrough requirements.
  *
  * The generic Mastery vocabulary lives in capabilities/mastery.ts.
@@ -86,133 +84,58 @@
  */
 
 
+import {
+  describeDiagnosticValue,
+  type EngineError,
+} from "../../../../infrastructure/diagnostics";
 import type { EngineResult } from "../../../../infrastructure/result";
-import { createTraceNode } from "../../../../infrastructure/trace";
+import { createTraceNode, type TraceNode } from "../../../../infrastructure/trace";
 
 import {
   isMasteryRank,
+  isMasteryValue,
   MASTERY_RANKS,
   STANDARD_MASTERY_MAX,
   type MasteryRank,
   type MasteryTrack,
+  type MasteryValue,
 } from "../../../capabilities/mastery";
-
-
-/* -------------------------------------------------------------------------- */
-/* Constants                                                                  */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Minimum Hatsu Mastery required to create a personal Nen Ability and access
- * the universal Hatsu effect multiplier.
- */
-export const HATSU_EFFECT_MINIMUM_MASTERY: MasteryRank = 3;
 
 
 /* -------------------------------------------------------------------------- */
 /* Mastery                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/** Minimum Hatsu Mastery required to create a personal Nen Ability. */
+export const HATSU_PERSONAL_ABILITY_MINIMUM_MASTERY: MasteryRank = 3;
+
+
 export interface HatsuMasteryProfile {
   readonly rank: MasteryRank;
 
   /**
-   * Whether this Mastery rank permits creation of a personal Nen Ability.
+   * The share of funded Aura that becomes effective Nen Ability power, as a
+   * decimal. Never above 1: Hatsu wastes less as it improves, and never creates
+   * power nobody paid for.
    */
-  readonly canCreateNenAbility: boolean;
+  readonly conversionEfficiency: number;
 
-  /**
-   * Additive percentage adjustment represented as a decimal.
-   *
-   * Examples:
-   *
-   *   -0.40 -> -40%
-   *    0.00 ->   0%
-   *    1.00 -> +100%
-   *
-   * Null means the Hatsu effect multiplier has not yet been unlocked.
-   */
-  readonly effectModifier: number | null;
-
-  /**
-   * Final multiplier applied to eligible Hatsu-produced effects.
-   *
-   * Null means the multiplier has not yet been unlocked.
-   */
-  readonly effectMultiplier: number | null;
+  /** Whether this rank permits creating a personal Nen Ability. */
+  readonly canCreatePersonalNenAbility: boolean;
 }
 
 
 export const HATSU_MASTERY_PROFILES = {
-  1: {
-    rank: 1,
-    canCreateNenAbility: false,
-    effectModifier: null,
-    effectMultiplier: null,
-  },
-
-  2: {
-    rank: 2,
-    canCreateNenAbility: false,
-    effectModifier: null,
-    effectMultiplier: null,
-  },
-
-  3: {
-    rank: 3,
-    canCreateNenAbility: true,
-    effectModifier: -0.40,
-    effectMultiplier: 0.60,
-  },
-
-  4: {
-    rank: 4,
-    canCreateNenAbility: true,
-    effectModifier: -0.20,
-    effectMultiplier: 0.80,
-  },
-
-  5: {
-    rank: 5,
-    canCreateNenAbility: true,
-    effectModifier: 0.00,
-    effectMultiplier: 1.00,
-  },
-
-  6: {
-    rank: 6,
-    canCreateNenAbility: true,
-    effectModifier: 0.20,
-    effectMultiplier: 1.20,
-  },
-
-  7: {
-    rank: 7,
-    canCreateNenAbility: true,
-    effectModifier: 0.40,
-    effectMultiplier: 1.40,
-  },
-
-  8: {
-    rank: 8,
-    canCreateNenAbility: true,
-    effectModifier: 0.60,
-    effectMultiplier: 1.60,
-  },
-
-  9: {
-    rank: 9,
-    canCreateNenAbility: true,
-    effectModifier: 0.80,
-    effectMultiplier: 1.80,
-  },
-
-  10: {
-    rank: 10,
-    canCreateNenAbility: true,
-    effectModifier: 1.00,
-    effectMultiplier: 2.00,
-  },
+  1: { rank: 1, conversionEfficiency: 0.20, canCreatePersonalNenAbility: false },
+  2: { rank: 2, conversionEfficiency: 0.35, canCreatePersonalNenAbility: false },
+  3: { rank: 3, conversionEfficiency: 0.50, canCreatePersonalNenAbility: true },
+  4: { rank: 4, conversionEfficiency: 0.60, canCreatePersonalNenAbility: true },
+  5: { rank: 5, conversionEfficiency: 0.70, canCreatePersonalNenAbility: true },
+  6: { rank: 6, conversionEfficiency: 0.80, canCreatePersonalNenAbility: true },
+  7: { rank: 7, conversionEfficiency: 0.85, canCreatePersonalNenAbility: true },
+  8: { rank: 8, conversionEfficiency: 0.90, canCreatePersonalNenAbility: true },
+  9: { rank: 9, conversionEfficiency: 0.95, canCreatePersonalNenAbility: true },
+  10: { rank: 10, conversionEfficiency: 1.00, canCreatePersonalNenAbility: true },
 } as const satisfies Readonly<
   Record<MasteryRank, HatsuMasteryProfile>
 >;
@@ -230,39 +153,20 @@ export const HATSU_MASTERY_TRACK = {
   maximumMastery: STANDARD_MASTERY_MAX,
 
   ranks: MASTERY_RANKS.map((rank) => {
-    const profile =
-      HATSU_MASTERY_PROFILES[rank];
-
-    if (profile.effectMultiplier === null) {
-      return {
-        rank,
-        description:
-          "Develop Hatsu proficiency. Personal Nen Ability creation and the Hatsu effect multiplier unlock at Mastery III.",
-      };
-    }
-
-    const percent =
-      profile.effectModifier === null
-        ? 0
-        : Math.round(profile.effectModifier * 100);
-
-    const signedPercent =
-      percent > 0
-        ? `+${percent}%`
-        : `${percent}%`;
+    const profile = HATSU_MASTERY_PROFILES[rank];
+    const percent = Math.round(profile.conversionEfficiency * 100);
 
     return {
       rank,
-      description:
-        `Hatsu-produced effects resolve at ${profile.effectMultiplier}x effectiveness (${signedPercent}).`,
+      description: profile.canCreatePersonalNenAbility
+        ? `Convert funded Aura into Nen Ability power at ${percent}% efficiency; personal Nen Abilities may be created.`
+        : `Convert funded Aura into Nen Ability power at ${percent}% efficiency. Personal Nen Ability creation unlocks at Mastery III.`,
     };
   }),
 } satisfies MasteryTrack;
 
 
-/**
- * Return Hatsu's complete mechanical profile for one learned Mastery rank.
- */
+/** Hatsu's complete mechanical profile for one learned Mastery rank. */
 export function getHatsuMasteryProfile(
   mastery: MasteryRank,
 ): HatsuMasteryProfile {
@@ -270,264 +174,186 @@ export function getHatsuMasteryProfile(
 }
 
 
-/* -------------------------------------------------------------------------- */
-/* Nen Ability creation                                                       */
-/* -------------------------------------------------------------------------- */
+/** The share of funded Aura one learned Hatsu rank converts into power. */
+export function deriveHatsuConversionEfficiency(
+  mastery: MasteryRank,
+): number {
+  return HATSU_MASTERY_PROFILES[mastery].conversionEfficiency;
+}
+
 
 /**
- * Return whether a Hatsu Mastery rank is sufficient to create a personal
- * Nen Ability.
+ * Whether a Hatsu Mastery value is enough to create a personal Nen Ability.
+ *
+ * Takes a MasteryValue because 0 — no usable Hatsu — is a meaningful answer
+ * here, and the answer to it is no.
  */
-export function canCreateNenAbilityWithHatsu(
-  mastery: MasteryRank,
+export function canCreatePersonalNenAbility(
+  mastery: MasteryValue,
 ): boolean {
-  return mastery >= HATSU_EFFECT_MINIMUM_MASTERY;
+  return mastery >= HATSU_PERSONAL_ABILITY_MINIMUM_MASTERY;
 }
 
 
 /* -------------------------------------------------------------------------- */
-/* Effect multiplier                                                          */
+/* Conversion                                                                 */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Return Hatsu's universal effect multiplier.
- *
- * Hatsu I-II have not yet unlocked effect scaling and therefore return null.
- *
- * The caller decides whether the value being scaled is an eligible
- * Aura-produced effect.
- */
-export function deriveHatsuEffectMultiplier(
-  mastery: MasteryRank,
-): number | null {
-  return (
-    HATSU_MASTERY_PROFILES[
-      mastery
-    ].effectMultiplier
-  );
-}
-
-
-/**
- * Return Hatsu's additive percentage modifier.
- *
- * Examples:
- *
- *   Hatsu III -> -0.40
- *   Hatsu V   ->  0.00
- *   Hatsu X   ->  1.00
- *
- * Hatsu I-II return null because effect scaling has not yet been unlocked.
- */
-export function deriveHatsuEffectModifier(
-  mastery: MasteryRank,
-): number | null {
-  return (
-    HATSU_MASTERY_PROFILES[
-      mastery
-    ].effectModifier
-  );
-}
-
-
-/* -------------------------------------------------------------------------- */
-/* Generic effect scaling                                                     */
-/* -------------------------------------------------------------------------- */
-
-export interface HatsuScaledEffect {
+export interface HatsuConversion {
+  /** The effective Hatsu rank the conversion used. */
   readonly mastery: MasteryRank;
 
-  /**
-   * Numeric effect magnitude before Hatsu scaling.
-   */
-  readonly baseEffect: number;
+  /** Aura already funded for this Ability resolution. */
+  readonly fundedAura: number;
 
-  /**
-   * Hatsu's additive percentage modifier.
-   */
-  readonly effectModifier: number;
+  readonly conversionEfficiency: number;
 
-  /**
-   * Hatsu's multiplicative scaling factor.
-   */
-  readonly effectMultiplier: number;
+  /** The one effective-power budget the Ability may translate into effects. */
+  readonly effectivePower: number;
+}
 
-  /**
-   * Final numeric effect magnitude after Hatsu scaling.
-   */
-  readonly finalEffect: number;
+
+export const HATSU_CONVERSION_FORMULA =
+  "effectivePower = fundedAura × Hatsu conversionEfficiency";
+
+
+function refuse<T>(root: TraceNode, error: EngineError): EngineResult<T> {
+  root.output = false;
+
+  return { success: false, trace: { root }, warnings: [], errors: [error] };
+}
+
+
+function traceable(value: unknown): number | string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : JSON.stringify(describeDiagnosticValue(value));
 }
 
 
 /**
- * Apply Hatsu's universal multiplier to one eligible numeric effect.
+ * Convert funded Aura into Hatsu effective power, once.
  *
- * Formula:
- *
- *   finalEffect =
- *     baseEffect
- *     * effectMultiplier
- *
- * This function intentionally has no knowledge of what `baseEffect`
- * represents.
- *
- * The caller is responsible for deciding that the supplied value is an effect
- * which Hatsu is allowed to modify.
+ * Zero Aura is valid and yields zero power. The result is not rounded: a
+ * fractional budget is the Ability's to round according to its own rules, and
+ * rounding here would lose power the user paid for before the Ability had any
+ * say in how to spend it.
  */
-export function applyHatsuEffectMultiplier(
-  baseEffect: number,
+export function resolveHatsuConversion(
+  fundedAura: number,
   mastery: number,
-): EngineResult<HatsuScaledEffect> {
-  const traceNode = createTraceNode({
-    id: "nen.hatsu.effect",
-    label: "Apply Hatsu effect multiplier",
-
-    formula:
-      "finalEffect = baseEffect * Hatsu effectMultiplier",
-
+): EngineResult<HatsuConversion> {
+  const root = createTraceNode({
+    id: "nen.hatsu.conversion",
+    label: "Convert funded Aura through Hatsu",
+    formula: HATSU_CONVERSION_FORMULA,
     inputs: {
-      baseEffect: {
-        value:
-          Number.isFinite(baseEffect)
-            ? baseEffect
-            : String(baseEffect),
-      },
-
-      mastery: {
-        value: mastery,
-      },
+      fundedAura: { value: traceable(fundedAura) },
+      mastery: { value: traceable(mastery) },
     },
   });
 
-
-  if (!Number.isFinite(baseEffect)) {
-    return {
-      success: false,
-
-      trace: {
-        root: traceNode,
-      },
-
-      warnings: [],
-
-      errors: [
-        {
-          code:
-            "nen.hatsu.effect.invalid",
-          message:
-            "Hatsu effect scaling requires a finite numeric base effect.",
-          audience: "developer",
-          required: "finite number",
-          actual: String(baseEffect),
-        },
-      ],
-    };
+  if (
+    typeof fundedAura !== "number" ||
+    !Number.isFinite(fundedAura) ||
+    fundedAura < 0
+  ) {
+    return refuse(root, {
+      code: "nen.hatsu.funded_aura.invalid",
+      message: "Hatsu converts a finite, non-negative amount of funded Aura.",
+      audience: "developer",
+      required: "finite number >= 0",
+      actual: describeDiagnosticValue(fundedAura),
+    });
   }
-
 
   if (!isMasteryRank(mastery)) {
-    return {
-      success: false,
-
-      trace: {
-        root: traceNode,
-      },
-
-      warnings: [],
-
-      errors: [
-        {
-          code:
-            "nen.hatsu.mastery.invalid",
-          message:
-            "Hatsu mechanics require a learned Mastery rank from I through X.",
-          audience: "developer",
-          required:
-            `integer from 1 through ${STANDARD_MASTERY_MAX}`,
-          actual: mastery,
-        },
-      ],
-    };
+    return refuse(root, {
+      code: "nen.hatsu.mastery.invalid",
+      message: "Hatsu conversion requires a learned Mastery rank from I through X.",
+      audience: "developer",
+      required: `integer from 1 through ${STANDARD_MASTERY_MAX}`,
+      actual: describeDiagnosticValue(mastery),
+    });
   }
 
+  const conversionEfficiency = deriveHatsuConversionEfficiency(mastery);
+  const effectivePower = fundedAura * conversionEfficiency;
 
-  const profile =
-    getHatsuMasteryProfile(mastery);
-
-
-  if (
-    profile.effectMultiplier === null ||
-    profile.effectModifier === null
-  ) {
-    return {
-      success: false,
-
-      trace: {
-        root: traceNode,
-      },
-
-      warnings: [],
-
-      errors: [
-        {
-          code:
-            "nen.hatsu.effect.locked",
-          message:
-            "The Hatsu effect multiplier requires Hatsu Mastery III or higher.",
-          audience: "developer",
-          required:
-            `Hatsu Mastery ${HATSU_EFFECT_MINIMUM_MASTERY} or higher`,
-          actual: mastery,
-        },
-      ],
-    };
-  }
-
-
-  const finalEffect =
-    baseEffect *
-    profile.effectMultiplier;
-
-
-  const payload: HatsuScaledEffect = {
+  const payload: HatsuConversion = {
     mastery,
-
-    baseEffect,
-
-    effectModifier:
-      profile.effectModifier,
-
-    effectMultiplier:
-      profile.effectMultiplier,
-
-    finalEffect,
+    fundedAura,
+    conversionEfficiency,
+    effectivePower,
   };
 
+  root.output = { ...payload };
 
-  traceNode.output = {
-    mastery,
-
-    baseEffect,
-
-    effectModifier:
-      payload.effectModifier,
-
-    effectMultiplier:
-      payload.effectMultiplier,
-
-    finalEffect:
-      payload.finalEffect,
-  };
+  return { success: true, payload, trace: { root }, warnings: [] };
+}
 
 
-  return {
-    success: true,
-    payload,
+/* -------------------------------------------------------------------------- */
+/* Ability mastery ceiling                                                    */
+/* -------------------------------------------------------------------------- */
 
-    trace: {
-      root: traceNode,
+export interface NenAbilityMasteryCeiling {
+  /** Permanent, trained Ability mastery. Never lowered by the ceiling. */
+  readonly storedAbilityMastery: MasteryValue;
+
+  readonly effectiveHatsuMastery: MasteryValue;
+
+  /** What the Ability may actually be used at right now. */
+  readonly effectiveAbilityMastery: MasteryValue;
+}
+
+
+/**
+ * Cap an Ability's usable mastery at the user's effective Hatsu.
+ *
+ * Both sides are MasteryValues: 0 is a real answer on either one — an Ability
+ * not yet trained, or a Hatsu that is sealed shut or reverted — and it caps the
+ * result at 0 rather than being refused.
+ */
+export function resolveNenAbilityMasteryCeiling(
+  storedAbilityMastery: number,
+  effectiveHatsuMastery: number,
+): EngineResult<NenAbilityMasteryCeiling> {
+  const root = createTraceNode({
+    id: "nen.hatsu.ability_mastery",
+    label: "Cap Nen Ability mastery at effective Hatsu",
+    formula: "effectiveAbilityMastery = min(storedAbilityMastery, effectiveHatsuMastery)",
+    inputs: {
+      storedAbilityMastery: { value: traceable(storedAbilityMastery) },
+      effectiveHatsuMastery: { value: traceable(effectiveHatsuMastery) },
     },
+  });
 
-    warnings: [],
+  for (const [value, path] of [
+    [storedAbilityMastery, "storedAbilityMastery"],
+    [effectiveHatsuMastery, "effectiveHatsuMastery"],
+  ] as const) {
+    if (!isMasteryValue(value)) {
+      return refuse(root, {
+        code: "nen.hatsu.ability_mastery.invalid",
+        message: "Nen Ability mastery and Hatsu mastery must each be a whole number from 0 through X.",
+        audience: "developer",
+        required: `${path}: integer from 0 through ${STANDARD_MASTERY_MAX}`,
+        actual: describeDiagnosticValue(value),
+      });
+    }
+  }
+
+  const payload: NenAbilityMasteryCeiling = {
+    storedAbilityMastery: storedAbilityMastery as MasteryValue,
+    effectiveHatsuMastery: effectiveHatsuMastery as MasteryValue,
+    effectiveAbilityMastery: Math.min(
+      storedAbilityMastery,
+      effectiveHatsuMastery,
+    ) as MasteryValue,
   };
+
+  root.output = { ...payload };
+
+  return { success: true, payload, trace: { root }, warnings: [] };
 }

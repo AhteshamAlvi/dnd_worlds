@@ -98,6 +98,24 @@ export type {
 } from "./zetsu";
 
 export {
+  HATSU_CONVERSION_FORMULA,
+  HATSU_MASTERY_PROFILES,
+  HATSU_PERSONAL_ABILITY_MINIMUM_MASTERY,
+  resolveCharacterHatsuConversion,
+  resolveCharacterNenAbilityMastery,
+  resolveEffectiveHatsu,
+} from "./hatsu";
+
+export type {
+  CharacterHatsuConversionRequest,
+  CharacterNenAbilityMasteryRequest,
+  EffectiveHatsu,
+  HatsuConversion,
+  HatsuMasteryProfile,
+  NenAbilityMasteryCeiling,
+} from "./hatsu";
+
+export {
   appliedOverrides,
   declaredOverrideFields,
   findExceptionalSourceIssues,
