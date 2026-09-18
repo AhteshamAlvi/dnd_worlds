@@ -1,8 +1,8 @@
 # Nenworld Engine — Authoritative Incomplete-Mechanics Backlog
 
 **This is the single authoritative list of what the engine does not yet do.** `ENGINE_SUMMARY.md`
-and `ENGINE_HANDOFF.md` describe what exists, and
-[`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) describes who owns what state; when any of them needs
+describes what exists, and
+[`RUNTIME_PROTOCOL.md`](RUNTIME_PROTOCOL.md) describes who owns what state; when either of them needs
 to say something is missing, it links here rather than keeping its own list. Two backlogs are two things to keep in step, and the
 six-second Round survived in `attributes/speed.ts` for exactly as long as it did because three
 documents each described the timing and none of them was the one that had to be right.
@@ -108,7 +108,7 @@ Inventoried at Phase 1 close: **688 exports, 30 state-changing operations.**
 
 Phase 4 (Tickets 4.4-4.9) plus its repair closed the Item boundary: registration, selection,
 contribution, conditional bonuses, integrity, and an authoritative whole-Item Shū envelope. See
-`ENGINE_HANDOFF.md` §8.9 and the `equipment.*` entries in `decisions/log.ts`. What is still missing
+the `equipment.*` entries in `decisions/log.ts`. What is still missing
 is listed here, and every one of it was deliberately out of the repair's scope rather than
 overlooked.
 
