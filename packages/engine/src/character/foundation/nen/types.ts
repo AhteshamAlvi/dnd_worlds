@@ -20,6 +20,7 @@ import type { MasteryRank, MasteryValue } from "../../capabilities/mastery";
 import type { AttributeKey } from "../attributes/types";
 
 import type { NenAwakeningState } from "./awakening/types";
+import type { NenAffinityKnowledge } from "./nen-type";
 
 
 /**
@@ -83,7 +84,7 @@ export type NenMasterySeals = Readonly<
 
 
 /**
- * Stored Nen state: awakening, mastery, and temporary mastery seals.
+ * Stored Nen state: awakening, affinity, mastery, and temporary mastery seals.
  *
  * That is the whole of it, and the name deliberately no longer promises more.
  * There is NO active-principle state here — nothing records that Ten is up,
@@ -110,6 +111,14 @@ export type NenMasterySeals = Readonly<
  */
 export interface NenState {
   readonly awakening: NenAwakeningState;
+
+  /*
+   * The character's Nen Type and whether it has been established — the ONE
+   * stored affinity. A sibling of awakening, not part of it: an unawakened
+   * character already has a type, and opening their nodes neither assigns nor
+   * discovers it. See nen-type.ts.
+   */
+  readonly affinity: NenAffinityKnowledge;
 
   readonly mastery: NenMasteryState;
 

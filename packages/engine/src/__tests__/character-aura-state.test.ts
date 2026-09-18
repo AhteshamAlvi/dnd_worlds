@@ -33,7 +33,7 @@ import type { AuraAllocation } from "../character/foundation/aura/state";
 import { auraOnOnePart } from "./fixtures/aura";
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 import { revertedNen, standardAwakenedNen } from "./fixtures/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import { unassignedNenAffinity } from "../character/foundation/nen/nen-type";
 
 const RIGHT_ARM = continuityKey("upper-limb:right");
 
@@ -116,7 +116,7 @@ describe("what Character stores about Aura", () => {
 
 describe("Nen state as a sibling of Aura", () => {
   it("gives an unawakened character a complete, real Nen state", () => {
-    const nen = createUnawakenedNenState(unassignedNenType());
+    const nen = createUnawakenedNenState(unassignedNenAffinity());
 
     expect(nen.awakening.condition).toBe("unawakened");
     expect(nen.awakening.nodes).toBe("half-open");
@@ -136,7 +136,7 @@ describe("Nen state as a sibling of Aura", () => {
     const character = createTestCharacter({
       attributes: AURA_CAPABLE,
       aura: { current: 4000, allocations: [] },
-      nen: createUnawakenedNenState(unassignedNenType()),
+      nen: createUnawakenedNenState(unassignedNenAffinity()),
     });
 
     expect(isNenAwakened(character.nen)).toBe(false);
@@ -152,7 +152,7 @@ describe("Nen state as a sibling of Aura", () => {
   });
 
   it("keeps the Aura pool out of Nen state entirely", () => {
-    const nen = createUnawakenedNenState(unassignedNenType());
+    const nen = createUnawakenedNenState(unassignedNenAffinity());
 
     for (const auraField of ["current", "aura", "pool", "maximum"]) {
       expect(nen).not.toHaveProperty(auraField);
@@ -183,7 +183,7 @@ describe("Nen state as a sibling of Aura", () => {
     expect(reverted.awakening.nodes).toBe("half-open");
     expect(hasPseudoChu(reverted.awakening)).toBe(false);
 
-    expect(hasPseudoChu(createUnawakenedNenState(unassignedNenType()).awakening)).toBe(true);
+    expect(hasPseudoChu(createUnawakenedNenState(unassignedNenAffinity()).awakening)).toBe(true);
   });
 });
 

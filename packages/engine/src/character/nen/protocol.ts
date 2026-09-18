@@ -57,7 +57,10 @@ import type {
   NenReawakeningHurdle,
   NenSuppressionKind,
 } from "../foundation/nen/awakening/types";
-import type { NenTypeChange } from "../foundation/nen/nen-type";
+import type {
+  NenAffinity,
+  NenAffinityChange,
+} from "../foundation/nen/nen-type";
 import type { NenMasteryRank, NenPrincipleId, NenState } from "../foundation/nen/types";
 import type { RequirementContext } from "../rules/resolution";
 
@@ -192,6 +195,21 @@ export type NenAwakeningRequestInput =
 
 
 /*
+ * A complete affinity change a reverting source asks for.
+ *
+ * `previous` is optional and, when supplied, must be the affinity the character
+ * actually has — a source naming a different one is describing somebody else.
+ * The recorded change always takes `previous` from the state, never from here.
+ */
+export interface NenAffinityChangeRequest {
+  readonly previous?: NenAffinity | null;
+  readonly next: NenAffinity;
+  readonly known: boolean;
+  readonly cause: string;
+}
+
+
+/*
  * Undoing an awakening. Exceptional by definition, so the source is required.
  *
  * `targetedExternalAbilityIds` is how a source removes something that is NOT
@@ -202,7 +220,7 @@ export type NenAwakeningRequestInput =
 export interface NenReversionRequest {
   readonly source: ContributionSourceRef;
   readonly reason: string;
-  readonly nenTypeChange?: NenTypeChange;
+  readonly affinityChange?: NenAffinityChangeRequest;
   readonly targetedExternalAbilityIds?: readonly string[];
 }
 
@@ -267,7 +285,7 @@ export interface NenAwakeningChanges {
   readonly naturalAbilityLost: string | null;
   readonly externalAbilitiesLost: readonly string[];
 
-  readonly nenTypeChange: NenTypeChange | null;
+  readonly affinityChange: NenAffinityChange | null;
   readonly appliedOverrides: readonly NenAppliedOverride[];
 
   readonly reawakening: boolean;
@@ -303,7 +321,7 @@ export function noAwakeningChanges(
     naturalAbilityGranted: null,
     naturalAbilityLost: null,
     externalAbilitiesLost: [],
-    nenTypeChange: null,
+    affinityChange: null,
     appliedOverrides: [],
     reawakening: false,
     hurdle: null,
@@ -353,7 +371,9 @@ export const NEN_AWAKENING_EVENT_KINDS = [
   "nen-involuntary-zetsu-released",
   "nen-natural-ability-granted",
   "nen-natural-ability-lost",
-  "nen-type-changed",
+  "nen-affinity-changed",
+  "nen-affinity-assigned",
+  "nen-affinity-discovered",
 ] as const;
 
 export type NenAwakeningEventKind = typeof NEN_AWAKENING_EVENT_KINDS[number];

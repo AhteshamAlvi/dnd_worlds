@@ -1,8 +1,8 @@
 /*
  * Reading a Nen state written by an older engine.
  *
- * Two shapes predate the current one, and a host loading a saved character has
- * no way to tell which it is holding except by looking:
+ * Three shapes predate the current one, and a host loading a saved character
+ * has no way to tell which it is holding except by looking:
  *
  *   PRE-PHASE-5   `{ awakened: boolean, mastery, seals? }`, with the
  *                 character's Nen Type stored separately on
@@ -15,6 +15,15 @@
  *                 those were repaired: forced and involuntary Zetsu are
  *                 separate mechanics now, and affinity is an explicit assigned
  *                 or unassigned state.
+ *
+ *   PRE-HNT-1     the current awakening object, with the affinity stored on it
+ *                 as `awakening.nenType: { status, type, known }` — a Type with
+ *                 no lean, owned by the wrong object. It moves to
+ *                 `nen.affinity` as a complete affinity with NO lean (the old
+ *                 record never carried one, and inventing one would change what
+ *                 the character is), and history's Type-only `nenTypeChange`
+ *                 entries become complete `affinityChange` entries the same
+ *                 way.
  *
  * WHAT A MIGRATION MAY NOT DO is invent history. A pre-Phase-5 character
  * recorded as awakened has no record of HOW, WHEN, or because of what — so the
@@ -41,11 +50,14 @@ import { createTraceNode } from "../../../../infrastructure/trace";
 import { NO_MASTERY } from "../../../capabilities/mastery";
 import {
   adoptLegacyNenType,
-  assignedNenType,
+  assignedNenAffinity,
+  findNenAffinityKnowledgeIssues,
   isNenType,
-  unassignedNenType,
+  pureNenAffinity,
+  unassignedNenAffinity,
   UNASSIGNED_CONFLICTING_FIELDS,
-  type NenTypeKnowledge,
+  type NenAffinityChange,
+  type NenAffinityKnowledge,
 } from "../nen-type";
 import { NEN_PRINCIPLE_IDS } from "../nen";
 import type {
@@ -135,7 +147,7 @@ function readMastery(value: unknown): NenMasteryState | null {
  * source says `legacy-migration`, so nothing downstream can mistake it for a
  * standard awakening this engine resolved.
  */
-function reconstructAwakening(nenType: NenTypeKnowledge): NenAwakeningState {
+function reconstructAwakening(): NenAwakeningState {
   const record: NenAwakeningRecord = {
     kind: "awakening",
     id: LEGACY_AWAKENING_RECORD_ID,
@@ -148,7 +160,7 @@ function reconstructAwakening(nenType: NenTypeKnowledge): NenAwakeningState {
   };
 
   return {
-    ...createUnawakenedAwakeningState(nenType),
+    ...createUnawakenedAwakeningState(),
     condition: "awakened",
     nodes: "open",
     currentMethod: "standard",
@@ -278,8 +290,13 @@ export function migrateLegacyNenState(
 
   if (!awakening.ok) return fail(traceId, awakening.errors);
 
+  const affinity = migrateAffinity(stored, awakening.legacyAffinity);
+
+  if (!affinity.ok) return fail(traceId, affinity.errors);
+
   const migrated: NenState = {
     awakening: awakening.value,
+    affinity: affinity.value,
     mastery,
     ...(seals === undefined
       ? {}
@@ -325,24 +342,229 @@ export function migrateLegacyNenState(
 }
 
 
+/*
+ * A migrated awakening, and the affinity it was carrying when it arrived.
+ *
+ * `legacyAffinity` is what `awakening.nenType` held — already translated, and
+ * already REMOVED from the awakening value — or undefined when the awakening
+ * carried none. It is handed up rather than written straight onto the Nen
+ * state, because only the caller can see whether `nen.affinity` also exists
+ * and the two would then have to be reconciled.
+ */
 type Migrated =
-  | { readonly ok: true; readonly value: NenAwakeningState }
+  | {
+    readonly ok: true;
+    readonly value: NenAwakeningState;
+    readonly legacyAffinity: NenAffinityKnowledge | undefined;
+  }
   | { readonly ok: false; readonly errors: readonly EngineError[] };
+
+
+type MigrationFailure = { readonly ok: false; readonly errors: readonly EngineError[] };
+
+
+function migrationFailure(
+  code: string,
+  message: string,
+  required: string,
+  actual: unknown,
+): MigrationFailure {
+  return {
+    ok: false,
+    errors: [{
+      code,
+      message,
+      audience: "developer",
+      required,
+      actual: describeDiagnosticValue(actual),
+    }],
+  };
+}
 
 
 function migrateBooleanAwakening(awakened: boolean): Migrated {
   /*
-   * The affinity is unassigned rather than guessed. A pre-Phase-5 record kept
-   * the type on `details`, which arrives separately and is folded in above; if
-   * it was absent there too, then nobody ever decided, and saying so is the
-   * honest answer.
+   * No affinity here at all. A pre-Phase-5 record kept the type on `details`,
+   * which arrives separately and is folded in by adoptLegacyNenType; if it was
+   * absent there too, then nobody ever decided, and migrateAffinity says so.
    */
   return {
     ok: true,
     value: awakened
-      ? reconstructAwakening(unassignedNenType())
-      : createUnawakenedAwakeningState(unassignedNenType()),
+      ? reconstructAwakening()
+      : createUnawakenedAwakeningState(),
+    legacyAffinity: undefined,
   };
+}
+
+
+/*
+ * Where the affinity comes from, and there may be only one answer.
+ *
+ *   nen.affinity only            current. Judged strictly and passed through
+ *                                UNCHANGED — a malformed lean is refused, not
+ *                                normalized, and a valid one is not rewritten.
+ *   awakening.nenType only       pre-HNT-1. Already translated by the awakening
+ *                                migration into a lean-free affinity.
+ *   both                         REFUSED. Two stored affinities is the defect
+ *                                this whole move exists to end, and choosing
+ *                                one would change somebody's character.
+ *   neither, boolean shape       pre-Phase-5, whose type lived on `details`:
+ *                                unassigned, and adoptLegacyNenType folds the
+ *                                details value in afterwards.
+ *   neither, object shape        REFUSED. Every awakening object ever written
+ *                                carried a Nen Type; one without is corrupt.
+ */
+function migrateAffinity(
+  stored: Record<string, unknown>,
+  legacyAffinity: NenAffinityKnowledge | undefined,
+):
+  | { readonly ok: true; readonly value: NenAffinityKnowledge }
+  | MigrationFailure {
+  const hasCurrent = Object.prototype.hasOwnProperty.call(stored, "affinity");
+
+  if (hasCurrent && legacyAffinity !== undefined) {
+    return migrationFailure(
+      "nen.state.migrate.affinity.ambiguous",
+      "A stored Nen state carries both `affinity` and the retired `awakening.nenType`.",
+      "one affinity representation",
+      "both",
+    );
+  }
+
+  if (hasCurrent) {
+    const issues = findNenAffinityKnowledgeIssues(stored["affinity"], "affinity");
+
+    if (issues.length > 0) return { ok: false, errors: issues };
+
+    return { ok: true, value: stored["affinity"] as NenAffinityKnowledge };
+  }
+
+  if (legacyAffinity !== undefined) return { ok: true, value: legacyAffinity };
+
+  if (Object.prototype.hasOwnProperty.call(stored, "awakened")) {
+    return { ok: true, value: unassignedNenAffinity() };
+  }
+
+  return migrationFailure(
+    "nen.state.migrate.affinity.missing",
+    "A stored Nen state must record an affinity, even an unassigned one.",
+    "`affinity`, or `awakening.nenType` before HNT-1",
+    "neither",
+  );
+}
+
+
+/*
+ * History's Type-only changes, rewritten as complete affinity changes.
+ *
+ * `previous` and `next` gain NO lean, for the same reason the current affinity
+ * gains none. `known` is recorded as TRUE, and that is not a guess: before this
+ * ticket every change applied `known: true` to the stored Type whatever the
+ * source had asked for, so true is what those changes actually did. (That was
+ * a defect, and it is fixed going forward — see settlement.ts.)
+ *
+ * Applied-override names move with it: the field an exceptional source
+ * declared was called `nenType` and is now `affinity`.
+ *
+ * An entry is only rebuilt when it carries something old, so a current history
+ * round-trips as the same objects.
+ */
+function migrateHistory(
+  history: unknown,
+): { readonly ok: true; readonly value: unknown } | MigrationFailure {
+  if (!Array.isArray(history)) return { ok: true, value: history };
+
+  const errors: EngineError[] = [];
+  let changed = false;
+
+  const migrated = (history as readonly unknown[]).map((entry, index) => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      return entry;
+    }
+
+    const record = entry as Record<string, unknown>;
+    let next: Record<string, unknown> = record;
+
+    if (Object.prototype.hasOwnProperty.call(record, "nenTypeChange")) {
+      if (Object.prototype.hasOwnProperty.call(record, "affinityChange")) {
+        errors.push(...migrationFailure(
+          "nen.state.migrate.type-change.ambiguous",
+          `history[${index}] carries both \`nenTypeChange\` and \`affinityChange\`.`,
+          "one change representation",
+          "both",
+        ).errors);
+
+        return entry;
+      }
+
+      const change = record["nenTypeChange"];
+
+      if (
+        change === null ||
+        typeof change !== "object" ||
+        Array.isArray(change) ||
+        !(
+          (change as Record<string, unknown>)["previous"] === null ||
+          isNenType((change as Record<string, unknown>)["previous"])
+        ) ||
+        !isNenType((change as Record<string, unknown>)["next"])
+      ) {
+        errors.push(...migrationFailure(
+          "nen.state.migrate.type-change.invalid",
+          `history[${index}] carries an unreadable Nen Type change.`,
+          "{ previous: NenType | null, next: NenType, cause }",
+          change,
+        ).errors);
+
+        return entry;
+      }
+
+      const old = change as Record<string, unknown>;
+      const { nenTypeChange: _retired, ...rest } = record;
+
+      const affinityChange: NenAffinityChange = {
+        previous: old["previous"] === null
+          ? null
+          : pureNenAffinity(old["previous"] as NonNullable<NenAffinityChange["previous"]>["primary"]),
+        next: pureNenAffinity(old["next"] as NenAffinityChange["next"]["primary"]),
+        known: true,
+        cause: old["cause"] as string,
+      };
+
+      next = { ...rest, affinityChange };
+    }
+
+    const overrides = next["appliedOverrides"];
+
+    if (
+      Array.isArray(overrides) &&
+      overrides.some((override) =>
+        override !== null &&
+        typeof override === "object" &&
+        (override as { field?: unknown }).field === "nenType"
+      )
+    ) {
+      next = {
+        ...next,
+        appliedOverrides: overrides.map((override) =>
+          override !== null &&
+          typeof override === "object" &&
+          (override as { field?: unknown }).field === "nenType"
+            ? { ...(override as object), field: "affinity" }
+            : override
+        ),
+      };
+    }
+
+    if (next !== record) changed = true;
+
+    return next;
+  });
+
+  if (errors.length > 0) return { ok: false, errors };
+
+  return { ok: true, value: changed ? migrated : history };
 }
 
 
@@ -395,9 +617,33 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
     };
   }
 
-  const nenType = migrateNenTypeField(stored["nenType"]);
+  /*
+   * The affinity, if this awakening still carries one. PRESENCE again: a
+   * pre-HNT-1 awakening always did, and a current one never does — whether
+   * `nen.affinity` then has to supply it is decided by the caller.
+   */
+  const hasNenType = Object.prototype.hasOwnProperty.call(stored, "nenType");
 
-  if (!nenType.ok) return nenType;
+  let legacyAffinity: NenAffinityKnowledge | undefined;
+
+  if (hasNenType) {
+    const migratedType = migrateNenTypeField(stored["nenType"]);
+
+    if (!migratedType.ok) return migratedType;
+
+    legacyAffinity = migratedType.value;
+  }
+
+  const history = migrateHistory(stored["history"]);
+
+  if (!history.ok) return history;
+
+  const { nenType: _moved, ...withoutType } = stored;
+
+  const carried: Record<string, unknown> = {
+    ...(hasNenType ? withoutType : stored),
+    ...(history.value === stored["history"] ? {} : { history: history.value }),
+  };
 
   /*
    * Already current: passed through UNCHANGED rather than defaulted, and left
@@ -407,8 +653,10 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
   if (hasCurrent) {
     return {
       ok: true,
-      value: { ...stored, nenType: nenType.value } as
-        unknown as NenAwakeningState,
+      value: (hasNenType || carried["history"] !== stored["history"]
+        ? carried
+        : stored) as unknown as NenAwakeningState,
+      legacyAffinity,
     };
   }
 
@@ -453,15 +701,15 @@ function migrateAwakeningObject(stored: Record<string, unknown>): Migrated {
 
   if (errors.length > 0) return { ok: false, errors };
 
-  const { forcedStates: _dropped, ...rest } = stored;
+  const { forcedStates: _dropped, ...rest } = carried;
 
   return {
     ok: true,
     value: {
       ...rest,
       suppression: migrated,
-      nenType: nenType.value,
     } as unknown as NenAwakeningState,
+    legacyAffinity,
   };
 }
 
@@ -614,7 +862,8 @@ function migrateForcedState(held: unknown, recovery: unknown): MigratedState {
 
 
 /*
- * The Nen Type field, in whichever of the two shapes it was stored.
+ * The retired `awakening.nenType` field, in whichever shape it was stored,
+ * translated into a lean-free affinity.
  *
  * REFUSED rather than normalized. The earlier version turned anything that was
  * not an object into `unassigned` and read `known` as `=== true`, which meant
@@ -622,26 +871,25 @@ function migrateForcedState(held: unknown, recovery: unknown): MigratedState {
  * silently became `false`. Both are inventions: the record said something, and
  * the migration does not get to decide it said nothing.
  *
- * The genuine legacy form is `{ type: NenType | null, known: boolean }`, where
- * `{ type: null, known: false }` was what "nobody has established this"
- * looked like before the state became explicit.
+ * Two shapes:
+ *
+ *   Phase 5.0   `{ type: NenType | null, known: boolean }`, where
+ *               `{ type: null, known: false }` meant nobody had decided.
+ *   pre-HNT-1   `{ status: "assigned", type, known }` or
+ *               `{ status: "unassigned" }`.
+ *
+ * Neither ever carried a lean, so every assigned result has `leaning: null`.
  */
 function migrateNenTypeField(
   value: unknown,
-): { readonly ok: true; readonly value: NenTypeKnowledge } | { readonly ok: false; readonly errors: readonly EngineError[] } {
-  const refuse = (
-    required: string,
-    actual: unknown,
-  ): { readonly ok: false; readonly errors: readonly EngineError[] } => ({
-    ok: false,
-    errors: [{
-      code: "nen.state.migrate.nen-type.invalid",
-      message: "A stored awakening must carry a readable Nen Type record.",
-      audience: "developer",
+): { readonly ok: true; readonly value: NenAffinityKnowledge } | MigrationFailure {
+  const refuse = (required: string, actual: unknown): MigrationFailure =>
+    migrationFailure(
+      "nen.state.migrate.nen-type.invalid",
+      "A stored awakening must carry a readable Nen Type record.",
       required,
-      actual: describeDiagnosticValue(actual),
-    }],
-  });
+      actual,
+    );
 
   if (value === null || typeof value !== "object" || Array.isArray(value)) {
     return refuse("{ type, known } or { status }", value);
@@ -650,7 +898,7 @@ function migrateNenTypeField(
   const stored = value as Record<string, unknown>;
 
   /*
-   * Already current — and the union is ENFORCED rather than normalized.
+   * The union is ENFORCED rather than normalized.
    *
    * `{ status: "unassigned", type: "enhancement", known: true }` contradicts
    * itself: one half says nobody has decided and the other names a discovered
@@ -674,7 +922,16 @@ function migrateNenTypeField(
       );
     }
 
-    return { ok: true, value: unassignedNenType() };
+    return { ok: true, value: unassignedNenAffinity() };
+  }
+
+  /*
+   * The retired field holding the NEW vocabulary is neither shape. An
+   * `affinity` here is a current value written to the old path, and accepting
+   * it would keep the old path alive as a second place to write one.
+   */
+  if (Object.prototype.hasOwnProperty.call(stored, "affinity")) {
+    return refuse("{ status, type, known } with no affinity", stored["affinity"]);
   }
 
   if (stored["status"] === "assigned") {
@@ -686,14 +943,17 @@ function migrateNenTypeField(
       return refuse("boolean", stored["known"]);
     }
 
-    return { ok: true, value: assignedNenType(stored["type"], stored["known"]) };
+    return {
+      ok: true,
+      value: assignedNenAffinity(pureNenAffinity(stored["type"]), stored["known"]),
+    };
   }
 
   if (stored["status"] !== undefined) {
     return refuse("assigned | unassigned", stored["status"]);
   }
 
-  /* The legacy form. `known` must be a boolean; it was one. */
+  /* The Phase-5.0 form. `known` must be a boolean; it was one. */
   if (typeof stored["known"] !== "boolean") {
     return refuse("boolean", stored["known"]);
   }
@@ -710,10 +970,13 @@ function migrateNenTypeField(
       return refuse("known: false when no type is recorded", stored["known"]);
     }
 
-    return { ok: true, value: unassignedNenType() };
+    return { ok: true, value: unassignedNenAffinity() };
   }
 
   if (!isNenType(type)) return refuse("a Nen Type or null", type);
 
-  return { ok: true, value: assignedNenType(type, stored["known"]) };
+  return {
+    ok: true,
+    value: assignedNenAffinity(pureNenAffinity(type), stored["known"]),
+  };
 }

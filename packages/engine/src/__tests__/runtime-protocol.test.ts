@@ -46,7 +46,7 @@ import {
   type RuntimeRequest,
   type RuntimeRequestOutcome,
 } from "../runtime";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import { unassignedNenAffinity } from "../character/foundation/nen/nen-type";
 
 const OPERATION = { operationId: "op-1", occurredAt: 1_000 } as const;
 
@@ -199,7 +199,7 @@ describe("Runtime State exists outside Combat", () => {
       "../character/foundation/nen/nen"
     );
 
-    const keys = Object.keys(createUnawakenedNenState(unassignedNenType()));
+    const keys = Object.keys(createUnawakenedNenState(unassignedNenAffinity()));
 
     for (const key of keys) {
       expect(key.toLowerCase()).not.toMatch(/active$/);

@@ -131,7 +131,7 @@ export function findRequestShapeIssues(
  * reverted character and emitted events targeting null without a single error.
  */
 export function findRoutingMetadataIssues(
-  context: NenAwakeningContext,
+  context: Pick<NenAwakeningContext, "owner" | "operationId" | "occurredAt">,
 ): readonly EngineError[] {
   const errors: EngineError[] = [];
 
@@ -400,7 +400,7 @@ export interface AwakenedEventsInput {
   readonly leaking: boolean;
   readonly suppressionApplied: readonly NenSuppressionRef[];
   readonly naturalAbilityGranted: string | null;
-  readonly nenTypeChanged: boolean;
+  readonly affinityChanged: boolean;
 }
 
 
@@ -447,8 +447,8 @@ export function awakenedEvents(
     );
   }
 
-  if (input.nenTypeChanged) {
-    events.push(awakeningEvent(emit, "nen-type-changed", record.id));
+  if (input.affinityChanged) {
+    events.push(awakeningEvent(emit, "nen-affinity-changed", record.id));
   }
 
   for (const held of input.suppressionApplied) {

@@ -133,7 +133,7 @@ export type {
   NenNaturalAbilityOverride,
   NenPrerequisiteOverride,
   NenProgressionOverride,
-  NenTypeOverride,
+  NenAffinityOverride,
 } from "./sources";
 
 export {
@@ -163,6 +163,7 @@ export type {
   NenAwakeningTraumaRequest,
   NenAwakeningTransitionResult,
   NenConditionRequest,
+  NenAffinityChangeRequest,
   NenMasteryGrant,
   NenReversionRequest,
   NenSuppressionRef,
@@ -210,3 +211,17 @@ export {
 } from "./reversion";
 
 export type { RetainedNenMastery } from "./reversion";
+
+
+export {
+  assignNenAffinity,
+  discoverNenAffinity,
+} from "./affinity";
+
+export type {
+  NenAffinityAssignmentRequest,
+  NenAffinityChanges,
+  NenAffinityContext,
+  NenAffinityDiscoveryRequest,
+  NenAffinityTransitionResult,
+} from "./affinity";

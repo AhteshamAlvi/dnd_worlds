@@ -41,10 +41,20 @@ import type {
 } from "../character/foundation/nen/awakening/types";
 import { createUnawakenedNenState } from "../character/foundation/nen/nen";
 
-import { abruptAwakenedNen, revertedNen, standardAwakenedNen } from "./fixtures/nen";
 import {
-  assignedNenType,
-  unassignedNenType,
+  abruptAwakenedNen,
+  awakeningContext,
+  expectAwakened,
+  revertedNen,
+  standardAwakenedNen,
+} from "./fixtures/nen";
+import { awakenNenStandard } from "../character/nen/transitions";
+import { revertNen } from "../character/nen/reversion";
+import {
+  assignedNenAffinity,
+  findNenAffinityKnowledgeIssues,
+  pureNenAffinity,
+  unassignedNenAffinity,
 } from "../character/foundation/nen/nen-type";
 
 function codes(issues: readonly { code: string }[]): readonly string[] {
@@ -69,7 +79,7 @@ function awakenedState(
   overrides: Partial<NenAwakeningState> = {},
 ): NenAwakeningState {
   return {
-    ...createUnawakenedAwakeningState(unassignedNenType()),
+    ...createUnawakenedAwakeningState(),
     condition: "awakened",
     nodes: "open",
     currentMethod: "standard",
@@ -82,7 +92,7 @@ function awakenedState(
 
 describe("the seven facts a boolean could not carry", () => {
   it("separates never awakened from reverted", () => {
-    const fresh = createUnawakenedNenState(unassignedNenType()).awakening;
+    const fresh = createUnawakenedNenState(unassignedNenAffinity()).awakening;
     const reverted = revertedNen().awakening;
 
     expect(isAwakened(fresh)).toBe(false);
@@ -101,7 +111,7 @@ describe("the seven facts a boolean could not carry", () => {
    * `reverted` is a third condition rather than a return to `unawakened`.
    */
   it("never gives pseudo-Chu back once it has ended", () => {
-    expect(hasPseudoChu(createUnawakenedNenState(unassignedNenType()).awakening)).toBe(true);
+    expect(hasPseudoChu(createUnawakenedNenState(unassignedNenAffinity()).awakening)).toBe(true);
     expect(hasPseudoChu(standardAwakenedNen().awakening)).toBe(false);
     expect(hasPseudoChu(abruptAwakenedNen().awakening)).toBe(false);
     expect(hasPseudoChu(revertedNen().awakening)).toBe(false);
@@ -110,7 +120,7 @@ describe("the seven facts a boolean could not carry", () => {
   it("tracks node state alongside the condition", () => {
     expect(standardAwakenedNen().awakening.nodes).toBe("open");
     expect(revertedNen().awakening.nodes).toBe("half-open");
-    expect(createUnawakenedNenState(unassignedNenType()).awakening.nodes).toBe("half-open");
+    expect(createUnawakenedNenState(unassignedNenAffinity()).awakening.nodes).toBe("half-open");
   });
 
   it("records which awakening the character is currently in", () => {
@@ -122,15 +132,39 @@ describe("the seven facts a boolean could not carry", () => {
   });
 
   it("knows whether the NEXT awakening would be a reawakening", () => {
-    expect(wouldBeReawakening(createUnawakenedNenState(unassignedNenType()).awakening)).toBe(false);
+    expect(wouldBeReawakening(createUnawakenedNenState(unassignedNenAffinity()).awakening)).toBe(false);
     expect(wouldBeReawakening(revertedNen().awakening)).toBe(true);
   });
 
-  it("tracks Nen Type separately from awakening", () => {
-    const awakened = standardAwakenedNen().awakening;
+  it("tracks affinity on NenState, not on awakening", () => {
+    const awakened = standardAwakenedNen();
 
-    /* Awakening assigns no affinity and discovers none. */
-    expect(awakened.nenType).toEqual(unassignedNenType());
+    /* Awakening assigns no affinity, discovers none, and stores none. */
+    expect(awakened.affinity).toEqual(unassignedNenAffinity());
+    expect(awakened.awakening).not.toHaveProperty("nenType");
+    expect(awakened.awakening).not.toHaveProperty("affinity");
+    expect(createUnawakenedAwakeningState()).not.toHaveProperty("nenType");
+  });
+
+  it("preserves an assigned affinity through ordinary awakening and reversion", () => {
+    const affinity = assignedNenAffinity(
+      { primary: "transmutation", leaning: { toward: "conjuration", percent: 50 } },
+      false,
+    );
+    const nen = createUnawakenedNenState(affinity);
+
+    const awakened = expectAwakened(awakenNenStandard(
+      awakeningContext({ nen }),
+      { method: "standard", trainingCompleted: true },
+    ));
+    const reverted = expectAwakened(revertNen(
+      awakeningContext({ nen: awakened, operationId: "op-2" }),
+      { source: { type: "test", id: "reverting-source" }, reason: "Test." },
+    ));
+
+    expect(nen.affinity).toBe(affinity);
+    expect(awakened.affinity).toEqual(affinity);
+    expect(reverted.affinity).toEqual(affinity);
   });
 });
 
@@ -226,7 +260,7 @@ describe("forced states are not Zetsu mastery", () => {
 
   it("refuses suppression on an unawakened character", () => {
     const impossible: NenAwakeningState = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       suppression: [{ ...forced, exemptions: [] }],
     };
 
@@ -239,7 +273,7 @@ describe("forced states are not Zetsu mastery", () => {
 describe("structural validation", () => {
   it("accepts what the transitions produce", () => {
     for (const nen of [
-      createUnawakenedNenState(unassignedNenType()),
+      createUnawakenedNenState(unassignedNenAffinity()),
       standardAwakenedNen(),
       abruptAwakenedNen(),
       revertedNen(),
@@ -254,12 +288,13 @@ describe("structural validation", () => {
     ["a method outside the vocabulary", { currentMethod: "wished" }, "nen.awakening.current-method.invalid"],
     ["a non-array history", { history: "none" }, "nen.awakening.history.invalid"],
     ["a non-array suppression list", { suppression: 3 }, "nen.awakening.suppression.list.invalid"],
-    ["a missing Nen Type reading", { nenType: null }, "nen.awakening.nen-type.invalid"],
+    ["the retired Nen Type field", { nenType: { status: "unassigned" } }, "nen.awakening.nen-type.retired"],
+    ["even a null retired Nen Type field", { nenType: null }, "nen.awakening.nen-type.retired"],
   ];
 
   it.each(malformed)("refuses %s without throwing", (_label, patch, code) => {
     const state = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       ...(patch as object),
     } as NenAwakeningState;
 
@@ -339,7 +374,7 @@ describe("domain validation", () => {
     ))).toContain("nen.awakening.nodes.mismatch");
 
     expect(codes(findAwakeningStateDomainIssues({
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       nodes: "open",
     }))).toContain("nen.awakening.nodes.mismatch");
   });
@@ -356,7 +391,7 @@ describe("domain validation", () => {
 
   it("insists a reverted character has something to have reverted from", () => {
     const impossible: NenAwakeningState = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       condition: "reverted",
     };
 
@@ -366,7 +401,7 @@ describe("domain validation", () => {
 
   it("insists a character with a history is reverted rather than unawakened", () => {
     const impossible: NenAwakeningState = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       history: [AWAKENING],
     };
 
@@ -418,10 +453,10 @@ describe("domain validation", () => {
    * represent it at all, so what is left to check is an assigned reading whose
    * type is missing.
    */
-  it("refuses an assigned Nen Type with no type", () => {
-    expect(codes(findAwakeningStateDomainIssues(
-      awakenedState({ nenType: { status: "assigned", known: true } as never }),
-    ))).toContain("nen.awakening.nen-type.value.invalid");
+  it("refuses an assigned affinity with no affinity", () => {
+    expect(codes(findNenAffinityKnowledgeIssues(
+      { status: "assigned", known: true },
+    ))).toContain("nen.affinity.invalid");
   });
 
   it("distinguishes a provenance-linked Ability from one that merely resembles it", () => {
@@ -449,7 +484,7 @@ describe("domain validation", () => {
 describe("serialization", () => {
   it("round-trips every state the transitions produce", () => {
     for (const nen of [
-      createUnawakenedNenState(unassignedNenType()),
+      createUnawakenedNenState(unassignedNenAffinity()),
       standardAwakenedNen(),
       abruptAwakenedNen(),
       revertedNen(),
@@ -471,7 +506,7 @@ describe("serialization", () => {
    */
   it("refuses a structurally valid but impossible state", () => {
     const impossible = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       history: [AWAKENING],
     };
 
@@ -493,7 +528,7 @@ describe("serialization", () => {
 
   it("carries the trace through both branches", () => {
     expect(awakeningStateFromJson(
-      awakeningStateToJson(createUnawakenedAwakeningState(unassignedNenType())),
+      awakeningStateToJson(createUnawakenedAwakeningState()),
     ).trace.root.id).toBe("nen.awakening.state.deserialize");
 
     expect(awakeningStateFromJson(null as never).trace.root.id)
@@ -534,7 +569,7 @@ describe("collapse recovery readings", () => {
   });
 
   it("owes nothing when there is no recovery", () => {
-    expect(collapseRecoveryHoursRemaining(createUnawakenedAwakeningState(unassignedNenType())))
+    expect(collapseRecoveryHoursRemaining(createUnawakenedAwakeningState()))
       .toBe(0);
   });
 });
@@ -557,11 +592,11 @@ describe("the domain pass survives being called on its own", () => {
       {},
       { condition: "awakened" },
       { condition: "awakened", nodes: "open", history: [] },
-      { ...createUnawakenedAwakeningState(unassignedNenType()), naturalAbility: undefined },
-      { ...createUnawakenedAwakeningState(unassignedNenType()), collapseRecovery: undefined },
-      { ...createUnawakenedAwakeningState(unassignedNenType()), suppression: [null] },
-      { ...createUnawakenedAwakeningState(unassignedNenType()), history: [null] },
-      { ...createUnawakenedAwakeningState(unassignedNenType()), externalAbilities: [7] },
+      { ...createUnawakenedAwakeningState(), naturalAbility: undefined },
+      { ...createUnawakenedAwakeningState(), collapseRecovery: undefined },
+      { ...createUnawakenedAwakeningState(), suppression: [null] },
+      { ...createUnawakenedAwakeningState(), history: [null] },
+      { ...createUnawakenedAwakeningState(), externalAbilities: [7] },
     ];
 
     for (const value of garbage) {
@@ -574,7 +609,7 @@ describe("the domain pass survives being called on its own", () => {
 });
 
 
-describe("the Nen Type union is enforced, not normalized", () => {
+describe("the affinity union is enforced, not normalized", () => {
   /*
    * `{ status: "unassigned", type: "enhancement", known: true }` contradicts
    * itself: one half says nobody has decided and the other names a discovered
@@ -586,46 +621,63 @@ describe("the Nen Type union is enforced, not normalized", () => {
    * validation and migration cannot drift apart.
    */
   it("accepts a bare unassigned reading", () => {
-    expect(codes(findAwakeningStateStructuralIssues(
-      awakenedState({ nenType: { status: "unassigned" } }),
-    ))).toEqual([]);
+    expect(codes(findNenAffinityKnowledgeIssues({ status: "unassigned" }))).toEqual([]);
   });
 
-  it("refuses unassigned carrying type, known, or both", () => {
+  it("refuses unassigned carrying an affinity, known, the retired type, or several", () => {
     const contradictory: readonly (readonly [string, unknown])[] = [
       ["type", { status: "unassigned", type: "enhancement" }],
       ["known", { status: "unassigned", known: false }],
-      ["both", { status: "unassigned", type: "enhancement", known: true }],
+      ["affinity", { status: "unassigned", affinity: pureNenAffinity("enhancement") }],
+      ["all", {
+        status: "unassigned",
+        type: "enhancement",
+        affinity: pureNenAffinity("enhancement"),
+        known: true,
+      }],
     ];
 
-    for (const [name, nenType] of contradictory) {
-      expect([name, codes(findAwakeningStateStructuralIssues(
-        awakenedState({ nenType: nenType as never }),
-      ))]).toEqual([
+    for (const [name, affinity] of contradictory) {
+      expect([name, codes(findNenAffinityKnowledgeIssues(affinity))]).toEqual([
         name,
-        expect.arrayContaining(["nen.awakening.nen-type.unassigned.conflict"]),
+        expect.arrayContaining(["nen.affinity.unassigned.conflict"]),
       ]);
     }
   });
 
   it("still accepts every valid assigned reading", () => {
     for (const known of [true, false]) {
-      expect(codes(findAwakeningStateStructuralIssues(
-        awakenedState({ nenType: assignedNenType("transmutation", known) }),
+      expect(codes(findNenAffinityKnowledgeIssues(
+        assignedNenAffinity(pureNenAffinity("transmutation"), known),
       ))).toEqual([]);
     }
   });
 
-  /*
-   * An unrelated extension field is somebody else's business. This engine has
-   * no general closed-object policy, and inventing one here would be a wider
-   * rule than the defect calls for.
-   */
+  it("refuses invalid knowledge flags and the retired type beside an affinity", () => {
+    for (const known of ["yes", 1, null, undefined]) {
+      expect(codes(findNenAffinityKnowledgeIssues({
+        status: "assigned",
+        affinity: pureNenAffinity("emission"),
+        known,
+      }))).toContain("nen.affinity.known.invalid");
+    }
+
+    expect(codes(findNenAffinityKnowledgeIssues({
+      status: "assigned",
+      affinity: pureNenAffinity("emission"),
+      known: true,
+      type: "emission",
+    }))).toContain("nen.affinity.retired-type");
+
+    expect(codes(findNenAffinityKnowledgeIssues({ status: "maybe" })))
+      .toContain("nen.affinity.status.invalid");
+    expect(codes(findNenAffinityKnowledgeIssues(null)))
+      .toContain("nen.affinity.knowledge.invalid");
+  });
+
   it("does not police unrelated fields on an unassigned reading", () => {
-    expect(codes(findAwakeningStateStructuralIssues(
-      awakenedState({
-        nenType: { status: "unassigned", noteFromSomeHost: "x" } as never,
-      }),
+    expect(codes(findNenAffinityKnowledgeIssues(
+      { status: "unassigned", noteFromSomeHost: "x" },
     ))).toEqual([]);
   });
 });

@@ -38,7 +38,7 @@
  * Content declares, field by field, which ordinary rules it replaces. Every
  * rule it does not mention applies normally — that is the half that does the
  * work. A source that waives the Attribute thresholds has waived the Attribute
- * thresholds and has NOT granted Ten, changed a Nen Type, permitted an Ability
+ * thresholds and has NOT granted Ten, changed an affinity, permitted an Ability
  * the character never developed, or excused a mastery prerequisite anywhere
  * else in the engine.
  *
@@ -69,7 +69,10 @@ import type {
 } from "../foundation/nen/types";
 import { NEN_PRINCIPLE_IDS } from "../foundation/nen/nen";
 import { isMasteryValue } from "../capabilities/mastery";
-import { nenTypeOf } from "../foundation/nen/nen-type";
+import {
+  nenAffinityOf,
+  type NenAffinityChange,
+} from "../foundation/nen/nen-type";
 
 import { isNenUncontained } from "./access";
 import {
@@ -109,7 +112,7 @@ import {
   naturalAbilityRecord,
   openNodes,
   applySuppression,
-  applyNenTypeChange,
+  applyAffinityChange,
   suppressionId,
 } from "./settlement";
 
@@ -301,7 +304,6 @@ export function awakenNenInstinctive(
       awakeningId: recordId,
       method: "instinctive",
     }),
-    nenType: state.nenType,
   });
 
   const next: NenState = {
@@ -361,7 +363,7 @@ export function awakenNenInstinctive(
         leaking,
         suppressionApplied: [{ id: zetsuId, kind: "forced-zetsu" }],
         naturalAbilityGranted: abilityId,
-        nenTypeChanged: false,
+        affinityChanged: false,
       }),
       leaking
         ? [conditionRequest(
@@ -515,7 +517,7 @@ function findOverrideContradictions(
  * The content-defined route: only the overrides the source actually declared.
  *
  * Note what this function does NOT do when a source overrides eligibility: it
- * does not grant Ten, does not touch the Nen Type, does not permit an Ability,
+ * does not grant Ten, does not touch the affinity, does not permit an Ability,
  * and does not relax the Nen mastery graph. Every one of those needs its own
  * declared override, and the mastery grant — however it is declared — still
  * goes through validateNenAdvancement like every other grant in the engine.
@@ -608,17 +610,23 @@ export function awakenNenExceptional(
   const recordId = awakeningRecordId(context.operationId);
 
   /*
-   * A Nen Type change ONLY when the source declared one. An eligibility
+   * An affinity change ONLY when the source declared one. An eligibility
    * override leaves the character's affinity exactly as it was, which is the
    * whole of "unmentioned rules remain normal".
+   *
+   * The COMPLETE affinity and the declared `known`, both recorded as given
+   * and both stored as given — the record and the resulting state are built
+   * from one value so they cannot disagree.
    */
-  const nenTypeChange = overrides.nenType === undefined
-    ? undefined
-    : {
-      previous: nenTypeOf(state.nenType),
-      next: overrides.nenType.type,
-      cause: overrides.nenType.summary,
-    };
+  const affinityChange: NenAffinityChange | undefined =
+    overrides.affinity === undefined
+      ? undefined
+      : {
+        previous: nenAffinityOf(context.nen.affinity),
+        next: overrides.affinity.affinity,
+        known: overrides.affinity.known,
+        cause: overrides.affinity.summary,
+      };
 
   const record: NenAwakeningRecord = {
     kind: "awakening",
@@ -630,7 +638,7 @@ export function awakenNenExceptional(
     eligibilityBypassed: overrides.eligibility !== undefined,
     appliedOverrides: declaredOverrides,
     ...(request.hurdle === undefined ? {} : { hurdle: request.hurdle }),
-    ...(nenTypeChange === undefined ? {} : { nenTypeChange }),
+    ...(affinityChange === undefined ? {} : { affinityChange }),
   };
 
   const abilityId =
@@ -647,12 +655,11 @@ export function awakenNenExceptional(
       awakeningId: recordId,
       method: "exceptional",
     }),
-    nenType: applyNenTypeChange(state.nenType, nenTypeChange),
   });
 
   /*
-   * No forced state. An exceptional source may replace eligibility, force a
-   * Nen Type, prohibit Ability development, grant Mastery, add prerequisites
+   * No forced state. An exceptional source may replace eligibility, replace
+   * the affinity, prohibit Ability development, grant Mastery, add prerequisites
    * and note a change to later progression — and that is the whole list. It
    * cannot impose a forced Zetsu. The vocabulary can represent an
    * Ability-imposed or status-imposed one — a forced Zetsu carries a generic
@@ -660,7 +667,11 @@ export function awakenNenExceptional(
    * WHEN content may impose one, and what lifts it, is the Ability and status
    * runtime's business rather than this file's.
    */
-  const draft: NenState = { ...context.nen, awakening: opened };
+  const draft: NenState = {
+    ...context.nen,
+    awakening: opened,
+    affinity: applyAffinityChange(context.nen.affinity, affinityChange),
+  };
 
   /*
    * Through the ordinary mastery path, whatever the source declared. An
@@ -696,7 +707,7 @@ export function awakenNenExceptional(
     leakageStarted: leaking,
     suppressionApplied: [],
     naturalAbilityGranted: abilityId ?? null,
-    nenTypeChange: nenTypeChange ?? null,
+    affinityChange: affinityChange ?? null,
     appliedOverrides: declaredOverrides,
     reawakening,
     hurdle: request.hurdle ?? null,
@@ -722,7 +733,7 @@ export function awakenNenExceptional(
         leaking,
         suppressionApplied: changes.suppressionApplied,
         naturalAbilityGranted: changes.naturalAbilityGranted,
-        nenTypeChanged: nenTypeChange !== undefined,
+        affinityChanged: affinityChange !== undefined,
       }),
       leaking
         ? [conditionRequest(

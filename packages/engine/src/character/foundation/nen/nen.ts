@@ -79,7 +79,10 @@ import { ATTRIBUTE_KEYS } from "../attributes/base";
 import type { Attributes } from "../attributes/types";
 import type { MasteryRank } from "../../capabilities/mastery";
 
-import type { NenTypeKnowledge } from "./nen-type";
+import {
+  findNenAffinityKnowledgeIssues,
+  type NenAffinityKnowledge,
+} from "./nen-type";
 import {
   createUnawakenedAwakeningState,
   hasEverAwakened,
@@ -243,11 +246,17 @@ export const NEN_PRINCIPLE_IDS =
  * "definitely unawakened" the same value, and only one of those is a fact
  * about the character.
  *
+ * The affinity is REQUIRED rather than defaulted. Every character has a Nen
+ * Type from birth, so a constructor that quietly supplied one would be the
+ * engine deciding it. A host with no value to give passes
+ * unassignedNenAffinity(), which says that about the RECORD rather than about
+ * the person.
+ *
  * Note what it does NOT say: nothing about Aura. An unawakened character still
  * has a pool and still loses Current Aura. See foundation/aura/state.ts.
  */
 export function createUnawakenedNenState(
-  nenType: NenTypeKnowledge,
+  affinity: NenAffinityKnowledge,
 ): NenState {
   const mastery = {} as Record<NenPrincipleId, NenMasteryRank>;
 
@@ -255,7 +264,7 @@ export function createUnawakenedNenState(
     mastery[principleId] = NO_MASTERY;
   }
 
-  return { awakening: createUnawakenedAwakeningState(nenType), mastery };
+  return { awakening: createUnawakenedAwakeningState(), affinity, mastery };
 }
 
 
@@ -994,7 +1003,16 @@ export function validateNenState(
    * nobody has checked — which is how "reverted with no history" became a
    * character who could hold Mastery they never trained.
    */
-  const awakeningIssues = findAwakeningStateIssues(state.awakening);
+  const awakeningIssues = [
+    ...findAwakeningStateIssues(state.awakening),
+
+    /*
+     * The one stored affinity, judged structurally alongside the awakening.
+     * No mastery rule reads it, but a state that validated with a malformed
+     * lean would hand the next profile lookup a record nobody had checked.
+     */
+    ...findNenAffinityKnowledgeIssues(state.affinity, "affinity"),
+  ];
 
   if (awakeningIssues.length > 0) {
     traceNode.output = { valid: false };

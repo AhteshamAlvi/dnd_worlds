@@ -11,7 +11,8 @@
  *   3  AURA-NODE STATE                  half-open / open
  *   4  HISTORY AND PROVENANCE           what happened, when, and because of what
  *   5  MASTERY, AND WHETHER IT IS USABLE  a reverted character keeps Ten V
- *   6  NEN TYPE, AND WHETHER IT IS KNOWN  an affinity is not an awakening
+ *   6  NEN TYPE, AND WHETHER IT IS KNOWN  an affinity is not an awakening,
+ *                                       and lives on NenState.affinity
  *   7  TEMPORARY FORCED STATES          forced Zetsu is not Zetsu mastery
  *
  * A boolean can express (2) and nothing else. A reverted character is
@@ -48,7 +49,7 @@ import type { ContributionSourceRef } from "../../../../infrastructure/contribut
 import type { GameTimestamp } from "../../../../time/types";
 
 import type { AuraNodeState } from "../../aura/types";
-import type { NenTypeChange, NenTypeKnowledge } from "../nen-type";
+import type { NenAffinityChange } from "../nen-type";
 
 
 /* ── 2. Current awakening condition ─────────────────────────────────────── */
@@ -297,7 +298,7 @@ export type NenSuppressionState =
  */
 export const NEN_EXCEPTIONAL_OVERRIDE_FIELDS = [
   "eligibility",
-  "nenType",
+  "affinity",
   "naturalAbilityDevelopment",
   "masteryGrant",
   "prerequisite",
@@ -365,7 +366,12 @@ export interface NenAwakeningRecord {
 
   readonly appliedOverrides: readonly NenAppliedOverride[];
 
-  readonly nenTypeChange?: NenTypeChange;
+  /*
+   * An affinity change this awakening caused, when an exceptional source
+   * declared one. HISTORY of a change, not the current affinity: that lives on
+   * NenState.affinity and nowhere else.
+   */
+  readonly affinityChange?: NenAffinityChange;
 }
 
 
@@ -385,7 +391,7 @@ export interface NenReversionRecord {
   /** The provenance-linked natural Ability that was lost, if there was one. */
   readonly removedNaturalAbilityId: string | null;
 
-  readonly nenTypeChange?: NenTypeChange;
+  readonly affinityChange?: NenAffinityChange;
 }
 
 
@@ -500,7 +506,10 @@ export interface NenAwakeningState {
    */
   readonly suppression: readonly NenSuppressionState[];
 
-  readonly nenType: NenTypeKnowledge;
+  /*
+   * No affinity. The character's Nen Type is NenState.affinity; an awakening
+   * state that carried it too would be a second writable home for one fact.
+   */
 
   readonly collapseRecovery: NenCollapseRecovery | null;
 }

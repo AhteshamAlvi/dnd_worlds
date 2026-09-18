@@ -33,7 +33,13 @@ import {
   resolveEffectiveHatsu,
 } from "../character/nen/hatsu";
 import { createUnawakenedNenState } from "../character/foundation/nen/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import {
+  NEN_TYPES,
+  assignedNenAffinity,
+  pureNenAffinity,
+  unassignedNenAffinity,
+  type NenAffinityKnowledge,
+} from "../character/foundation/nen/nen-type";
 import { MASTERY_RANKS, type MasteryRank } from "../character/capabilities/mastery";
 import type { NenState } from "../character/foundation/nen/types";
 
@@ -308,7 +314,7 @@ describe("the character-facing adapter", () => {
 
   it("refuses conversion for an unawakened character", () => {
     expect(errorCodesOf(resolveCharacterHatsuConversion({
-      nen: createUnawakenedNenState(unassignedNenType()),
+      nen: createUnawakenedNenState(unassignedNenAffinity()),
       fundedAura: 10,
     }))).toEqual(["nen.hatsu.unavailable"]);
   });
@@ -344,8 +350,8 @@ describe("the character-facing adapter", () => {
     [
       "mastery on a never-awakened character",
       () => ({
-        ...createUnawakenedNenState(unassignedNenType()),
-        mastery: { ...createUnawakenedNenState(unassignedNenType()).mastery, hatsu: 4 },
+        ...createUnawakenedNenState(unassignedNenAffinity()),
+        mastery: { ...createUnawakenedNenState(unassignedNenAffinity()).mastery, hatsu: 4 },
       }) as NenState,
       "nen.mastery.before_awakening",
     ],
@@ -392,6 +398,54 @@ describe("the character-facing adapter", () => {
     expect(conversionNode?.formula)
       .toBe("effectivePower = fundedAura × Hatsu conversionEfficiency");
     expect(conversionNode?.output).toMatchObject({ effectivePower: 24, conversionEfficiency: 0.60 });
+  });
+});
+
+
+/*
+ * Hatsu produces power; Nen Type produces percentages. The Nen Ability
+ * subsystem will compose them — until then, neither may read the other, so a
+ * character's affinity cannot change how efficiently their Aura converts.
+ */
+describe("Hatsu is independent of affinity", () => {
+  const AFFINITIES: readonly NenAffinityKnowledge[] = [
+    unassignedNenAffinity(),
+    ...NEN_TYPES.flatMap((primary) => [
+      assignedNenAffinity(pureNenAffinity(primary), true),
+      assignedNenAffinity(pureNenAffinity(primary), false),
+    ]),
+    assignedNenAffinity({ primary: "specialization", leaning: { toward: "manipulation", percent: 50 } }, true),
+    assignedNenAffinity({ primary: "enhancement", leaning: { toward: "emission", percent: 25 } }, false),
+  ];
+
+  it.each(MASTERY_RANKS)("converts identically at Hatsu %i whatever the affinity", (rank) => {
+    const powers = AFFINITIES.map((affinity) => payloadOf(resolveCharacterHatsuConversion({
+      nen: nenWith(rank, { affinity }),
+      fundedAura: 100,
+    })).effectivePower);
+
+    expect(new Set(powers).size).toBe(1);
+    expect(powers[0]).toBeCloseTo(POWER_FROM_100[rank], 10);
+  });
+
+  it("works for an unassigned NPC, fractional Aura unrounded", () => {
+    const npc = nenWith(7, { affinity: unassignedNenAffinity() });
+
+    expect(payloadOf(resolveCharacterHatsuConversion({ nen: npc, fundedAura: 12.5 })).effectivePower)
+      .toBe(12.5 * 0.85);
+    expect(payloadOf(resolveCharacterHatsuConversion({ nen: npc, fundedAura: 0 })).effectivePower)
+      .toBe(0);
+  });
+
+  it("gives the same effective mastery and ceiling whatever the affinity", () => {
+    for (const affinity of AFFINITIES) {
+      const nen = sealed(9, 4);
+      const withAffinity = { ...nen, affinity };
+
+      expect(payloadOf(resolveEffectiveHatsu(withAffinity))).toEqual(payloadOf(resolveEffectiveHatsu(nen)));
+      expect(payloadOf(resolveCharacterNenAbilityMastery({ nen: withAffinity, storedAbilityMastery: 8 })))
+        .toEqual(payloadOf(resolveCharacterNenAbilityMastery({ nen, storedAbilityMastery: 8 })));
+    }
   });
 });
 

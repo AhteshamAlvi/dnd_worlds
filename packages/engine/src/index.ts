@@ -478,34 +478,64 @@ export {
 /* ── Character: Nen awakening ───────────────────────────────────────────── */
 
 /*
- * A character's Nen Type, and whether anybody has established what it is.
+ * A character's Nen affinity — primary Type plus an optional 25%/50% lean —
+ * and whether anybody has established it.
  *
- * Two facts, not one. A character HAS an affinity from birth; whether it has
- * been discovered is separate, and an optional single field could not say
- * "Enhancer, undiscovered" apart from "nobody has decided yet".
+ * Stored at NenState.affinity and nowhere else. `unassigned` is legal for a
+ * record that never needed one, and every category lookup refuses it rather
+ * than inventing a type. Nen Type is independent of Hatsu: neither imports the
+ * other, and the future Nen Ability subsystem is what composes them.
  */
 export type {
-  NenAssignedType,
+  NenAffinity,
+  NenAffinityChange,
+  NenAffinityKnowledge,
+  NenAffinityLean,
+  NenAffinityProfile,
+  NenAffinityTotal,
+  NenAssignedAffinity,
+  NenCategoryAffinity,
+  NenLeanPercent,
   NenType,
-  NenTypeChange,
-  NenTypeKnowledge,
-  NenUnassignedType,
+  NenUnassignedAffinity,
 } from "./character/foundation/nen/nen-type";
 
 export {
+  NEN_AFFINITY_PROFILE_FORMULA,
+  NEN_LEAN_PERCENTS,
+  NEN_LEAN_SHIFT,
+  NEN_LEGAL_LEAN_TARGETS,
+  NEN_ORDINARY_AFFINITY_RING,
+  NEN_PURE_AFFINITY_PROFILES,
+  NEN_SPECIALIST_AFFINITY_RING,
   NEN_TYPES,
 
   /*
-   * The canonical affinity lives on Nen state alone. `adoptLegacyNenType` is
-   * the one-time adapter for a record written when it also sat on
+   * The one-time adapter for a record written when the affinity also sat on
    * CharacterDetails; it refuses a legacy value that contradicts the canonical
    * one rather than silently picking a winner.
    */
   adoptLegacyNenType,
-  assignedNenType,
+  assignedNenAffinity,
+  findNenAffinityChangeIssues,
+  findNenAffinityIssues,
+  findNenAffinityKnowledgeIssues,
+  isLegalNenLean,
+  isNenAffinity,
+  isNenAffinityAssigned,
+  isNenAffinityKnown,
+  isNenLeanPercent,
   isNenType,
-  nenTypeOf,
-  unassignedNenType,
+  isSameNenAffinity,
+  nenAffinityOf,
+  nenLeanTargets,
+  pureNenAffinity,
+  resolveNenAffinityProfile,
+  resolveNenCategoryAffinity,
+  resolveNenStateAffinityProfile,
+  resolveNenStateCategoryAffinity,
+  unassignedNenAffinity,
+  unknownNenAffinity,
 } from "./character/foundation/nen/nen-type";
 
 /*

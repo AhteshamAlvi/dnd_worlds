@@ -34,10 +34,7 @@ import {
   isSameContributionSource,
 } from "../../../../infrastructure/contribution-source";
 import { AURA_NODE_STATES } from "../../aura/types";
-import {
-  isNenType,
-  UNASSIGNED_CONFLICTING_FIELDS,
-} from "../nen-type";
+import { findNenAffinityChangeIssues } from "../nen-type";
 
 import {
   awakeningRecords,
@@ -368,7 +365,7 @@ function findAwakeningRecordStructuralIssues(
     });
   }
 
-  errors.push(...findNenTypeChangeIssues(record.nenTypeChange, at));
+  errors.push(...findAffinityChangeIssues(record, at));
 
   return errors;
 }
@@ -405,46 +402,36 @@ function findReversionRecordStructuralIssues(
     ));
   }
 
-  errors.push(...findNenTypeChangeIssues(record.nenTypeChange, at));
+  errors.push(...findAffinityChangeIssues(record, at));
 
   return errors;
 }
 
 
-function findNenTypeChangeIssues(
-  change: NenAwakeningRecord["nenTypeChange"],
+function findAffinityChangeIssues(
+  record: NenAwakeningHistoryEntry,
   at: string,
 ): readonly EngineError[] {
-  if (change === undefined) return [];
-
   const errors: EngineError[] = [];
 
-  if (change.previous !== null && !isNenType(change.previous)) {
+  /*
+   * The retired Type-only change. The migration boundary rewrites it into a
+   * complete affinity change; one that survives to here was never migrated.
+   */
+  if (Object.prototype.hasOwnProperty.call(record, "nenTypeChange")) {
     errors.push(developerError(
-      "nen.awakening.type-change.previous.invalid",
-      `${at} records a malformed previous Nen Type.`,
-      "a Nen Type or null",
-      describe(change.previous),
+      "nen.awakening.type-change.retired",
+      `${at} carries a Type-only change; history records complete affinity changes.`,
+      "affinityChange",
+      describe((record as { nenTypeChange?: unknown }).nenTypeChange),
     ));
   }
 
-  if (!isNenType(change.next)) {
-    errors.push(developerError(
-      "nen.awakening.type-change.next.invalid",
-      `${at} must record the Nen Type it changed to.`,
-      "a Nen Type",
-      describe(change.next),
-    ));
-  }
+  if (record.affinityChange === undefined) return errors;
 
-  if (!isIdentifier(change.cause)) {
-    errors.push(developerError(
-      "nen.awakening.type-change.cause.invalid",
-      `${at} must record what caused the Nen Type change.`,
-      "non-empty string",
-      describe(change.cause),
-    ));
-  }
+  errors.push(
+    ...findNenAffinityChangeIssues(record.affinityChange, `${at}.affinityChange`),
+  );
 
   return errors;
 }
@@ -749,55 +736,17 @@ export function findAwakeningStateStructuralIssues(
     });
   }
 
-  if (!isRecordObject(state.nenType)) {
+  /*
+   * Affinity lives on NenState.affinity. An awakening state still carrying the
+   * old `nenType` is a second writable home for one fact — the migration
+   * boundary moves it, and nothing else may leave it here.
+   */
+  if (Object.prototype.hasOwnProperty.call(state, "nenType")) {
     errors.push(developerError(
-      "nen.awakening.nen-type.invalid",
-      "An awakening state must carry a Nen Type reading.",
-      "{ type, known }",
-      describe(state.nenType),
-    ));
-  } else if (state.nenType.status === "assigned") {
-    if (!isNenType(state.nenType.type)) {
-      errors.push(developerError(
-        "nen.awakening.nen-type.value.invalid",
-        "An assigned Nen Type must be one of the six types.",
-        "a Nen Type",
-        describe(state.nenType.type),
-      ));
-    }
-
-    if (typeof state.nenType.known !== "boolean") {
-      errors.push(developerError(
-        "nen.awakening.nen-type.known.invalid",
-        "A Nen Type reading must say whether the type is known.",
-        "boolean",
-        describe(state.nenType.known),
-      ));
-    }
-  } else if (state.nenType.status === "unassigned") {
-    /*
-     * The union, enforced here as well as in the migration, so the two cannot
-     * disagree about what a readable Nen Type is. An `unassigned` reading
-     * carrying `type` or `known` contradicts its own discriminant — one half
-     * says nobody has decided, the other names a discovered affinity — and a
-     * validator that accepted it would be the reason a migration had to guess.
-     */
-    for (const field of UNASSIGNED_CONFLICTING_FIELDS) {
-      if (!Object.prototype.hasOwnProperty.call(state.nenType, field)) continue;
-
-      errors.push(developerError(
-        "nen.awakening.nen-type.unassigned.conflict",
-        `An unassigned Nen Type cannot also carry "${field}".`,
-        `no ${field} alongside status "unassigned"`,
-        describe((state.nenType as Record<string, unknown>)[field]),
-      ));
-    }
-  } else {
-    errors.push(developerError(
-      "nen.awakening.nen-type.status.invalid",
-      "A Nen Type reading must be assigned or unassigned.",
-      "assigned | unassigned",
-      describe((state.nenType as { status?: unknown }).status),
+      "nen.awakening.nen-type.retired",
+      "An awakening state no longer carries a Nen Type; affinity belongs to NenState.affinity.",
+      "no nenType field",
+      describe((state as { nenType?: unknown }).nenType),
     ));
   }
 

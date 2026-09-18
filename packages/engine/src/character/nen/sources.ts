@@ -53,7 +53,10 @@ import {
   isNenExceptionalOverrideField,
   NEN_EXCEPTIONAL_OVERRIDE_FIELDS,
 } from "../foundation/nen/awakening/types";
-import { isNenType, type NenType } from "../foundation/nen/nen-type";
+import {
+  findNenAffinityIssues,
+  type NenAffinity,
+} from "../foundation/nen/nen-type";
 import type { NamedRequirement } from "../rules/requirements";
 import type { RequirementContext, RequirementDisposition } from "../rules/resolution";
 import {
@@ -141,9 +144,18 @@ export interface NenEligibilityOverride {
 }
 
 
-/** Forces the character's Nen Type, recording what it was. */
-export interface NenTypeOverride {
-  readonly type: NenType;
+/*
+ * Replaces the character's WHOLE affinity, recording what it was.
+ *
+ * The complete affinity, lean included. A source that changes the primary
+ * Type says what the lean becomes as well — `leaning: null` is a statement,
+ * and nothing infers one from the old affinity.
+ *
+ * `known` is stored exactly as declared. A source may leave the character
+ * ignorant of what they have become.
+ */
+export interface NenAffinityOverride {
+  readonly affinity: NenAffinity;
   readonly known: boolean;
   readonly summary: string;
 }
@@ -194,7 +206,7 @@ export interface NenProgressionOverride {
  */
 export interface NenExceptionalOverrides {
   readonly eligibility?: NenEligibilityOverride;
-  readonly nenType?: NenTypeOverride;
+  readonly affinity?: NenAffinityOverride;
   readonly naturalAbilityDevelopment?: NenNaturalAbilityOverride;
   readonly masteryGrant?: NenMasteryGrantOverride;
   readonly prerequisite?: NenPrerequisiteOverride;
@@ -407,30 +419,35 @@ export function findExceptionalSourceIssues(
 
   if (errors.length > 0) return errors;
 
-  if (overrides.nenType !== undefined) {
-    if (!isNenType(overrides.nenType.type)) {
+  if (overrides.affinity !== undefined) {
+    const affinityIssues = findNenAffinityIssues(
+      overrides.affinity.affinity,
+      "overrides.affinity.affinity",
+    );
+
+    if (affinityIssues.length > 0) {
       errors.push({
-        code: "nen.awakening.override.nen-type.invalid",
-        message: "A Nen Type override must name one of the six Nen Types.",
+        code: "nen.awakening.override.affinity.invalid",
+        message: "An affinity override must declare a complete, legal affinity.",
         audience: "developer",
-        required: "a Nen Type",
-        actual: describeDiagnosticValue(overrides.nenType.type),
+        required: "{ primary, leaning } with a legal lean or null",
+        actual: affinityIssues.map((issue) => issue.code),
       });
     }
 
     /*
-     * Whether the character KNOWS the forced type is a separate fact from what
-     * it is, and it was never checked — a `known: "yes"` passed straight
-     * through into stored state that claims to be a boolean.
+     * Whether the character KNOWS the new affinity is a separate fact from
+     * what it is, and a `known: "yes"` would otherwise pass straight through
+     * into stored state that claims to be a boolean.
      */
-    if (typeof overrides.nenType.known !== "boolean") {
+    if (typeof overrides.affinity.known !== "boolean") {
       errors.push({
-        code: "nen.awakening.override.nen-type.known.invalid",
+        code: "nen.awakening.override.affinity.known.invalid",
         message:
-          "A Nen Type override must say whether the character knows the type.",
+          "An affinity override must say whether the character knows the affinity.",
         audience: "developer",
         required: "boolean",
-        actual: describeDiagnosticValue(overrides.nenType.known),
+        actual: describeDiagnosticValue(overrides.affinity.known),
       });
     }
   }

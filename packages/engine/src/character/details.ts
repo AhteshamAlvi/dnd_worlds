@@ -46,8 +46,8 @@ export type Gender =
  * character could be an Enhancer on one and an Emitter on the other and both
  * would validate.
  *
- * The canonical value is `character.nen.awakening.nenType`, which also records
- * whether anybody has established it. A record written before that was true
+ * The canonical value is `character.nen.affinity`, which also records the lean
+ * and whether anybody has established it. A record written before that was true
  * migrates through adoptLegacyNenType(), which refuses a legacy value that
  * contradicts the canonical one rather than silently picking a winner.
  *

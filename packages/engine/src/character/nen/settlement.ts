@@ -51,8 +51,11 @@ import type {
   NenSuppressionKind,
   NenSuppressionState,
 } from "../foundation/nen/awakening/types";
-import { assignedNenType } from "../foundation/nen/nen-type";
-import type { NenTypeChange, NenTypeKnowledge } from "../foundation/nen/nen-type";
+import {
+  affinityAfterChange,
+  type NenAffinityChange,
+  type NenAffinityKnowledge,
+} from "../foundation/nen/nen-type";
 import type {
   NenMasteryRank,
   NenMasteryState,
@@ -159,7 +162,6 @@ export interface OpenNodesInput {
   readonly state: NenAwakeningState;
   readonly record: NenAwakeningRecord;
   readonly naturalAbility: NenNaturalAbilityRecord | null;
-  readonly nenType: NenTypeKnowledge;
 }
 
 
@@ -183,7 +185,6 @@ export function openNodes(input: OpenNodesInput): NenAwakeningState {
     currentAwakeningId: record.id,
     history: [...state.history, record],
     naturalAbility: input.naturalAbility ?? state.naturalAbility,
-    nenType: input.nenType,
   };
 }
 
@@ -200,7 +201,6 @@ export function closeNodes(input: {
   readonly record: NenReversionRecord;
   readonly removeNaturalAbility: boolean;
   readonly remainingExternalAbilityIds: readonly string[];
-  readonly nenType: NenTypeKnowledge;
 }): NenAwakeningState {
   const { state } = input;
 
@@ -228,7 +228,6 @@ export function closeNodes(input: {
      */
     suppression: [],
     collapseRecovery: null,
-    nenType: input.nenType,
   };
 }
 
@@ -441,12 +440,18 @@ export function naturalAbilityRecord(input: {
 }
 
 
-/** The Nen Type reading after an optional, explicit change. */
-export function applyNenTypeChange(
-  current: NenTypeKnowledge,
-  change: NenTypeChange | undefined,
-): NenTypeKnowledge {
+/*
+ * The affinity reading after an optional, explicit change.
+ *
+ * `known` comes FROM THE CHANGE. This used to hard-code `true`, so a source
+ * that declared `known: false` recorded one thing in its history and stored
+ * another on the character — the two halves of one transition disagreeing.
+ */
+export function applyAffinityChange(
+  current: NenAffinityKnowledge,
+  change: NenAffinityChange | undefined,
+): NenAffinityKnowledge {
   if (change === undefined) return current;
 
-  return assignedNenType(change.next, true);
+  return affinityAfterChange(change);
 }

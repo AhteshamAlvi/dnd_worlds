@@ -29,11 +29,12 @@ import { INSTINCTIVE_AWAKENING_MINIMUM_SPI } from "../character/foundation/nen/a
 import { revertNen } from "../character/nen/reversion";
 import type { NenExceptionalAwakeningSource } from "../character/nen/sources";
 import type { NenState } from "../character/foundation/nen/types";
+import { createUnawakenedNenState } from "../character/foundation/nen/nen";
 
 import { AWAKENING_CAPABLE, awakeningContext } from "./fixtures/nen";
 import {
-  assignedNenType,
-  unassignedNenType,
+  assignedNenAffinity,
+  unassignedNenAffinity,
 } from "../character/foundation/nen/nen-type";
 
 function codes(result: NenAwakeningTransitionResult): readonly string[] {
@@ -302,7 +303,7 @@ describe("exceptional awakening", () => {
    * The half that does the work: an override of one field is an override of
    * one field. Everything unmentioned applies exactly as it always did.
    */
-  it("grants no Ten, changes no Nen Type and permits no Ability", () => {
+  it("grants no Ten, changes no affinity and permits no Ability", () => {
     const state = expectState(awakenNenExceptional(
       awakeningContext({ attributes: { ...AWAKENING_CAPABLE, spi: 4 } }),
       {
@@ -314,19 +315,24 @@ describe("exceptional awakening", () => {
     ));
 
     expect(state.mastery.ten).toBe(0);
-    expect(state.awakening.nenType).toEqual(unassignedNenType());
+    expect(state.affinity).toEqual(unassignedNenAffinity());
     expect(state.awakening.naturalAbility).toBeNull();
 
     /* And, having no Ten, it leaks exactly as an abrupt awakening does. */
     expect(isNenUncontained(state)).toBe(true);
   });
 
-  it("forces a Nen Type only when it says so, and records the change", () => {
+  it("replaces the complete affinity only when it says so, and records the change", () => {
+    const next = {
+      primary: "specialization",
+      leaning: { toward: "manipulation", percent: 50 },
+    } as const;
+
     const result = awakenNenExceptional(awakeningContext(), {
       method: "exceptional",
       source: source({
-        nenType: {
-          type: "specialization",
+        affinity: {
+          affinity: next,
           known: true,
           summary: "The relic rewrites what its bearer is.",
         },
@@ -336,16 +342,95 @@ describe("exceptional awakening", () => {
     expect(result.success).toBe(true);
     if (!result.success) return;
 
-    expect(result.payload.state.awakening.nenType)
-      .toEqual(assignedNenType("specialization", true));
+    expect(result.payload.state.affinity).toEqual(assignedNenAffinity(next, true));
+    expect(result.payload.state.awakening).not.toHaveProperty("nenType");
 
-    expect(result.payload.changes.nenTypeChange).toEqual({
+    expect(result.payload.changes.affinityChange).toEqual({
       previous: null,
-      next: "specialization",
+      next,
+      known: true,
       cause: "The relic rewrites what its bearer is.",
     });
 
-    expect(kinds(result)).toContain("nen-type-changed");
+    expect(kinds(result)).toContain("nen-affinity-changed");
+  });
+
+  /*
+   * The defect: the override's `known` was validated and then ignored, and
+   * every change was stored as known. The history said one thing and the
+   * character another.
+   */
+  it("stores exactly the `known` the override asked for, in state and history", () => {
+    for (const known of [false, true]) {
+      const next = { primary: "emission", leaning: { toward: "enhancement", percent: 25 } } as const;
+
+      const result = awakenNenExceptional(
+        awakeningContext({
+          nen: createUnawakenedNenState(
+            assignedNenAffinity({ primary: "conjuration", leaning: null }, true),
+          ),
+        }),
+        {
+          method: "exceptional",
+          source: source({ affinity: { affinity: next, known, summary: "Rewritten." } }),
+        },
+      );
+
+      const state = expectState(result);
+      const record = state.awakening.history.at(-1);
+
+      expect(state.affinity).toEqual(assignedNenAffinity(next, known));
+      expect(record?.affinityChange).toEqual({
+        previous: { primary: "conjuration", leaning: null },
+        next,
+        known,
+        cause: "Rewritten.",
+      });
+      expect(result.success && result.payload.changes.affinityChange)
+        .toEqual(record?.affinityChange);
+    }
+  });
+
+  it("changes nothing but affinity when it replaces one", () => {
+    const next = { primary: "manipulation", leaning: null } as const;
+
+    const plain = expectState(awakenNenExceptional(awakeningContext(), {
+      method: "exceptional",
+      source: source({ eligibility: { requirements: [], summary: "Waived." } }),
+    }));
+    const changed = expectState(awakenNenExceptional(awakeningContext(), {
+      method: "exceptional",
+      source: source({
+        eligibility: { requirements: [], summary: "Waived." },
+        affinity: { affinity: next, known: false, summary: "Rewritten." },
+      }),
+    }));
+
+    expect(changed.mastery).toEqual(plain.mastery);
+    expect(changed.seals).toEqual(plain.seals);
+    expect(changed.awakening.condition).toBe(plain.awakening.condition);
+    expect(changed.awakening.naturalAbility).toEqual(plain.awakening.naturalAbility);
+    expect(changed.awakening.externalAbilities).toEqual(plain.awakening.externalAbilities);
+    expect(changed.affinity).toEqual(assignedNenAffinity(next, false));
+  });
+
+  it("refuses an affinity override with an illegal lean", () => {
+    const result = awakenNenExceptional(awakeningContext(), {
+      method: "exceptional",
+      source: source({
+        affinity: {
+          affinity: { primary: "conjuration", leaning: { toward: "manipulation", percent: 25 } },
+          known: true,
+          summary: "Illegal.",
+        },
+      }),
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) return;
+
+    expect(result.errors.map((error) => error.code))
+      .toContain("nen.awakening.override.affinity.invalid");
   });
 
   /*
@@ -514,14 +599,19 @@ describe("exceptional awakening", () => {
     const state = expectState(awakenNenExceptional(awakeningContext(), {
       method: "exceptional",
       source: source({
-        nenType: { type: "emission", known: true, summary: "Rewritten." },
+        affinity: {
+          affinity: { primary: "emission", leaning: { toward: "manipulation", percent: 50 } },
+          known: false,
+          summary: "Rewritten.",
+        },
       }),
     }));
 
     const restored = JSON.parse(JSON.stringify(state)) as NenState;
 
+    expect(restored).toEqual(state);
     expect(restored.awakening.history).toEqual(state.awakening.history);
-    expect(restored.awakening.nenType).toEqual(state.awakening.nenType);
+    expect(restored.affinity).toEqual(state.affinity);
   });
 
   it("imposes no forced state of its own", () => {

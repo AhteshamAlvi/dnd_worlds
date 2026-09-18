@@ -14,7 +14,6 @@
  */
 
 import { isSameContributionSource } from "../../../../infrastructure/contribution-source";
-import type { NenTypeKnowledge } from "../nen-type";
 
 import type {
   NenAwakeningHistoryEntry,
@@ -33,15 +32,10 @@ import type {
  * createUnawakenedNenState() is. An ordinary person HAS this state: half-open
  * nodes, an empty history, no Ability and no suppression.
  *
- * The affinity is REQUIRED rather than defaulted. Every character has a Nen
- * Type from birth, so a constructor that quietly supplied "none" would be
- * inventing a character who has no affinity — a thing the rules do not
- * contain. A host with no value to give passes unassignedNenType(), which says
- * that about the RECORD rather than about the person.
+ * No affinity: that is NenState's, and createUnawakenedNenState() is the
+ * constructor that requires one.
  */
-export function createUnawakenedAwakeningState(
-  nenType: NenTypeKnowledge,
-): NenAwakeningState {
+export function createUnawakenedAwakeningState(): NenAwakeningState {
   return {
     condition: "unawakened",
     nodes: "half-open",
@@ -51,7 +45,6 @@ export function createUnawakenedAwakeningState(
     naturalAbility: null,
     externalAbilities: [],
     suppression: [],
-    nenType,
     collapseRecovery: null,
   };
 }

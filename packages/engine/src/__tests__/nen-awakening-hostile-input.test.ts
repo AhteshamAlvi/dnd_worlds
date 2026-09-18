@@ -39,7 +39,7 @@ import { findExceptionalSourceIssues } from "../character/nen/sources";
 import { describeDiagnosticValue } from "../infrastructure/diagnostics";
 import {
   adoptLegacyNenType,
-  unassignedNenType,
+  unassignedNenAffinity,
 } from "../character/foundation/nen/nen-type";
 import { createUnawakenedNenState } from "../character/foundation/nen/nen";
 import { uncontainedCollapse } from "../character/foundation/aura/leakage";
@@ -306,7 +306,7 @@ describe("R3 — every new validator survives hostile content", () => {
      * on it.
      */
     const state = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       externalAbilities: [null],
     };
 
@@ -328,7 +328,7 @@ describe("R3 — every new validator survives hostile content", () => {
     ];
 
     for (const [field, value] of nested) {
-      const state = { ...createUnawakenedAwakeningState(unassignedNenType()), [field]: value };
+      const state = { ...createUnawakenedAwakeningState(), [field]: value };
 
       expect([field, (() => {
         try {
@@ -350,14 +350,18 @@ describe("R3 — every new validator survives hostile content", () => {
       .toContain("nen.awakening.override.field.unknown");
   });
 
-  it("validates nenType.known and naturalAbilityDevelopment against their vocabularies", () => {
+  it("validates affinity.known and naturalAbilityDevelopment against their vocabularies", () => {
     expect(findExceptionalSourceIssues({
       ref: { type: "item", id: "relic" },
       overrides: {
-        nenType: { type: "emission", known: "yes", summary: "x" },
+        affinity: {
+          affinity: { primary: "emission", leaning: null },
+          known: "yes",
+          summary: "x",
+        },
       },
     } as never).map((issue) => issue.code))
-      .toContain("nen.awakening.override.nen-type.known.invalid");
+      .toContain("nen.awakening.override.affinity.known.invalid");
 
     expect(findExceptionalSourceIssues({
       ref: { type: "item", id: "relic" },
@@ -743,7 +747,7 @@ describe("prototype-less values never break diagnostic formatting", () => {
   });
 
   it("refuses a prototype-less legacy Nen Type rather than throwing", () => {
-    const nen = createUnawakenedNenState(unassignedNenType());
+    const nen = createUnawakenedNenState(unassignedNenAffinity());
 
     expect(() => adoptLegacyNenType(nen, BARE())).not.toThrow();
     expect(adoptLegacyNenType(nen, BARE()).success).toBe(false);
@@ -781,7 +785,7 @@ describe("prototype-less values never break diagnostic formatting", () => {
     expect(awakeningStateFromJson(BARE()).success).toBe(false);
 
     const bareNested = {
-      ...createUnawakenedAwakeningState(unassignedNenType()),
+      ...createUnawakenedAwakeningState(),
       externalAbilities: [Object.create(null)],
       suppression: [Object.create(null)],
     };

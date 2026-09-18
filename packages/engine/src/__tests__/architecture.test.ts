@@ -3177,43 +3177,213 @@ describe("forced and involuntary Zetsu are separate mechanics", () => {
 });
 
 
-describe("one canonical Nen Type", () => {
+describe("one canonical Nen affinity", () => {
+  const NEN_TYPE = join(SRC, "character", "foundation", "nen", "nen-type.ts");
+
   it("keeps no writable affinity on CharacterDetails", () => {
     const details = readFileSync(join(SRC, "character", "details.ts"), "utf8");
 
-    expect(details).not.toMatch(/readonly\s+nenType\s*[?]?\s*:/);
+    expect(details).not.toMatch(/readonly\s+(?:nenType|affinity)\s*[?]?\s*:/);
   });
 
   /*
-   * A single STORED affinity. Scoped to the stored vocabulary under
-   * foundation/, because the transition layer legitimately passes an affinity
-   * around as an argument — `openNodes` takes one, an exceptional override
-   * declares one. What must not exist twice is a field a sheet writes down,
-   * and two of those with nothing synchronising them let a character be an
-   * Enhancer on one and an Emitter on the other with both validating.
+   * A single STORED affinity: `NenState.affinity`, in foundation/nen/types.ts.
+   * Scoped to the stored vocabulary under foundation/, because the transition
+   * layer legitimately passes an affinity around as an argument — an
+   * exceptional override declares one, a request names one. What must not
+   * exist twice is a field a sheet writes down.
    */
-  it("stores the affinity in exactly one place", () => {
-    const declarations = sourceFilesUnder(join(SRC, "character"))
-      .filter((path) => !path.includes("__tests__"))
-      .filter((path) => path.includes(join("character", "foundation")))
+  it("stores the current affinity in exactly one field", () => {
+    const holders = sourceFilesUnder(join(SRC, "character", "foundation"))
+      /* The loader's private result shapes carry one in transit; they are not stored. */
+      .filter((path) => !path.endsWith(join("awakening", "migration.ts")))
       .filter((path) =>
-        /readonly\s+nenType\s*[?]?\s*:/.test(readFileSync(path, "utf8")),
+        /readonly\s+\w+\s*[?]?\s*:\s*NenAffinityKnowledge\b/.test(readFileSync(path, "utf8")),
       );
 
-    expect(declarations.map((path) => path.split("/").pop())).toEqual([
-      "types.ts",
-    ]);
+    expect(holders).toEqual([join(SRC, "character", "foundation", "nen", "types.ts")]);
+
+    const nenState = readFileSync(holders[0]!, "utf8")
+      .match(/export interface NenState \{[\s\S]*?\n\}/)?.[0] ?? "";
+
+    expect(nenState).toMatch(/readonly affinity: NenAffinityKnowledge;/);
+  });
+
+  it("leaves no current-affinity field on the awakening state", () => {
+    const awakeningTypes = readFileSync(
+      join(SRC, "character", "foundation", "nen", "awakening", "types.ts"),
+      "utf8",
+    );
+    const state = awakeningTypes
+      .match(/export interface NenAwakeningState \{[\s\S]*?\n\}/)?.[0];
+
+    expect(state).toBeDefined();
+    expect(state!.replace(/\/\*[\s\S]*?\*\//g, ""))
+      .not.toMatch(/nenType|affinity|NenAffinity|NenType/i);
+
+    /* And nothing in the stored vocabulary still spells the old one. */
+    const retired = sourceFilesUnder(join(SRC, "character"))
+      .filter((path) => !path.endsWith(join("awakening", "migration.ts")))
+      .filter((path) =>
+        /readonly\s+nenType\s*[?]?\s*:|NenTypeKnowledge|NenTypeChange\b|assignedNenType\(|unassignedNenType\(/
+          .test(readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\//g, "")),
+      );
+
+    expect(retired).toEqual([]);
+  });
+
+  it("does not require an affinity to build an awakening state", () => {
+    const state = readFileSync(
+      join(SRC, "character", "foundation", "nen", "awakening", "state.ts"),
+      "utf8",
+    );
+
+    expect(state).toMatch(/export function createUnawakenedAwakeningState\(\): NenAwakeningState/);
   });
 
   it("models affinity and knowledge without a null type", () => {
-    const nenType = readFileSync(
-      join(SRC, "character", "foundation", "nen", "nen-type.ts"),
-      "utf8",
-    );
+    const nenType = readFileSync(NEN_TYPE, "utf8");
 
     expect(nenType).toMatch(/status: "assigned"/);
     expect(nenType).toMatch(/status: "unassigned"/);
     expect(nenType).not.toMatch(/type:\s*NenType\s*\|\s*null/);
+    expect(nenType).not.toMatch(/primary:\s*NenType\s*\|\s*null/);
+  });
+
+  /*
+   * The pure profile rows and the lean shift are declared once, in
+   * nen-type.ts. A second copy in an adapter, in Hatsu or in awakening would
+   * be two tables free to disagree about what a Specialist's Enhancement is.
+   */
+  it("declares the affinity tables in exactly one production file", () => {
+    const production = sourceFilesUnder(SRC).filter((path) => !path.includes("__tests__"));
+    const declarers = production.filter((path) =>
+      /NEN_PURE_AFFINITY_PROFILES\s*=|NEN_LEGAL_LEAN_TARGETS\s*=|NEN_LEAN_SHIFT\s*=/.test(
+        readFileSync(path, "utf8"),
+      ),
+    );
+
+    expect(declarers).toEqual([NEN_TYPE]);
+
+    /* No restated profile row: the Specialist's 40/100 pair appears nowhere else. */
+    const restated = production
+      .filter((path) => path !== NEN_TYPE)
+      .filter((path) =>
+        /enhancement:\s*40\b|specialization:\s*100\b|transmutation:\s*100\b/.test(
+          readFileSync(path, "utf8"),
+        ),
+      );
+
+    expect(restated).toEqual([]);
+  });
+
+  /*
+   * Two adjacencies, deliberately apart. Percentage adjacency skips
+   * Specialization, so Conjuration and Manipulation are neighbours on it; legal
+   * lean direction follows the full hexagon, on which they are not. If the lean
+   * table were ever derived from — or replaced by — the calculation ring, that
+   * barrier would disappear without a single type error.
+   */
+  it("keeps percentage adjacency and legal lean direction as separate constants", () => {
+    const source = readFileSync(NEN_TYPE, "utf8");
+
+    const leanTable = source
+      .match(/export const NEN_LEGAL_LEAN_TARGETS = \{[\s\S]*?\n\}/)?.[0];
+
+    expect(leanTable).toBeDefined();
+    expect(leanTable).not.toMatch(/RING/);
+
+    /* Written out as literal rows, including the two one-way barriers. */
+    expect(leanTable).toMatch(/conjuration: \["transmutation"\]/);
+    expect(leanTable).toMatch(/manipulation: \["emission"\]/);
+
+    expect(source).toMatch(/export const NEN_ORDINARY_AFFINITY_RING = \[/);
+
+    /* The profile calculation walks a ring and never consults the lean table. */
+    const calculation = source
+      .match(/function calculationRingFor[\s\S]*?\nfunction refuse/)?.[0];
+
+    expect(calculation).toBeDefined();
+    expect(calculation).not.toMatch(/NEN_LEGAL_LEAN_TARGETS|nenLeanTargets|isLegalNenLean/);
+  });
+});
+
+
+/*
+ * HNT-1 — Hatsu produces power, Nen Type produces affinity percentages, and
+ * the future Nen Ability subsystem composes them. Until it exists, neither
+ * domain may reach the other or it, and the Ability placeholder stays empty.
+ */
+describe("Nen Type, Hatsu and Nen Ability stay independent", () => {
+  const NEN = join(SRC, "character", "foundation", "nen");
+  const NEN_TYPE = join(NEN, "nen-type.ts");
+  const HATSU_FILES = [
+    join(NEN, "principles", "hatsu.ts"),
+    join(SRC, "character", "nen", "hatsu.ts"),
+  ];
+  const ABILITY = join(NEN, "ability");
+
+  function code(path: string): string {
+    return readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+  }
+
+  it("keeps Hatsu free of every affinity import and reading", () => {
+    for (const path of HATSU_FILES) {
+      const reaching = moduleSpecifiers(path).filter((specifier) =>
+        resolvesInto(path, specifier, "nen-type") ||
+        resolvesInto(path, specifier, join("nen", "ability")),
+      );
+
+      expect([path.replace(SRC, ""), reaching]).toEqual([path.replace(SRC, ""), []]);
+      expect([path.replace(SRC, ""), /\baffinity\b|NenAffinity|NenType\b|resolveNen\w*Affinity|NEN_PURE_AFFINITY/.test(code(path))])
+        .toEqual([path.replace(SRC, ""), false]);
+    }
+  });
+
+  it("keeps Nen Type free of Hatsu, principles, the Ability folder and mastery", () => {
+    const reaching = moduleSpecifiers(NEN_TYPE).filter((specifier) =>
+      resolvesInto(NEN_TYPE, specifier, "hatsu") ||
+      resolvesInto(NEN_TYPE, specifier, "principles") ||
+      resolvesInto(NEN_TYPE, specifier, join("nen", "ability")) ||
+      resolvesInto(NEN_TYPE, specifier, join("capabilities", "mastery")),
+    );
+
+    expect(reaching).toEqual([]);
+    expect(code(NEN_TYPE)).not.toMatch(/\bhatsu\b|Hatsu|conversionEfficiency|effectivePower|fundedAura/i);
+  });
+
+  it("imports the Ability folder from nowhere", () => {
+    const reaching = sourceFilesUnder(SRC)
+      .filter((path) => !path.startsWith(ABILITY))
+      .filter((path) =>
+        moduleSpecifiers(path).some((specifier) =>
+          resolvesInto(path, specifier, join("nen", "ability")),
+        ),
+      );
+
+    expect(reaching).toEqual([]);
+  });
+
+  it("leaves the Ability placeholder untouched and alone", () => {
+    expect(readdirSync(ABILITY)).toEqual(["placeholder.ts"]);
+    expect(readFileSync(join(ABILITY, "placeholder.ts"), "utf8")).toBe("");
+  });
+
+  /*
+   * One Hatsu table. A caller restating an efficiency would be a second curve
+   * free to drift from HAT-1's.
+   */
+  it("restates the Hatsu efficiency table nowhere", () => {
+    const restating = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => path !== HATSU_FILES[0])
+      .filter((path) =>
+        /conversionEfficiency:\s*[0-9.]+|HATSU_MASTERY_PROFILES\s*=/.test(readFileSync(path, "utf8")),
+      );
+
+    expect(restating).toEqual([]);
   });
 });
 

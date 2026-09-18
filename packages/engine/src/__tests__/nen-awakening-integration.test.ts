@@ -55,7 +55,7 @@ import {
   awakeningContext,
   requirementContextFor,
 } from "./fixtures/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import { unassignedNenAffinity } from "../character/foundation/nen/nen-type";
 
 const OP = "operation-under-test";
 
@@ -156,7 +156,7 @@ describe("every row of the required transition matrix resolves", () => {
 
     expect(state.awakening.condition).toBe("awakened");
     expect(state.mastery.ten).toBe(0);
-    expect(state.awakening.nenType.status).toBe("unassigned");
+    expect(state.affinity.status).toBe("unassigned");
   });
 
   it("awakened + reversion -> reverted, half-open, mastery kept, Ability lost", () => {
@@ -301,7 +301,7 @@ function reverted(): NenState {
 
 describe("the required invariants hold across every reachable state", () => {
   const states: readonly (readonly [string, NenState])[] = [
-    ["unawakened", createUnawakenedNenState(unassignedNenType())],
+    ["unawakened", createUnawakenedNenState(unassignedNenAffinity())],
     ["standard", expectState(awakenNenStandard(awakeningContext(), {
       method: "standard", trainingCompleted: true,
     }))],
@@ -369,8 +369,8 @@ describe("the required invariants hold across every reachable state", () => {
 
   it("refuses mastery on a character who has never awakened", () => {
     const impossible: NenState = {
-      ...createUnawakenedNenState(unassignedNenType()),
-      mastery: { ...createUnawakenedNenState(unassignedNenType()).mastery, ten: 1 },
+      ...createUnawakenedNenState(unassignedNenAffinity()),
+      mastery: { ...createUnawakenedNenState(unassignedNenAffinity()).mastery, ten: 1 },
     };
 
     const result = validateNenState(impossible);
@@ -558,8 +558,8 @@ describe("events and requests obey the shared protocol", () => {
 
 describe("every route refuses hostile state rather than building on it", () => {
   const corrupt = {
-    ...createUnawakenedNenState(unassignedNenType()),
-    awakening: { ...createUnawakenedNenState(unassignedNenType()).awakening, condition: "asleep" },
+    ...createUnawakenedNenState(unassignedNenAffinity()),
+    awakening: { ...createUnawakenedNenState(unassignedNenAffinity()).awakening, condition: "asleep" },
   } as unknown as NenState;
 
   it("refuses a malformed awakening state everywhere", () => {

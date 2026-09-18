@@ -46,7 +46,7 @@ import type { BodyPartDefinition } from "../character/foundation/body/anatomy/ty
 
 import { createTestCharacter } from "./fixtures/character";
 import { standardAwakenedNen } from "./fixtures/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import { unassignedNenAffinity } from "../character/foundation/nen/nen-type";
 
 /* CON 20 / VIT 18 derives a Maximum Aura of 20,000. */
 const AURA_CAPABLE = { con: 20, vit: 18 } as const;
@@ -314,7 +314,7 @@ describe("allocations in Character validation", () => {
 describe("Nen state in Character validation", () => {
   it("accepts an unawakened character", () => {
     expect(validateCharacter(createTestCharacter({
-      nen: createUnawakenedNenState(unassignedNenType()),
+      nen: createUnawakenedNenState(unassignedNenAffinity()),
     })).success).toBe(true);
   });
 
@@ -338,8 +338,8 @@ describe("Nen state in Character validation", () => {
   it("rejects a non-integer mastery", () => {
     const result = validateCharacter(createTestCharacter({
       nen: {
-        ...createUnawakenedNenState(unassignedNenType()),
-        mastery: { ...createUnawakenedNenState(unassignedNenType()).mastery, ten: 2.5 as never },
+        ...createUnawakenedNenState(unassignedNenAffinity()),
+        mastery: { ...createUnawakenedNenState(unassignedNenAffinity()).mastery, ten: 2.5 as never },
       },
     }));
 
@@ -349,7 +349,7 @@ describe("Nen state in Character validation", () => {
   it("rejects an invalid temporary mastery seal", () => {
     const result = validateCharacter(createTestCharacter({
       nen: {
-        ...createUnawakenedNenState(unassignedNenType()),
+        ...createUnawakenedNenState(unassignedNenAffinity()),
         seals: { ten: -3 as never },
       },
     }));
@@ -360,8 +360,8 @@ describe("Nen state in Character validation", () => {
   it("tags Nen errors with the character they came from", () => {
     const character = createTestCharacter({
       nen: {
-        ...createUnawakenedNenState(unassignedNenType()),
-        mastery: { ...createUnawakenedNenState(unassignedNenType()).mastery, ten: 99 as never },
+        ...createUnawakenedNenState(unassignedNenAffinity()),
+        mastery: { ...createUnawakenedNenState(unassignedNenAffinity()).mastery, ten: 99 as never },
       },
     });
 

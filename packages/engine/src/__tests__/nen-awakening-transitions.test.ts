@@ -43,7 +43,7 @@ import {
   awakeningContext,
   requirementContextFor,
 } from "./fixtures/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import { unassignedNenAffinity } from "../character/foundation/nen/nen-type";
 
 function codes(result: NenAwakeningTransitionResult): readonly string[] {
   return result.success ? [] : result.errors.map((error) => error.code);
@@ -109,7 +109,7 @@ describe("standard awakening", () => {
       trainingCompleted: true,
     }));
 
-    expect(Object.keys(state)).toEqual(["awakening", "mastery"]);
+    expect(Object.keys(state).sort()).toEqual(["affinity", "awakening", "mastery"]);
     expect(JSON.stringify(state)).not.toMatch(/active|running|upkeep/i);
   });
 
@@ -561,7 +561,7 @@ describe("nothing the engine refuses ever half-happened", () => {
    * one at all and by deep equality where it does not.
    */
   it("preserves the original state on every rejected path", () => {
-    const original = createUnawakenedNenState(unassignedNenType());
+    const original = createUnawakenedNenState(unassignedNenAffinity());
     const snapshot = JSON.stringify(original);
 
     const refusals: readonly NenAwakeningTransitionResult[] = [

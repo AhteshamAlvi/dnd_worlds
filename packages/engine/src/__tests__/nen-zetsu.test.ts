@@ -62,7 +62,7 @@ import {
   deriveEffectiveNenMastery,
   isNenPrincipleUnlocked,
 } from "../character/foundation/nen/nen";
-import { unassignedNenType } from "../character/foundation/nen/nen-type";
+import { unassignedNenAffinity } from "../character/foundation/nen/nen-type";
 import { uncontainedCollapse } from "../character/foundation/aura/leakage";
 import {
   advanceCharacterTime,
@@ -300,7 +300,7 @@ describe("entering Zetsu", () => {
 
   it("refuses the unawakened, reverted, sealed-to-zero, forced and involuntary", () => {
     const cases: readonly [string, NenState, string][] = [
-      ["unawakened", createUnawakenedNenState(unassignedNenType()), "nen.zetsu.unavailable.access-lost"],
+      ["unawakened", createUnawakenedNenState(unassignedNenAffinity()), "nen.zetsu.unavailable.access-lost"],
       ["reverted", withMastery(revertedNen(), { zetsu: 2 }), "nen.zetsu.unavailable.access-lost"],
       ["unlearned", nenWith({ zetsu: 0 }), "nen.zetsu.unavailable.sealed"],
       ["sealed", nenWith({ zetsu: 5 }, { seals: { zetsu: 0 } }), "nen.zetsu.unavailable.sealed"],

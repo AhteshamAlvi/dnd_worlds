@@ -221,7 +221,6 @@ export function awakenNenStandard(
       state,
       record,
       naturalAbility: null,
-      nenType: state.nenType,
     }),
   };
 
@@ -287,7 +286,7 @@ export function awakenNenStandard(
         leaking,
         suppressionApplied: [],
         naturalAbilityGranted: null,
-        nenTypeChanged: false,
+        affinityChanged: false,
       }),
       leaking
         ? [conditionRequest(
@@ -555,7 +554,6 @@ export function awakenNenAbrupt(
       state,
       record,
       naturalAbility: null,
-      nenType: state.nenType,
     }),
   };
 
@@ -595,7 +593,7 @@ export function awakenNenAbrupt(
         leaking,
         suppressionApplied: [],
         naturalAbilityGranted: null,
-        nenTypeChanged: false,
+        affinityChanged: false,
       }),
       leaking
         ? [conditionRequest(

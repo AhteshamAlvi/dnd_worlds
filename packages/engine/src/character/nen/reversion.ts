@@ -76,7 +76,13 @@ import { findAwakeningStateIssues } from "../foundation/nen/awakening/validation
 import { deriveEffectiveNenMastery, validateNenState } from "../foundation/nen/nen";
 import { NEN_PRINCIPLE_IDS } from "../foundation/nen/nen";
 import type { NenMasteryRank, NenPrincipleId, NenState } from "../foundation/nen/types";
-import { isNenType, nenTypeOf } from "../foundation/nen/nen-type";
+import {
+  findNenAffinityIssues,
+  isSameNenAffinity,
+  nenAffinityOf,
+  type NenAffinity,
+  type NenAffinityChange,
+} from "../foundation/nen/nen-type";
 import type { Attributes } from "../foundation/attributes/types";
 
 import { isNenUncontained } from "./access";
@@ -97,7 +103,7 @@ import {
   type NenSuppressionRef,
 } from "./protocol";
 import {
-  applyNenTypeChange,
+  applyAffinityChange,
   awakeningEvent,
   closeNodes,
   conditionRequest,
@@ -212,62 +218,78 @@ export function revertNen(
   }
 
   /*
-   * A Nen Type change is EXPLICIT or absent. A reversion that silently
+   * An affinity change is EXPLICIT or absent. A reversion that silently
    * shuffled a character's affinity would be the kind of side effect the
    * field-scoped override contract exists to make impossible.
    */
-  const typeChange = request.nenTypeChange;
+  const requested = request.affinityChange;
+  const currentAffinity = nenAffinityOf(context.nen.affinity);
 
-  if (typeChange !== undefined) {
-    if (typeChange === null || typeof typeChange !== "object") {
+  if (requested !== undefined) {
+    if (requested === null || typeof requested !== "object") {
       return failAwakening(root, [{
-        code: "nen.reversion.type-change.invalid",
-        message: "A Nen Type change must be a record.",
+        code: "nen.reversion.affinity-change.invalid",
+        message: "An affinity change must be a record.",
         audience: "developer",
-        required: "{ previous, next, cause }",
-        actual: describeDiagnosticValue(typeChange),
+        required: "{ next, known, cause }",
+        actual: describeDiagnosticValue(requested),
       }]);
     }
 
-    if (!isNenType(typeChange.next)) {
+    const nextIssues = findNenAffinityIssues(
+      requested.next,
+      "affinityChange.next",
+    );
+
+    if (nextIssues.length > 0) {
       issues.push({
-        code: "nen.reversion.type-change.invalid",
-        message: "A Nen Type change must name one of the six Nen Types.",
+        code: "nen.reversion.affinity-change.invalid",
+        message: "An affinity change must name a complete, legal affinity.",
         audience: "developer",
-        required: "a Nen Type",
-        actual: describeDiagnosticValue(typeChange.next),
+        required: "{ primary, leaning } with a legal lean or null",
+        actual: nextIssues.map((issue) => issue.code),
+      });
+    }
+
+    if (typeof requested.known !== "boolean") {
+      issues.push({
+        code: "nen.reversion.affinity-change.known.invalid",
+        message: "An affinity change must say whether the new affinity is known.",
+        audience: "developer",
+        required: "boolean",
+        actual: describeDiagnosticValue(requested.known),
       });
     }
 
     if (
-      typeof typeChange.cause !== "string" ||
-      typeChange.cause.trim().length === 0
+      typeof requested.cause !== "string" ||
+      requested.cause.trim().length === 0
     ) {
       issues.push({
-        code: "nen.reversion.type-change.unexplained",
-        message: "A Nen Type change must record what caused it.",
+        code: "nen.reversion.affinity-change.unexplained",
+        message: "An affinity change must record what caused it.",
         audience: "developer",
         required: "non-empty string",
-        actual: describeDiagnosticValue(typeChange.cause),
+        actual: describeDiagnosticValue(requested.cause),
       });
     }
 
     /*
-     * The "previous" it records has to be the type the character actually had.
-     * A source that names a different one is describing somebody else, and the
-     * record would be a false account of the change.
+     * The "previous" a source names has to be the affinity the character
+     * actually had, lean and all. A source that names a different one is
+     * describing somebody else, and the record would be a false account.
      */
     if (
-      typeChange.previous !== undefined &&
-      typeChange.previous !== nenTypeOf(state.nenType)
+      requested.previous !== undefined &&
+      !sameAffinityOrNull(requested.previous, currentAffinity)
     ) {
       issues.push({
-        code: "nen.reversion.type-change.previous.mismatch",
+        code: "nen.reversion.affinity-change.previous.mismatch",
         message:
-          "A Nen Type change records a previous type this character did not have.",
+          "An affinity change records a previous affinity this character did not have.",
         audience: "developer",
-        required: describeDiagnosticValue(nenTypeOf(state.nenType)),
-        actual: describeDiagnosticValue(typeChange.previous),
+        required: describeDiagnosticValue(currentAffinity),
+        actual: describeDiagnosticValue(requested.previous),
       });
     }
   }
@@ -329,13 +351,27 @@ export function revertNen(
     (id) => !targeted.includes(id),
   );
 
+  /*
+   * Built from the STATE's affinity and the request's next/known/cause, so the
+   * history entry and the stored result come from one value.
+   */
+  const affinityChange: NenAffinityChange | undefined =
+    requested === undefined
+      ? undefined
+      : {
+        previous: currentAffinity,
+        next: requested.next,
+        known: requested.known,
+        cause: requested.cause,
+      };
+
   const record: NenReversionRecord = {
     kind: "reversion",
     id: reversionRecordId(context.operationId),
     occurredAt: context.occurredAt,
     source: request.source,
     removedNaturalAbilityId: removesNatural ? natural.abilityId : null,
-    ...(typeChange === undefined ? {} : { nenTypeChange: typeChange }),
+    ...(affinityChange === undefined ? {} : { affinityChange }),
   };
 
   /*
@@ -359,8 +395,9 @@ export function revertNen(
       record,
       removeNaturalAbility: removesNatural,
       remainingExternalAbilityIds: remainingExternalIds,
-      nenType: applyNenTypeChange(state.nenType, typeChange),
     }),
+
+    affinity: applyAffinityChange(context.nen.affinity, affinityChange),
   };
 
   const validated = validateNenState(next);
@@ -388,7 +425,7 @@ export function revertNen(
     suppressionReleased: releasedSuppression,
     naturalAbilityLost: removesNatural ? natural.abilityId : null,
     externalAbilitiesLost: targeted,
-    nenTypeChange: typeChange ?? null,
+    affinityChange: affinityChange ?? null,
   };
 
   root.output = {
@@ -423,8 +460,8 @@ export function revertNen(
     );
   }
 
-  if (typeChange !== undefined) {
-    events.push(awakeningEvent(emit, "nen-type-changed", typeChange.next));
+  if (affinityChange !== undefined) {
+    events.push(awakeningEvent(emit, "nen-affinity-changed", record.id));
   }
 
   return {
@@ -445,6 +482,19 @@ export function revertNen(
     trace: { root },
     warnings: [],
   };
+}
+
+
+function sameAffinityOrNull(
+  claimed: unknown,
+  actual: NenAffinity | null,
+): boolean {
+  if (claimed === null || actual === null) return claimed === actual;
+
+  return (
+    findNenAffinityIssues(claimed).length === 0 &&
+    isSameNenAffinity(claimed as NenAffinity, actual)
+  );
 }
 
 

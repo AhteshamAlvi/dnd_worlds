@@ -44,8 +44,7 @@ import {
   requirementContextFor,
 } from "./fixtures/nen";
 import {
-  assignedNenType,
-  unassignedNenType,
+  assignedNenAffinity,
 } from "../character/foundation/nen/nen-type";
 
 function codes(result: NenAwakeningTransitionResult): readonly string[] {
@@ -218,42 +217,88 @@ describe("reversion", () => {
     expect(kinds(result)).toContain("nen-leakage-stopped");
   });
 
-  it("records an explicit Nen Type change and refuses an unexplained one", () => {
+  it("records an explicit affinity change and refuses an unexplained one", () => {
+    const emission = { primary: "emission", leaning: { toward: "manipulation", percent: 25 } } as const;
+    const specialist = { primary: "specialization", leaning: { toward: "conjuration", percent: 50 } } as const;
+
     const typed = expectState(awakenNenExceptional(awakeningContext(), {
       method: "exceptional",
       source: {
         ref: { type: "item", id: "a-relic" },
         overrides: {
-          nenType: { type: "emission", known: true, summary: "Set by the relic." },
+          affinity: { affinity: emission, known: true, summary: "Set by the relic." },
         },
       },
     }));
 
     const result = revert(typed, {
-      nenTypeChange: {
-        previous: "emission",
-        next: "specialization",
+      affinityChange: {
+        previous: emission,
+        next: specialist,
+        known: false,
         cause: "The severing rewrote what was left.",
       },
     });
 
     const reverted = expectState(result);
+    const record = reverted.awakening.history.at(-1);
 
-    expect(reverted.awakening.nenType)
-      .toEqual(assignedNenType("specialization", true));
-    expect(kinds(result)).toContain("nen-type-changed");
+    /* The override's `known` survives; state and history agree. */
+    expect(reverted.affinity).toEqual(assignedNenAffinity(specialist, false));
+    expect(record?.affinityChange).toEqual({
+      previous: emission,
+      next: specialist,
+      known: false,
+      cause: "The severing rewrote what was left.",
+    });
+    expect(result.success && result.payload.changes.affinityChange)
+      .toEqual(record?.affinityChange);
+    expect(kinds(result)).toContain("nen-affinity-changed");
+
+    /* Mastery, history and the rest are untouched by the affinity half. */
+    const plain = expectState(revert(typed));
+
+    expect(reverted.mastery).toEqual(plain.mastery);
+    expect(reverted.awakening.condition).toBe(plain.awakening.condition);
+    expect(reverted.awakening.externalAbilities).toEqual(plain.awakening.externalAbilities);
+    expect(plain.affinity).toEqual(typed.affinity);
 
     expect(codes(revert(typed, {
-      nenTypeChange: { previous: "emission", next: "specialization", cause: "" },
-    }))).toContain("nen.reversion.type-change.unexplained");
+      affinityChange: { previous: emission, next: specialist, known: true, cause: "" },
+    }))).toContain("nen.reversion.affinity-change.unexplained");
 
     expect(codes(revert(typed, {
-      nenTypeChange: {
-        previous: "conjuration",
-        next: "specialization",
+      affinityChange: { next: specialist, known: "yes", cause: "x" },
+    } as never))).toContain("nen.reversion.affinity-change.known.invalid");
+
+    expect(codes(revert(typed, {
+      affinityChange: {
+        next: { primary: "manipulation", leaning: { toward: "conjuration", percent: 25 } },
+        known: true,
+        cause: "illegal lean",
+      },
+    } as never))).toContain("nen.reversion.affinity-change.invalid");
+
+    /* A previous naming the right primary but the wrong lean is a different affinity. */
+    expect(codes(revert(typed, {
+      affinityChange: {
+        previous: { primary: "emission", leaning: null },
+        next: specialist,
+        known: true,
         cause: "wrong previous",
       },
-    }))).toContain("nen.reversion.type-change.previous.mismatch");
+    }))).toContain("nen.reversion.affinity-change.previous.mismatch");
+  });
+
+  it("records previous: null when the reverted character was unassigned", () => {
+    const next = { primary: "conjuration", leaning: null } as const;
+    const result = revert(trained(), {
+      affinityChange: { next, known: true, cause: "Declared by the severing." },
+    });
+    const state = expectState(result);
+
+    expect(state.affinity).toEqual(assignedNenAffinity(next, true));
+    expect(state.awakening.history.at(-1)?.affinityChange?.previous).toBeNull();
   });
 
   it("is exceptional, so it refuses a missing source or reason", () => {
