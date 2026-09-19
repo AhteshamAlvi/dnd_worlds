@@ -64,6 +64,7 @@ import {
   isNenAwakened,
 } from "../foundation/nen/nen";
 import {
+  NEN_OUTPUT_CLOCK_ID,
   resolveRawRenAttackOutput,
   resolveRenSelection,
   type RawRenAttackOutput,
@@ -85,28 +86,28 @@ import type {
 import type { NenState } from "../foundation/nen/types";
 
 import {
+  NEN_PRINCIPLE_DEFINITIONS,
+  REN_ACTIVITY_DEFINITION_ID as REN_ID,
+} from "./definitions";
+import {
   activateNenActivity,
   adjustNenActivity,
   type NenActivityTransition,
 } from "./runtime/transitions";
 
 
-/** The authored definition every Ren activity instantiates. */
-export const REN_ACTIVITY_DEFINITION_ID = "ren";
-
 /*
- * Ren's declaration to the runtime.
+ * Ren's identity and declaration, re-exported from where they are authored.
  *
- * No relations: the only thing Ren excludes is Ten, and Ten is passive derived
- * state rather than an activity the runtime could relate it to. Deliberate
- * access is a constraint because a character who can no longer project Aura on
- * purpose cannot still be emitting it.
+ * They moved to `nen/definitions.ts` when KGS-1 gave Ren relations for the
+ * first time: "Ren replaces Ken" and "Ken replaces Ren" are one rule, and a
+ * rule split across two adapter files is a rule that can be half-changed. The
+ * re-export keeps every existing caller and the package barrel working.
  */
-export const REN_ACTIVITY_DEFINITION: NenActivityDefinition = {
-  id: REN_ACTIVITY_DEFINITION_ID,
-  relations: [],
-  constraints: [{ kind: "deliberate-access" }],
-};
+export {
+  REN_ACTIVITY_DEFINITION,
+  REN_ACTIVITY_DEFINITION_ID,
+} from "./definitions";
 
 /** The provenance Ren's flow carries into Aura. */
 export const REN_OUTWARD_FLOW_SOURCE = "ren";
@@ -114,7 +115,7 @@ export const REN_OUTWARD_FLOW_SOURCE = "ren";
 
 /** Whether an activity is a Ren. The one place that question is asked. */
 export function isRenActivity(activity: NenActivity): boolean {
-  return activity.definitionId === REN_ACTIVITY_DEFINITION_ID;
+  return activity.definitionId === REN_ID;
 }
 
 
@@ -287,17 +288,29 @@ function resolveFundedSelection(
 /*
  * The generic configuration a selection becomes.
  *
- * Duration in full-output-equivalent seconds, load as the share of the ceiling
- * in use — the runtime integrates exertion from those two alone. No upkeep:
- * the flow is charged by the Aura time solver, once.
+ * ONE named clock — `output` — carrying the physiological limit on how long
+ * the nodes can be held open at this share of the ceiling. Capacity in
+ * full-load-equivalent seconds, load as the share of the ceiling in use; the
+ * runtime integrates the clock from those two alone.
+ *
+ * Ren VIII through X declare the clock with NO capacity rather than declaring
+ * no clock. The dimension is real and is the one Ken borrows to bound its own
+ * Output; what those ranks have is an unlimited capacity on it, not an absent
+ * one, and an adapter that dropped the clock would leave nothing for a trace
+ * to name when Ken's Output endurance is the binding constraint.
+ *
+ * No upkeep: the flow is charged by the Aura time solver, once.
  */
 function renConfiguration(selection: RenSelection): NenActivityConfiguration {
   return {
     aura: selection.activeOutput,
-    exertionLoad: selection.load,
-    ...(selection.fullOutputDurationSeconds === null
-      ? {}
-      : { durationSeconds: selection.fullOutputDurationSeconds }),
+    clocks: [{
+      id: NEN_OUTPUT_CLOCK_ID,
+      load: selection.load,
+      ...(selection.fullOutputDurationSeconds === null
+        ? {}
+        : { fullLoadDurationSeconds: selection.fullOutputDurationSeconds }),
+    }],
   };
 }
 
@@ -384,14 +397,14 @@ export function startRen(
     runtime,
     {
       activityId: request.activityId,
-      definitionId: REN_ACTIVITY_DEFINITION_ID,
+      definitionId: REN_ID,
       source: request.source,
       at: request.at,
       requested: renConfiguration(resolved.selection),
       priority,
       funding: resolved.funding,
     },
-    new Map([[REN_ACTIVITY_DEFINITION_ID, REN_ACTIVITY_DEFINITION]]),
+    NEN_PRINCIPLE_DEFINITIONS,
   );
 
   root.children.push(activated.trace.root);

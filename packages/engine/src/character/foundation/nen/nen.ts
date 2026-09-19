@@ -83,6 +83,15 @@ import {
   findNenAffinityKnowledgeIssues,
   type NenAffinityKnowledge,
 } from "./nen-type";
+/*
+ * The two DEX tables, from the principle files that own them.
+ *
+ * Imported rather than restated. A second copy here would type-check against
+ * the first and diverge silently — and the divergence would be invisible,
+ * because a threshold is only ever read at the instant somebody advances.
+ */
+import { GYO_ADVANCEMENT_DEX } from "./principles/gyo";
+import { SHU_ADVANCEMENT_DEX } from "./principles/shu";
 import {
   createUnawakenedAwakeningState,
   hasEverAwakened,
@@ -100,6 +109,7 @@ import type {
   NenPrincipleId,
   NenProgressionRules,
   NenState,
+  NenUnlockBackfill,
 } from "./types";
 
 
@@ -125,12 +135,30 @@ export type NenProgressionRuleSet =
  *   Ten -> Ren -> Zetsu -> Hatsu, unlock only, and no attribute requirements.
  *
  *
- * KEN AND GYŌ
+ * KEN, GYŌ AND SHŪ
  *
- *   capped by min(effective Ten, effective Ren).
+ * UNLOCK ONLY. None of the three is capped by a predecessor's rank, and the
+ * distinction is the whole point: Ken III with Ren II is still Ken III. Its
+ * containment CAPACITY is what Ken III's capacity is; what Ren II limits is
+ * how much Output there is to contain. Those are two different quantities and
+ * a mastery cap collapses them into one, which then says the character forgot
+ * how to contain Aura because their Ren was sealed.
  *
- * Gyō's DEX requirement has no authoritative per-rank table in the engine, so
- * none is authored here. Adding one is a design decision, not an inference.
+ * The continuous requirements are real, but they are runtime conditions rather
+ * than ceilings: Ken needs effective Ten and Ren at I or better to run at all,
+ * Gyō needs Ken, Ten and Ren, and Shū needs Ten. A seal that takes one of
+ * those to zero stops the ACTIVITY — as `sealed`, at the boundary, without
+ * resuming when the seal lifts — and leaves the stored rank untouched. Those
+ * conditions are declared by the activity adapters as `minimum-mastery`
+ * constraints, which is where a thing that stops an activity belongs.
+ *
+ * Note what does NOT follow from Ren being a Ken prerequisite: Shū depends on
+ * Ten alone, so a sealed Ren leaves Shū working.
+ *
+ * Gyō and Shū each carry a DEX table, which gates ADVANCEMENT and nothing
+ * else. It is judged when a rank is bought and is never consulted again: a
+ * character whose DEX later drops keeps every rank they earned, and no runtime
+ * resolver asks what their DEX is.
  *
  *
  * EVERYTHING ELSE
@@ -159,19 +187,35 @@ export const NEN_PROGRESSION_RULES: NenProgressionRuleSet = {
   hatsu: { unlockPrerequisites: ["zetsu"] },
 
   shu: {
-    masteryPrerequisites: [{ principleId: "ten" }],
+    unlockPrerequisites: ["ten"],
+    attributeRequirements: [{
+      attribute: "dex",
+      minimumByRank: SHU_ADVANCEMENT_DEX,
+    }],
   },
 
   en: {
     masteryPrerequisites: [{ principleId: "ten" }, { principleId: "ren" }],
   },
 
+  /*
+   * Ken learned, and nothing about Ken's RANK.
+   *
+   * Ten and Ren are reached transitively — Ken cannot be learned without them
+   * — so listing them again here would be a second statement of one fact, free
+   * to fall out of step with Ken's own entry.
+   */
   gyo: {
-    masteryPrerequisites: [{ principleId: "ten" }, { principleId: "ren" }],
+    unlockPrerequisites: ["ken"],
+    unlockBackfill: [{ principleId: "ken", rank: 1 }],
+    attributeRequirements: [{
+      attribute: "dex",
+      minimumByRank: GYO_ADVANCEMENT_DEX,
+    }],
   },
 
   ken: {
-    masteryPrerequisites: [{ principleId: "ten" }, { principleId: "ren" }],
+    unlockPrerequisites: ["ten", "ren"],
   },
 
   chu: {
@@ -233,6 +277,22 @@ export const NEN_PRINCIPLE_IDS =
   Object.keys(
     NEN_PROGRESSION_RULES,
   ) as NenPrincipleId[];
+
+
+/*
+ * The controlled unlock sequence, in order.
+ *
+ * Named because one rule has to refer to it: an authorized grant may backfill
+ * a missing prerequisite, and these four are the ones it may never backfill.
+ * A source that could fill in Zetsu on its way to handing somebody Hatsu would
+ * be a route through the whole sequence that skipped all of it.
+ */
+export const NEN_FOUNDATIONAL_PRINCIPLE_IDS = [
+  "ten",
+  "ren",
+  "zetsu",
+  "hatsu",
+] as const satisfies readonly NenPrincipleId[];
 
 
 /**
@@ -379,6 +439,21 @@ export function getNenUnlockPrerequisites(
   rules: NenProgressionRuleSet = NEN_PROGRESSION_RULES,
 ): readonly NenPrincipleId[] {
   return rules[principleId].unlockPrerequisites ?? [];
+}
+
+
+/**
+ * The principles an authorized GRANT of this one carries with it.
+ *
+ * Read by the grant path and by nothing else. Ordinary advancement never
+ * consults it, which is what keeps "Gyō I needs Ken I" true for every
+ * character who trains normally.
+ */
+export function getNenUnlockBackfill(
+  principleId: NenPrincipleId,
+  rules: NenProgressionRuleSet = NEN_PROGRESSION_RULES,
+): readonly NenUnlockBackfill[] {
+  return rules[principleId].unlockBackfill ?? [];
 }
 
 
@@ -1326,6 +1401,80 @@ export function findNenProgressionRuleIssues(
         !(MASTERY_RANKS as readonly unknown[]).includes(fromRank)
       ) {
         issue("nen.progression.prerequisite.from_rank.invalid", `${principleId}'s ${valid} cap starts at an invalid rank.`, fromRank);
+      }
+    }
+
+    const backfills = listOf(entry.unlockBackfill);
+
+    if (backfills === null) {
+      issue(
+        "nen.progression.list.malformed",
+        `${principleId}.unlockBackfill must be a list.`,
+        principleId,
+      );
+    }
+
+    const backfilled = new Set<string>();
+
+    for (const backfill of backfills ?? []) {
+      const candidate = backfill as
+        | { principleId?: unknown; rank?: unknown }
+        | null;
+
+      if (candidate === null || typeof candidate !== "object") {
+        issue(
+          "nen.progression.backfill.malformed",
+          `${principleId} has a malformed unlock backfill.`,
+          candidate,
+        );
+
+        continue;
+      }
+
+      const valid = reference(candidate.principleId, "unlockBackfill");
+
+      if (valid === null) continue;
+
+      if (backfilled.has(valid)) {
+        issue(
+          "nen.progression.backfill.duplicate",
+          `${principleId} backfills ${valid} twice.`,
+          valid,
+        );
+      }
+
+      backfilled.add(valid);
+
+      /*
+       * Only a principle this one already depends on. A backfill that named
+       * something unrelated would be a grant route into an arbitrary
+       * principle, which is the thing the declaration exists to avoid being.
+       */
+      if (!unlockIds.has(valid)) {
+        issue(
+          "nen.progression.backfill.unrelated",
+          `${principleId} backfills ${valid}, which is not one of its unlock prerequisites.`,
+          valid,
+        );
+      }
+
+      if (
+        (NEN_FOUNDATIONAL_PRINCIPLE_IDS as readonly string[]).includes(valid)
+      ) {
+        issue(
+          "nen.progression.backfill.foundational",
+          `${principleId} may not backfill ${valid}: the controlled unlock ` +
+            "sequence is never granted as a side effect.",
+          valid,
+        );
+      }
+
+      if (!(MASTERY_RANKS as readonly unknown[]).includes(candidate.rank)) {
+        issue(
+          "nen.progression.backfill.rank.invalid",
+          `${principleId}'s ${valid} backfill names an invalid rank.`,
+          candidate.rank,
+        );
       }
     }
 

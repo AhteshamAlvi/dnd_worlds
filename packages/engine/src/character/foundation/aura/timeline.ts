@@ -136,6 +136,21 @@ export interface AuraActiveNenCommitment {
   readonly endsAt?: GameTimestamp;
 
   readonly functionsThroughSuppression: boolean;
+
+  /*
+   * Whether these activities hold the body's surface themselves.
+   *
+   * While one does, the AUTOMATIC coating is set aside and so is the residual
+   * that escapes it — there is one coating on a body, and a commitment that is
+   * holding Output against the skin IS it. A running outward flow already does
+   * this; this is the same displacement for a commitment that is held rather
+   * than poured out.
+   *
+   * Generic: Aura is told that the coating is replaced, never which principle
+   * replaced it. Absent reads as false, which is what every existing caller
+   * describing an ordinary maintained technique means.
+   */
+  readonly replacesAutomaticCoating?: boolean;
 }
 
 

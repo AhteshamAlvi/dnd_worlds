@@ -180,7 +180,7 @@ function fund(input: {
 function runtimeWith(
   funding: AuraFundingOutcome,
   overrides: {
-    readonly requested?: { readonly aura: number; readonly durationSeconds?: number };
+    readonly requested?: { readonly aura: number; readonly clocks?: readonly { readonly id: string; readonly load: number; readonly fullLoadDurationSeconds?: number }[] };
     readonly constraints?: readonly NenActivityConstraint[];
     readonly owner?: string;
   } = {},
@@ -322,7 +322,7 @@ describe("authoritative time drives both", () => {
     const detail = fund({ current: 10_000, baseAuraCost: 100 });
 
     const base = runtimeWith(detail.funding, {
-      requested: { aura: 100, durationSeconds: 17 },
+      requested: { aura: 100, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 17 }] },
     });
 
     const long = advanceNenActivities(base, { to: 60_000, by: ACTOR });
@@ -403,7 +403,7 @@ describe("authoritative time drives both", () => {
      * the ownership vocabulary is for.
      */
     const activities = runtimeWith(detail.funding, {
-      requested: { aura: 100, durationSeconds: 60 },
+      requested: { aura: 100, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 60 }] },
       owner: `nen:${subject.id}`,
     });
 

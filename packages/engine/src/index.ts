@@ -2079,3 +2079,11 @@ export {
 export * from "./character/foundation/nen/runtime";
 export * from "./character/nen/runtime";
 export * from "./gameplay/aura";
+
+/*
+ * `gameplay/nen` is the same shape one level further up: joining a principle
+ * to an Item's physics, to the Action economy and to a sensory check is the
+ * composition that Character, Equipment, Combat and Senses are each forbidden
+ * from making on their own.
+ */
+export * from "./gameplay/nen";

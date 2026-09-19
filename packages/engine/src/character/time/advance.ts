@@ -110,6 +110,9 @@ import {
   renOutwardFlow,
   renStopCauseFor,
 } from "../nen/ren";
+import { activeKenActivity, kenStopCauseFor } from "../nen/ken";
+import { activeGyoActivity, gyoStopCauseFor } from "../nen/gyo";
+import { activeShuActivity, shuStopCauseFor } from "../nen/shu";
 import {
   activeZetsuActivity,
   zetsuStopCauseFor,
@@ -338,6 +341,26 @@ export function advanceCharacterTime(
         detail: "Ren is not legal for this character's Nen state",
       },
       {
+        activity: activeKenActivity(openingActivities),
+        cause: kenStopCauseFor(character.nen),
+        detail: "Ken is not legal for this character's Nen state",
+      },
+      {
+        activity: activeGyoActivity(openingActivities),
+        cause: gyoStopCauseFor(character.nen),
+        detail: "Gyō is not legal for this character's Nen state",
+      },
+      /*
+       * Shū answers for Ten and Shū alone. A Ren seal reaches Ken and Gyō
+       * above and stops there — a character who cannot open their nodes still
+       * has Ten's coating, and Shū extends whatever coating is in force.
+       */
+      {
+        activity: activeShuActivity(openingActivities),
+        cause: shuStopCauseFor(character.nen),
+        detail: "Shū is not legal for this character's Nen state",
+      },
+      {
         activity: activeZetsuActivity(openingActivities),
         cause: zetsuStopCauseFor(character.nen),
         detail: "ordinary Zetsu is not legal for this character's Nen state",
@@ -504,6 +527,16 @@ export function advanceCharacterTime(
       ...(ends.some((end) => end === null)
         ? {}
         : { endsAt: Math.max(...(ends as number[])) }),
+
+      /*
+       * Read from the activities' own stored declarations, so the coordinator
+       * never has to know which principle holds a coating. One is enough: a
+       * body has one surface, and if anything running is holding it, the
+       * automatic coating is not also there leaking underneath.
+       */
+      ...(users.some((one) => one.replacesAutomaticCoating === true)
+        ? { replacesAutomaticCoating: true }
+        : {}),
     };
 
   const suppressedActivity = <T extends { readonly suppression?: unknown }>(

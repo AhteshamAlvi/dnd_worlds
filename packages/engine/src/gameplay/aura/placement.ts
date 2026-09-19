@@ -675,15 +675,34 @@ function shareByMeasure(
     }
 
     /*
-     * The whole eligible body, in the unit this channel is denominated in.
-     * Summed from the same measurements distribution will use, so the weight a
-     * body carries here and the parts it expands into below cannot disagree.
+     * How much BODY this channel actually covers, in its own unit. Summed from
+     * the same measurements distribution will use, so the weight a body
+     * carries here and the parts it expands into below cannot disagree.
+     *
+     * A uniform channel covers the whole eligible body, by definition. A
+     * DIFFERENTIAL one does not, and treating it as though it did is wrong in
+     * a way that only shows up when it shares a request with something else: a
+     * concentration onto one hand, sharing with a sword, would claim the whole
+     * body's surface as its weight and take almost all the Aura — leaving the
+     * hand at a wildly higher density than the sword, from a request that
+     * asked for one density across both. So a differential channel weighs the
+     * parts it actually names.
      */
     const unit = measureUnitFor(placementOf(entry.channel));
+
+    const named = entry.channel.kind.startsWith("differential-")
+      ? new Set(
+        (entry.channel as DifferentialBodyChannel).weights.map(
+          (weight) => String(weight.continuityKey),
+        ),
+      )
+      : null;
+
     let total = 0;
 
     for (const part of body!.anatomy.parts) {
       if (part.state !== "active") continue;
+      if (named !== null && !named.has(String(part.continuityKey))) continue;
 
       const measured = body!.measurements.byPartId[part.id];
 

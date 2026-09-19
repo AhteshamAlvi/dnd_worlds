@@ -23,6 +23,7 @@ import {
   findNenProgressionRuleIssues,
   getNenAttributeRequirements,
   getNenMasteryPrerequisitesForRank,
+  getNenUnlockBackfill,
   getNenUnlockPrerequisites,
   isNenPrincipleUnlocked,
   NEN_PRINCIPLE_IDS,
@@ -32,6 +33,7 @@ import {
   validateNenState,
   type NenProgressionRuleSet,
 } from "../character/foundation/nen/nen";
+import { grantNenMastery } from "../character/nen/settlement";
 import type {
   NenMasteryRank,
   NenPrincipleId,
@@ -149,22 +151,77 @@ describe("the authored progression rules", () => {
     }
   });
 
-  it("cap Ken and Gyō by both Ten and Ren", () => {
-    for (const id of ["ken", "gyo"] as const) {
+  /*
+   * The edge KGS-1 replaced. Ken III with Ren II is still Ken III: what Ren
+   * limits is how much Output there is to contain, not how much the character
+   * knows how to contain. A cap collapses the two quantities into one and then
+   * reports that a sealed Ren made somebody forget Ken.
+   */
+  it("unlock Ken, Gyō and Shū without ANY of them being mastery-capped", () => {
+    for (const id of ["ken", "gyo", "shu"] as const) {
       for (const rank of MASTERY_RANKS) {
-        expect([id, rank, getNenMasteryPrerequisitesForRank(id, rank)]).toEqual([id, rank, ["ten", "ren"]]);
+        expect([id, rank, getNenMasteryPrerequisitesForRank(id, rank)])
+          .toEqual([id, rank, []]);
       }
-
-      expect(getNenUnlockPrerequisites(id)).toEqual([]);
     }
+
+    expect(getNenUnlockPrerequisites("ken")).toEqual(["ten", "ren"]);
+    expect(getNenUnlockPrerequisites("gyo")).toEqual(["ken"]);
+    expect(getNenUnlockPrerequisites("shu")).toEqual(["ten"]);
   });
 
   /*
-   * Blocked design input, stated as a test so it cannot be forgotten: the
-   * engine has no authoritative per-rank Gyō DEX table, so none is authored.
+   * Shū depends on Ten alone, which is the whole reason a sealed Ren leaves it
+   * working. Stated here as a rule about the GRAPH, and again further down as
+   * a fact about a sealed character.
    */
-  it("author no Gyō DEX table until one is decided", () => {
-    expect(getNenAttributeRequirements("gyo")).toEqual([]);
+  it("keep Ren out of Shū's dependencies entirely", () => {
+    expect(getNenUnlockPrerequisites("shu")).not.toContain("ren");
+    expect(getNenMasteryPrerequisitesForRank("shu", 10)).not.toContain("ren");
+  });
+
+  it("declare the Gyō grant backfill, and only for Ken I", () => {
+    expect(getNenUnlockBackfill("gyo")).toEqual([{ principleId: "ken", rank: 1 }]);
+
+    for (const id of NEN_PRINCIPLE_IDS.filter((one) => one !== "gyo")) {
+      expect([id, getNenUnlockBackfill(id)]).toEqual([id, []]);
+    }
+  });
+
+  it("refuse a backfill that names a foundational principle", () => {
+    const codes = findNenProgressionRuleIssues({
+      ...NEN_PROGRESSION_RULES,
+      gyo: {
+        unlockPrerequisites: ["ken", "ren"],
+        unlockBackfill: [{ principleId: "ren", rank: 1 }],
+      },
+    } as NenProgressionRuleSet).map((issue) => issue.code);
+
+    expect(codes).toContain("nen.progression.backfill.foundational");
+  });
+
+  it("refuse a backfill of something that is not a prerequisite", () => {
+    const codes = findNenProgressionRuleIssues({
+      ...NEN_PROGRESSION_RULES,
+      gyo: {
+        unlockPrerequisites: ["ken"],
+        unlockBackfill: [{ principleId: "en", rank: 1 }],
+      },
+    } as NenProgressionRuleSet).map((issue) => issue.code);
+
+    expect(codes).toContain("nen.progression.backfill.unrelated");
+  });
+
+  it("refuse a backfill at an invalid rank", () => {
+    const codes = findNenProgressionRuleIssues({
+      ...NEN_PROGRESSION_RULES,
+      gyo: {
+        unlockPrerequisites: ["ken"],
+        unlockBackfill: [{ principleId: "ken", rank: 0 }],
+      },
+    } as unknown as NenProgressionRuleSet).map((issue) => issue.code);
+
+    expect(codes).toContain("nen.progression.backfill.rank.invalid");
   });
 
   /* Every relationship the ticket did not name, exactly as the old list had it. */
@@ -172,7 +229,6 @@ describe("the authored progression rules", () => {
     const mastery = (id: NenPrincipleId, rank: NenMasteryRank) =>
       [...getNenMasteryPrerequisitesForRank(id, rank)].sort();
 
-    expect(mastery("shu", 1)).toEqual(["ten"]);
     expect(mastery("en", 1)).toEqual(["ren", "ten"]);
     expect(mastery("chu", 1)).toEqual(["ren", "ten", "zetsu"]);
     expect(mastery("in", 1)).toEqual(["zetsu"]);
@@ -184,7 +240,9 @@ describe("the authored progression rules", () => {
     expect(mastery("ju", 1)).toEqual(["chu", "hatsu", "ken"]);
     expect(mastery("fu", 1)).toEqual(["en", "hatsu"]);
 
-    for (const id of NEN_PRINCIPLE_IDS.filter((one) => !BASIC.includes(one))) {
+    const UNLOCK_ONLY: readonly NenPrincipleId[] = [...BASIC, "ken", "gyo", "shu"];
+
+    for (const id of NEN_PRINCIPLE_IDS.filter((one) => !UNLOCK_ONLY.includes(one))) {
       expect([id, getNenUnlockPrerequisites(id)]).toEqual([id, []]);
     }
   });
@@ -281,33 +339,165 @@ describe("the Major Principles advance independently once unlocked", () => {
 });
 
 
-/* ── Ken and Gyō ────────────────────────────────────────────────────────── */
+/* ── Ken, Gyō and Shū ───────────────────────────────────────────────────── */
 
-describe("Ken and Gyō are capped by min(effective Ten, effective Ren)", () => {
-  const cases: readonly (readonly [number, number, NenMasteryRank])[] = [
-    [2, 8, 2],
-    [8, 2, 2],
-    [8, 8, 8],
-  ];
+/*
+ * The edge KGS-1 replaced, from the character's side.
+ *
+ * Ken III with Ren II is Ken III. The old rules said 2, which is the same
+ * engine reporting that a sealed Ren had made the character forget how to
+ * contain Aura — and then, when the seal lifted, remember. What Ren actually
+ * limits is how much Output there IS; the two quantities are multiplied
+ * together at runtime, not collapsed into one rank here.
+ */
+describe("Ken, Gyō and Shū keep their rank whatever their predecessors do", () => {
+  const cases: readonly (readonly [number, number])[] = [[2, 8], [8, 2], [8, 8]];
 
   for (const principle of ["ken", "gyo"] as const) {
-    for (const [ten, ren, expected] of cases) {
-      it(`resolves Ten ${ten}, Ren ${ren}, stored ${principle} X to ${expected}`, () => {
-        expect(deriveEffectiveNenMastery(nen({ ten, ren, [principle]: 10 }), principle)).toBe(expected);
+    for (const [ten, ren] of cases) {
+      it(`resolves Ten ${ten}, Ren ${ren}, stored ${principle} X to X`, () => {
+        const state = nen({ ten, ren, ken: 10, [principle]: 10 });
+
+        expect(validateNenState(state).success).toBe(true);
+        expect(deriveEffectiveNenMastery(state, principle)).toBe(10);
       });
     }
 
-    it(`follows a seal on either parent for ${principle}`, () => {
-      expect(deriveEffectiveNenMastery(nen({ ten: 8, ren: 8, [principle]: 8 }, { ten: 3 }), principle)).toBe(3);
-      expect(deriveEffectiveNenMastery(nen({ ten: 8, ren: 8, [principle]: 8 }, { ren: 4 }), principle)).toBe(4);
+    it(`ignores a seal on either predecessor for ${principle}`, () => {
+      const held = { ten: 8, ren: 8, ken: 8, [principle]: 8 };
+
+      expect(deriveEffectiveNenMastery(nen(held, { ten: 3 }), principle)).toBe(8);
+      expect(deriveEffectiveNenMastery(nen(held, { ren: 4 }), principle)).toBe(8);
+      expect(deriveEffectiveNenMastery(nen(held, { ten: 0 }), principle)).toBe(8);
     });
 
-    it(`refuses advancing ${principle} past the lower parent`, () => {
-      expect(codes(validateNenAdvancement(nen({ ten: 2, ren: 8, [principle]: 2 }), principle, 3)))
-        .toEqual(["nen.mastery.prerequisite_not_met"]);
-      expect(validateNenAdvancement(nen({ ten: 3, ren: 8, [principle]: 2 }), principle, 3).success).toBe(true);
+    it(`advances ${principle} past the lower predecessor`, () => {
+      const state = nen({ ten: 2, ren: 2, ken: 2, [principle]: 2 });
+
+      expect(validateNenAdvancement(state, principle, 3).success).toBe(true);
+      expect(validateNenAdvancement(nen({ ten: 1, ren: 1, ken: 9, gyo: 9 }), principle, 10).success)
+        .toBe(true);
     });
   }
+
+  it("leaves Shū alone whatever Ren does, sealed or not", () => {
+    expect(deriveEffectiveNenMastery(nen({ ten: 8, shu: 8 }, { ren: 0 }), "shu")).toBe(8);
+    expect(deriveEffectiveNenMastery(nen({ ten: 8, ren: 8, shu: 8 }, { ren: 0 }), "shu")).toBe(8);
+    expect(validateNenState(nen({ ten: 1, shu: 10 })).success).toBe(true);
+  });
+
+  it("still follows a seal on Shū's own predecessor for the ACTIVITY, not the rank", () => {
+    expect(deriveEffectiveNenMastery(nen({ ten: 8, shu: 8 }, { ten: 0 }), "shu")).toBe(8);
+    expect(deriveEffectiveNenMastery(nen({ ten: 8, shu: 8 }, { ten: 0 }), "ten")).toBe(0);
+  });
+});
+
+
+/* ── Unlocking Ken, Gyō and Shū ─────────────────────────────────────────── */
+
+describe("Ken, Gyō and Shū unlock from what they are built on", () => {
+  const cases: readonly (readonly [string, Partial<Record<NenPrincipleId, number>>, NenPrincipleId, boolean])[] = [
+    ["Ken with no Ten or Ren", {}, "ken", false],
+    ["Ken with Ten but no Ren", { ten: 10 }, "ken", false],
+    ["Ken with Ten and Ren", { ten: 1, ren: 1 }, "ken", true],
+    ["Gyō with no Ken", { ten: 10, ren: 10 }, "gyo", false],
+    ["Gyō with Ken I", { ten: 1, ren: 1, ken: 1 }, "gyo", true],
+    ["Shū with no Ten", {}, "shu", false],
+    ["Shū with Ten I and no Ren", { ten: 1 }, "shu", true],
+  ];
+
+  for (const [label, mastery, principle, allowed] of cases) {
+    it(`${allowed ? "allows" : "refuses"} ${label}`, () => {
+      expect(validateNenAdvancement(nen(mastery), principle, 1).success).toBe(allowed);
+    });
+  }
+});
+
+
+/* ── The authorized Gyō grant backfills Ken ─────────────────────────────── */
+
+/*
+ * The one route that may hand somebody Gyō they never trained for.
+ *
+ * Ordinary advancement above refuses it. A GRANT expands the declaration
+ * instead, and the four things it must not do are each a separate assertion,
+ * because each of them is a different way of being wrong: granting more than
+ * Ken, granting a Ken that overwrites a better one, granting one of the two
+ * changes, and granting nothing while reporting success.
+ */
+describe("an authorized grant of Gyō backfills Ken I, atomically", () => {
+  const subject = (mastery: Partial<Record<NenPrincipleId, number>>) =>
+    nen(mastery);
+
+  it("grants Ken I alongside Gyō I when Ken is unlearned", () => {
+    const outcome = grantNenMastery(subject({ ten: 1, ren: 1 }), [
+      { principleId: "gyo", rank: 1 },
+    ]);
+
+    expect(outcome.errors).toEqual([]);
+    expect(outcome.mastery.ken).toBe(1);
+    expect(outcome.mastery.gyo).toBe(1);
+    expect(outcome.granted).toEqual([
+      { principleId: "ken", rank: 1 },
+      { principleId: "gyo", rank: 1 },
+    ]);
+  });
+
+  it("grants Ten, Ren, Zetsu and Hatsu NOTHING on the way past", () => {
+    const before = subject({ ten: 3, ren: 2 });
+    const outcome = grantNenMastery(before, [{ principleId: "gyo", rank: 1 }]);
+
+    for (const id of ["ten", "ren", "zetsu", "hatsu"] as const) {
+      expect([id, outcome.mastery[id]]).toEqual([id, before.mastery[id]]);
+    }
+  });
+
+  it("preserves a Ken rank already above I", () => {
+    const outcome = grantNenMastery(subject({ ten: 5, ren: 5, ken: 6 }), [
+      { principleId: "gyo", rank: 1 },
+    ]);
+
+    expect(outcome.mastery.ken).toBe(6);
+    expect(outcome.granted).toEqual([{ principleId: "gyo", rank: 1 }]);
+  });
+
+  it("applies both changes or neither, and never a half-grant", () => {
+    /* No Ren, so Ken I cannot be granted — and Gyō must not arrive alone. */
+    const before = subject({ ten: 1 });
+    const outcome = grantNenMastery(before, [{ principleId: "gyo", rank: 1 }]);
+
+    expect(outcome.errors.length).toBeGreaterThan(0);
+    expect(outcome.mastery).toEqual(before.mastery);
+    expect(outcome.granted).toEqual([]);
+  });
+
+  it("leaves the resulting state valid", () => {
+    const before = subject({ ten: 1, ren: 1 });
+    const outcome = grantNenMastery(before, [{ principleId: "gyo", rank: 1 }]);
+
+    expect(validateNenState({ ...before, mastery: outcome.mastery }).success)
+      .toBe(true);
+  });
+
+  it("does not silently repair a hand-built state that skipped the grant", () => {
+    const base = nen({ ten: 1, ren: 1 });
+    const invalid: NenState = {
+      ...base,
+      mastery: { ...base.mastery, gyo: 1 },
+    };
+
+    expect(deriveEffectiveNenMastery(invalid, "ken")).toBe(0);
+    expect(deriveEffectiveNenMastery(invalid, "gyo")).toBe(1);
+  });
+
+  it("backfills nothing for a principle that declares none", () => {
+    const outcome = grantNenMastery(subject({ ten: 1 }), [
+      { principleId: "ren", rank: 1 },
+    ]);
+
+    expect(outcome.granted).toEqual([{ principleId: "ren", rank: 1 }]);
+    expect(outcome.mastery.ken).toBe(0);
+  });
 });
 
 
@@ -329,7 +519,7 @@ describe("attribute requirements are judged through eligibility", () => {
     },
   };
 
-  const learner = nen({ ten: 3, ren: 3, gyo: 2 });
+  const learner = nen({ ten: 3, ren: 3, ken: 1, gyo: 2 });
 
   it("refuses a rank whose DEX threshold is not met, and allows it once met", () => {
     expect(codes(resolveNenAdvancementEligibility(learner, "gyo", 3, { ...FLOOR, dex: 11 }, withGyoDex)))
@@ -341,13 +531,21 @@ describe("attribute requirements are judged through eligibility", () => {
       .toEqual([{ attribute: "dex", minimum: 12, actual: 12 }]);
   });
 
-  it("still applies the mastery cap before the attribute", () => {
-    expect(codes(resolveNenAdvancementEligibility(nen({ ten: 2, ren: 8, gyo: 2 }), "gyo", 3, { ...FLOOR, dex: 30 }, withGyoDex)))
-      .toEqual(["nen.mastery.prerequisite_not_met"]);
+  /*
+   * The UNLOCK is judged before the attribute, and the predecessor's RANK is
+   * not judged at all: an enormous DEX does not buy Gyō for somebody with no
+   * Ken, and a low Ken does not block a Gyō rank the character already earned.
+   */
+  it("applies the unlock before the attribute, and no rank cap at all", () => {
+    expect(codes(resolveNenAdvancementEligibility(nen({ ten: 8, ren: 8 }), "gyo", 1, { ...FLOOR, dex: 30 }, withGyoDex)))
+      .toEqual(["nen.mastery.unlock_prerequisite_not_met"]);
+
+    expect(resolveNenAdvancementEligibility(nen({ ten: 2, ren: 2, ken: 1, gyo: 2 }), "gyo", 3, { ...FLOOR, dex: 30 }, withGyoDex).success)
+      .toBe(true);
   });
 
   it("never lowers mastery already held when the attribute is lower", () => {
-    expect(deriveEffectiveNenMastery(nen({ ten: 8, ren: 8, gyo: 8 }), "gyo", withGyoDex)).toBe(8);
+    expect(deriveEffectiveNenMastery(nen({ ten: 8, ren: 8, ken: 8, gyo: 8 }), "gyo", withGyoDex)).toBe(8);
   });
 
   it("asks nothing of any attribute for the four Major Principles", () => {
@@ -385,7 +583,7 @@ describe("malformed rules, state and attributes refuse", () => {
     ["a missing threshold", broken("gyo", { attributeRequirements: [{ attribute: "dex", minimumByRank: { 1: 12 } }] }), "nen.progression.attribute.threshold.invalid"],
     ["a falling threshold", broken("gyo", { attributeRequirements: [{ attribute: "dex", minimumByRank: { 1: 12, 2: 11, 3: 12, 4: 13, 5: 14, 6: 15, 7: 16, 8: 17, 9: 18, 10: 19 } }] }), "nen.progression.attribute.threshold.decreasing"],
     ["an unlock cycle", { ...broken("ten", { unlockPrerequisites: ["hatsu"] }) }, "nen.progression.unlock.cyclic"],
-    ["a mastery cycle", broken("ten", { masteryPrerequisites: [{ principleId: "ken" }] }), "nen.progression.mastery.cyclic"],
+    ["a mastery cycle", broken("ten", { masteryPrerequisites: [{ principleId: "en" }] }), "nen.progression.mastery.cyclic"],
   ];
 
   for (const [label, rules, code] of ruleCases) {
@@ -414,7 +612,7 @@ describe("malformed rules, state and attributes refuse", () => {
       },
     };
 
-    expect(codes(resolveNenAdvancementEligibility(nen({ ten: 1, ren: 1 }), "gyo", 1, { ...FLOOR, dex: Number.NaN }, withGyoDex)))
+    expect(codes(resolveNenAdvancementEligibility(nen({ ten: 1, ren: 1, ken: 1 }), "gyo", 1, { ...FLOOR, dex: Number.NaN }, withGyoDex)))
       .toEqual(["nen.mastery.attribute.invalid"]);
   });
 
@@ -457,7 +655,7 @@ describe("generic rules and Ren's mechanics are unchanged", () => {
   it("opens stored Ren X at Ten I, and holds Ren I at Ten X to its own ceiling", () => {
     const opened = start(nen({ ten: 1, ren: 10 }), 10_000).result;
 
-    expect(opened.success && activeRenActivity(opened.payload.runtime)!.requested.durationSeconds).toBeUndefined();
+    expect(opened.success && activeRenActivity(opened.payload.runtime)!.requested.clocks![0]!.fullLoadDurationSeconds).toBeUndefined();
     expect(codes(start(nen({ ten: 10, ren: 1 }), 1001).result)).toEqual(["nen.ren.output_limit.exceeded"]);
   });
 

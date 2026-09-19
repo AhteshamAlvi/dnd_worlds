@@ -407,7 +407,7 @@ describe("authorized active Nen under suppression recovers nothing", () => {
 
   /* Ward lasts 30 minutes; its composite has no end of its own and goes with it. */
   const timed = (base: NenActivityRuntime = runtimeFor()) => {
-    const ward = withActivity(base, WARD, "ward-1", { source: ABILITY_A, requested: { aura: 0, durationSeconds: 1800 } });
+    const ward = withActivity(base, WARD, "ward-1", { source: ABILITY_A, requested: { aura: 0, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 1800 }] } });
 
     return withActivity(ward, WARD, "ward-composite", {
       source: ABILITY_A,
@@ -605,7 +605,7 @@ describe("replacement collapses composites exactly as a stop does", () => {
 
   it("dates an advance's composite collapse at the component's own expiry", () => {
     let runtime = runtimeFor(0);
-    runtime = withActivity(runtime, PART_A, "a", { requested: { aura: 0, durationSeconds: 10 } });
+    runtime = withActivity(runtime, PART_A, "a", { requested: { aura: 0, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 10 }] } });
     runtime = withActivity(runtime, PLAIN, "c", { constraints: [{ kind: "component", activityId: "a" }] });
 
     const advancedRuntime = expectSuccess(advanceNenActivities(runtime, { to: 60_000, by: SELF })).runtime;

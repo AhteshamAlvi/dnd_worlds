@@ -526,7 +526,7 @@ describe("upkeep ends with its owner, exactly once", () => {
   });
 
   it("charges nothing after its owner expires", () => {
-    const runtime = withActivity(runtimeFor(), INCAPABLE, "timed", { requested: { aura: 0, durationSeconds: 1800 } });
+    const runtime = withActivity(runtimeFor(), INCAPABLE, "timed", { requested: { aura: 0, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 1800 }] } });
     const result = advanced(subject(standardAwakenedNen()), T0, HOUR, AWAKE, { runtime, upkeep: [owned("timed-upkeep", "timed")] });
 
     expect(result.aura.upkeepCharges.map((one) => [one.id, one.hours])).toEqual([["timed-upkeep", 0.5]]);
@@ -580,7 +580,7 @@ describe("upkeep ends with its owner, exactly once", () => {
       temporalState: characterTemporalState(T0),
       interval: gameTimeIntervalOf(T0, 1),
       activity: AWAKE,
-      activeEffects: { nenActivities: withActivity(runtimeFor(), INCAPABLE, "brief", { requested: { aura: 0, durationSeconds: 0.0005 } }) },
+      activeEffects: { nenActivities: withActivity(runtimeFor(), INCAPABLE, "brief", { requested: { aura: 0, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 0.0005 }] } }) },
     })).nenActivities!.runtime;
 
     expect(codes(advanceFor(character, T0 + 1, HOUR, AWAKE, { runtime: stopped, upkeep: [owned("u", "brief")] })))

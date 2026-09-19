@@ -75,6 +75,7 @@ import {
   resolveInventoryItemRef,
   type InventoryItemRef,
 } from "./references";
+import type { ItemBoundaryPhysics } from "./physics";
 import type { CharacterItem, ItemDefinition, ItemDefinitionId, ShuInteraction } from "./types";
 import {
   ITEM_DEFINITION_OUTCOME_CODES,
@@ -117,6 +118,17 @@ export interface ResolvedItemEnvelope {
 
   /** Read from the definition. Never from an argument. */
   readonly shuInteraction: ShuInteraction;
+
+  /**
+   * The Item's physical boundary, when the definition declares one.
+   *
+   * Read from the definition exactly as the verdict above is — never from an
+   * argument — and omitted rather than defaulted when the definition is
+   * silent. There is no fallback surface and no assumed conductivity: an
+   * absent measure means the caller must refuse to extend anything onto this
+   * Item, not that it may guess one. See physics.ts.
+   */
+  readonly boundaryPhysics?: ItemBoundaryPhysics;
 
   /** The entry's derived integrity state, for a durable Item. */
   readonly integrityState?: ItemIntegrityState;
@@ -307,6 +319,9 @@ export function buildItemEnvelope(
     item: { characterId, entryId: entry.entryId },
     definitionId: definition.id,
     shuInteraction: definition.shuInteraction,
+    ...(definition.boundaryPhysics === undefined
+      ? {}
+      : { boundaryPhysics: definition.boundaryPhysics }),
     ...(policy === undefined || integrity === undefined
       ? {}
       : { integrityState: resolveIntegrityState(policy, integrity) }),

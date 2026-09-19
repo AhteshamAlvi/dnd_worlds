@@ -19,6 +19,7 @@ import {
   describeDiagnosticValue,
   type EngineError,
 } from "../../../../infrastructure/diagnostics";
+import { isJsonValue } from "../../../../infrastructure/json";
 import { GAME_MILLISECONDS_PER_SECOND } from "../../../../time/duration";
 import type { GameTimestamp } from "../../../../time/types";
 
@@ -30,8 +31,11 @@ import {
   type NenActivity,
   type NenActivityCondition,
   type NenActivityConstraintKind,
+  NEN_ACTIVITY_MAX_CLOCK_LOAD,
+  type NenActivityClock,
+  type NenActivityClockProgress,
+  type NenActivityConfiguration,
   type NenActivityDefinition,
-  type NenActivityProgress,
   type NenActivityRuntime,
   type NenSuppressionPolicy,
 } from "./types";
@@ -107,40 +111,76 @@ export function wasNenActivityRunningAt(
 /* ── Exertion ───────────────────────────────────────────────────────────── */
 
 /*
- * How far past the declared duration a stored exertion may sit before it is
- * a contradiction rather than a rounding residual.
+ * How far past a declared capacity a stored figure may sit before it is a
+ * contradiction rather than a rounding residual.
  */
 const EXERTION_TOLERANCE_SECONDS = 1e-6;
 
 
-/** Exertion accrued per second of running. Absent means every second counts. */
-export function nenActivityExertionLoad(activity: NenActivity): number {
-  return activity.requested.exertionLoad ?? 1;
+/** Every endurance dimension an activity declares. Absent reads as none. */
+export function nenActivityClocks(
+  activity: NenActivity,
+): readonly NenActivityClock[] {
+  return activity.requested.clocks ?? [];
+}
+
+
+/** One named clock's declaration, if the activity has it. */
+export function nenActivityClock(
+  activity: NenActivity,
+  clockId: string,
+): NenActivityClock | undefined {
+  return nenActivityClocks(activity).find((one) => one.id === clockId);
+}
+
+
+/*
+ * What one clock has spent as of an instant.
+ *
+ * Progress is matched BY ID and is sparse: a clock with no stored entry has
+ * spent nothing as of `startedAt`. An entry whose clock the configuration no
+ * longer declares still reads back — that is what stops an adjustment which
+ * drops a dimension and later restores it from refilling it.
+ */
+function storedProgressFor(
+  activity: NenActivity,
+  clockId: string,
+): NenActivityClockProgress {
+  const stored = (activity.progress ?? []).find(
+    (one) => one.clockId === clockId,
+  );
+
+  return stored ?? {
+    clockId,
+    fullLoadEquivalentSeconds: 0,
+    resolvedAt: activity.startedAt,
+  };
 }
 
 
 /**
- * The activity's exertion, settled to an instant.
+ * One clock's progress, settled to an instant.
  *
- * An ACTIVE activity accrues at its load from the progress it carries; a
- * stopped one accrued nothing after it stopped, so its progress is returned as
- * stored. Absent progress normalises to none as of `startedAt`, which is what
- * an activity that predates the field genuinely has.
+ * An ACTIVE activity accrues at that clock's load from the progress it
+ * carries; a stopped one accrued nothing after it stopped, so its progress is
+ * returned as stored.
  *
  * Pure and total over a well-formed activity. Settling to an instant before
  * the stored one is a caller error the transitions refuse first; here it
  * accrues nothing rather than subtracting.
  */
-export function nenActivityProgressAt(
+export function nenActivityClockProgressAt(
   activity: NenActivity,
+  clockId: string,
   at: GameTimestamp,
-): NenActivityProgress {
-  const stored = activity.progress ?? {
-    exertionSeconds: 0,
-    resolvedAt: activity.startedAt,
-  };
+): NenActivityClockProgress {
+  const stored = storedProgressFor(activity, clockId);
+  const clock = nenActivityClock(activity, clockId);
 
-  if (activity.condition !== "active" || at <= stored.resolvedAt) {
+  if (
+    activity.condition !== "active" || clock === undefined ||
+    at <= stored.resolvedAt
+  ) {
     return stored;
   }
 
@@ -148,43 +188,107 @@ export function nenActivityProgressAt(
     (at - stored.resolvedAt) / GAME_MILLISECONDS_PER_SECOND;
 
   return {
-    exertionSeconds:
-      stored.exertionSeconds + nenActivityExertionLoad(activity) * elapsedSeconds,
+    clockId,
+    fullLoadEquivalentSeconds:
+      stored.fullLoadEquivalentSeconds + clock.load * elapsedSeconds,
     resolvedAt: at,
   };
 }
 
 
 /**
- * The exact instant a running activity's exertion reaches its duration.
+ * Every clock's progress, settled to an instant.
  *
- * `null` for an activity with no declared duration, and for one that is not
- * running. The ONE producer of the expiry instant: the lifecycle advance stops
- * an activity here, and the character-time coordinator hands the same instant
- * to the Aura time solver as a boundary, so the two cannot disagree about when
- * something ran out.
- *
- *   expiresAt = resolvedAt + (duration - exertion) / load   (seconds -> ms)
+ * The whole progress record an adjustment or a stop stores. Clocks the
+ * activity no longer declares are carried through untouched rather than
+ * dropped, so nothing an adjustment removes comes back refilled.
  */
+export function nenActivityProgressAt(
+  activity: NenActivity,
+  at: GameTimestamp,
+): readonly NenActivityClockProgress[] {
+  const declared = nenActivityClocks(activity).map((clock) =>
+    nenActivityClockProgressAt(activity, clock.id, at)
+  );
+
+  const covered = new Set(declared.map((one) => one.clockId));
+
+  const orphaned = (activity.progress ?? []).filter(
+    (one) => !covered.has(one.clockId),
+  );
+
+  return [...declared, ...orphaned];
+}
+
+
+/*
+ * The exact instant one clock exhausts, and which it is.
+ *
+ * `null` for a clock with no declared capacity and for an activity that is not
+ * running.
+ *
+ *   exhaustsAt = resolvedAt + (capacity - spent) / load   (seconds -> ms)
+ */
+function clockExpiry(
+  activity: NenActivity,
+  clock: NenActivityClock,
+): GameTimestamp | null {
+  if (clock.fullLoadDurationSeconds === undefined) return null;
+
+  const progress = storedProgressFor(activity, clock.id);
+
+  const remainingSeconds =
+    Math.max(
+      0,
+      clock.fullLoadDurationSeconds - progress.fullLoadEquivalentSeconds,
+    ) / clock.load;
+
+  return progress.resolvedAt + remainingSeconds * GAME_MILLISECONDS_PER_SECOND;
+}
+
+
+/**
+ * The exact instant a running activity runs out, and on WHICH clock.
+ *
+ * The earliest exhausting clock wins, because an activity that has run out of
+ * any one of its dimensions has run out. Ties are broken by clock id so that
+ * two hosts holding the clocks in different orders report the same cause.
+ *
+ * The ONE producer of the expiry instant: the lifecycle advance stops an
+ * activity here, and the character-time coordinator hands the same instant to
+ * the Aura time solver as a boundary, so the two cannot disagree about when
+ * something ran out.
+ */
+export function nenActivityExpiry(
+  activity: NenActivity,
+): { readonly at: GameTimestamp; readonly clockId: string } | null {
+  if (activity.condition !== "active") return null;
+
+  let earliest: { readonly at: GameTimestamp; readonly clockId: string } | null =
+    null;
+
+  for (const clock of nenActivityClocks(activity)) {
+    const at = clockExpiry(activity, clock);
+
+    if (at === null) continue;
+
+    if (
+      earliest === null || at < earliest.at ||
+      (at === earliest.at && clock.id.localeCompare(earliest.clockId) < 0)
+    ) {
+      earliest = { at, clockId: clock.id };
+    }
+  }
+
+  return earliest;
+}
+
+
+/** The instant a running activity runs out, without saying on which clock. */
 export function nenActivityExpiryAt(
   activity: NenActivity,
 ): GameTimestamp | null {
-  if (activity.condition !== "active") return null;
-
-  const duration = activity.requested.durationSeconds;
-
-  if (duration === undefined) return null;
-
-  const progress = activity.progress ?? {
-    exertionSeconds: 0,
-    resolvedAt: activity.startedAt,
-  };
-
-  const remainingSeconds =
-    Math.max(0, duration - progress.exertionSeconds) /
-    nenActivityExertionLoad(activity);
-
-  return progress.resolvedAt + remainingSeconds * GAME_MILLISECONDS_PER_SECOND;
+  return nenActivityExpiry(activity)?.at ?? null;
 }
 
 
@@ -479,6 +583,107 @@ export function findNenActivityIssues(
  * accepts a new configuration, so a shape one refuses cannot be written by the
  * other.
  */
+/*
+ * Everything wrong with an activity's declared clocks.
+ *
+ * Ids must be unique because progress is matched by id: two clocks called
+ * "output" would share one progress entry and each spend the other's
+ * endurance. Capacity is optional and, when stated, strictly positive — a
+ * capacity of zero is an activity that has already expired, which is a stop
+ * rather than a configuration.
+ */
+function findClockIssues(
+  clocks: NenActivityConfiguration["clocks"],
+  label: string,
+): readonly EngineError[] {
+  if (clocks === undefined) return [];
+
+  if (!Array.isArray(clocks)) {
+    return [{
+      code: "nen.activity.clock.invalid",
+      message: `${label} must declare its endurance clocks as a list.`,
+      audience: "developer",
+      required: "NenActivityClock[]",
+      actual: describeDiagnosticValue(clocks),
+    }];
+  }
+
+  const errors: EngineError[] = [];
+  const seen = new Set<string>();
+
+  for (const clock of clocks) {
+    if (clock === null || typeof clock !== "object") {
+      errors.push({
+        code: "nen.activity.clock.invalid",
+        message: `${label} declares a malformed endurance clock.`,
+        audience: "developer",
+        required: "{ id, load, fullLoadDurationSeconds? }",
+        actual: describeDiagnosticValue(clock),
+      });
+
+      continue;
+    }
+
+    if (typeof clock.id !== "string" || clock.id.trim().length === 0) {
+      errors.push({
+        code: "nen.activity.clock.id.invalid",
+        message: `${label} declares an endurance clock with no id.`,
+        audience: "developer",
+        required: "non-empty string",
+        actual: describeDiagnosticValue(clock.id),
+      });
+    } else if (seen.has(clock.id)) {
+      errors.push({
+        code: "nen.activity.clock.id.duplicate",
+        message:
+          `${label} declares two endurance clocks called "${clock.id}"; ` +
+          "progress is matched by id, so they would spend each other.",
+        audience: "developer",
+        required: "distinct clock ids",
+        actual: clock.id,
+      });
+    } else {
+      seen.add(clock.id);
+    }
+
+    if (
+      typeof clock.load !== "number" || !Number.isFinite(clock.load) ||
+      clock.load <= 0 || clock.load > NEN_ACTIVITY_MAX_CLOCK_LOAD
+    ) {
+      errors.push({
+        code: "nen.activity.clock.load.invalid",
+        message:
+          `${label} must give every endurance clock a load in ` +
+          `(0, ${NEN_ACTIVITY_MAX_CLOCK_LOAD}].`,
+        audience: "developer",
+        required: `finite number > 0 and <= ${NEN_ACTIVITY_MAX_CLOCK_LOAD}`,
+        actual: describeDiagnosticValue(clock.load),
+      });
+    }
+
+    const capacity = clock.fullLoadDurationSeconds;
+
+    if (
+      capacity !== undefined &&
+      (typeof capacity !== "number" || !Number.isFinite(capacity) ||
+        capacity <= 0)
+    ) {
+      errors.push({
+        code: "nen.activity.clock.duration.invalid",
+        message:
+          `${label} must give a stated clock capacity as a finite positive ` +
+          "number of full-load-equivalent seconds; absent means unlimited.",
+        audience: "developer",
+        required: "finite number > 0, or absent",
+        actual: describeDiagnosticValue(capacity),
+      });
+    }
+  }
+
+  return errors;
+}
+
+
 export function findNenActivityConfigurationIssues(
   requested: NenActivity["requested"],
   label = "a Nen activity",
@@ -512,33 +717,25 @@ export function findNenActivityConfigurationIssues(
     });
   }
 
-  const duration = requested.durationSeconds;
+  errors.push(...findClockIssues(requested.clocks, label));
 
-  if (
-    duration !== undefined &&
-    (typeof duration !== "number" || !Number.isFinite(duration) || duration <= 0)
-  ) {
+  /*
+   * JSON-safe, and checked at the boundary rather than trusted.
+   *
+   * The runtime never reads inside a payload, which is exactly why it has to
+   * check this: a `Map` or a `Date` in there type-checks as `JsonValue` from a
+   * caller's `any`, survives every transition untouched, and then comes back
+   * from a save file as `{}` with nothing having reported a problem.
+   */
+  if (requested.payload !== undefined && !isJsonValue(requested.payload)) {
     errors.push({
-      code: "nen.activity.configuration.invalid",
-      message: "A declared duration must be a finite positive number.",
+      code: "nen.activity.configuration.payload.invalid",
+      message:
+        `${label} carries activity configuration that would not survive a ` +
+        "save: an opaque payload must be JSON-safe.",
       audience: "developer",
-      required: "finite number > 0",
-      actual: describeDiagnosticValue(duration),
-    });
-  }
-
-  const load = requested.exertionLoad;
-
-  if (
-    load !== undefined &&
-    (typeof load !== "number" || !Number.isFinite(load) || load <= 0 || load > 1)
-  ) {
-    errors.push({
-      code: "nen.activity.configuration.invalid",
-      message: "An exertion load must be a finite number in (0, 1].",
-      audience: "developer",
-      required: "finite number > 0 and <= 1",
-      actual: describeDiagnosticValue(load),
+      required: "a JSON value — no functions, Maps, Dates, cycles, NaN or undefined",
+      actual: describeDiagnosticValue(requested.payload),
     });
   }
 
@@ -547,15 +744,19 @@ export function findNenActivityConfigurationIssues(
 
 
 /*
- * Everything wrong with an activity's stored exertion.
+ * Everything wrong with an activity's stored clock progress.
  *
- * Refused rather than repaired: negative or non-finite exertion, progress
- * dated before the activity's current interval began or after it ended, or
- * more exertion than the duration allows.
+ * Refused rather than repaired: negative or non-finite figures, progress dated
+ * before the activity's current interval began or after it ended, two entries
+ * for one clock, or more spent on a clock than its capacity allows.
+ *
+ * An entry naming a clock the configuration does not declare is NOT an error.
+ * That is the shape an adjustment leaves behind when it drops a dimension, and
+ * keeping it is what stops the dimension coming back refilled if it returns.
  *
  * Deliberately NOT compared against wall-clock time since `startedAt`: a
- * resumed activity starts a new interval and keeps the exertion it had already
- * spent, which is exactly what stops a suspension from refilling endurance.
+ * resumed activity starts a new interval and keeps what it had already spent,
+ * which is exactly what stops a suspension from refilling endurance.
  */
 function findProgressIssues(
   activity: NenActivity,
@@ -565,75 +766,120 @@ function findProgressIssues(
 
   if (progress === undefined) return [];
 
-  if (progress === null || typeof progress !== "object") {
+  if (!Array.isArray(progress)) {
     return [{
       code: "nen.activity.progress.invalid",
-      message: `${at} carries malformed exertion progress.`,
+      message: `${at} carries malformed clock progress.`,
       audience: "developer",
-      required: "{ exertionSeconds, resolvedAt }",
+      required: "NenActivityClockProgress[]",
       actual: describeDiagnosticValue(progress),
     }];
   }
 
-  const { exertionSeconds, resolvedAt } = progress;
-
-  if (
-    typeof exertionSeconds !== "number" ||
-    !Number.isFinite(exertionSeconds) ||
-    exertionSeconds < 0 ||
-    typeof resolvedAt !== "number" ||
-    !Number.isFinite(resolvedAt)
-  ) {
-    return [{
-      code: "nen.activity.progress.invalid",
-      message:
-        `${at} must record a finite non-negative exertion at a finite timestamp.`,
-      audience: "developer",
-      required: "exertionSeconds >= 0, finite resolvedAt",
-      actual: describeDiagnosticValue(exertionSeconds),
-    }];
-  }
-
   const errors: EngineError[] = [];
+  const seen = new Set<string>();
 
-  if (Number.isFinite(activity.startedAt) && resolvedAt < activity.startedAt) {
-    errors.push({
-      code: "nen.activity.progress.contradictory",
-      message: `${at} records exertion as of a moment before it started.`,
-      audience: "developer",
-      required: `resolvedAt >= ${activity.startedAt}`,
-      actual: resolvedAt,
-    });
-  }
+  for (const entry of progress) {
+    if (entry === null || typeof entry !== "object") {
+      errors.push({
+        code: "nen.activity.progress.invalid",
+        message: `${at} carries a malformed clock progress entry.`,
+        audience: "developer",
+        required: "{ clockId, fullLoadEquivalentSeconds, resolvedAt }",
+        actual: describeDiagnosticValue(entry),
+      });
 
-  if (
-    activity.endedAt !== null &&
-    Number.isFinite(activity.endedAt) &&
-    resolvedAt > activity.endedAt
-  ) {
-    errors.push({
-      code: "nen.activity.progress.contradictory",
-      message: `${at} records exertion as of a moment after it ended.`,
-      audience: "developer",
-      required: `resolvedAt <= ${activity.endedAt}`,
-      actual: resolvedAt,
-    });
-  }
+      continue;
+    }
 
-  const duration = activity.requested?.durationSeconds;
+    const { clockId, fullLoadEquivalentSeconds, resolvedAt } = entry;
 
-  if (
-    typeof duration === "number" &&
-    Number.isFinite(duration) &&
-    exertionSeconds > duration + EXERTION_TOLERANCE_SECONDS
-  ) {
-    errors.push({
-      code: "nen.activity.progress.contradictory",
-      message: `${at} records more exertion than its duration permits.`,
-      audience: "developer",
-      required: `exertionSeconds <= ${duration}`,
-      actual: exertionSeconds,
-    });
+    if (typeof clockId !== "string" || clockId.trim().length === 0) {
+      errors.push({
+        code: "nen.activity.progress.invalid",
+        message: `${at} records progress against an unnamed clock.`,
+        audience: "developer",
+        required: "non-empty clockId",
+        actual: describeDiagnosticValue(clockId),
+      });
+
+      continue;
+    }
+
+    if (seen.has(clockId)) {
+      errors.push({
+        code: "nen.activity.progress.duplicate",
+        message:
+          `${at} records the clock "${clockId}" twice; one clock has one ` +
+          "figure.",
+        audience: "developer",
+        required: "one entry per clock",
+        actual: clockId,
+      });
+    }
+
+    seen.add(clockId);
+
+    if (
+      typeof fullLoadEquivalentSeconds !== "number" ||
+      !Number.isFinite(fullLoadEquivalentSeconds) ||
+      fullLoadEquivalentSeconds < 0 ||
+      typeof resolvedAt !== "number" ||
+      !Number.isFinite(resolvedAt)
+    ) {
+      errors.push({
+        code: "nen.activity.progress.invalid",
+        message:
+          `${at} must record a finite non-negative figure for "${clockId}" ` +
+          "at a finite timestamp.",
+        audience: "developer",
+        required: "fullLoadEquivalentSeconds >= 0, finite resolvedAt",
+        actual: describeDiagnosticValue(fullLoadEquivalentSeconds),
+      });
+
+      continue;
+    }
+
+    if (Number.isFinite(activity.startedAt) && resolvedAt < activity.startedAt) {
+      errors.push({
+        code: "nen.activity.progress.contradictory",
+        message:
+          `${at} records "${clockId}" as of a moment before it started.`,
+        audience: "developer",
+        required: `resolvedAt >= ${activity.startedAt}`,
+        actual: resolvedAt,
+      });
+    }
+
+    if (
+      activity.endedAt !== null &&
+      Number.isFinite(activity.endedAt) &&
+      resolvedAt > activity.endedAt
+    ) {
+      errors.push({
+        code: "nen.activity.progress.contradictory",
+        message: `${at} records "${clockId}" as of a moment after it ended.`,
+        audience: "developer",
+        required: `resolvedAt <= ${activity.endedAt}`,
+        actual: resolvedAt,
+      });
+    }
+
+    const capacity = nenActivityClock(activity, clockId)?.fullLoadDurationSeconds;
+
+    if (
+      typeof capacity === "number" && Number.isFinite(capacity) &&
+      fullLoadEquivalentSeconds > capacity + EXERTION_TOLERANCE_SECONDS
+    ) {
+      errors.push({
+        code: "nen.activity.progress.contradictory",
+        message:
+          `${at} records more spent on "${clockId}" than its capacity permits.`,
+        audience: "developer",
+        required: `fullLoadEquivalentSeconds <= ${capacity}`,
+        actual: fullLoadEquivalentSeconds,
+      });
+    }
   }
 
   return errors;
@@ -695,20 +941,25 @@ export function findNenActivityRuntimeIssues(
 
     /*
      * Progress dated after the runtime itself is exertion from the future: the
-     * runtime is the instant everything in it is described at.
+     * runtime is the instant everything in it is described at. Checked on
+     * EVERY clock — one dimension settled past the runtime is as impossible as
+     * all of them.
      */
-    const resolvedAt = activity?.progress?.resolvedAt;
+    for (const entry of activity?.progress ?? []) {
+      const resolvedAt = entry?.resolvedAt;
 
-    if (
-      typeof resolvedAt === "number" &&
-      Number.isFinite(resolvedAt) &&
-      Number.isFinite(runtime.at) &&
-      resolvedAt > runtime.at
-    ) {
+      if (
+        typeof resolvedAt !== "number" || !Number.isFinite(resolvedAt) ||
+        !Number.isFinite(runtime.at) || resolvedAt <= runtime.at
+      ) {
+        continue;
+      }
+
       errors.push({
         code: "nen.activity.progress.future",
         message:
-          `activity ${String(activity.id)} records exertion after the instant its runtime is described at.`,
+          `activity ${String(activity.id)} records "${String(entry.clockId)}" ` +
+          "after the instant its runtime is described at.",
         audience: "developer",
         required: `resolvedAt <= ${runtime.at}`,
         actual: resolvedAt,

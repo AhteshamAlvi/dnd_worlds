@@ -65,6 +65,7 @@ import {
   findNenActivityRuntimeIssues,
   findNenActivity,
   findNenActivityIssues,
+  nenActivityExpiry,
   nenActivityExpiryAt,
   findNenSuppressionPolicyIssues,
   nenActivityPermittedUnderSuppression,
@@ -75,6 +76,7 @@ import {
 } from "../../foundation/nen/runtime/state";
 import type {
   NenActivity,
+  NenActivityClockProgress,
   NenActivityConfiguration,
   NenActivityConstraint,
   NenActivityDefinition,
@@ -465,9 +467,16 @@ export function activateNenActivity(
     ...(definition?.imposesSuppression === undefined
       ? {}
       : { imposesSuppression: definition.imposesSuppression }),
+    ...(definition?.replacesAutomaticCoating === undefined
+      ? {}
+      : { replacesAutomaticCoating: definition.replacesAutomaticCoating }),
 
-    /* A fresh activity has spent none of its endurance. */
-    progress: { exertionSeconds: 0, resolvedAt: request.at },
+    /* A fresh activity has spent none of its endurance, on any clock. */
+    progress: (request.requested.clocks ?? []).map((clock) => ({
+      clockId: clock.id,
+      fullLoadEquivalentSeconds: 0,
+      resolvedAt: request.at,
+    })),
   };
 
   /*
@@ -1123,10 +1132,10 @@ export function resumeNenActivity(
      * and nothing is refunded either — a pause is not a rest that refills
      * endurance.
      */
-    progress: {
-      exertionSeconds: nenActivityProgressAt(activity, request.at).exertionSeconds,
+    progress: nenActivityProgressAt(activity, request.at).map((one) => ({
+      ...one,
       resolvedAt: request.at,
-    },
+    })),
   };
 
   return succeed(root, {
@@ -1277,7 +1286,7 @@ export function adjustNenActivity(
   const adjusted: NenActivity = {
     ...activity,
     requested: request.requested,
-    progress: nenActivityProgressAt(activity, request.at),
+    progress: adjustedProgress(activity, request),
     funding: {
       requestId: request.funding.requestId,
       committed: request.funding.funded,
@@ -1305,6 +1314,40 @@ export function adjustNenActivity(
       at: request.at,
     }],
   });
+}
+
+
+/*
+ * The clock progress an adjustment leaves behind.
+ *
+ * Two halves, and the second is the one that is easy to miss. Every clock the
+ * activity ALREADY had is settled to the adjustment instant under its old load
+ * and carried forward, matched by id — that is what stops an adjustment from
+ * handing back endurance. A clock the adjustment INTRODUCES has spent nothing,
+ * but it has not been running since the activity started either, so it is
+ * seeded as of the adjustment instant.
+ *
+ * Seeding it as of `startedAt` instead would have been wrong by exactly the
+ * elapsed time: a fresh dimension added ten seconds in would have arrived
+ * already ten seconds old, and expired that much early.
+ */
+function adjustedProgress(
+  activity: NenActivity,
+  request: NenAdjustRequest,
+): readonly NenActivityClockProgress[] {
+  const settled = nenActivityProgressAt(activity, request.at);
+  const known = new Set(settled.map((one) => one.clockId));
+
+  return [
+    ...settled,
+    ...(request.requested.clocks ?? [])
+      .filter((clock) => !known.has(clock.id))
+      .map((clock) => ({
+        clockId: clock.id,
+        fullLoadEquivalentSeconds: 0,
+        resolvedAt: request.at,
+      })),
+  ];
 }
 
 
@@ -1498,14 +1541,19 @@ function advanceVerdictFor(
    * Seconds of exertion against a millisecond timeline, converted in ONE
    * place. Adding the duration straight to `startedAt` used to expire every
    * timed activity a thousand times too early.
+   *
+   * An activity with several clocks runs out at the EARLIEST of them, and the
+   * detail names which — "Ken ended" is a different fact for a player from
+   * "Ken ended because you could not hold the nodes open that long" versus
+   * "because you could not contain that much".
    */
-  const expiresAt = nenActivityExpiryAt(activity);
+  const expires = nenActivityExpiry(activity);
 
-  const expiry = expiresAt !== null && request.to >= expiresAt
+  const expiry = expires !== null && request.to >= expires.at
     ? {
       cause: "expired" as const,
-      at: expiresAt,
-      detail: "its declared duration ran out",
+      at: expires.at,
+      detail: `its "${expires.clockId}" endurance ran out`,
     }
     : null;
 
@@ -1522,7 +1570,8 @@ function advanceVerdictFor(
       cause: "suppressed" as const,
       at: Math.max(
         suppression.since ?? request.to,
-        activity.progress?.resolvedAt ?? activity.startedAt,
+        ...(activity.progress ?? []).map((one) => one.resolvedAt),
+        activity.startedAt,
       ),
       detail: "suppression closed over it",
     }

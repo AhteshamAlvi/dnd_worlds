@@ -697,7 +697,7 @@ describe("adjustment", () => {
 describe("elapsed time", () => {
   it("gives one long advance the same answer as many short ones", () => {
     const base = started(runtime(), {
-      requested: { aura: 100, durationSeconds: 30 },
+      requested: { aura: 100, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 30 }] },
     });
 
     /* Timestamps are game MILLISECONDS; the duration is in seconds. */
@@ -735,7 +735,7 @@ describe("elapsed time", () => {
 
   it("treats the expiry instant as exclusive", () => {
     const base = started(runtime(), {
-      requested: { aura: 100, durationSeconds: 30 },
+      requested: { aura: 100, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 30 }] },
     });
 
     const activity = only(base);

@@ -40,7 +40,10 @@ import type { RuntimeOwnerRef } from "../../runtime/domains";
 import type { RuntimeEvent } from "../../runtime/events";
 import type { GameTimestamp } from "../../time/types";
 
-import { validateNenAdvancement } from "../foundation/nen/nen";
+import {
+  getNenUnlockBackfill,
+  validateNenAdvancement,
+} from "../foundation/nen/nen";
 import { awakeningRecords } from "../foundation/nen/awakening/state";
 import type {
   NenAwakeningRecord,
@@ -292,7 +295,7 @@ export function grantNenMastery(
   const granted: NenMasteryGrant[] = [];
   const errors: EngineError[] = [];
 
-  for (const grant of grants) {
+  for (const grant of expandNenMasteryGrants(grants)) {
     const held = mastery[grant.principleId];
 
     if (held >= grant.rank) continue;
@@ -319,6 +322,38 @@ export function grantNenMastery(
   }
 
   return { mastery, granted, errors };
+}
+
+
+/*
+ * A grant list with every declared unlock backfill in front of what needs it.
+ *
+ * Driven by the progression rules' own `unlockBackfill` declaration and by
+ * nothing else — there is no `if (principleId === "gyo")` here, and there must
+ * not be, because the next principle that needs this would then be a second
+ * branch rather than a second declaration.
+ *
+ * Only for GRANTS. Ordinary advancement does not come through here, so "Gyō I
+ * requires Ken I" stays true for anybody who trains normally; what this covers
+ * is the authorized source that hands somebody Gyō they have no Ken for, where
+ * the alternative to filling Ken in is committing a state the validator
+ * refuses.
+ *
+ * The backfill goes FIRST, so the thing it is a prerequisite for can validate
+ * against it, and it is a grant like any other — which means `grantNenMastery`
+ * already skips it when the rank held is higher, and already abandons the
+ * whole batch if any step of it fails. Both changes land or neither does.
+ */
+function expandNenMasteryGrants(
+  grants: readonly NenMasteryGrant[],
+): readonly NenMasteryGrant[] {
+  return grants.flatMap((grant) => [
+    ...getNenUnlockBackfill(grant.principleId).map((backfill) => ({
+      principleId: backfill.principleId,
+      rank: backfill.rank,
+    })),
+    grant,
+  ]);
 }
 
 

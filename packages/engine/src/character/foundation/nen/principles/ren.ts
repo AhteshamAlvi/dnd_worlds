@@ -22,8 +22,24 @@
  *     renLoad    = Oactive / Olimit
  *     renExertion = integral(renLoad dt)
  *   and Ren expires when accumulated exertion reaches the rank's full-output
- *   duration. Mastery X has no such limit, though its flow still has to be paid
- *   for.
+ *   duration. Masteries VIII, IX and X have no such limit.
+ *
+ *
+ * UNLIMITED IS PHYSIOLOGICAL, NOT FREE
+ * ------------------------------------
+ *
+ * From Mastery VIII the body stops being the thing that ends a Ren. A rank
+ * VIII, IX or X practitioner has trained the open-node posture until holding
+ * it is no more tiring than standing, so `fullOutputDurationMinutes` is null
+ * and there is no exertion clock to run out.
+ *
+ * That is emphatically NOT a free Ren. The outward flow is unchanged: raw Ren
+ * still pours Oactive Aura out of the body every minute at every rank, and a
+ * reserve that cannot pay that bill ends the Ren exactly as it always did. The
+ * old VIII = 120 minutes and IX = 240 minutes were a second, physiological
+ * ceiling sitting on top of the economic one; removing them leaves the economy
+ * as the single answer to "how long can this person hold Ren", which is the
+ * answer that was doing the work anyway.
  * - Raw Ren offers a strike the Aura flowing from the ONE Body Part that makes
  *   contact, in proportion to that part's share of the whole-body surface. No
  *   chain of parent parts, no adjacent parts, no weapon.
@@ -100,8 +116,8 @@ export const REN_MASTERY_PROFILES = {
   5: { rank: 5, accessFraction: 0.50, fullOutputDurationMinutes: 20 },
   6: { rank: 6, accessFraction: 0.60, fullOutputDurationMinutes: 30 },
   7: { rank: 7, accessFraction: 0.70, fullOutputDurationMinutes: 60 },
-  8: { rank: 8, accessFraction: 0.80, fullOutputDurationMinutes: 120 },
-  9: { rank: 9, accessFraction: 0.90, fullOutputDurationMinutes: 240 },
+  8: { rank: 8, accessFraction: 0.80, fullOutputDurationMinutes: null },
+  9: { rank: 9, accessFraction: 0.90, fullOutputDurationMinutes: null },
   10: { rank: 10, accessFraction: 1.00, fullOutputDurationMinutes: null },
 } as const satisfies Readonly<Record<MasteryRank, RenMasteryProfile>>;
 
@@ -110,11 +126,23 @@ export const REN_MASTERY_TRACK = {
   ranks: MASTERY_RANKS.map((rank) => ({
     rank,
     description:
-      rank === STANDARD_MASTERY_MAX
-        ? "Open and indefinitely sustain the body's full Physiological Aura Output, for as long as the flow can be paid for."
+      REN_MASTERY_PROFILES[rank].fullOutputDurationMinutes === null
+        ? `Open up to ${rank * 10}% of Physiological Aura Output and hold it with no physiological limit at all, for as long as the outward flow can be paid for.`
         : `Open up to ${rank * 10}% of Physiological Aura Output, with increasing full-output endurance.`,
   })),
 } satisfies MasteryTrack;
+
+
+/*
+ * The exertion dimension Ren owns.
+ *
+ * Ren is the principle that opens the nodes, so the clock that measures how
+ * long a body can keep them open is Ren's. Ken and Gyō borrow this same id
+ * rather than minting their own, because the Output they run is opened through
+ * Ren and therefore spends the same endurance; Ken's separate containment
+ * clock is its own dimension and lives in ken.ts.
+ */
+export const NEN_OUTPUT_CLOCK_ID = "output";
 
 export function getRenMasteryProfile(
   mastery: MasteryRank,
@@ -129,7 +157,7 @@ export function deriveRenAccessFraction(
 }
 
 /**
- * The full-output duration in SECONDS, or null at Mastery X.
+ * The full-output duration in SECONDS, or null from Mastery VIII up.
  *
  * Seconds because that is the unit the generic activity runtime measures
  * exertion in; the minutes in the table are the authored figure.
@@ -285,7 +313,7 @@ export interface RenSelection extends RenOutputLimit {
   /** Oactive / Olimit, in (0, 1]. */
   readonly load: number;
 
-  /** null at Mastery X. */
+  /** null from Mastery VIII up, where the body imposes no limit. */
   readonly fullOutputDurationSeconds: number | null;
 
   /** The wall-clock duration at this load from fresh, or null when unlimited. */

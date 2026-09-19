@@ -207,6 +207,36 @@ export interface NenProgressionRules {
 
   /** Attribute thresholds judged when a rank is learned or advanced. */
   readonly attributeRequirements?: readonly NenAttributeRequirement[];
+
+  /*
+   * Principles an AUTHORIZED GRANT of this one must grant alongside it.
+   *
+   * Not a prerequisite, and not a waiver of one. Ordinary advancement to Gyō I
+   * still requires Ken I and is refused without it; what this covers is the
+   * separate, explicitly authorized route where a source hands somebody Gyō
+   * they never trained the foundation for. Something has to happen to Ken in
+   * that moment, and the three candidates are all worse than this one: leaving
+   * Ken at zero produces a state the validator refuses, refusing the grant
+   * makes the authorized route useless, and letting a read resolver quietly
+   * repair it on the way past hides an invalid sheet instead of fixing it.
+   *
+   * So the grant is EXPANDED before it is applied, from this declaration and
+   * not from a principle id anything compares. The backfill is applied first
+   * and in the same transition, both changes commit or neither does, and a
+   * rank already above the declared one is left alone.
+   *
+   * A backfill may never name a foundational principle — Ten, Ren, Zetsu or
+   * Hatsu are the controlled unlock sequence, and a grant that could fill
+   * those in would be a route to Hatsu that skipped all four.
+   */
+  readonly unlockBackfill?: readonly NenUnlockBackfill[];
+}
+
+
+/** One principle an authorized grant carries with it, at a stated rank. */
+export interface NenUnlockBackfill {
+  readonly principleId: NenPrincipleId;
+  readonly rank: NenMasteryRank;
 }
 
 

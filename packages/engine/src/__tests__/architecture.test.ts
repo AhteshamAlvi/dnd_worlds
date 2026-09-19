@@ -2534,14 +2534,30 @@ describe("Nen awakening stays inside its own domain", () => {
     expect(reaching).toEqual([join(SRC, "character", "nen", "hatsu.ts")]);
   });
 
-  it("reaches the Ren principle from the Ren adapter alone", () => {
+  /*
+   * Ren's adapter, and the two principles that open Output THROUGH Ren.
+   *
+   * Ken and Gyō are not exceptions to this rule, they are the rule: their
+   * Output ceiling is Ren's access fraction and their Output endurance is
+   * Ren's clock, so the alternative to importing Ren's producer is a second
+   * copy of Ren's table living in ken.ts. The list stays exact so that a
+   * FOURTH importer — an Ability reaching for the access fraction, a combat
+   * resolver reading the duration — still fails here.
+   */
+  it("reaches the Ren principle from its adapter and the principles built on it", () => {
     const reaching = nenFiles.filter((path) =>
       moduleSpecifiers(path).some((specifier) =>
         resolvesInto(path, specifier, join("nen", "principles", "ren")),
       ),
     );
 
-    expect(reaching).toEqual([join(SRC, "character", "nen", "ren.ts")]);
+    /* This rule's file set is the adapter directory; ken.ts's own import of
+     * the Ren table is covered by the exact-importer rule in TRR-1 below. */
+    expect(reaching.map((path) => path.replace(SRC, "")).sort()).toEqual([
+      join("character", "nen", "gyo.ts"),
+      join("character", "nen", "ken.ts"),
+      join("character", "nen", "ren.ts"),
+    ]);
   });
 
   it("reaches the Zetsu principle from the Zetsu adapter alone", () => {
@@ -3738,12 +3754,36 @@ describe("Ten and Ren stay independent, with one producer per rule", () => {
   });
 
   /*
-   * One approved adapter each. The passive projection turns Ten into an Aura
-   * access input; the Ren adapter turns a running Ren into a generic flow.
+   * One approved adapter each, plus one approved PEER.
+   *
+   * The passive projection turns Ten into an Aura access input; the Ren
+   * adapter turns a running Ren into a generic flow. KGS-1 adds `ken.ts`,
+   * which reads `deriveRenAccessFraction` for exactly the reason this rule
+   * exists: Ken's Output is opened THROUGH Ren, so `Oren` has to come from
+   * Ren's own table rather than from a second copy of it living in ken.ts.
+   * Importing the producer is the rule being obeyed, not evaded.
+   *
+   * Ten is different and stays at one importer. Nothing computes a Ten
+   * quantity from a Ren quantity or the reverse — that coupling is the whole
+   * thing TRR-1 removed — so the two principle files must never import each
+   * other, whatever else is allowed to import them.
    */
-  it("lets only the approved adapters import either principle", () => {
+  it("lets only the approved adapters and peers import either principle", () => {
     expect(importers("ten")).toEqual([join(SRC, "character", "nen", "access.ts")]);
-    expect(importers("ren")).toEqual([join(SRC, "character", "nen", "ren.ts")]);
+    expect(importers("ren").map((path) => path.replace(SRC, "")).sort()).toEqual([
+      join("character", "foundation", "nen", "principles", "ken.ts"),
+      join("character", "nen", "gyo.ts"),
+      join("character", "nen", "ken.ts"),
+      join("character", "nen", "ren.ts"),
+    ]);
+  });
+
+  it("never lets Ten and Ren import each other", () => {
+    for (const [from, to] of [[TEN_FILE, "ren"], [REN_FILE, "ten"]] as const) {
+      expect([from, moduleSpecifiers(from).some((specifier) =>
+        resolvesInto(from, specifier, join("nen", "principles", to)),
+      )]).toEqual([from, false]);
+    }
   });
 
   it("keeps Aura, the generic runtime and the time coordinator principle-free", () => {
@@ -3801,12 +3841,35 @@ describe("Ten and Ren stay independent, with one producer per rule", () => {
   });
 
   const REMOVED =
-    /\b(?:minimumCoating|renAccessFraction|renAccessibleOutput|resolveRenContainmentEfficiency|deriveRenContainmentAuraLoss|TEN_MINIMUM_COATING_OUTPUT_FRACTION|containmentFraction|resolveTenCoating|masteryFraction|minimumFraction)\b|"output-access"/;
+    /\b(?:minimumCoating|renAccessFraction|renAccessibleOutput|resolveRenContainmentEfficiency|deriveRenContainmentAuraLoss|TEN_MINIMUM_COATING_OUTPUT_FRACTION|resolveTenCoating|masteryFraction|minimumFraction)\b|"output-access"/;
+
+  /*
+   * `containmentFraction` is checked separately, and everywhere but ken.ts.
+   *
+   * The name was removed because of what it MEANT on the old coupled model:
+   * the share of Ren's outward flow that Ten held back, which is the coupling
+   * TRR-1 deleted. Ken's `containmentFraction` is an unrelated quantity that
+   * happens to share the word — the share of Physiological Output that Ken can
+   * hold without leaking, which involves neither Ten nor Ren's waste.
+   *
+   * So the word stays banned in every other production file, including ten.ts
+   * and ren.ts, where its return really would be the old model coming back.
+   */
+  const KEN_FILE = join(SRC, "character", "foundation", "nen", "principles", "ken.ts");
 
   it("leaves no removed coupling API or override in production code", () => {
     const offenders = production.filter((path) => REMOVED.test(code(path)));
 
     expect(offenders).toEqual([]);
+  });
+
+  it("leaves the old containment coupling out of everything but Ken's own table", () => {
+    const offenders = production
+      .filter((path) => path !== KEN_FILE)
+      .filter((path) => /\bcontainmentFraction\b/.test(code(path)));
+
+    expect(offenders).toEqual([]);
+    expect(/\bcontainmentFraction\b/.test(code(KEN_FILE))).toBe(true);
   });
 
   /* Every predicate above, exercised so none of them can stop matching quietly. */
@@ -3819,6 +3882,7 @@ describe("Ten and Ren stay independent, with one producer per rule", () => {
     expect(REMOVED.test("resolveRenContainmentEfficiency(output, limit)")).toBe(true);
     expect(REMOVED.test('{ kind: "output-access", source }')).toBe(true);
     expect(REMOVED.test("const renAccessFraction = 0;")).toBe(true);
+    expect(REMOVED.test("readonly containmentFraction: number;")).toBe(false);
   });
 });
 
@@ -4510,5 +4574,214 @@ describe("Hatsu is one conversion, not a multiplier or an activity", () => {
     );
 
     expect(reaching).toEqual([]);
+  });
+});
+
+
+/*
+ * KGS-1 — Ken, Gyō and Shū, and the layer that composes them.
+ *
+ * Three principles that touch more of the engine than any before them: Ken
+ * and Gyō borrow Ren's access and Ren's clock, Shū reaches Items, and eye Gyō
+ * reaches a sensory check. Every one of those is a chance for the direction of
+ * the dependencies to reverse, and each rule below is the cheapest way that
+ * could happen.
+ */
+describe("Ken, Gyō and Shū compose upward and never downward", () => {
+  const production = sourceFilesUnder(SRC).filter(
+    (path) => !path.startsWith(join(SRC, "__tests__")),
+  );
+
+  const code = (path: string): string =>
+    readFileSync(path, "utf8")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+
+  const importersOf = (...segments: readonly string[]) =>
+    production
+      .filter((path) =>
+        moduleSpecifiers(path).some((specifier) =>
+          resolvesInto(path, specifier, join(...segments)),
+        )
+      )
+      .map((path) => path.replace(SRC, ""))
+      .sort();
+
+  it("finds the sources it is checking", () => {
+    expect(production.length).toBeGreaterThan(200);
+    expect(production).toContain(
+      join(SRC, "gameplay", "nen", "coating.ts"),
+    );
+  });
+
+  /*
+   * Each pure principle file has a named, exact set of importers, exactly as
+   * Ten and Ren do. The point is not that the list is short; it is that adding
+   * to it is a decision somebody makes in this file, in view of the others,
+   * rather than an import somebody adds in passing.
+   */
+  it("lets only the declared consumers reach the Ken principle", () => {
+    expect(importersOf("nen", "principles", "ken")).toEqual([
+      join("character", "foundation", "nen", "principles", "gyo.ts"),
+      join("character", "nen", "gyo.ts"),
+      join("character", "nen", "ken.ts"),
+    ]);
+  });
+
+  it("lets only the declared consumers reach the Gyō principle", () => {
+    expect(importersOf("nen", "principles", "gyo")).toEqual([
+      join("character", "foundation", "nen", "nen.ts"),
+      join("character", "nen", "gyo.ts"),
+      join("gameplay", "nen", "coating.ts"),
+      join("gameplay", "nen", "items.ts"),
+      join("gameplay", "nen", "senses.ts"),
+    ]);
+  });
+
+  it("lets only the declared consumers reach the Shū principle", () => {
+    expect(importersOf("nen", "principles", "shu")).toEqual([
+      join("character", "foundation", "nen", "nen.ts"),
+      join("character", "nen", "shu.ts"),
+      join("gameplay", "nen", "items.ts"),
+    ]);
+  });
+
+  /*
+   * The direction the whole arrangement rests on. `gameplay/nen` may reach
+   * down into Character, Equipment, Combat and Senses; not one of them may
+   * reach back up, because the moment one does the composition layer is a
+   * cycle rather than a boundary.
+   */
+  it("is imported by nothing below it", () => {
+    const below = [
+      ...sourceFilesUnder(join(SRC, "character")),
+      ...sourceFilesUnder(join(SRC, "gameplay", "combat")),
+      ...sourceFilesUnder(join(SRC, "gameplay", "senses")),
+      ...sourceFilesUnder(join(SRC, "gameplay", "aura")),
+      ...sourceFilesUnder(join(SRC, "checks")),
+      ...sourceFilesUnder(join(SRC, "targeting")),
+    ].filter((path) => !path.startsWith(join(SRC, "__tests__")));
+
+    expect(below.length).toBeGreaterThan(100);
+
+    const offenders = below.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("gameplay", "nen")),
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps equipment free of Aura, Nen and the composition layer", () => {
+    const equipment = sourceFilesUnder(join(SRC, "character", "equipment"));
+
+    const offenders = equipment.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("character", "foundation", "aura")) ||
+        resolvesInto(path, specifier, join("character", "foundation", "nen")) ||
+        resolvesInto(path, specifier, join("gameplay", "nen"))
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps senses free of every principle and of the composition layer", () => {
+    const senses = sourceFilesUnder(join(SRC, "character", "foundation", "senses"));
+
+    expect(senses.length).toBeGreaterThan(5);
+
+    const offenders = senses.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles")) ||
+        resolvesInto(path, specifier, join("gameplay", "nen"))
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps Foundation Aura free of principles and of equipment", () => {
+    const aura = sourceFilesUnder(join(SRC, "character", "foundation", "aura"));
+
+    const offenders = aura.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        resolvesInto(path, specifier, join("nen", "principles")) ||
+        resolvesInto(path, specifier, join("character", "equipment")) ||
+        resolvesInto(path, specifier, join("gameplay", "nen"))
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  /*
+   * NO PRINCIPLE ID IN A GENERIC RESOLVER.
+   *
+   * The generic runtime, Foundation Aura and the time coordinator hold the
+   * fifteen principles as instances of one contract. A comparison against
+   * `"ken"` anywhere in them is that contract becoming fifteen special cases,
+   * and it is the single cheapest way for it to happen.
+   *
+   * Comments are stripped first, because these files legitimately DISCUSS the
+   * principles at length — a rule that flagged its own explanation would be
+   * noise rather than a guard.
+   */
+  it("never compares a definition id to a principle name in a generic resolver", () => {
+    const generic = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "nen", "runtime")),
+      ...sourceFilesUnder(join(SRC, "character", "nen", "runtime")),
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "aura")),
+      ...sourceFilesUnder(join(SRC, "gameplay", "aura")),
+    ].filter((path) => !path.startsWith(join(SRC, "__tests__")));
+
+    expect(generic.length).toBeGreaterThan(25);
+
+    /*
+     * The ACTIVITY ids. `"ten"` is deliberately absent: Ten is not an activity
+     * and has no definition id, and Aura's access-state vocabulary has called
+     * its contained state `"ten"` since long before any of this — a rule that
+     * flagged that would be renaming a settled concept to satisfy a guard.
+     */
+    const named = /"(?:ken|gyo|shu|ren|zetsu|hatsu)"/;
+
+    const offenders = generic.filter((path) => named.test(code(path)));
+
+    expect(offenders.map((path) => path.replace(SRC, ""))).toEqual([]);
+  });
+
+  /*
+   * The adapters may name their own principle and no other's. `ken.ts` saying
+   * "ken" is the integration boundary doing its job; `ken.ts` saying "gyo"
+   * would be one adapter reaching into another's rules.
+   */
+  it("lets each adapter name only its own principle's id", () => {
+    const pairs: readonly (readonly [string, RegExp])[] = [
+      ["ken.ts", /"(?:gyo|shu|zetsu|hatsu)"/],
+      ["gyo.ts", /"(?:shu|zetsu|hatsu)"/],
+      ["shu.ts", /"(?:gyo|zetsu|hatsu)"/],
+    ];
+
+    for (const [file, forbidden] of pairs) {
+      const source = code(join(SRC, "character", "nen", file));
+
+      expect([file, forbidden.test(source)]).toEqual([file, false]);
+    }
+  });
+
+  /*
+   * The ids themselves are declared once. Two files spelling `"ken"` as a
+   * definition id is two places a rename has to reach.
+   */
+  it("declares every principle definition id in one file", () => {
+    const declarers = production.filter((path) =>
+      /_ACTIVITY_DEFINITION_ID\s*=\s*"/.test(code(path)),
+    );
+
+    expect(declarers.map((path) => path.replace(SRC, "")).sort()).toEqual([
+      join("character", "nen", "definitions.ts"),
+      join("character", "nen", "zetsu.ts"),
+    ]);
   });
 });

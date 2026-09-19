@@ -197,8 +197,8 @@ describe("Ren's Mastery tables", () => {
       [5, 0.5, 20],
       [6, 0.6, 30],
       [7, 0.7, 60],
-      [8, 0.8, 120],
-      [9, 0.9, 240],
+      [8, 0.8, null],
+      [9, 0.9, null],
       [10, 1, null],
     ]);
 
@@ -278,8 +278,8 @@ describe("selecting an Output", () => {
 /* ── 10.5 Endurance arithmetic ──────────────────────────────────────────── */
 
 describe("endurance is full-output-equivalent exertion", () => {
-  it("lasts twice as long at 50% load and four times at 25%, ranks I-IX", () => {
-    for (let mastery = 1 as number; mastery <= 9; mastery += 1) {
+  it("lasts twice as long at 50% load and four times at 25%, ranks I-VII", () => {
+    for (let mastery = 1 as number; mastery <= 7; mastery += 1) {
       const full = deriveRenFullOutputDurationSeconds(mastery as 1)!;
       const limit = P * (mastery / 10);
 
@@ -291,9 +291,33 @@ describe("endurance is full-output-equivalent exertion", () => {
     }
   });
 
-  it("has no physiological limit at Mastery X", () => {
-    expect(deriveRenFullOutputDurationSeconds(10)).toBeNull();
-    expect(deriveRenRemainingSeconds(10, 1_000_000, 1)).toBeNull();
+  /*
+   * VIII, IX and X, not X alone.
+   *
+   * KGS-1 moved the physiological ceiling off the top three ranks entirely:
+   * from VIII the body is no longer what ends a Ren. The Aura still drains at
+   * Oactive per minute, which is why the economy is tested separately and why
+   * "unlimited" here means "no exertion clock", not "free".
+   */
+  it("has no physiological limit at Mastery VIII, IX or X", () => {
+    for (const mastery of [8, 9, 10] as const) {
+      expect([mastery, deriveRenFullOutputDurationSeconds(mastery)])
+        .toEqual([mastery, null]);
+      expect([mastery, deriveRenRemainingSeconds(mastery, 1_000_000, 1)])
+        .toEqual([mastery, null]);
+
+      const limit = P * (mastery / 10);
+      const half = resolveRenSelection({
+        physiologicalOutput: P,
+        mastery,
+        selectedOutput: limit / 2,
+      });
+
+      expect([mastery, half.success && half.payload.maximumDurationSeconds])
+        .toEqual([mastery, null]);
+    }
+
+    expect(deriveRenFullOutputDurationSeconds(7)).toBe(3600);
 
     const selection = resolveRenSelection({ physiologicalOutput: P, mastery: 10, selectedOutput: P });
 
@@ -423,9 +447,9 @@ describe("starting Ren", () => {
     const runtime = started(character, 500);
     const activity = activeRenActivity(runtime)!;
 
-    expect(activity.requested).toEqual({ aura: 500, exertionLoad: 0.5, durationSeconds: 60 });
+    expect(activity.requested).toEqual({ aura: 500, clocks: [{ id: "output", load: 0.5, fullLoadDurationSeconds: 60 }] });
     expect(activity.funding).toMatchObject({ committed: 500, status: "funded", unmet: 0, allocationIds: [] });
-    expect(activity.progress).toEqual({ exertionSeconds: 0, resolvedAt: T0 });
+    expect(activity.progress).toEqual([{ clockId: "output", fullLoadEquivalentSeconds: 0, resolvedAt: T0 }]);
     expect(nenActivityExpiryAt(activity)).toBe(T0 + 2 * MINUTE);
     expect(renOutwardFlow(runtime)).toEqual({ id: "ren-1", source: "ren", output: 500, endsAt: T0 + 2 * MINUTE });
   });
@@ -434,7 +458,8 @@ describe("starting Ren", () => {
     const character = subject({ ten: 10, ren: 10 });
     const activity = activeRenActivity(started(character, 1000))!;
 
-    expect(activity.requested.durationSeconds).toBeUndefined();
+    expect(activity.requested.clocks).toEqual([{ id: "output", load: 0.1 }]);
+    expect(activity.requested.clocks![0]).not.toHaveProperty("fullLoadDurationSeconds");
     expect(renOutwardFlow(started(character, 1000))!.endsAt).toBeUndefined();
   });
 
@@ -512,7 +537,7 @@ describe("adjusting Ren", () => {
 
     expect(after.id).toBe(before.id);
     expect(after.startedAt).toBe(T0);
-    expect(after.progress).toEqual({ exertionSeconds: 30, resolvedAt: T0 + MINUTE });
+    expect(after.progress).toEqual([{ clockId: "output", fullLoadEquivalentSeconds: 30, resolvedAt: T0 + MINUTE }]);
     expect(after.funding.committed).toBe(1000);
     expect(nenActivityExpiryAt(after)).toBe(T0 + MINUTE + 30_000);
   });
@@ -586,7 +611,7 @@ describe("Ren replaces Ten for exactly as long as it runs", () => {
     expect(stoppedRen.stop!.cause).toBe("expired");
     expect(stoppedRen.stop!.at).toBe(T0 + 2 * MINUTE);
     expect(stoppedRen.funding.committed).toBe(0);
-    expect(stoppedRen.progress!.exertionSeconds).toBeCloseTo(60, 9);
+    expect(stoppedRen.progress![0]!.fullLoadEquivalentSeconds).toBeCloseTo(60, 9);
     expect(result.nenActivities!.events.filter((event) => event.kind === "nen-activity-stopped")).toHaveLength(1);
   });
 
@@ -881,18 +906,24 @@ describe("exertion progress is validated before anything moves", () => {
     const issues = (activity: NenActivity, at?: number) =>
       findNenActivityRuntimeIssues(withActivity(activity, at)).map((issue) => issue.code);
 
-    expect(issues({ ...ren, progress: { exertionSeconds: -1, resolvedAt: T0 } })).toContain("nen.activity.progress.invalid");
-    expect(issues({ ...ren, progress: { exertionSeconds: Number.NaN, resolvedAt: T0 } })).toContain("nen.activity.progress.invalid");
-    expect(issues({ ...ren, progress: { exertionSeconds: 1, resolvedAt: T0 + MINUTE } })).toContain("nen.activity.progress.future");
-    expect(issues({ ...ren, progress: { exertionSeconds: 0, resolvedAt: T0 - 1 } }, T0)).toContain("nen.activity.progress.contradictory");
-    expect(issues({ ...ren, progress: { exertionSeconds: 61, resolvedAt: T0 } })).toContain("nen.activity.progress.contradictory");
-    expect(issues({ ...ren, requested: { ...ren.requested, exertionLoad: 0 } })).toContain("nen.activity.configuration.invalid");
-    expect(issues({ ...ren, requested: { ...ren.requested, exertionLoad: 1.5 } })).toContain("nen.activity.configuration.invalid");
+    const spent = (fullLoadEquivalentSeconds: number, resolvedAt: number) =>
+      [{ clockId: "output", fullLoadEquivalentSeconds, resolvedAt }];
+
+    expect(issues({ ...ren, progress: spent(-1, T0) })).toContain("nen.activity.progress.invalid");
+    expect(issues({ ...ren, progress: spent(Number.NaN, T0) })).toContain("nen.activity.progress.invalid");
+    expect(issues({ ...ren, progress: spent(1, T0 + MINUTE) })).toContain("nen.activity.progress.future");
+    expect(issues({ ...ren, progress: spent(0, T0 - 1) }, T0)).toContain("nen.activity.progress.contradictory");
+    expect(issues({ ...ren, progress: spent(61, T0) })).toContain("nen.activity.progress.contradictory");
+    expect(issues({ ...ren, progress: [...spent(0, T0), ...spent(0, T0)] })).toContain("nen.activity.progress.duplicate");
+    expect(issues({ ...ren, requested: { ...ren.requested, clocks: [{ id: "output", load: 0 }] } })).toContain("nen.activity.clock.load.invalid");
+    expect(issues({ ...ren, requested: { ...ren.requested, clocks: [{ id: "output", load: 2.5 }] } })).toContain("nen.activity.clock.load.invalid");
+    expect(issues({ ...ren, requested: { ...ren.requested, clocks: [{ id: "output", load: 1 }, { id: "output", load: 1 }] } })).toContain("nen.activity.clock.id.duplicate");
+    expect(issues({ ...ren, requested: { ...ren.requested, clocks: [{ id: "output", load: 1, fullLoadDurationSeconds: 0 }] } })).toContain("nen.activity.clock.duration.invalid");
   });
 
   it("refuses to advance a malformed runtime, and leaves it untouched", () => {
     const character2 = subject({ ren: 1 });
-    const bad = deepFreeze(withActivity({ ...ren, progress: { exertionSeconds: -1, resolvedAt: T0 } }));
+    const bad = deepFreeze(withActivity({ ...ren, progress: [{ clockId: "output", fullLoadEquivalentSeconds: -1, resolvedAt: T0 }] }));
     const snapshot = JSON.stringify(bad);
 
     const result = advanceCharacterTime({

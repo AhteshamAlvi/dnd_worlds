@@ -43,6 +43,7 @@
  */
 
 import type { ContributionSourceRef } from "../../../../infrastructure/contribution-source";
+import type { JsonValue } from "../../../../infrastructure/json";
 import type { GameTimestamp } from "../../../../time/types";
 
 import type { AuraFundingStatus } from "../../aura/funding";
@@ -203,6 +204,56 @@ export type NenActivityConstraintKind =
  * them that — nor can a later adjustment tell "they wanted 200 all along" from
  * "they wanted 40".
  */
+/*
+ * The largest load any one clock may carry.
+ *
+ * Not 1. A load is "how fast this dimension is being spent relative to what
+ * the rank can sustain indefinitely at its own maximum", and there is a real
+ * mechanic — Gyō's concentration strain — where holding the same Output in a
+ * focused shape costs the containment dimension up to DOUBLE what holding it
+ * uniformly costs. Capping at 1 would have forced that adapter to lie about
+ * either its capacity or its duration to express a strain the rules state
+ * plainly, so the generic bound is the range actually required rather than the
+ * range that looked tidy.
+ */
+export const NEN_ACTIVITY_MAX_CLOCK_LOAD = 2;
+
+
+/*
+ * One endurance dimension an activity is spending, named.
+ *
+ * An activity can run out for more than one reason at once and the reasons are
+ * INDEPENDENT: Ken is limited both by how long the character can keep the
+ * nodes open at that Output (Ren's dimension) and by how long they can keep
+ * that much Aura contained without leaking (Ken's own). Those have different
+ * capacities, are spent at different rates, and either can be the one that
+ * gives out first — so a single `durationSeconds` could only ever express one
+ * of them, and an adapter forced to pick would be discarding a rule.
+ *
+ * Named rather than positional, because the ids are how ADJUSTMENT preserves
+ * what has already been spent. An adjustment settles every old clock, then
+ * applies the new loads and capacities against progress matched BY ID; with
+ * positions, reordering the array would silently hand back endurance.
+ *
+ *   id                        opaque to the runtime, chosen by the adapter
+ *   fullLoadDurationSeconds   capacity at load 1; ABSENT means unlimited
+ *   load                      accrual per second, in (0, MAX_CLOCK_LOAD]
+ *
+ * Absent capacity is "this dimension does not run out", not "it runs out
+ * immediately" and not zero — Ren VIII through X genuinely have no
+ * physiological limit, and they still pay for their flow.
+ */
+export interface NenActivityClock {
+  readonly id: string;
+
+  /** Capacity in full-load-equivalent seconds. Absent means unlimited. */
+  readonly fullLoadDurationSeconds?: number;
+
+  /** Accrual per second of running. Finite, > 0, <= NEN_ACTIVITY_MAX_CLOCK_LOAD. */
+  readonly load: number;
+}
+
+
 export interface NenActivityConfiguration {
   /** Output the activity wants to commit while it runs. */
   readonly aura: number;
@@ -218,38 +269,49 @@ export interface NenActivityConfiguration {
   readonly upkeepPerRound?: number;
 
   /*
-   * How much EXERTION the activity may accumulate before it expires, in
-   * full-output-equivalent seconds. Absent means it runs until stopped.
+   * Every endurance dimension this activity is spending, by id.
    *
-   * Exertion accrues at `exertionLoad` per second of running, so at the
-   * default load of 1 this is simply a wall-clock duration — and at a load of
-   * one half the activity lasts twice as long.
+   * Absent or empty means it runs until something stops it. Ids must be
+   * unique within the activity; the runtime integrates all of them and expires
+   * the activity at the EARLIEST one to exhaust.
    */
-  readonly durationSeconds?: number;
+  readonly clocks?: readonly NenActivityClock[];
 
   /*
-   * Exertion accrued per second of running, in (0, 1]. Absent means 1.
+   * Principle-specific configuration the runtime carries and never reads.
    *
-   * Generic: the adapter that configures an activity decides what load means
-   * for it. The runtime only integrates it.
+   * Gyō has a focus region and a shift fraction; Shū has an Item selection and
+   * a contact network. Neither fits `aura` and neither may become a generic
+   * field, because `NenActivityConfiguration` gaining a `gyo` key is the exact
+   * moment this stops being one contract and becomes fifteen special cases
+   * with extra steps.
+   *
+   * So: ONE opaque slot, validated only for being JSON-safe — so a runtime
+   * round-trips through a save file unchanged — and decoded only by the
+   * adapter that owns the definition it belongs to. The runtime preserves it
+   * through every transition and never branches on anything inside it.
    */
-  readonly exertionLoad?: number;
+  readonly payload?: JsonValue;
 }
 
 
 /*
- * How much of its duration an activity has already used, and as of when.
+ * How much of one named clock an activity has already spent, and as of when.
  *
- * Kept on the activity so an ADJUSTMENT can change the load without resetting
- * what has been spent: exertion is settled to the adjustment instant under the
- * old load, and accrues under the new one from there. Absent on an activity
- * that predates it, which reads as no exertion as of `startedAt`.
+ * Kept on the activity so an ADJUSTMENT can change a load without resetting
+ * what has been spent: each clock is settled to the adjustment instant under
+ * its OLD load and carried forward, and the new load only governs the rest.
+ * Absent on an activity that has spent nothing, which reads as zero on every
+ * clock as of `startedAt`.
  */
-export interface NenActivityProgress {
-  /** Full-output-equivalent seconds accumulated. Not wall-clock time. */
-  readonly exertionSeconds: number;
+export interface NenActivityClockProgress {
+  /** The clock this belongs to. Matched by id, never by position. */
+  readonly clockId: string;
 
-  /** The instant `exertionSeconds` is accurate as of. */
+  /** Full-load-equivalent seconds accumulated. Not wall-clock time. */
+  readonly fullLoadEquivalentSeconds: number;
+
+  /** The instant `fullLoadEquivalentSeconds` is accurate as of. */
   readonly resolvedAt: GameTimestamp;
 }
 
@@ -349,8 +411,18 @@ export interface NenActivity {
   /** Copied from the definition at activation. Absent means false. */
   readonly imposesSuppression?: boolean;
 
-  /** Accumulated exertion. Absent reads as none, as of `startedAt`. */
-  readonly progress?: NenActivityProgress;
+  /** Copied from the definition at activation. Absent means false. */
+  readonly replacesAutomaticCoating?: boolean;
+
+  /*
+   * Accumulated exertion, per named clock. Absent reads as none.
+   *
+   * Sparse: a clock with no entry has spent nothing as of `startedAt`, and an
+   * entry for a clock the configuration no longer declares is preserved rather
+   * than dropped, so that an adjustment which temporarily removes a dimension
+   * and later restores it does not hand back the endurance already spent on it.
+   */
+  readonly progress?: readonly NenActivityClockProgress[];
 }
 
 
@@ -516,4 +588,20 @@ export interface NenActivityDefinition {
    * activating or resuming such an activity is refused.
    */
   readonly imposesSuppression?: boolean;
+
+  /*
+   * This activity holds the body's surface itself, so the AUTOMATIC coating is
+   * set aside while it runs — and so is the residual that escapes it.
+   *
+   * Generic, and named for what it does rather than for what declares it. An
+   * activity that is itself holding Output against the body has not left the
+   * passive coating underneath to leak its own share: there is one coating,
+   * and this activity is it. Ren expresses the same displacement through its
+   * outward flow, which the solver already treats this way; this is the same
+   * fact for a commitment that is HELD rather than poured out.
+   *
+   * It says nothing about how much, or where. Placement is somebody else's
+   * question entirely.
+   */
+  readonly replacesAutomaticCoating?: boolean;
 }

@@ -74,6 +74,7 @@ import type { InventoryEntryId } from "./references";
 
 import { findItemIntegrityIssues } from "./integrity";
 import { findItemFamilyIssues } from "./families";
+import { findItemBoundaryPhysicsIssues } from "./physics";
 
 
 /** How this module is told what the catalog contains. */
@@ -323,6 +324,19 @@ export type ItemDefinitionIssue =
       readonly where: "possessedEffects" | "equippedEffects";
     }
   | {
+      /**
+       * An Item that can never be coated supplies active boundary physics.
+       *
+       * Not a harmless extra field. Conductivity, a mode and a surface are
+       * exactly what a selection layer reads to decide an Item can take a
+       * coating, and an incompatible Item carrying them is content saying two
+       * opposite things at once — with the more specific one, the one that
+       * looks like a measurement, likely to win wherever somebody reads the
+       * physics before the verdict.
+       */
+      readonly type: "incompatible-boundary-physics";
+    }
+  | {
       readonly type: "invalid-consumes-on-use";
       readonly value: unknown;
     }
@@ -356,6 +370,9 @@ export function describeItemDefinitionIssue(
 
     case "stackable-passive-effects":
       return `is stackable and declares ${issue.where}, which apply once per entry regardless of quantity`;
+
+    case "incompatible-boundary-physics":
+      return "declares boundary physics while refusing whole-Item enhancement, which are two opposite claims about the same Item";
 
     case "invalid-consumes-on-use":
       return "declares a consumesOnUse that is neither true nor false";
@@ -462,6 +479,41 @@ function coreIssuesOf(definition: ItemFields): readonly ItemDefinitionIssue[] {
         issue: issue.code,
         path: "integrity",
       });
+    }
+  }
+
+  /*
+   * Boundary physics, checked at the CORE for the reason families are: it is
+   * neither an equipment fact nor a use fact. It is what the OBJECT is, which
+   * a selection layer reads whichever surface an attempt came through.
+   *
+   * Only when PRESENT. Absent is legal even on a compatible Item — see
+   * `ItemDefinition.boundaryPhysics` for why requiring it at registration
+   * would invalidate already-authored content for a fact nothing has asked
+   * for yet. Present-and-malformed is a different thing entirely: an author
+   * who wrote a conductivity meant one, and a silently ignored measurement is
+   * worse than a missing one.
+   */
+  const boundary = definition.boundaryPhysics;
+
+  if (boundary !== undefined) {
+    /*
+     * Refused outright on an Item that can never be coated, and the shape
+     * checks are skipped in that case. "Your incompatible Item may not carry
+     * physics, and also its conductivity is malformed" is one fault reported
+     * twice, and the fix for the first makes the second moot.
+     */
+    if (definition.shuInteraction === "incompatible") {
+      issues.push({ type: "incompatible-boundary-physics" });
+    } else {
+      for (const issue of findItemBoundaryPhysicsIssues(boundary, "An Item's boundary physics")) {
+        issues.push({
+          type: "malformed-rule",
+          where: "boundaryPhysics",
+          issue: issue.code,
+          path: "boundaryPhysics",
+        });
+      }
     }
   }
 

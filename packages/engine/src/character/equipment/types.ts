@@ -39,6 +39,7 @@ import type { ItemEquipmentState } from "./state";
 import type { InventoryEntryId } from "./references";
 import type { ItemFamilyId } from "./families";
 import type { ItemIntegrityDefinition } from "./integrity";
+import type { ItemBoundaryPhysics } from "./physics";
 
 /*
  * ItemUseApplication is declared in ./actions, not here.
@@ -320,6 +321,40 @@ export interface ItemDefinition extends Definition {
    * `inventoryMode`.
    */
   readonly shuInteraction: ShuInteraction;
+
+
+  /**
+   * The Item's physical boundary: what its outside is, how well it conducts,
+   * and how much exposed surface it has. See physics.ts, which owns the
+   * vocabulary and says nothing about what may be extended onto it.
+   *
+   * OPTIONAL AT REGISTRATION, AND DELIBERATELY SO. An Item declaring itself
+   * compatible with whole-Item enhancement and carrying no physics is NOT a
+   * registration failure. It becomes a failure at the moment something tries
+   * to extend a coating onto it, which is the only moment the physics is
+   * needed and the only moment anybody can act on its absence.
+   *
+   * Two reasons, and neither is convenience.
+   *
+   * Requiring it at registration would invalidate every compatible Item
+   * already authored. `shuInteraction` has been required since Ticket 4.6 and
+   * content has been written against it; adding a second required field to the
+   * same declaration retroactively breaks content that was correct when it was
+   * written, for a fact nothing has asked for yet.
+   *
+   * And the physics is only ever read at SELECTION. Nothing about owning,
+   * equipping, using, breaking or repairing an Item consults its conductivity
+   * or its surface. A field required by a barrier that never reads it is a
+   * barrier enforcing someone else's precondition — and enforcing it in the
+   * one place where "this Item cannot be coated" is not yet a question anybody
+   * asked.
+   *
+   * What IS refused here is physics on an `"incompatible"` Item: see
+   * validation.ts's `incompatible-boundary-physics`. An Item that can never be
+   * coated must not carry an active boundary that something could read as
+   * permission.
+   */
+  readonly boundaryPhysics?: ItemBoundaryPhysics;
 
 
   /**

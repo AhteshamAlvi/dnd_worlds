@@ -55,6 +55,69 @@ export type {
 } from "./upkeep";
 
 export {
+  GYO_ACTIVITY_DEFINITION,
+  GYO_ACTIVITY_DEFINITION_ID,
+  KEN_ACTIVITY_DEFINITION,
+  KEN_ACTIVITY_DEFINITION_ID,
+  NEN_PRINCIPLE_DEFINITIONS,
+  SHU_ACTIVITY_DEFINITION,
+  SHU_ACTIVITY_DEFINITION_ID,
+} from "./definitions";
+
+export {
+  KEN_ACCESS_SOURCE,
+  activeKenActivity,
+  adjustKen,
+  isKenActivity,
+  kenHeldOutput,
+  kenShortfallOutput,
+  kenStopCauseFor,
+  startKen,
+  withKenAccess,
+} from "./ken";
+
+export type {
+  AdjustKenRequest,
+  KenCharacterFacts,
+  StartKenInput,
+  StartKenRequest,
+} from "./ken";
+
+export {
+  activeGyoActivity,
+  adjustGyo,
+  decodeGyoPayload,
+  gyoStopCauseFor,
+  isGyoActivity,
+  startGyo,
+  withGyoAccess,
+} from "./gyo";
+
+export type {
+  AdjustGyoRequest,
+  GyoActivityPayload,
+  GyoCharacterFacts,
+  StartGyoRequest,
+} from "./gyo";
+
+export {
+  activeShuActivity,
+  adjustShu,
+  decodeShuPayload,
+  isShuActivity,
+  shuStopCauseFor,
+  startShu,
+} from "./shu";
+
+export type {
+  AdjustShuRequest,
+  ShuActivityPayload,
+  ShuCharacterFacts,
+  ShuSelectionRequest,
+  StartShuRequest,
+} from "./shu";
+
+export {
   REN_ACTIVITY_DEFINITION,
   REN_ACTIVITY_DEFINITION_ID,
   REN_OUTWARD_FLOW_SOURCE,

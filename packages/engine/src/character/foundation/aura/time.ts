@@ -1108,8 +1108,17 @@ export function advanceAuraTime(
      * that leaks its own residual. Suppression stops all three, and so does a
      * collapse; a running flow replaces the open-node ones.
      */
+    /*
+     * Zero while a commitment is holding the surface itself. The automatic
+     * coating is not underneath it leaking its own residual: a body has one
+     * coating, and for as long as something is deliberately holding Output
+     * against the skin, that is the one it has.
+     */
     const containedRate =
-      regenerationPerHour * accessNow().containedLeakageRegenerationMultiple;
+      activeNenRunningNow() && activeNen?.replacesAutomaticCoating === true
+        ? 0
+        : regenerationPerHour *
+          accessNow().containedLeakageRegenerationMultiple;
 
     const leak: { rate: number; source: AuraLeakageSource | null } =
       suppressedNow()
