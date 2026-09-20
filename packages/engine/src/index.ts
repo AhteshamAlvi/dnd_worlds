@@ -2206,3 +2206,19 @@ export * from "./gameplay/aura";
  * from making on their own.
  */
 export * from "./gameplay/nen";
+
+/*
+ * `gameplay/composition` sits above everything above: it reads Actions,
+ * Spatial, Senses and content in order to derive what an action puts into the
+ * world, which is the one composition none of them may make for itself.
+ *
+ * It is the producer `character/foundation/senses/cues.ts` was deliberately
+ * built without. Cues still arrive at the sensory domain RESOLVED — nothing
+ * below this line learns what a bow is — and an explicit host or GM
+ * adjustment remains a first-class way to supply one.
+ *
+ * `gameplay/phenomena` is the same layer for things that continue rather than
+ * happen: a campfire is a stored, queryable source, not a stream of events.
+ */
+export * from "./gameplay/composition";
+export * from "./gameplay/phenomena";

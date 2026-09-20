@@ -379,6 +379,15 @@ describe("no catalog is outside the registration barrier", () => {
       "findAnatomicalPointDefinitionStructuralIssues",
       "findSenseStructuralIssues",
       "findSensoryChannelStructuralIssues",
+
+      /*
+       * Composition's two catalogs, added deliberately as this list requires.
+       * Both adapt a typed `find...Issues` to the barrier's `unknown` contract
+       * rather than casting past it, so a host's homebrew profile is refused
+       * for exactly the reasons an authored one would be.
+       */
+      "findEmissionProfileStructuralIssues",
+      "findPhenomenonProfileStructuralIssues",
     ];
 
     for (const path of registryFiles) {
@@ -5130,5 +5139,297 @@ describe("the sensory system keeps its boundaries", () => {
     );
 
     expect(offenders).toEqual([]);
+  });
+});
+
+
+/*
+ * ECP-1 — the boundaries demand-driven composition had to respect to exist.
+ *
+ * This domain sits above almost everything and reads from almost everything,
+ * which makes it the easiest place in the engine to accidentally invert a
+ * dependency. Three inversions in particular would each undo a rule the whole
+ * design rests on: composition reaching into receiver anatomy, the sensory
+ * domain reaching back up for content, and a projector reaching sideways for a
+ * result its own tier has not produced yet.
+ */
+describe("action composition composes downward and never sideways", () => {
+  const COMPOSITION_DIR = join(SRC, "gameplay", "composition");
+  const PHENOMENA_DIR = join(SRC, "gameplay", "phenomena");
+  const SENSES_DIR = join(SRC, "character", "foundation", "senses");
+
+  const compositionFiles = sourceFilesUnder(COMPOSITION_DIR);
+  const phenomenaFiles = sourceFilesUnder(PHENOMENA_DIR);
+  const senseFiles = sourceFilesUnder(SENSES_DIR);
+
+  const domainFiles = [...compositionFiles, ...phenomenaFiles];
+
+  const read = (path: string): string => readFileSync(path, "utf8");
+
+  function stripComments(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+  }
+
+  it("finds the directories it is checking", () => {
+    expect(compositionFiles.length).toBeGreaterThan(8);
+    expect(phenomenaFiles.length).toBeGreaterThan(2);
+  });
+
+  /*
+   * The dependency graph, as ranks. A projector may consume a STRICTLY
+   * earlier tier and nothing else — not a later one, and not a sibling.
+   *
+   * Ranking rather than listing permitted pairs, because a pair list grows
+   * quadratically and nobody maintains it; a rank makes "is this edge legal"
+   * a comparison. A cycle is impossible by construction once every edge
+   * strictly decreases, which is the property R6 actually wants.
+   */
+  const RANKS: Readonly<Record<string, number>> = {
+    "digest.ts": 0,
+    "environment.ts": 0,
+    "candidates.ts": 0,
+    "range.ts": 0,
+    "phases.ts": 1,
+    "contributions.ts": 2,
+    "snapshot.ts": 3,
+    "sensory.ts": 3,
+    "threat.ts": 3,
+    "session.ts": 3,
+    "propagation.ts": 4,
+    "profiles.ts": 5,
+    "action.ts": 6,
+  };
+
+  it("ranks every composition module, so none escapes the check", () => {
+    const ranked = Object.keys(RANKS).sort();
+
+    const actual = compositionFiles
+      .map((path) => path.slice(COMPOSITION_DIR.length + 1))
+      .filter((name) => name !== "index.ts")
+      .sort();
+
+    expect(actual).toEqual(ranked);
+  });
+
+  it("lets every internal edge point strictly downward", () => {
+    const offenders: string[] = [];
+
+    for (const path of compositionFiles) {
+      const name = path.slice(COMPOSITION_DIR.length + 1);
+
+      /* The barrel re-exports everything and is not a consumer. */
+      if (name === "index.ts") continue;
+
+      const rank = RANKS[name];
+
+      for (const specifier of moduleSpecifiers(path)) {
+        if (!specifier.startsWith("./")) continue;
+
+        const target = `${specifier.slice(2)}.ts`;
+        const targetRank = RANKS[target];
+
+        if (targetRank === undefined) continue;
+
+        if (rank === undefined || targetRank >= rank) {
+          offenders.push(`${name} -> ${target}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never reaches back up into the sensory domain's answers", () => {
+    /*
+     * Composition supplies energy. Receivers, routes, Detection, Concealment
+     * and Perception are SEN-1's answers, and importing one here would mean a
+     * producer that had started deciding what its own output is worth.
+     */
+    const FORBIDDEN = [
+      "senses/receivers",
+      "senses/detection",
+      "senses/concealment",
+      "senses/perception",
+      "senses/investigation",
+      "senses/definitions",
+    ];
+
+    const offenders = domainFiles.filter((path) =>
+      FORBIDDEN.some((fragment) =>
+        new RegExp(`from\\s+"[^"]*${fragment}`).test(read(path))
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("names no receiving anatomy anywhere in composition", () => {
+    /*
+     * The mutation this refuses is a composer that writes "the light goes
+     * into the left eye". A cue that named an organ would have decided the
+     * route before the observer was even known, and every creature with
+     * unusual anatomy would silently get the anatomy the composer assumed.
+     *
+     * `access.ts` and `routes.ts` are the ONE permitted sensory import, in
+     * propagation.ts, because handing the cue over is the whole point of the
+     * handoff — and what it hands over is a cue and exposure facts, never a
+     * receiver.
+     */
+    const ANATOMY = [
+      "SensoryReceiverRef",
+      "receiverKey",
+      "canonicalReceiver",
+      "pointIds",
+      "CriticalPointId",
+      "anatomicalPoints",
+    ];
+
+    const offenders = domainFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return ANATOMY.some((name) => new RegExp(`\\b${name}\\b`).test(code));
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the sensory domain from ever importing composition back", () => {
+    /*
+     * The reverse edge, which would be the worse one. `cues.ts` is explicit
+     * that a partial composer living inside Senses is worse than none — so
+     * the producer sits above the boundary, and the boundary only ever
+     * receives resolved cues.
+     */
+    const offenders = senseFiles.filter((path) =>
+      /from\s+"[^"]*gameplay\//.test(read(path))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never branches on a built-in content or channel id", () => {
+    /*
+     * The rule that keeps a host's homebrew working. A resolver that said
+     * `if (skillId === "fire-blast")` would give the shipped Skill behaviour
+     * nothing a host registers could ever have, and the rule would live
+     * inside an if-chain nobody can find or override.
+     *
+     * `profiles.ts` in each domain is exempt, because that is where the
+     * definitions ARE — declaring `id: "campfire"` is content, not a branch.
+     */
+    const BUILT_IN = [
+      "fire-blast",
+      "campfire",
+      "punch",
+      "gauntlets",
+      "visible-light",
+      "airborne-chemical",
+      "aura",
+      "sight",
+      "hearing",
+    ];
+
+    const EXEMPT = [
+      join("composition", "profiles.ts"),
+      join("phenomena", "profiles.ts"),
+    ];
+
+    const offenders = domainFiles
+      .filter((path) => !EXEMPT.some((exempt) => path.endsWith(exempt)))
+      .filter((path) => {
+        const code = stripComments(read(path));
+
+        return BUILT_IN.some((id) =>
+          new RegExp(`[=!]==\\s*"${id}"`).test(code) ||
+          new RegExp(`case\\s+"${id}"`).test(code)
+        );
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("treats a settled report as a report, never as an authority input", () => {
+    /*
+     * R1's half that is easy to break by accident: a RuntimeEvent describes
+     * what was settled, so a projector reading one would be recalculating an
+     * authoritative mechanic from its own output.
+     */
+    const offenders = domainFiles.filter((path) =>
+      /from\s+"[^"]*runtime\/events/.test(read(path)) ||
+      /\bRuntimeEvent\b/.test(stripComments(read(path)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("holds no cache that outlives one preparation", () => {
+    /*
+     * A module-level Map here would be the cross-action rules cache R7
+     * refuses — stale by construction, invisible in every call signature, and
+     * invalidated by nothing. Sessions are created by a function and held by
+     * the caller, so the only state is on the stack.
+     */
+    const offenders = domainFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return /^(const|let|var)\s+\w+\s*(:[^=]*)?=\s*new\s+(Map|Set|WeakMap)/m
+        .test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads no clock, rolls no dice and touches no I/O", () => {
+    /*
+     * Purity, checked against the source rather than trusted. Every
+     * timestamp this domain uses arrives as a parameter, because a projector
+     * that read the wall clock would answer differently on a replay.
+     */
+    const FORBIDDEN = [
+      /\bDate\.now\b/,
+      /\bnew Date\b/,
+      /\bMath\.random\b/,
+      /\bperformance\.now\b/,
+      /\bprocess\./,
+      /\bfetch\(/,
+      /\blocalStorage\b/,
+      /\bdocument\./,
+      /\bwindow\./,
+      /from\s+"node:/,
+      /from\s+"fs"/,
+      /\bfoundry\b/i,
+      /\bgame\.settings\b/,
+    ];
+
+    const offenders = domainFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return FORBIDDEN.some((pattern) => pattern.test(code));
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("leaves no second producer of action cues outside this domain", () => {
+    /*
+     * The migration rule. There is exactly one place that DERIVES a cue from
+     * an action, and it is composition/sensory.ts. Direct construction by a
+     * host or GM remains permanent and supported — that is what
+     * `ResolvedSensoryCue` being public means — but no second automatic
+     * producer may grow somewhere else and start disagreeing with this one.
+     */
+    const everySource = sourceFilesUnder(SRC).filter(
+      (path) => !path.includes("__tests__") && path !== DECISION_LOG,
+    );
+
+    const producers = everySource.filter((path) =>
+      /const\s+cue\s*:\s*ResolvedSensoryCue/.test(stripComments(read(path)))
+    );
+
+    expect(producers.map((path) => path.slice(SRC.length))).toEqual([
+      join("gameplay", "composition", "sensory.ts"),
+    ]);
   });
 });
