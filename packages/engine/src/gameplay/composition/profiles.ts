@@ -192,6 +192,69 @@ export function findEmissionProfileStructuralIssues(
 
 export const EMISSION_PROFILE_DEFINITIONS = {
   /*
+   * The one authored COMMUNICATION method, and deliberately only one.
+   *
+   * A warning is an Action that makes a noise, so it needs a profile exactly
+   * as a fire blast does — and it needs its own, because there is no such
+   * thing as a generic communication intensity. A shout, a hand signal, a
+   * radio and telepathy travel on different channels, carry different
+   * distances and are intercepted by different people, and giving the generic
+   * Warning Action a universal channel would make all four of those the same
+   * mechanic wearing four names.
+   *
+   * So the Warning Action REFERENCES a communication profile and has no
+   * emissions of its own, and this is the only one authored. Gestures, radios
+   * and telepathy each need theirs, later, with their own numbers.
+   *
+   * Sound 5 is an authored ordinal balance value and nothing more: louder than
+   * a campfire's crackle at 3, comparable to a fire blast's loose at 5,
+   * implying no decibels. It is anchored to the actor because a shout comes
+   * from whoever shouted, and it is emitted on `release` alone because that is
+   * the Action's authoritative completion time — the point where a warning
+   * becomes receivable.
+   *
+   * The falloff is the sound falloff this engine already uses, reused rather
+   * than re-chosen. A second, different table for the same channel would make
+   * a shout and a blast obey different physics.
+   *
+   * There is no privacy field, and that absence is R14: anybody with an ear
+   * pointed this way may hear it. Making an ordinary shout private would
+   * require a mechanic somebody authored, not a flag a caller sets.
+   */
+  "ordinary-shout": {
+    id: "ordinary-shout",
+    name: "Ordinary shout",
+    description: "Warning somebody out loud, in a voice anybody nearby can hear.",
+
+    appliesTo: { type: "communication", id: "ordinary-shout" },
+
+    /*
+     * No `threatSeverity`. Shouting at somebody endangers nobody, and a
+     * communication profile that declared a severity would emit danger on the
+     * warning itself — a warning the recipients would then need warning about.
+     */
+
+    emissions: [
+      { appliesTo: { phase: "release" }, subject: "action", phenomenon: "physical", channel: "sound", intensity: 5, anchor: "actor" },
+    ],
+
+    propagation: [
+      {
+        channel: "sound",
+        source: { type: "communication", id: "ordinary-shout" },
+        distance: [
+          { beyondMetres: 20, adjustBy: -1 },
+          { beyondMetres: 60, adjustBy: -3 },
+        ],
+        environment: [
+          { factor: "ambientNoise", band: "loud", adjustBy: -2 },
+          { factor: "ambientNoise", band: "overwhelming", adjustBy: -3 },
+        ],
+      },
+    ],
+  },
+
+  /*
    * The one authored action profile, and the vertical slice this architecture
    * was proved against.
    *

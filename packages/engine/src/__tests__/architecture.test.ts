@@ -5433,3 +5433,306 @@ describe("action composition composes downward and never sideways", () => {
     ]);
   });
 });
+
+
+/*
+ * Threat awareness consumes; it never produces, and never shortcuts.
+ *
+ * ECP-1 left danger projected and nothing consuming it, and the guard it
+ * shipped — composition is the only AUTOMATIC producer of resolved cues — is
+ * exactly the one a consumer layer is tempted to break. A warning is a noise,
+ * a noise is a cue, and constructing one here would be three lines and a
+ * second producer free to disagree with the first.
+ *
+ * The other temptation is worse and shorter. Composition hands this layer a
+ * danger intensity on a 1-10 scale; comparing it against a threshold would
+ * open Reaction Gates without ever asking whether the subject has a Sense that
+ * receives `danger`, whether a wall stops it, or what Concealment stands
+ * against them. That is one line, it reads as sensible, and it deletes SEN-1.
+ */
+describe("threat awareness consumes SEN-1 rather than second-guessing it", () => {
+  const AWARENESS_DIR = join(SRC, "gameplay", "awareness");
+  const SENSES_DIR = join(SRC, "character", "foundation", "senses");
+  const COMBAT_DIR = join(SRC, "gameplay", "combat");
+
+  const awarenessFiles = sourceFilesUnder(AWARENESS_DIR);
+  const senseFiles = sourceFilesUnder(SENSES_DIR);
+  const combatFiles = sourceFilesUnder(COMBAT_DIR);
+
+  const read = (path: string): string => readFileSync(path, "utf8");
+
+  function stripComments(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+  }
+
+  it("finds the directory it is checking", () => {
+    expect(awarenessFiles.length).toBeGreaterThan(8);
+  });
+
+  /*
+   * Ranks, for the same reason composition has them: a permitted-pair list
+   * grows quadratically and nobody maintains it, while a rank makes "is this
+   * edge legal" a comparison and makes a cycle impossible by construction.
+   */
+  const RANKS: Readonly<Record<string, number>> = {
+    "awareness.ts": 0,
+    "identity.ts": 0,
+    "reception.ts": 0,
+    "relationships.ts": 0,
+    "timing.ts": 0,
+    "gates.ts": 1,
+    "observer.ts": 1,
+    "subjects.ts": 1,
+    "warning.ts": 1,
+    "recipients.ts": 2,
+  };
+
+  it("ranks every awareness module, so none escapes the check", () => {
+    const ranked = Object.keys(RANKS).sort();
+
+    const actual = awarenessFiles
+      .map((path) => path.slice(AWARENESS_DIR.length + 1))
+      .filter((name) => name !== "index.ts")
+      .sort();
+
+    expect(actual).toEqual(ranked);
+  });
+
+  it("lets every internal edge point strictly downward", () => {
+    const offenders: string[] = [];
+
+    for (const path of awarenessFiles) {
+      const name = path.slice(AWARENESS_DIR.length + 1);
+
+      /* The barrel re-exports everything and is not a consumer. */
+      if (name === "index.ts") continue;
+
+      const rank = RANKS[name];
+
+      for (const specifier of moduleSpecifiers(path)) {
+        if (!specifier.startsWith("./")) continue;
+
+        const target = `${specifier.slice(2)}.ts`;
+        const targetRank = RANKS[target];
+
+        if (targetRank === undefined) continue;
+
+        if (rank === undefined || targetRank >= rank) {
+          offenders.push(`${name} -> ${target}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("produces no resolved cue of its own, leaving composition the only one", () => {
+    /*
+     * The ECP-1 guard restated for the new domain, and checked here as well as
+     * there so that a second producer growing in awareness/ fails in the suite
+     * that owns awareness rather than only in a list somebody has to notice.
+     */
+    const producers = awarenessFiles.filter((path) =>
+      /const\s+\w*[Cc]ue\w*\s*:\s*ResolvedSensoryCue/.test(stripComments(read(path)))
+    );
+
+    expect(producers).toEqual([]);
+  });
+
+  it("routes a warning's emissions through the composer", () => {
+    /* The positive half: the edge the rule above depends on is real. */
+    const warning = read(join(AWARENESS_DIR, "warning.ts"));
+
+    expect(warning).toMatch(/composeSensoryCues/);
+    expect(warning).toMatch(/from\s+"\.\.\/composition\/sensory"/);
+  });
+
+  it("opens nothing by comparing a danger intensity against a threshold", () => {
+    /*
+     * M3, refused structurally. Awareness may NAME the danger channel — it has
+     * to know which cue it is looking at — but it may not read an intensity
+     * off a cue's emissions and compare it, which is the shortcut that skips
+     * receivers, routes, exposure and Concealment in one line.
+     */
+    const offenders = awarenessFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return /emissions\s*\[[^\]]*\]\s*[<>=!]/.test(code) ||
+        /emissions\.\w+\s*[<>]/.test(code) ||
+        /\bdangerIntensity\b/.test(code) ||
+        /\bMINIMUM_SENSORY_INTENSITY\b|\bNEUTRAL_SENSORY_INTENSITY\b/.test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reaches SEN-1's own reception, so the exclusion above is real", () => {
+    const reception = read(join(AWARENESS_DIR, "reception.ts"));
+
+    expect(reception).toMatch(/receiveCue/);
+    expect(reception).toMatch(/propagateCue/);
+  });
+
+  it("never lets the sensory domain or Combat import awareness back", () => {
+    /*
+     * The reverse edges, both of which would be worse than the forward one.
+     * Senses importing this would put encounter state inside Foundation;
+     * Combat importing it would give the scheduler a sensory opinion, which is
+     * the exact coupling the Reaction Gate was built to avoid.
+     */
+    const offenders = [...senseFiles, ...combatFiles].filter((path) =>
+      /from\s+"[^"]*awareness\//.test(read(path))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("treats a settled report as a report, never as an authority input", () => {
+    const offenders = awarenessFiles.filter((path) =>
+      /from\s+"[^"]*runtime\/events/.test(read(path)) ||
+      /\bRuntimeEvent\b/.test(stripComments(read(path)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("holds no cache that outlives one threat", () => {
+    const offenders = awarenessFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return /^(const|let|var)\s+\w+\s*(:[^=]*)?=\s*new\s+(Map|Set|WeakMap)/m
+        .test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads no clock, rolls no dice and touches no I/O", () => {
+    const FORBIDDEN = [
+      /\bDate\.now\b/,
+      /\bnew Date\b/,
+      /\bMath\.random\b/,
+      /\bperformance\.now\b/,
+      /\bprocess\./,
+      /\bfetch\(/,
+      /from\s+"node:/,
+    ];
+
+    const offenders = awarenessFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return FORBIDDEN.some((pattern) => pattern.test(code));
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never branches on a built-in content, channel or Sense id", () => {
+    /*
+     * Same rule as composition's, for the same reason: a resolver that said
+     * `if (method === "ordinary-shout")` would give the shipped profile
+     * behaviour no host's radio or telepathy could ever have.
+     */
+    const BUILT_IN = [
+      "fire-blast",
+      "ordinary-shout",
+      "campfire",
+      "danger",
+      "sound",
+      "visible-light",
+      "esp",
+      "sight",
+      "hearing",
+    ];
+
+    const offenders = awarenessFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return BUILT_IN.some((id) =>
+        new RegExp(`[=!]==\\s*"${id}"`).test(code) ||
+        new RegExp(`case\\s+"${id}"`).test(code)
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("declares the one authored communication profile as content, not as a branch", () => {
+    /*
+     * `ordinary-shout` is a profile keyed by a source reference, exactly as
+     * `fire-blast` is. It lives with the other emission profiles, and nothing
+     * outside that file names it — which is what makes a host's own
+     * communication method a registration rather than a code change.
+     */
+    const profiles = read(join(SRC, "gameplay", "composition", "profiles.ts"));
+
+    expect(profiles).toMatch(/"ordinary-shout"/);
+
+    const namers = sourceFilesUnder(SRC)
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => !path.endsWith(join("composition", "profiles.ts")))
+      .filter((path) => /"ordinary-shout"/.test(read(path)));
+
+    expect(namers).toEqual([]);
+  });
+
+  it("charges a warning through Combat's own Action economy and no other", () => {
+    /*
+     * M8. A warning costs one Action from the shared Round pool, which means
+     * it must reach `spendCombatAction` like everything else. A second
+     * spending path here — a warning budget, a reaction pool, a decremented
+     * counter — would be a resource nobody authorized.
+     */
+    const warning = read(join(AWARENESS_DIR, "warning.ts"));
+
+    expect(warning).toMatch(/ONE_ACTION/);
+
+    const offenders = awarenessFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return /remainingActions\s*[-+]/.test(code) ||
+        /\bwarningPool\b|\breactionPool\b|\bwarningBudget\b/.test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("selects the allied observer here rather than letting a host decide", () => {
+    /*
+     * The relationship boundary. A host reports who is allied; it does not
+     * report who intervenes, who detected, or who gets a Gate — and the
+     * validator refuses a fact carrying one of those, because a helpful host
+     * would otherwise be believed and every rule in this domain bypassed by a
+     * field nobody meant as an override.
+     */
+    const relationships = read(join(AWARENESS_DIR, "relationships.ts"));
+
+    expect(relationships).toMatch(/DECIDED_OUTCOME_KEYS/);
+    expect(relationships).toMatch(/decides-outcome/);
+  });
+
+  it("orders simultaneous gates through Combat's Initiative and invents none", () => {
+    /*
+     * R9 reuses the authority the Round already has. What must not appear is a
+     * second ordering: a roll, a formula, an attribute comparison, or a silent
+     * fallback on array position. Initiative itself refuses equal values, and
+     * so does this.
+     */
+    const observer = read(join(AWARENESS_DIR, "observer.ts"));
+    const gates = read(join(AWARENESS_DIR, "gates.ts"));
+
+    expect(observer).toMatch(/findInitiativeEntry/);
+    expect(gates).toMatch(/findInitiativeEntry/);
+
+    const offenders = awarenessFiles.filter((path) => {
+      const code = stripComments(read(path));
+
+      return /\brollInitiative\b|\binitiativeRoll\b/.test(code) ||
+        /initiative\s*=\s*\w+\.(agi|dex|per|wis)\b/.test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+});
