@@ -10,7 +10,7 @@
  * The ceiling is Ken's, called rather than restated. The maximum shift runs
  * 10% at I to 90% at X — 100% is Kō and is not reachable from here.
  *
- * Eye Gyō converts Aura in the eyes into two bonuses by decade count, exactly,
+ * Sensory Gyō converts Aura on a sense organ into two bonuses by decade count,
  * without ever touching a logarithm.
  */
 
@@ -18,10 +18,10 @@ import { describe, expect, it } from "vitest";
 
 import * as gyo from "../character/foundation/nen/principles/gyo";
 import {
-  EYE_GYO_SATURATION_AURA,
+  SENSORY_GYO_SATURATION_AURA,
   GYO_ADVANCEMENT_DEX,
   GYO_MASTERY_PROFILES,
-  deriveEyeGyoBonuses,
+  deriveSensoryGyoBonuses,
   deriveGyoMaximumShift,
   getGyoMasteryProfile,
   resolveGyoSelection,
@@ -220,15 +220,15 @@ describe("shifting a coating strains containment", () => {
 });
 
 
-/* ── Eye Gyō ────────────────────────────────────────────────────────────── */
+/* ── Sensory Gyō ────────────────────────────────────────────────────────── */
 
-describe("Eye Gyō converts eye Aura into two bonuses", () => {
-  const bonuses = (eyeAura: number) => payloadOf(deriveEyeGyoBonuses(eyeAura));
+describe("Sensory Gyō converts organ Aura into two bonuses", () => {
+  const bonuses = (aura: number) => payloadOf(deriveSensoryGyoBonuses(aura));
 
-  const at = (eyeAura: number) => {
-    const { auraDetectionBonus, visualDetectionBonus } = bonuses(eyeAura);
+  const at = (aura: number) => {
+    const { nenPerceptionBonus, ordinaryPerceptionBonus } = bonuses(aura);
 
-    return [auraDetectionBonus, visualDetectionBonus];
+    return [nenPerceptionBonus, ordinaryPerceptionBonus];
   };
 
   it("gives nothing below a single point of Aura", () => {
@@ -270,7 +270,7 @@ describe("Eye Gyō converts eye Aura into two bonuses", () => {
     expect(at(720_000_000)).toEqual([9, 5]);
     expect(at(799_999_999)).toEqual([9, 5]);
     expect(at(800_000_000)).toEqual([10, 5]);
-    expect(at(EYE_GYO_SATURATION_AURA)).toEqual([10, 5]);
+    expect(at(SENSORY_GYO_SATURATION_AURA)).toEqual([10, 5]);
   });
 
   it("saturates rather than continuing to climb", () => {
@@ -278,28 +278,33 @@ describe("Eye Gyō converts eye Aura into two bonuses", () => {
     expect(at(Number.MAX_SAFE_INTEGER)).toEqual([10, 5]);
   });
 
-  it("halves the Aura bonus, rounded up, for the visual bonus", () => {
-    for (const eyeAura of [0, 1, 50, 300, 5_000, 50_000, 5_000_000, 5e7, 5e8, 9e8]) {
-      const { auraDetectionBonus, visualDetectionBonus } = bonuses(eyeAura);
+  it("halves the Nen bonus, rounded up, for the ordinary bonus", () => {
+    for (const aura of [0, 1, 50, 300, 5_000, 50_000, 5_000_000, 5e7, 5e8, 9e8]) {
+      const { nenPerceptionBonus, ordinaryPerceptionBonus } = bonuses(aura);
 
-      expect([eyeAura, visualDetectionBonus])
-        .toEqual([eyeAura, Math.ceil(auraDetectionBonus / 2)]);
+      expect([aura, ordinaryPerceptionBonus])
+        .toEqual([aura, Math.ceil(nenPerceptionBonus / 2)]);
     }
   });
 
-  it("refuses negative and non-finite eye Aura", () => {
+  it("refuses negative and non-finite sensory Aura", () => {
     for (const bad of [-1, -0.0001, Number.NaN, Number.POSITIVE_INFINITY]) {
-      expect([bad, errorCodesOf(deriveEyeGyoBonuses(bad))])
-        .toEqual([bad, ["nen.gyo.eye_aura.invalid"]]);
+      expect([bad, errorCodesOf(deriveSensoryGyoBonuses(bad))])
+        .toEqual([bad, ["nen.gyo.sensory_aura.invalid"]]);
     }
   });
 
   it("returns two numbers and knows nothing about checks or senses", () => {
     expect(Object.keys(bonuses(300)).sort())
-      .toEqual(["auraDetectionBonus", "visualDetectionBonus"]);
+      .toEqual(["nenPerceptionBonus", "ordinaryPerceptionBonus"]);
 
+    /*
+     * The pure file may say "sensory" — that is the mechanic's name — but it
+     * must not name a CHECK, a Sense id, or anything about routing. A bonus is
+     * two numbers here and becomes a modifier somewhere else.
+     */
     for (const name of Object.keys(gyo)) {
-      expect(name).not.toMatch(/check|sense|perception|detectionRoll|route/i);
+      expect(name).not.toMatch(/check|detectionRoll|route|sight|hearing/i);
     }
   });
 });

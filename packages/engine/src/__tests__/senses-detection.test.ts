@@ -38,28 +38,54 @@ import type {
 } from "../character/foundation/senses/detection";
 import type { ConcealmentRating } from "../character/foundation/senses/concealment";
 import type { ConcealmentRoute } from "../character/foundation/senses/concealment";
-import type { PerceivedCue } from "../character/foundation/senses/signatures";
+import type { GeneratedSensoryRoute } from "../character/foundation/senses/routes";
+import type { SensoryIntensity } from "../character/foundation/senses/channels";
 
 import {
   PASSIVE_DETECTION_BASE,
+  generatedRoute,
   roll,
   route,
   sensoryProfile,
-  signature,
   source,
 } from "./fixtures/senses";
 
 const SIGHT = route();
-const HEARING = route({ sense: "hearing" });
+const HEARING = route({ sense: "hearing", channel: "sound" });
 
 /* Sight Detection: round((PER 16 + WIS 14) / 2) = 15 -> +2. */
 const SIGHT_DETECTION_MODIFIER = 2;
 
-function cue(sense: "sight" | "hearing" = "sight"): PerceivedCue {
-  return {
-    signature: signature({ id: `${sense}-cue`, sense }),
-    perceptionBand: "partial",
-  };
+const PROFILE = sensoryProfile();
+
+/*
+ * Blinded by ANATOMY, which is the only way to lose a Sense now. There is no
+ * "this sense is unavailable" flag on the profile request any more, because
+ * availability is a consequence of what the creature has rather than an input.
+ */
+const BLINDED = sensoryProfile({
+  pointStates: {
+    "left-eye:head-1": "archived-removed",
+    "right-eye:head-1": "archived-removed",
+  },
+});
+
+/*
+ * A generated route at the NEUTRAL intensity 5, so `received - 5` is zero and
+ * every total below reads as the observer's alertness alone. Loudness has its
+ * own suite; folding it into every other assertion would have meant every
+ * expected number carried an unexplained offset.
+ */
+function generated(
+  sense: "sight" | "hearing" = "sight",
+  intensity = 5,
+): GeneratedSensoryRoute {
+  return generatedRoute(PROFILE, {
+    id: `${sense}-cue`,
+    emissions: {
+      [sense === "sight" ? "visible-light" : "sound"]: intensity as SensoryIntensity,
+    },
+  });
 }
 
 function rating(concealmentRoute: ConcealmentRoute, total: number): ConcealmentRating {
@@ -68,7 +94,7 @@ function rating(concealmentRoute: ConcealmentRoute, total: number): ConcealmentR
     mode: "passive",
     total,
     trace: createTraceNode({
-      id: `test.concealment.${concealmentRoute.sense}`,
+      id: `test.concealment.${concealmentRoute.channel}`,
       label: "Test Concealment rating",
       output: total,
     }),
@@ -79,7 +105,7 @@ function request(overrides: Partial<DetectionRequest> = {}): DetectionRequest {
   return {
     mode: "passive",
     profile: sensoryProfile(),
-    cue: cue(),
+    route: generated(),
     concealment: rating(SIGHT, 3),
     ...overrides,
   };
@@ -139,7 +165,8 @@ describe("passive Detection", () => {
   });
 
   it("reports which route answered", () => {
-    expect(payloadOf(resolvePassiveDetection(request())).route).toEqual(SIGHT);
+    expect(payloadOf(resolvePassiveDetection(request())).route)
+      .toMatchObject(SIGHT);
   });
 
   it("refuses a request that is not passive", () => {
@@ -168,7 +195,7 @@ describe("Detection returns no information band", () => {
     expect(typeof result.observerTotal).toBe("number");
     expect(typeof result.concealmentTotal).toBe("number");
     expect(typeof result.margin).toBe("number");
-    expect(result.route).toEqual(SIGHT);
+    expect(result.route).toMatchObject(SIGHT);
     expect(result.trace).toBeDefined();
   });
 
@@ -360,8 +387,8 @@ describe("best-route selection", () => {
     const sweep = payloadOf(sweepPassiveDetectionRoutes({
       profile: sensoryProfile(),
       routes: [
-        { cue: cue(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE + 10) },
-        { cue: cue("hearing"), concealment: rating(HEARING, PASSIVE_DETECTION_BASE - 2) },
+        { route: generated(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE + 10) },
+        { route: generated("hearing"), concealment: rating(HEARING, PASSIVE_DETECTION_BASE - 2) },
       ],
     }));
 
@@ -376,8 +403,8 @@ describe("best-route selection", () => {
     const sweep = payloadOf(sweepPassiveDetectionRoutes({
       profile: sensoryProfile(),
       routes: [
-        { cue: cue(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE + 12) },
-        { cue: cue("hearing"), concealment: rating(HEARING, PASSIVE_DETECTION_BASE + 3) },
+        { route: generated(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE + 12) },
+        { route: generated("hearing"), concealment: rating(HEARING, PASSIVE_DETECTION_BASE + 3) },
       ],
     }));
 
@@ -391,10 +418,10 @@ describe("best-route selection", () => {
 
   it("drops routes through a sense the observer does not have", () => {
     const sweep = payloadOf(sweepPassiveDetectionRoutes({
-      profile: sensoryProfile({ unavailablePhysicalSenses: ["sight"] }),
+      profile: BLINDED,
       routes: [
-        { cue: cue(), concealment: rating(SIGHT, -100) },
-        { cue: cue("hearing"), concealment: rating(HEARING, PASSIVE_DETECTION_BASE + 1) },
+        { route: generated(), concealment: rating(SIGHT, -100) },
+        { route: generated("hearing"), concealment: rating(HEARING, PASSIVE_DETECTION_BASE + 1) },
       ],
     }));
 
@@ -404,8 +431,8 @@ describe("best-route selection", () => {
 
   it("refuses a sweep with no usable route at all", () => {
     expect(errorCodesOf(sweepPassiveDetectionRoutes({
-      profile: sensoryProfile({ unavailablePhysicalSenses: ["sight"] }),
-      routes: [{ cue: cue(), concealment: rating(SIGHT, 0) }],
+      profile: BLINDED,
+      routes: [{ route: generated(), concealment: rating(SIGHT, 0) }],
     }))).toContain("character.senses.detection.routes.none");
   });
 });
@@ -437,7 +464,7 @@ describe("route matching", () => {
 
   it("reports an unavailable sense", () => {
     expect(findDetectionRequestIssues(request({
-      profile: sensoryProfile({ unavailablePhysicalSenses: ["sight"] }),
+      profile: BLINDED,
     })).map((issue) => issue.type)).toContain("sense-unavailable");
   });
 
@@ -451,7 +478,7 @@ describe("passive candidate sweeps", () => {
   function candidate(overrides: Partial<DetectionCandidate> & { id: string }): DetectionCandidate {
     return {
       importance: "relevant",
-      routes: [{ cue: cue(), concealment: rating(SIGHT, 4) }],
+      routes: [{ route: generated(), concealment: rating(SIGHT, 4) }],
       ...overrides,
     };
   }
@@ -461,7 +488,7 @@ describe("passive candidate sweeps", () => {
       profile: sensoryProfile(),
       candidates: [candidate({
         id: "hidden",
-        routes: [{ cue: cue(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE) }],
+        routes: [{ route: generated(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE) }],
       })],
     }));
 
@@ -484,8 +511,8 @@ describe("passive candidate sweeps", () => {
       candidates: [candidate({
         id: "intruder",
         routes: [
-          { cue: cue(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE + 4) },
-          { cue: cue("hearing"), concealment: rating(HEARING, 0) },
+          { route: generated(), concealment: rating(SIGHT, PASSIVE_DETECTION_BASE + 4) },
+          { route: generated("hearing"), concealment: rating(HEARING, 0) },
         ],
       })],
     }));
@@ -515,7 +542,7 @@ describe("passive candidate sweeps", () => {
       profile: sensoryProfile(),
       candidates: [candidate({
         id: "malformed",
-        routes: [{ cue: cue(), concealment: rating(HEARING, 0) }],
+        routes: [{ route: generated(), concealment: rating(HEARING, 0) }],
       })],
     }))).toContain("character.senses.route.mismatch");
   });
@@ -557,7 +584,7 @@ describe("passive candidate sweeps", () => {
         candidate({
           id: "scenery",
           importance: "ambient",
-          routes: [{ cue: cue(), concealment: rating(SIGHT, -10) }],
+          routes: [{ route: generated(), concealment: rating(SIGHT, -10) }],
         }),
         candidate({ id: "assassin", importance: "critical" }),
       ],
@@ -574,7 +601,7 @@ describe("passive candidate sweeps", () => {
         candidate({ id: "faint" }),
         candidate({
           id: "obvious",
-          routes: [{ cue: cue(), concealment: rating(SIGHT, 0) }],
+          routes: [{ route: generated(), concealment: rating(SIGHT, 0) }],
         }),
       ],
     }));

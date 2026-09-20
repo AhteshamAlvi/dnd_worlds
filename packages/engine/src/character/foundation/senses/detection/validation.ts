@@ -1,3 +1,4 @@
+import { sensoryRouteTermsKey } from "../routes";
 import type { DetectionRequest } from "./types";
 
 export type DetectionValidationIssue =
@@ -9,20 +10,31 @@ export function findDetectionRequestIssues(
   request: DetectionRequest,
 ): readonly DetectionValidationIssue[] {
   const issues: DetectionValidationIssue[] = [];
+
   if (request.mode !== "passive" && request.dice === undefined) {
     issues.push({ type: "dice-missing", path: "dice" });
   }
-  const signature = request.cue.signature;
-  const route = request.concealment.route;
+
+  const route = request.route.route;
+
   if (
-    signature.sense !== route.sense ||
-    signature.phenomenon !== route.phenomenon ||
-    signature.subject !== route.subject
+    sensoryRouteTermsKey(route) !==
+      sensoryRouteTermsKey(request.concealment.route)
   ) {
     issues.push({ type: "route-mismatch", path: "concealment.route" });
   }
-  if (!request.profile.senses[signature.sense].available) {
-    issues.push({ type: "sense-unavailable", path: `profile.senses.${signature.sense}` });
+
+  /*
+   * A safe lookup, not a bare index. An unknown Sense id has to report as an
+   * unavailable Sense rather than throwing on `.available` — the whole reason
+   * the profile publishes only the Senses a creature actually resolved.
+   */
+  if (request.profile.senses[route.sense]?.available !== true) {
+    issues.push({
+      type: "sense-unavailable",
+      path: `profile.senses.${route.sense}`,
+    });
   }
+
   return issues;
 }

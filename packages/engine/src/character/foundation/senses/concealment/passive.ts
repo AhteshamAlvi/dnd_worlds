@@ -43,7 +43,10 @@ export function resolvePassiveConcealment(
     const modifier = resolveCheckModifier(baseContributions, request.modifiers ?? [], {
       kind: "concealment",
       mode: "passive",
-      ...route,
+      sense: route.sense,
+      channel: route.channel,
+      phenomenon: route.phenomenon,
+      subject: route.subject,
     });
     return {
       route,

@@ -80,6 +80,10 @@ import { referenceFormRegistry } from "./foundation/body/anatomy/reference-forms
 import { validateReferenceForm } from "./foundation/body/anatomy/validation";
 import type { ReferenceFormDefinition } from "./foundation/body/anatomy/reference-forms";
 import type { SpecialPointDefinition } from "./foundation/body/critical-points/types";
+import { senseRegistry } from "./foundation/senses/definitions";
+import type { SenseDefinition } from "./foundation/senses/definitions";
+import { sensoryChannelRegistry } from "./foundation/senses/channels";
+import type { SensoryChannelDefinition } from "./foundation/senses/channels";
 
 // Singular on purpose: a domain names one kind of thing, and every message
 // built from it reads "unknown Species", not "unknown species-list".
@@ -95,7 +99,9 @@ export type CatalogDomain =
   | "item-family"
   | "body-part"
   | "special-point"
-  | "reference-form";
+  | "reference-form"
+  | "sense"
+  | "sensory-channel";
 
 // What each domain's definitions actually are, so a caller that names a
 // domain literally gets that domain's own type back rather than the base one.
@@ -112,6 +118,8 @@ export interface CatalogDefinitions {
   "body-part": BodyPartDefinition;
   "special-point": SpecialPointDefinition;
   "reference-form": ReferenceFormDefinition;
+  sense: SenseDefinition;
+  "sensory-channel": SensoryChannelDefinition;
 }
 
 // Display order, and the order a host should render sections in: what a
@@ -130,6 +138,8 @@ export const CATALOG_DOMAINS = [
   "body-part",
   "special-point",
   "reference-form",
+  "sensory-channel",
+  "sense",
 ] as const satisfies readonly CatalogDomain[];
 
 type RegistryByDomain = {
@@ -149,6 +159,15 @@ const REGISTRIES: RegistryByDomain = {
   "item-family": itemFamilyRegistry,
   "body-part": bodyPartRegistry,
   "special-point": specialPointRegistry,
+
+  /*
+   * Channels before Senses, because a Sense's registration is refused when it
+   * receives a channel that does not exist yet. A host adding both wants the
+   * carrier registered first, and listing them in this order is the cheapest
+   * way to say so.
+   */
+  "sensory-channel": sensoryChannelRegistry,
+  sense: senseRegistry,
 };
 
 // Human-readable domain names, for anything the host puts in front of a
@@ -167,6 +186,8 @@ export const CATALOG_DOMAIN_LABELS: Readonly<Record<CatalogDomain, string>> = {
   "body-part": "Body Part",
   "special-point": "Special Point",
   "reference-form": "Reference Form",
+  sense: "Sense",
+  "sensory-channel": "Sensory Channel",
 };
 
 // Every definition in a domain, authored first, then custom in the order it

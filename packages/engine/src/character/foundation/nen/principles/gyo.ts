@@ -72,17 +72,45 @@
  * file commits to: if you want the uniform coating, resolve a Ken.
  *
  *
- * EYE GYŌ
- * -------
+ * SENSORY GYŌ
+ * -----------
  *
  * The one place a bare number is authored here rather than derived: how much a
- * quantity of Aura concentrated in the eyes helps the practitioner SEE. The
- * bonus is a decade count over the Aura placed there, so each factor of ten is
- * worth one step, and it saturates at +10 rather than continuing to grow.
+ * quantity of Aura concentrated in a SENSE ORGAN helps the practitioner use
+ * it. The bonus is a decade count over the Aura placed there, so each factor
+ * of ten is worth one step, and it saturates at +10 rather than continuing to
+ * grow.
+ *
+ * It used to be Eye Gyō and it is not any more. The table never had anything
+ * to do with eyes — it is what a concentration of Aura does for a receptor —
+ * and hard-coding sight into it meant a creature with antennae, a lateral
+ * line, or a registered homebrew Sense could not benefit from Gyō at all, for
+ * no reason anybody had decided. The arithmetic is unchanged; the name stopped
+ * lying.
  *
  * This file returns the two numbers and stops. It does not know what a
- * Detection check is, does not route a bonus to a sense, and does not read the
+ * Detection check is, does not route a bonus to a Sense, and does not read the
  * character's senses — routing belongs to whoever owns checks.
+ *
+ *
+ * TWO KINDS OF FOCUS, AND NEVER BOTH
+ * ----------------------------------
+ *
+ * Gyō concentrates into one place, and there are two different things that
+ * "place" can mean:
+ *
+ *   reinforcement  body parts and Shū Items, which must form one connected
+ *                  region, and which the shifted share reinforces
+ *   sensory        Anatomical Points serving one Sense, which must share one
+ *                  cluster or be one complete distributed network, and which
+ *                  the shifted share SHARPENS rather than armours
+ *
+ * They are a discriminated union rather than two optional fields, so "a fist
+ * and an eye at the same time" is not a request that gets refused — it is a
+ * request that cannot be written down. That matters because the two shares do
+ * different things: a sensory share contributes no concentrated attack or
+ * defence, and a focus carrying both would have to decide which half of itself
+ * each consumer was reading.
  *
  *
  * This file owns:
@@ -90,7 +118,8 @@
  * - Gyō's I-X maximum shift fractions and advancement DEX figures;
  * - the split of a held Output into shifted and uniform shares;
  * - the shift-strain multiplier on Ken's containment load;
- * - Eye Gyō's decade table, and nothing downstream of it.
+ * - which selections are ONE focus, for both focus kinds;
+ * - the sensory bonus table, and nothing downstream of it.
  *
  * This file does NOT own:
  *
@@ -98,6 +127,9 @@
  * - containment capacity, Ren access, or either endurance table;
  * - Kō, and any route from Gyō to a 100% shift;
  * - check routing, senses, Detection, or what a bonus is added to;
+ * - what a Body Part, an Anatomical Point or a Sense actually IS — clusters
+ *   and networks arrive as opaque supplied groups, exactly as body adjacency
+ *   arrives as opaque supplied edges;
  * - runtime lifecycle, funding, or when a Gyō stops.
  */
 
@@ -405,7 +437,7 @@ export function resolveGyoSelection(
 
 
 /* -------------------------------------------------------------------------- */
-/* Eye Gyō                                                                    */
+/* Sensory Gyō                                                                */
 /* -------------------------------------------------------------------------- */
 
 /*
@@ -415,6 +447,12 @@ export function resolveGyoSelection(
  * puts exactly 100 at +2 and 100.0001 at +3 — the top of each decade belongs to
  * that decade.
  *
+ * ONE consultation per check, however many organs were selected. The caller
+ * sums the Aura on every selected point first and asks once; asking per organ
+ * and adding the answers would make two eyes worth +2 at an amount one eye is
+ * worth +1 at, which rewards having more organs rather than concentrating
+ * harder.
+ *
  * Counted rather than computed on purpose. The obvious spelling is
  * ceil(log10(x)), and it is wrong here: the base-ten logarithm of a power of
  * ten is not guaranteed to be exact in binary floating point, so on some
@@ -423,69 +461,77 @@ export function resolveGyoSelection(
  * failure mode — every entry is exactly representable, and `>` on two exact
  * doubles is exact.
  */
-const EYE_GYO_DECADE_THRESHOLDS: readonly number[] = [
+const SENSORY_GYO_DECADE_THRESHOLDS: readonly number[] = [
   1, 10, 100, 1_000, 10_000, 100_000, 1_000_000, 10_000_000, 100_000_000,
 ];
 
-/** At and above this much Aura in the eyes, the bonus saturates at +10. */
-export const EYE_GYO_SATURATION_AURA = 800_000_000;
+/** At and above this much Aura on the organ, the bonus saturates at +10. */
+export const SENSORY_GYO_SATURATION_AURA = 800_000_000;
 
 /** The largest bonus the decade count alone can reach, below saturation. */
-export const EYE_GYO_MAXIMUM_DECADE_BONUS = 9;
+export const SENSORY_GYO_MAXIMUM_DECADE_BONUS = 9;
 
 /** The saturated bonus. */
-export const EYE_GYO_MAXIMUM_BONUS = 10;
+export const SENSORY_GYO_MAXIMUM_BONUS = 10;
 
-export interface EyeGyoBonuses {
-  /** The bonus to perceiving Aura with the eyes. */
-  readonly auraDetectionBonus: number;
+export interface SensoryGyoBonuses {
+  /** The bonus when what is being perceived is a Nen phenomenon. */
+  readonly nenPerceptionBonus: number;
 
-  /** The bonus to ordinary sight, always ceil(auraDetectionBonus / 2). */
-  readonly visualDetectionBonus: number;
+  /** The bonus to ordinary perception, always ceil(nenPerceptionBonus / 2). */
+  readonly ordinaryPerceptionBonus: number;
 }
 
 /**
- * What a quantity of Aura concentrated in the eyes is worth, as two numbers.
+ * What a quantity of Aura concentrated in a sense organ is worth, as two
+ * numbers.
  *
- * Below one point of Aura there is nothing to see with and both bonuses are
- * zero. From one point up the Aura bonus is the decade count, capped at +9, and
- * saturates at +10 once the eyes carry 800,000,000. The visual bonus is always
- * half the Aura bonus rounded up, because sharpening ordinary sight is a
- * side effect of the concentration rather than its purpose.
+ * Below one point of Aura there is nothing to work with and both bonuses are
+ * zero. From one point up the Nen bonus is the decade count, capped at +9, and
+ * saturates at +10 once the organ carries 800,000,000. The ordinary bonus is
+ * always half the Nen bonus rounded up, because sharpening ordinary perception
+ * is a side effect of the concentration rather than its purpose.
+ *
+ * THE AURA HANDED IN IS ALREADY IMPAIRED. Callers pass
+ * `sum(pointAura * pointFunctionalFraction)`, so the table is consulted once on
+ * an amount that already accounts for a ruined organ. Impairing the resulting
+ * bonus again afterwards would charge the same injury twice.
  *
  * Two numbers and nothing else. What they are added to, whether a check happens
- * at all, and which sense they belong to are not questions this file answers.
+ * at all, and which Sense they belong to are not questions this file answers.
  */
-export function deriveEyeGyoBonuses(
-  eyeAura: number,
-): EngineResult<EyeGyoBonuses> {
+export function deriveSensoryGyoBonuses(
+  sensoryAura: number,
+): EngineResult<SensoryGyoBonuses> {
   const traceNode = createTraceNode({
-    id: "nen.gyo.eye-bonuses",
-    label: "Resolve Eye Gyō bonuses",
+    id: "nen.gyo.sensory-bonuses",
+    label: "Resolve Sensory Gyō bonuses",
     formula:
-      "auraBonus = decades(eyeAura), saturating at +10; visualBonus = ceil(auraBonus / 2)",
-    inputs: { eyeAura: { value: describeNumber(eyeAura) } },
+      "nenBonus = decades(sensoryAura), saturating at +10; " +
+      "ordinaryBonus = ceil(nenBonus / 2)",
+    inputs: { sensoryAura: { value: describeNumber(sensoryAura) } },
   });
 
   if (
-    typeof eyeAura !== "number" ||
-    !Number.isFinite(eyeAura) ||
-    eyeAura < 0
+    typeof sensoryAura !== "number" ||
+    !Number.isFinite(sensoryAura) ||
+    sensoryAura < 0
   ) {
     return refuse(traceNode, [{
-      code: "nen.gyo.eye_aura.invalid",
-      message: "Eye Gyō requires a finite non-negative quantity of Aura in the eyes.",
+      code: "nen.gyo.sensory_aura.invalid",
+      message:
+        "Sensory Gyō requires a finite non-negative quantity of Aura on the organ.",
       audience: "developer",
       required: "finite number >= 0",
-      actual: describeNumber(eyeAura),
+      actual: describeNumber(sensoryAura),
     }]);
   }
 
-  const auraDetectionBonus = eyeGyoAuraBonus(eyeAura);
+  const nenPerceptionBonus = sensoryGyoNenBonus(sensoryAura);
 
-  const payload: EyeGyoBonuses = {
-    auraDetectionBonus,
-    visualDetectionBonus: Math.ceil(auraDetectionBonus / 2),
+  const payload: SensoryGyoBonuses = {
+    nenPerceptionBonus,
+    ordinaryPerceptionBonus: Math.ceil(nenPerceptionBonus / 2),
   };
 
   traceNode.output = { ...payload };
@@ -498,17 +544,19 @@ export function deriveEyeGyoBonuses(
   };
 }
 
-function eyeGyoAuraBonus(eyeAura: number): number {
-  if (eyeAura < 1) return 0;
-  if (eyeAura >= EYE_GYO_SATURATION_AURA) return EYE_GYO_MAXIMUM_BONUS;
+function sensoryGyoNenBonus(sensoryAura: number): number {
+  if (sensoryAura < 1) return 0;
+  if (sensoryAura >= SENSORY_GYO_SATURATION_AURA) {
+    return SENSORY_GYO_MAXIMUM_BONUS;
+  }
 
   let exceeded = 0;
 
-  for (const threshold of EYE_GYO_DECADE_THRESHOLDS) {
-    if (eyeAura > threshold) exceeded += 1;
+  for (const threshold of SENSORY_GYO_DECADE_THRESHOLDS) {
+    if (sensoryAura > threshold) exceeded += 1;
   }
 
-  return Math.min(EYE_GYO_MAXIMUM_DECADE_BONUS, Math.max(1, exceeded));
+  return Math.min(SENSORY_GYO_MAXIMUM_DECADE_BONUS, Math.max(1, exceeded));
 }
 
 
@@ -548,7 +596,13 @@ export const GYO_ITEM_SITE_PREFIX = "item:";
 /** One undirected adjacency the focus may travel along. */
 export type GyoFocusEdge = readonly [string, string];
 
-export interface GyoFocusInput {
+export const GYO_FOCUS_KINDS = ["reinforcement", "sensory"] as const;
+
+export type GyoFocusKind = typeof GYO_FOCUS_KINDS[number];
+
+export interface ReinforcementGyoFocusInput {
+  readonly kind: "reinforcement";
+
   /** The sites the character selected. One or more, distinct, non-empty. */
   readonly sites: readonly string[];
 
@@ -562,7 +616,59 @@ export interface GyoFocusInput {
   readonly edges: readonly GyoFocusEdge[];
 }
 
-export interface GyoFocus {
+
+/*
+ * One group of Anatomical Points that may be concentrated into together.
+ *
+ * Supplied by the composition layer, exactly as `edges` are, and for the same
+ * reason: what makes two organs "the same cluster" is a fact about a body and
+ * a Sense registry, neither of which this file may import. What lives here is
+ * the RULE — one group, and a distributed one all at once — expressed over
+ * opaque keys so it cannot be restated anywhere else.
+ */
+export interface SensoryGyoFocusGroup {
+  /** The resolved group identity. Local clusters and networks share one space. */
+  readonly key: string;
+
+  readonly kind: "local" | "distributed";
+
+  /** The Sense this group serves. */
+  readonly senseId: string;
+
+  /** Every point currently in the group and working. */
+  readonly memberPointIds: readonly string[];
+}
+
+
+export interface SensoryGyoFocusInput {
+  readonly kind: "sensory";
+
+  /**
+   * The ONE Sense being sharpened.
+   *
+   * Required even when the selected organ serves several. An eye that both
+   * sees and senses heat is one organ with two jobs, and a focus that declined
+   * to say which job it was sharpening would have to sharpen both — which is
+   * two bonuses bought with one concentration.
+   */
+  readonly senseId: string;
+
+  /** The Anatomical Points selected. One or more, distinct, non-empty. */
+  readonly pointIds: readonly string[];
+
+  /** Every group this character has for this Sense, and who is in it. */
+  readonly groups: readonly SensoryGyoFocusGroup[];
+}
+
+
+export type GyoFocusInput =
+  | ReinforcementGyoFocusInput
+  | SensoryGyoFocusInput;
+
+
+export interface ReinforcementGyoFocus {
+  readonly kind: "reinforcement";
+
   /** The selected sites, deduplicated and ordered, so two hosts agree. */
   readonly sites: readonly string[];
 
@@ -570,15 +676,222 @@ export interface GyoFocus {
   readonly itemSites: readonly string[];
 }
 
+
+export interface SensoryGyoFocus {
+  readonly kind: "sensory";
+  readonly senseId: string;
+
+  /** The selected points, deduplicated and ordered. */
+  readonly pointIds: readonly string[];
+
+  readonly groupKey: string;
+  readonly groupKind: "local" | "distributed";
+}
+
+
+export type GyoFocus = ReinforcementGyoFocus | SensoryGyoFocus;
+
+
 /**
  * Validate a focus selection and describe it.
+ *
+ * Dispatches on the focus kind, which is a union rather than a pair of
+ * optional fields — so a focus carrying both a fist and an eye is not a
+ * request this function refuses, it is a request nobody can construct.
+ */
+export function resolveGyoFocus(
+  input: GyoFocusInput,
+): EngineResult<GyoFocus> {
+  if (input !== null && typeof input === "object" && input.kind === "sensory") {
+    return resolveSensoryGyoFocus(input);
+  }
+
+  return resolveReinforcementGyoFocus(input as ReinforcementGyoFocusInput);
+}
+
+
+/**
+ * The sensory focus rule: ONE group, and a distributed group all at once.
+ *
+ * Two facial eyes may combine; a facial eye and an eye in a palm may not,
+ * because they are different clusters; a rear eye on the same head may not,
+ * because the authored cluster is part of the identity. A distributed network
+ * is all or nothing — "concentrate into three-quarters of my skin" is not a
+ * thing a person can do, and allowing it would let a character put a whole-body
+ * network's worth of Aura onto whichever patch happened to be useful.
+ */
+function resolveSensoryGyoFocus(
+  input: SensoryGyoFocusInput,
+): EngineResult<GyoFocus> {
+  const traceNode = createTraceNode({
+    id: "nen.gyo.focus.sensory",
+    label: "Resolve a sensory Gyō focus",
+    formula:
+      "every selected point shares one group; a distributed group is selected whole",
+    inputs: {
+      senseId: { value: describeNumber(input?.senseId) },
+      points: { value: describeNumber(input?.pointIds?.length) },
+    },
+  });
+
+  if (
+    typeof input.senseId !== "string" || input.senseId.trim().length === 0 ||
+    !Array.isArray(input.pointIds)
+  ) {
+    return refuse(traceNode, [{
+      code: "nen.gyo.focus.malformed",
+      message: "A sensory Gyō focus must name one Sense and the points it selects.",
+      audience: "developer",
+      required: "SensoryGyoFocusInput",
+      actual: describeNumber(input),
+    }]);
+  }
+
+  const errors: EngineError[] = [];
+  const seen = new Set<string>();
+  const pointIds: string[] = [];
+
+  for (const pointId of input.pointIds) {
+    if (typeof pointId !== "string" || pointId.trim().length === 0) {
+      errors.push({
+        code: "nen.gyo.focus.point.invalid",
+        message: "Every selected Anatomical Point must be a non-empty identity.",
+        audience: "developer",
+        required: "non-empty string",
+        actual: describeNumber(pointId),
+      });
+
+      continue;
+    }
+
+    /*
+     * A body or item site in a sensory focus is REFUSED rather than ignored.
+     * It is a caller who believes they are concentrating into a fist through
+     * the sensory path, and quietly dropping it would leave them with a focus
+     * that does something other than what they asked for.
+     */
+    if (
+      pointId.startsWith(GYO_BODY_SITE_PREFIX) ||
+      pointId.startsWith(GYO_ITEM_SITE_PREFIX)
+    ) {
+      errors.push({
+        code: "nen.gyo.focus.point.not_sensory",
+        message:
+          `"${pointId}" names a body or Item site, not an Anatomical Point. ` +
+          "Reinforcing a limb and sharpening a sense are different focuses.",
+        audience: "player",
+        required: "an Anatomical Point id",
+        actual: pointId,
+      });
+
+      continue;
+    }
+
+    if (seen.has(pointId)) continue;
+
+    seen.add(pointId);
+    pointIds.push(pointId);
+  }
+
+  if (pointIds.length === 0) {
+    errors.push({
+      code: "nen.gyo.focus.empty",
+      message: "A sensory Gyō focus must select at least one Anatomical Point.",
+      audience: "player",
+      required: "one or more selected points",
+      actual: "none",
+    });
+  }
+
+  if (errors.length > 0) return refuse(traceNode, errors);
+
+  const groups = (input.groups ?? []).filter(
+    (group) => group?.senseId === input.senseId,
+  );
+
+  const owning = groups.filter((group) =>
+    pointIds.some((pointId) => group.memberPointIds.includes(pointId))
+  );
+
+  const unknown = pointIds.filter((pointId) =>
+    !groups.some((group) => group.memberPointIds.includes(pointId))
+  );
+
+  if (unknown.length > 0) {
+    return refuse(traceNode, [{
+      code: "nen.gyo.focus.point.unknown",
+      message:
+        `These points do not serve "${input.senseId}" on this character, so ` +
+        "there is nothing there to sharpen.",
+      audience: "player",
+      required: `points serving ${input.senseId}`,
+      actual: unknown.join(", "),
+    }]);
+  }
+
+  const group = owning[0]!;
+
+  if (owning.length > 1) {
+    return refuse(traceNode, [{
+      code: "nen.gyo.focus.disconnected",
+      message:
+        "A Gyō focus is ONE place: every selected organ must belong to the " +
+        "same cluster or the same network.",
+      audience: "player",
+      required: "one sensory group",
+      actual: owning.map((one) => one.key).join(", "),
+      resolution: "Concentrate into one cluster, or choose the whole network.",
+    }]);
+  }
+
+  if (group.kind === "distributed") {
+    const missing = group.memberPointIds.filter(
+      (pointId) => !seen.has(pointId),
+    );
+
+    if (missing.length > 0) {
+      return refuse(traceNode, [{
+        code: "nen.gyo.focus.network.partial",
+        message:
+          `"${group.key}" is one distributed network and is concentrated into ` +
+          "whole or not at all.",
+        audience: "player",
+        required: `${String(group.memberPointIds.length)} members`,
+        actual: `${String(pointIds.length)} selected`,
+        resolution:
+          "Select every active member, or choose a local cluster instead.",
+      }]);
+    }
+  }
+
+  const payload: SensoryGyoFocus = {
+    kind: "sensory",
+    senseId: input.senseId,
+    pointIds: [...pointIds].sort(),
+    groupKey: group.key,
+    groupKind: group.kind,
+  };
+
+  traceNode.output = {
+    senseId: payload.senseId,
+    points: payload.pointIds.length,
+    groupKey: payload.groupKey,
+    groupKind: payload.groupKind,
+  };
+
+  return { success: true, payload, trace: { root: traceNode }, warnings: [] };
+}
+
+
+/**
+ * The reinforcement focus rule: one connected region.
  *
  * Refuses an empty selection, a malformed or blank site, a site in neither
  * namespace, and — the rule this exists for — a selection whose induced
  * subgraph is not connected.
  */
-export function resolveGyoFocus(
-  input: GyoFocusInput,
+function resolveReinforcementGyoFocus(
+  input: ReinforcementGyoFocusInput,
 ): EngineResult<GyoFocus> {
   const traceNode = createTraceNode({
     id: "nen.gyo.focus",
@@ -696,7 +1009,8 @@ export function resolveGyoFocus(
     }]);
   }
 
-  const payload: GyoFocus = {
+  const payload: ReinforcementGyoFocus = {
+    kind: "reinforcement",
     sites,
     bodySites: sites.filter((site) => site.startsWith(GYO_BODY_SITE_PREFIX)),
     itemSites: sites.filter((site) => site.startsWith(GYO_ITEM_SITE_PREFIX)),

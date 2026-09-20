@@ -11,6 +11,7 @@
 import {
   matchesPhenomenonSelector,
   matchesSenseSelector,
+  matchesSensoryChannelSelector,
 } from "../character/foundation/senses/scopes";
 import {
   type CheckScope,
@@ -25,7 +26,11 @@ import {
   type InvestigationSubjectSelector,
 } from "./scopes";
 
-export { matchesSenseSelector, matchesPhenomenonSelector };
+export {
+  matchesSenseSelector,
+  matchesSensoryChannelSelector,
+  matchesPhenomenonSelector,
+};
 
 function matchesDetectionModeSelector(
   selector: DetectionModeSelector,
@@ -73,6 +78,8 @@ export function matchesCheckScope(
       return scope.kind === "perception" &&
         (selector.sense === undefined ||
           matchesSenseSelector(selector.sense, scope.sense)) &&
+        (selector.channel === undefined ||
+          matchesSensoryChannelSelector(selector.channel, scope.channel)) &&
         (selector.phenomenon === undefined ||
           matchesPhenomenonSelector(selector.phenomenon, scope.phenomenon));
 
@@ -82,6 +89,8 @@ export function matchesCheckScope(
           matchesDetectionModeSelector(selector.mode, scope.mode)) &&
         (selector.sense === undefined ||
           matchesSenseSelector(selector.sense, scope.sense)) &&
+        (selector.channel === undefined ||
+          matchesSensoryChannelSelector(selector.channel, scope.channel)) &&
         (selector.phenomenon === undefined ||
           matchesPhenomenonSelector(selector.phenomenon, scope.phenomenon)) &&
         (selector.subject === undefined ||
@@ -93,6 +102,8 @@ export function matchesCheckScope(
           matchesConcealmentModeSelector(selector.mode, scope.mode)) &&
         (selector.sense === undefined ||
           matchesSenseSelector(selector.sense, scope.sense)) &&
+        (selector.channel === undefined ||
+          matchesSensoryChannelSelector(selector.channel, scope.channel)) &&
         (selector.phenomenon === undefined ||
           matchesPhenomenonSelector(selector.phenomenon, scope.phenomenon)) &&
         (selector.subject === undefined ||
@@ -105,6 +116,9 @@ export function matchesCheckScope(
         (selector.sense === undefined ||
           (scope.sense !== undefined &&
             matchesSenseSelector(selector.sense, scope.sense))) &&
+        (selector.channel === undefined ||
+          (scope.channel !== undefined &&
+            matchesSensoryChannelSelector(selector.channel, scope.channel))) &&
         (selector.phenomenon === undefined ||
           (scope.phenomenon !== undefined &&
             matchesPhenomenonSelector(selector.phenomenon, scope.phenomenon)));
@@ -125,18 +139,22 @@ export function isSameCheckScope(
         left.derivedAttribute === right.derivedAttribute;
     case "perception":
       return right.kind === "perception" &&
-        left.sense === right.sense && left.phenomenon === right.phenomenon;
+        left.sense === right.sense && left.channel === right.channel &&
+        left.phenomenon === right.phenomenon;
     case "detection":
       return right.kind === "detection" && left.mode === right.mode &&
-        left.sense === right.sense && left.phenomenon === right.phenomenon &&
+        left.sense === right.sense && left.channel === right.channel &&
+        left.phenomenon === right.phenomenon &&
         left.subject === right.subject;
     case "concealment":
       return right.kind === "concealment" && left.mode === right.mode &&
-        left.sense === right.sense && left.phenomenon === right.phenomenon &&
+        left.sense === right.sense && left.channel === right.channel &&
+        left.phenomenon === right.phenomenon &&
         left.subject === right.subject;
     case "investigation":
       return right.kind === "investigation" && left.subject === right.subject &&
-        left.sense === right.sense && left.phenomenon === right.phenomenon;
+        left.sense === right.sense && left.channel === right.channel &&
+        left.phenomenon === right.phenomenon;
   }
 }
 

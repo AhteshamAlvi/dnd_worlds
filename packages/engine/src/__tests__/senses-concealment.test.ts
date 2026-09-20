@@ -31,6 +31,7 @@ import { findConcealmentRequestIssues } from "../character/foundation/senses/con
 import type {
   ConcealmentRequest,
 } from "../character/foundation/senses/concealment/types";
+import type { CheckModifierContribution } from "../checks/types";
 
 import {
   PASSIVE_CONCEALMENT_BASE,
@@ -42,7 +43,7 @@ import {
 } from "./fixtures/senses";
 
 const SIGHT = route();
-const HEARING = route({ sense: "hearing" });
+const HEARING = route({ sense: "hearing", channel: "sound" });
 
 /* Concealment Derived Attribute: round((DEX 12 + WIS 14) / 2) = 13 -> +1. */
 const CONCEALMENT_MODIFIER = 1;
@@ -400,7 +401,7 @@ describe("retained Concealment state", () => {
 
     expect(concealmentRatingForRoute(state, SIGHT)?.total)
       .toBe(13 + CONCEALMENT_MODIFIER);
-    expect(concealmentRatingForRoute(state, route({ sense: "smell" })))
+    expect(concealmentRatingForRoute(state, route({ sense: "smell", channel: "airborne-chemical" })))
       .toBeUndefined();
   });
 
@@ -457,7 +458,12 @@ describe("retained Concealment state", () => {
         ...resolution,
         ratings: [{
           ...resolution.ratings[0]!,
-          route: { ...SIGHT, sense: "echolocation" as never },
+          /*
+           * An id no registry knows. "echolocation" used to serve here and no
+           * longer can — it is a registered Sense now, which is the open
+           * vocabulary working.
+           */
+          route: { ...SIGHT, sense: "clairvoyance-of-the-ninth-house" as never },
         }],
       },
       at: 0,
@@ -648,5 +654,121 @@ describe("retained Concealment state", () => {
     }))).toContain("character.senses.concealment.state.identity.missing");
 
     expect(state.status).toBe("concealed");
+  });
+});
+
+
+/*
+ * CHANNEL-SPECIFIC CONCEALMENT
+ *
+ * The thing channels exist for. Invisibility hides you from light and does
+ * nothing about a dog; silence hides your footsteps and nothing about your
+ * shadow. Before channels, both of those arrived at the sensory domain as
+ * "sight" and "smell" with no shared vocabulary for what was actually being
+ * hidden — so a hiding Effect had to name the OBSERVER'S ORGAN, and a creature
+ * with unusual eyes was hidden from nobody.
+ *
+ * Naming the carrier instead means one invisibility covers Sight, a registered
+ * compound-eye Sense and anything else that reads light, without listing any
+ * of them — and leaves every other channel untouched.
+ */
+describe("Concealment is specific to the channel it hides", () => {
+  const SMELL = route({ sense: "smell", channel: "airborne-chemical" });
+
+  function concealed(
+    modifiers: readonly CheckModifierContribution[],
+  ) {
+    return payloadOf(establishConcealment({
+      basis: characterBasis(),
+      routes: [SIGHT, HEARING, SMELL],
+      dice: roll(10),
+      modifiers,
+    }));
+  }
+
+  function totalFor(
+    resolution: ReturnType<typeof concealed>,
+    channel: string,
+  ): number {
+    return resolution.ratings.find((one) => one.route.channel === channel)!.total;
+  }
+
+  const INVISIBILITY = {
+    source: source("invisibility", "ability"),
+    scope: {
+      kind: "concealment" as const,
+      channel: { kind: "specific" as const, channel: "visible-light" },
+    },
+    amount: 8,
+    channel: "persistent" as const,
+  };
+
+  it("raises only the channel it names", () => {
+    const resolution = concealed([INVISIBILITY]);
+
+    expect(totalFor(resolution, "visible-light"))
+      .toBe(10 + CONCEALMENT_MODIFIER + 8);
+    expect(totalFor(resolution, "sound")).toBe(10 + CONCEALMENT_MODIFIER);
+    expect(totalFor(resolution, "airborne-chemical"))
+      .toBe(10 + CONCEALMENT_MODIFIER);
+  });
+
+  it("leaves every other channel exactly where an unmodified attempt left it", () => {
+    const plain = concealed([]);
+    const invisible = concealed([INVISIBILITY]);
+
+    for (const channel of ["sound", "airborne-chemical"]) {
+      expect([channel, totalFor(invisible, channel)])
+        .toEqual([channel, totalFor(plain, channel)]);
+    }
+  });
+
+  it("hides from anything that reads the channel, named or not", () => {
+    /*
+     * The modifier names `visible-light` and NOT `sight`. A registered Sense
+     * that also reads light is covered by the same one modifier, which is the
+     * whole reason the carrier is what gets named.
+     */
+    expect(INVISIBILITY.scope).not.toHaveProperty("sense");
+  });
+
+  it("still lets a Sense-specific Concealment name a Sense when it means one", () => {
+    const resolution = concealed([{
+      source: source("mirror-cloak", "item"),
+      scope: {
+        kind: "concealment",
+        sense: { kind: "specific", sense: "sight" },
+      },
+      amount: 5,
+      channel: "persistent",
+    }]);
+
+    expect(totalFor(resolution, "visible-light"))
+      .toBe(10 + CONCEALMENT_MODIFIER + 5);
+    expect(totalFor(resolution, "sound")).toBe(10 + CONCEALMENT_MODIFIER);
+  });
+
+  it("scopes silence, scent masking and thermal masking the same way", () => {
+    for (
+      const [channel, other] of [
+        ["sound", "visible-light"],
+        ["airborne-chemical", "sound"],
+      ] as const
+    ) {
+      const resolution = concealed([{
+        source: source(`mask-${channel}`, "ability"),
+        scope: {
+          kind: "concealment",
+          channel: { kind: "specific", channel },
+        },
+        amount: 6,
+        channel: "persistent",
+      }]);
+
+      expect([channel, totalFor(resolution, channel)])
+        .toEqual([channel, 10 + CONCEALMENT_MODIFIER + 6]);
+      expect([channel, totalFor(resolution, other)])
+        .toEqual([channel, 10 + CONCEALMENT_MODIFIER]);
+    }
   });
 });

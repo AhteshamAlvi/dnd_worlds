@@ -695,6 +695,7 @@ describe("authored modifiers reach the gameplay check resolver", () => {
       kind: "detection",
       mode: "active",
       sense: "hearing",
+      channel: "sound",
       phenomenon: "physical",
       subject: "entity",
     });
@@ -703,6 +704,7 @@ describe("authored modifiers reach the gameplay check resolver", () => {
       kind: "detection",
       mode: "active",
       sense: "sight",
+      channel: "visible-light",
       phenomenon: "physical",
       subject: "entity",
     });

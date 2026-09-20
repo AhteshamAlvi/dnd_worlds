@@ -35,13 +35,38 @@ export function resolveInvestigationCheck(
     );
   }
 
-  const score = request.sense === undefined
-    ? resolveDerivedAttribute("investigation", request.stats)
-    : request.profile!.senses[request.sense].investigation.score;
+  /*
+   * A sense-specific Investigation reads the ANATOMY-RESOLVED score, which is
+   * the whole reason it is sense-specific: examining a wound by eye is limited
+   * by the eyes doing the examining, and a character with one left sees half
+   * as much of it.
+   */
+  const senseScore = request.sense === undefined
+    ? undefined
+    : request.profile!.senses[request.sense]?.investigation.score;
+
+  if (request.sense !== undefined && senseScore === undefined) {
+    return sensoryFailure(
+      "character.senses.investigation.resolve",
+      "Resolve Investigation",
+      {
+        code: "character.senses.investigation.sense.unresolved",
+        message:
+          "This investigator has no resolved Sense to analyse the evidence with.",
+        audience: "developer",
+        required: "a Sense present in the investigator's profile",
+        actual: request.sense,
+      },
+    );
+  }
+
+  const score = senseScore ??
+    resolveDerivedAttribute("investigation", request.stats);
   const scope = {
     kind: "investigation" as const,
     subject: request.subject,
     ...(request.sense === undefined ? {} : { sense: request.sense }),
+    ...(request.channel === undefined ? {} : { channel: request.channel }),
     ...(request.phenomenon === undefined ? {} : { phenomenon: request.phenomenon }),
   };
   const checkRequest = {

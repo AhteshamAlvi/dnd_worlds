@@ -99,6 +99,10 @@ import type { BodyPartSelector } from "../foundation/body/selectors";
 import type { ActionCapacityContribution } from "../foundation/actions/types";
 import type {
   ResolvedSensoryEffects,
+  SourcedAnatomicalPointFunctionModifier,
+  SourcedSenseChannelGrant,
+  SourcedSenseChannelReceptionModifier,
+  SourcedSenseChannelSuppression,
   SourcedSenseGrant,
   SourcedSenseModifier,
   SourcedSenseSuppression,
@@ -455,6 +459,10 @@ export function resolveRuleEffects(
   const senseModifiers: SourcedSenseModifier[] = [];
   const senseGrants: SourcedSenseGrant[] = [];
   const senseSuppressions: SourcedSenseSuppression[] = [];
+  const senseChannelGrants: SourcedSenseChannelGrant[] = [];
+  const senseChannelSuppressions: SourcedSenseChannelSuppression[] = [];
+  const senseChannelReception: SourcedSenseChannelReceptionModifier[] = [];
+  const pointFunctionModifiers: SourcedAnatomicalPointFunctionModifier[] = [];
   const nenPerceptionGrants: ContributionSourceRef[] = [];
   const nenPerceptionSuppressions: ContributionSourceRef[] = [];
 
@@ -532,11 +540,51 @@ export function resolveRuleEffects(
         break;
 
       case "grantSense":
-        senseGrants.push({ source, sense: effect.sense });
+        senseGrants.push({
+          source,
+          sense: effect.sense,
+          ...(effect.enabledChannels === undefined
+            ? {}
+            : { enabledChannels: effect.enabledChannels }),
+          ...(effect.amount === undefined ? {} : { amount: effect.amount }),
+        });
         break;
 
       case "suppressSense":
         senseSuppressions.push({ source, sense: effect.sense });
+        break;
+
+      case "grantSenseChannel":
+        senseChannelGrants.push({
+          source,
+          sense: effect.sense,
+          channel: effect.channel,
+        });
+        break;
+
+      case "suppressSenseChannel":
+        senseChannelSuppressions.push({
+          source,
+          sense: effect.sense,
+          channel: effect.channel,
+        });
+        break;
+
+      case "modifySenseChannelReception":
+        senseChannelReception.push({
+          source,
+          sense: effect.sense,
+          channel: effect.channel,
+          amount: effect.amount,
+        });
+        break;
+
+      case "modifyAnatomicalPointFunction":
+        pointFunctionModifiers.push({
+          source,
+          pointId: effect.pointId,
+          multiplier: effect.multiplier,
+        });
         break;
 
       case "grantNenPerception":
@@ -672,6 +720,10 @@ export function resolveRuleEffects(
       senseModifiers,
       senseGrants,
       senseSuppressions,
+      senseChannelGrants,
+      senseChannelSuppressions,
+      senseChannelReception,
+      pointFunctionModifiers,
       nenPerceptionGrants,
       nenPerceptionSuppressions,
     },

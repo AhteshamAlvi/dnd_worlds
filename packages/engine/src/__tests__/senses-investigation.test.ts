@@ -27,7 +27,14 @@ import type { ConcealmentRating } from "../character/foundation/senses/concealme
 import { INFORMATION_BANDS } from "../character/foundation/senses/information";
 import { NEN_PRESENCE_EVIDENCE_ID } from "../character/senses/nen-concealment";
 
-import { roll, route, sensoryProfile, sensoryStats, source } from "./fixtures/senses";
+import {
+  effects,
+  roll,
+  route,
+  sensoryProfile,
+  sensoryStats,
+  source,
+} from "./fixtures/senses";
 
 /* Investigation: round((INT 18 + WIS 14 + PER 16) / 3) = 16 -> +3. */
 const INVESTIGATION_MODIFIER = 3;
@@ -211,17 +218,13 @@ describe("the finding helpers on their own", () => {
 
 describe("sense-specific Investigation", () => {
   const KEEN_EARS = sensoryProfile({
-    effects: {
+    effects: effects({
       senseModifiers: [{
         source: source("keen-ears"),
         sense: { kind: "specific", sense: "hearing" },
         amount: 6,
       }],
-      senseGrants: [],
-      senseSuppressions: [],
-      nenPerceptionGrants: [],
-      nenPerceptionSuppressions: [],
-    },
+    }),
   });
 
   it("substitutes the sense for ordinary PER", () => {

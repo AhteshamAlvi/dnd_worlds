@@ -41,6 +41,13 @@
  * preparation, so the preparation carries a binding of every identity it was
  * computed against, and settlement refuses anything that no longer matches. A
  * prepared check against the assassin cannot be spent on the guard.
+ *
+ * "Every identity" is meant literally: trigger, reacting combatant, observer,
+ * source, Concealment attempt, the COMPLETE route including its channel and
+ * receiver, the received intensity, and the Concealment total. Each of those
+ * either changes the dice count or changes the total the dice are compared
+ * against, so a binding that omitted one would let a preparation be spent on a
+ * check it was not costed for.
  */
 
 import type {
@@ -52,7 +59,10 @@ import {
   recordConcealmentDetection,
   type EstablishedConcealmentState,
 } from "../../character/foundation/senses/concealment";
-import type { ConcealmentRoute } from "../../character/foundation/senses/concealment";
+import {
+  sensoryRouteKey,
+  type SensoryRoute,
+} from "../../character/foundation/senses/routes";
 import {
   deriveConcealmentReactionDisadvantages,
   reconcileDetectionAdvantage,
@@ -94,9 +104,28 @@ export interface ReactionGateBinding {
   readonly reactingCombatantId: CombatantId;
   readonly observerId: string;
   readonly sourceId: string;
+
   /** Null when the source was already detected and no attempt is in play. */
   readonly attemptId: string | null;
-  readonly route: ConcealmentRoute | null;
+
+  /**
+   * The COMPLETE canonical route, receiver and channel included.
+   *
+   * All of it, because all of it can move between the two calls. A Gate
+   * prepared against the facial eyes must not be settled through a palm; a
+   * Gate prepared against `visible-light` must not be settled against `sound`,
+   * which would spend a preparation made in a lit room on a check in the dark.
+   */
+  readonly route: SensoryRoute | null;
+
+  /**
+   * What the cue was arriving at when the dice count was decided.
+   *
+   * Bound because it is a base contribution on the settling check: a threat
+   * that got louder after the preparation would be rolled against a Gate
+   * costed for the quieter one.
+   */
+  readonly receivedIntensity: number | null;
 }
 
 
@@ -172,14 +201,12 @@ function sameTrigger(left: ReactionTrigger, right: ReactionTrigger): boolean {
 
 
 function sameRoute(
-  left: ConcealmentRoute | null,
-  right: ConcealmentRoute | null,
+  left: SensoryRoute | null,
+  right: SensoryRoute | null,
 ): boolean {
   if (left === null || right === null) return left === right;
 
-  return left.sense === right.sense &&
-    left.phenomenon === right.phenomenon &&
-    left.subject === right.subject;
+  return sensoryRouteKey(left) === sensoryRouteKey(right);
 }
 
 
@@ -192,6 +219,7 @@ function sameBinding(
     left.observerId === right.observerId &&
     left.sourceId === right.sourceId &&
     left.attemptId === right.attemptId &&
+    left.receivedIntensity === right.receivedIntensity &&
     sameRoute(left.route, right.route);
 }
 
@@ -260,6 +288,7 @@ export function prepareReactionGate(
     sourceId: input.sourceId,
     attemptId: stillConcealed ? input.concealment!.attemptId : null,
     route: stillConcealed ? best.route : null,
+    receivedIntensity: stillConcealed ? best.receivedIntensity : null,
   };
 
   const finish = (
@@ -378,12 +407,7 @@ export function settleReactionGate(
     });
   }
 
-  const signature = input.route.cue.signature;
-  const routeNow: ConcealmentRoute = {
-    sense: signature.sense,
-    phenomenon: signature.phenomenon,
-    subject: signature.subject,
-  };
+  const routeNow = input.route.route.route;
 
   const stillConcealed = input.concealment !== null &&
     isConcealedFrom(input.concealment, input.observerId);
@@ -395,6 +419,9 @@ export function settleReactionGate(
     sourceId: input.sourceId,
     attemptId: stillConcealed ? input.concealment!.attemptId : null,
     route: stillConcealed ? routeNow : null,
+    receivedIntensity: stillConcealed
+      ? input.route.route.receivedIntensity
+      : null,
   };
 
   if (!sameBinding(input.preparation.binding, current)) {
@@ -438,7 +465,7 @@ export function settleReactionGate(
       message: "The prepared Concealment attempt does not cover this route.",
       audience: "developer",
       required: "a rated route",
-      actual: `${routeNow.sense}/${routeNow.phenomenon}/${routeNow.subject}`,
+      actual: sensoryRouteKey(routeNow),
     });
   }
 
@@ -455,7 +482,7 @@ export function settleReactionGate(
   const detected = resolveDetectionCheck({
     mode: "reaction",
     profile: input.profile,
-    cue: input.route.cue,
+    route: input.route.route,
     concealment: rating,
     dice: dice.payload,
     ...(input.modifiers === undefined ? {} : { modifiers: input.modifiers }),

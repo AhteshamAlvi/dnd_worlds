@@ -45,11 +45,11 @@ export type {
   ConcealmentCheckScopeSelector,
   InvestigationCheckScopeSelector,
   CheckScopeSelector,
+  SensoryChannelId,
+  SensoryChannelSelector,
 } from "./scopes";
 
 export {
-  SENSE_IDS,
-  PHYSICAL_SENSE_IDS,
   PERCEPTION_PHENOMENA,
   DETECTION_MODES,
   CONCEALMENT_MODES,

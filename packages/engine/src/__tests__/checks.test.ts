@@ -16,6 +16,7 @@ const ACTIVE_SIGHT_DETECTION: CheckScope = {
   kind: "detection",
   mode: "active",
   sense: "sight",
+  channel: "visible-light",
   phenomenon: "physical",
   subject: "entity",
 };
@@ -54,7 +55,7 @@ describe("checks", () => {
         {
           kind: "detection",
           mode: { kind: "specific", mode: "active" },
-          sense: { kind: "all-physical" },
+          sense: { kind: "family", family: "basic" },
         },
         ACTIVE_SIGHT_DETECTION,
       ),
@@ -64,7 +65,7 @@ describe("checks", () => {
       matchesCheckScope(
         {
           kind: "detection",
-          sense: { kind: "specific", sense: "extrasensory" },
+          sense: { kind: "specific", sense: "esp" },
         },
         ACTIVE_SIGHT_DETECTION,
       ),
@@ -127,6 +128,7 @@ describe("checks", () => {
           kind: "concealment",
           mode: "active",
           sense: "sight",
+          channel: "visible-light",
           phenomenon: "physical",
           subject: "entity",
         },

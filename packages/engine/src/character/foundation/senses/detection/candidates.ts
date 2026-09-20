@@ -20,7 +20,7 @@ import {
 } from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 import type { ConcealmentRating } from "../concealment";
-import type { PerceivedCue } from "../signatures";
+import type { GeneratedSensoryRoute } from "../routes";
 import type { ResolvedSensoryProfile } from "../types";
 import { resolvePassiveDetection } from "./passive";
 import type { DetectionResolution } from "./types";
@@ -29,7 +29,7 @@ export const DETECTION_IMPORTANCE = ["ambient", "relevant", "critical"] as const
 export type DetectionImportance = typeof DETECTION_IMPORTANCE[number];
 
 export interface DetectionCandidateRoute {
-  readonly cue: PerceivedCue;
+  readonly route: GeneratedSensoryRoute;
   readonly concealment: ConcealmentRating;
 }
 
@@ -70,11 +70,11 @@ export function resolvePassiveDetectionCandidates(input: {
   for (const candidate of input.candidates) {
     const results: DetectionResolution[] = [];
 
-    for (const { cue, concealment } of candidate.routes) {
+    for (const { route, concealment } of candidate.routes) {
       const result = resolvePassiveDetection({
         mode: "passive",
         profile: input.profile,
-        cue,
+        route,
         concealment,
         ...(input.modifiers === undefined ? {} : { modifiers: input.modifiers }),
       });

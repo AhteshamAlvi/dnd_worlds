@@ -44,7 +44,10 @@ import {
 import { resolveDetectionCheck } from "../foundation/senses/detection";
 import type { DetectionResolution } from "../foundation/senses/detection";
 import { sensoryFailure } from "../foundation/senses/diagnostics";
-import type { PerceivedCue } from "../foundation/senses/signatures";
+import {
+  sensoryRouteTermsKey,
+  type GeneratedSensoryRoute,
+} from "../foundation/senses/routes";
 import type { ResolvedSensoryProfile } from "../foundation/senses/types";
 import { NEN_PRESENCE_EVIDENCE_ID } from "./nen-concealment";
 
@@ -53,8 +56,15 @@ export interface ActiveSearchRequest {
   readonly observerId: string;
   readonly profile: ResolvedSensoryProfile;
 
-  /** The route being searched through, already perceived. */
-  readonly cue: PerceivedCue;
+  /**
+   * The route being searched through.
+   *
+   * ONE route, chosen by the caller, and generated rather than authored. A
+   * search is a deliberate act with a direction — you look, or you listen —
+   * and handing in every route the searcher has would be asking for a free
+   * roll per organ.
+   */
+  readonly route: GeneratedSensoryRoute;
 
   readonly concealment: EstablishedConcealmentState;
 
@@ -90,7 +100,7 @@ export function resolveActiveSearch(
 ): EngineResult<ActiveSearchResolution> {
   const traceId = "character.senses.search";
   const label = "Resolve an active search";
-  const signature = request.cue.signature;
+  const route = request.route.route;
 
   if (!isConcealedFrom(request.concealment, request.observerId)) {
     return sensoryFailure(traceId, label, {
@@ -102,11 +112,7 @@ export function resolveActiveSearch(
     });
   }
 
-  const rating = concealmentRatingForRoute(request.concealment, {
-    sense: signature.sense,
-    phenomenon: signature.phenomenon,
-    subject: signature.subject,
-  });
+  const rating = concealmentRatingForRoute(request.concealment, route);
 
   if (rating === undefined) {
     return sensoryFailure(traceId, label, {
@@ -114,16 +120,16 @@ export function resolveActiveSearch(
       message: "This Concealment attempt does not cover the route being searched.",
       audience: "developer",
       required: request.concealment.ratings
-        .map((entry) => `${entry.route.sense}/${entry.route.phenomenon}/${entry.route.subject}`)
+        .map((entry) => sensoryRouteTermsKey(entry.route))
         .join(" | "),
-      actual: `${signature.sense}/${signature.phenomenon}/${signature.subject}`,
+      actual: sensoryRouteTermsKey(route),
     });
   }
 
   const detected = resolveDetectionCheck({
     mode: "active",
     profile: request.profile,
-    cue: request.cue,
+    route: request.route,
     concealment: rating,
     dice: request.dice,
     ...(request.modifiers === undefined ? {} : { modifiers: request.modifiers }),
@@ -139,7 +145,7 @@ export function resolveActiveSearch(
     engineSuccess({
       detection,
       concealment,
-      evidenceIds: detection.detected && signature.phenomenon === "nen"
+      evidenceIds: detection.detected && route.phenomenon === "nen"
         ? [NEN_PRESENCE_EVIDENCE_ID]
         : [],
     }, {
@@ -149,7 +155,7 @@ export function resolveActiveSearch(
         formula: "rolled Detection against retained Concealment, ties failing, no Lead penalty",
         inputs: {
           observer: { value: request.observerId },
-          route: { value: `${signature.sense}/${signature.phenomenon}` },
+          route: { value: sensoryRouteTermsKey(route) },
         },
         output: detection.detected,
         children: [detection.trace],

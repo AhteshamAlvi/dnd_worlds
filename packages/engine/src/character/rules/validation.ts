@@ -38,7 +38,8 @@ import {
   type ActionCapacityKind,
 } from "../foundation/actions/types";
 import { isValidActionCapacityAmount } from "../foundation/actions/validation";
-import { isSenseId } from "../foundation/senses/scopes";
+import { isSenseId, getSenseDefinition } from "../foundation/senses/definitions";
+import { isSensoryChannelId } from "../foundation/senses/channels";
 import { isValidSenseSelector } from "../foundation/senses/validation";
 /*
  * No Effect, Requirement or NamedRequirement type is imported here any more,
@@ -89,7 +90,8 @@ export type RuleValidationIssue =
   | InvalidBodyMultiplierIssue
   | SuppressOnBaseAnatomyIssue
   | MissingAnatomyReferenceIssue
-  | InvalidSenseEffectIssue;
+  | InvalidSenseEffectIssue
+  | InvalidSensoryChannelEffectIssue;
 
 /*
  * An omitted mode is legal and means granted-while-present; anything present
@@ -118,6 +120,22 @@ function findGrantModeIssues(
 export interface InvalidSenseEffectIssue {
   readonly type: "invalid-sense-effect";
   readonly path: string;
+}
+
+
+/**
+ * A sensory Effect naming a channel that is not registered, or one that does
+ * not belong to the Sense it is being enabled on.
+ *
+ * The second half is the load-bearing one. A grant restricted to channels the
+ * Sense does not receive would resolve into a Sense that receives nothing and
+ * generates no routes — available on paper, blind in practice, with nothing
+ * anywhere saying why.
+ */
+export interface InvalidSensoryChannelEffectIssue {
+  readonly type: "invalid-sensory-channel-effect";
+  readonly path: string;
+  readonly channel: unknown;
 }
 
 
@@ -172,7 +190,9 @@ export interface InvalidEffectAmountIssue {
     | "modifyResolvedAttribute"
     | "modifyCheck"
     | "modifyActionCapacity"
-    | "modifySense";
+    | "modifySense"
+    | "modifySenseChannelReception"
+    | "modifyAnatomicalPointFunction";
   /*
    * `unknown`, not `number`. This issue exists BECAUSE the amount was not a
    * number, and declaring it as one would be the validator restating the
@@ -241,11 +261,13 @@ export interface MissingEffectReferenceIssue {
   readonly effectType:
     | "grantTrait"
     | "grantSkill"
-    | "grantTechnique";
+    | "grantTechnique"
+    | "modifyAnatomicalPointFunction";
   readonly field:
     | "traitId"
     | "skillId"
-    | "techniqueId";
+    | "techniqueId"
+    | "pointId";
 }
 
 
@@ -671,13 +693,139 @@ export function findEffectValidationIssues(
     case "grantSense": {
       if (!isSenseId(effect.sense)) {
         issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+
+        break;
       }
+
+      if (
+        effect.amount !== undefined && effect.amount !== null &&
+        (typeof effect.amount !== "number" ||
+          !Number.isFinite(effect.amount) || effect.amount <= 0)
+      ) {
+        issues.push({
+          type: "invalid-effect-amount",
+          path: `${path}.amount`,
+          effectType: "modifySense",
+          amount: effect.amount,
+        });
+      }
+
+      /*
+       * Every enabled channel must belong to the Sense being granted. A grant
+       * that "enabled" a channel the Sense cannot receive would produce an
+       * available Sense with an empty channel set — perceiving nothing, for
+       * reasons nothing reports.
+       */
+      const definition = getSenseDefinition(effect.sense);
+      const enabled = effect.enabledChannels;
+
+      if (enabled !== undefined) {
+        if (!Array.isArray(enabled)) {
+          issues.push({
+            type: "invalid-sensory-channel-effect",
+            path: `${path}.enabledChannels`,
+            channel: enabled,
+          });
+        } else {
+          for (const channel of enabled) {
+            if (
+              typeof channel !== "string" ||
+              definition?.receiveChannels.includes(channel) !== true
+            ) {
+              issues.push({
+                type: "invalid-sensory-channel-effect",
+                path: `${path}.enabledChannels`,
+                channel,
+              });
+            }
+          }
+        }
+      }
+
       break;
     }
 
     case "suppressSense": {
       if (!isValidSenseSelector(effect.sense)) {
         issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      break;
+    }
+
+    case "grantSenseChannel": {
+      if (!isSenseId(effect.sense)) {
+        issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      if (!isSensoryChannelId(effect.channel)) {
+        issues.push({
+          type: "invalid-sensory-channel-effect",
+          path: `${path}.channel`,
+          channel: effect.channel,
+        });
+      }
+      break;
+    }
+
+    case "suppressSenseChannel": {
+      if (!isValidSenseSelector(effect.sense)) {
+        issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      if (!isSensoryChannelId(effect.channel)) {
+        issues.push({
+          type: "invalid-sensory-channel-effect",
+          path: `${path}.channel`,
+          channel: effect.channel,
+        });
+      }
+      break;
+    }
+
+    case "modifySenseChannelReception": {
+      if (!isFiniteNumber(effect.amount)) {
+        issues.push({
+          type: "invalid-effect-amount",
+          path: `${path}.amount`,
+          effectType: type,
+          amount: effect.amount,
+        });
+      }
+      if (!isValidSenseSelector(effect.sense)) {
+        issues.push({ type: "invalid-sense-effect", path: `${path}.sense` });
+      }
+      if (!isSensoryChannelId(effect.channel)) {
+        issues.push({
+          type: "invalid-sensory-channel-effect",
+          path: `${path}.channel`,
+          channel: effect.channel,
+        });
+      }
+      break;
+    }
+
+    case "modifyAnatomicalPointFunction": {
+      if (!isNonEmptyId(effect.pointId)) {
+        issues.push({
+          type: "missing-effect-reference",
+          path: `${path}.pointId`,
+          effectType: type,
+          field: "pointId",
+        });
+      }
+
+      /*
+       * Non-negative, and finite. A negative multiplier would flip a
+       * contribution's sign and let an injury improve the Sense it damaged.
+       */
+      if (
+        typeof effect.multiplier !== "number" ||
+        !Number.isFinite(effect.multiplier) || effect.multiplier < 0
+      ) {
+        issues.push({
+          type: "invalid-effect-amount",
+          path: `${path}.multiplier`,
+          effectType: type,
+          amount: effect.multiplier,
+        });
       }
       break;
     }

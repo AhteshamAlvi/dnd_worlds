@@ -943,15 +943,21 @@ export {
  * band. Two different things, so two different names.
  */
 
-/* The closed sensory vocabulary — declared once, in foundation/senses/. */
+/*
+ * The sensory check vocabulary — declared once, in foundation/senses/.
+ *
+ * Senses and channels are no longer part of it: they are registries, exported
+ * just below. What remains closed here is mechanics — phenomena, modes and
+ * subjects — which a host does not extend.
+ */
 export type {
-  SenseId,
   PerceptionPhenomenon,
   DetectionMode,
   ConcealmentMode,
   DetectionSubject,
   InvestigationSubject,
   SenseSelector,
+  SensoryChannelSelector,
   PhenomenonSelector,
   DetectionModeSelector,
   ConcealmentModeSelector,
@@ -970,18 +976,71 @@ export type {
 } from "./character/foundation/senses/scopes";
 
 export {
-  SENSE_IDS,
-  PHYSICAL_SENSE_IDS,
   PERCEPTION_PHENOMENA,
   DETECTION_MODES,
   CONCEALMENT_MODES,
   DETECTION_SUBJECTS,
   INVESTIGATION_SUBJECTS,
-  isSenseId,
   isPerceptionPhenomenon,
+  isDetectionSubject,
   matchesSenseSelector,
+  matchesSensoryChannelSelector,
   matchesPhenomenonSelector,
 } from "./character/foundation/senses/scopes";
+
+/*
+ * The two registries the sensory vocabulary is now backed by.
+ *
+ * Senses and channels are registered content, exactly as Species and Traits
+ * are, so a host adds one by registering it rather than by editing the engine.
+ * A resolver that branched on one of these ids would undo that, and
+ * architecture.test.ts fails on one.
+ */
+export type {
+  SenseId,
+  SenseDefinition,
+  SenseFamily,
+  SenseAvailabilityKind,
+  SenseScoreBasis,
+  BuiltInSenseId,
+} from "./character/foundation/senses/definitions";
+
+export {
+  SENSE_DEFINITIONS,
+  SENSE_FAMILIES,
+  SENSE_AVAILABILITY_KINDS,
+  EXTRASENSORY_PERCEPTION_SENSE_ID,
+  senseRegistry,
+  getSenseDefinition,
+  isSenseId,
+  listSenses,
+  sensesReceiving,
+  senseReceivesChannel,
+  findSenseCatalogIssues,
+} from "./character/foundation/senses/definitions";
+
+export type {
+  SensoryChannelId,
+  SensoryChannelDefinition,
+  SensoryChannelPropagation,
+  SensoryIntensity,
+  BuiltInSensoryChannelId,
+} from "./character/foundation/senses/channels";
+
+export {
+  SENSORY_CHANNEL_DEFINITIONS,
+  SENSORY_CHANNEL_PROPAGATIONS,
+  MINIMUM_SENSORY_INTENSITY,
+  MAXIMUM_SENSORY_INTENSITY,
+  NEUTRAL_SENSORY_INTENSITY,
+  isSensoryIntensity,
+  sensoryIntensityModifier,
+  sensoryChannelRegistry,
+  getSensoryChannel,
+  isSensoryChannelId,
+  listSensoryChannels,
+  findSensoryChannelCatalogIssues,
+} from "./character/foundation/senses/channels";
 
 /*
  * The resolved profile, reachable on ResolvedCharacter.senses.
@@ -991,28 +1050,88 @@ export {
  */
 export type {
   ResolvedSense,
+  ResolvedSenseReceiver,
   ResolvedSensoryProfile,
   ResolvedNenPerception,
   SenseAvailabilityReason,
   SenseScoreContribution,
+  SenseAnatomicalContribution,
 } from "./character/foundation/senses/types";
 
-export { NATURAL_EXTRASENSORY_PERCEPTION_REQUIREMENTS } from "./character/foundation/senses/types";
+export {
+  getResolvedSense,
+  hasAvailableSense,
+  availableSenses,
+} from "./character/foundation/senses/types";
 
 export type { ResolveSensoryProfileOptions } from "./character/foundation/senses/profile";
-export { resolveSensoryProfile } from "./character/foundation/senses/profile";
+export {
+  NEN_PERCEPTION_SENSE_ID,
+  NEN_AWAKENING_SENSE_SOURCE,
+  resolveSensoryProfile,
+  localClusterKey,
+  receivedIntensityFor,
+} from "./character/foundation/senses/profile";
 
-/* One authored route through which a phenomenon may be sensed. */
+/*
+ * The resolved-fact boundary the sensory domain consumes.
+ *
+ * A cue carries registered channels and intensities. It does NOT carry a
+ * Sense, a receiver or a difficulty to detect, because those are the observer's
+ * and are derived. Deriving emissions from Items, attacks and events is a
+ * separate composition layer that does not exist yet and is deliberately not
+ * approximated here.
+ */
 export type {
+  SensoryEmissions,
   SensoryReception,
-  SensorySignature,
-  PerceivedCue,
-} from "./character/foundation/senses/signatures";
+  ResolvedSensoryCue,
+  SensoryCueIssue,
+} from "./character/foundation/senses/cues";
+
+export {
+  findSensoryCueIssues,
+  emittedChannels,
+} from "./character/foundation/senses/cues";
+
+export type {
+  AnatomicalSensoryReceiver,
+  DistributedSensoryReceiver,
+  GrantedSensoryReceiver,
+  SensoryReceiverRef,
+} from "./character/foundation/senses/receivers";
+
+export {
+  SENSORY_RECEIVER_KINDS,
+  receiverKey,
+  sameSensoryReceiver,
+  canonicalReceiver,
+  isCoatableReceiver,
+  receiverPointIds,
+  isSensoryReceiverRef,
+} from "./character/foundation/senses/receivers";
+
+export type {
+  SensoryRouteTerms,
+  SensoryRoute,
+  GeneratedSensoryRoute,
+  SensoryExposureFacts,
+  GenerateSensoryRoutesInput,
+} from "./character/foundation/senses/routes";
+
+export {
+  sensoryRouteTermsKey,
+  sensoryRouteKey,
+  sameSensoryRouteTerms,
+  sameSensoryRoute,
+  generateSensoryRoutes,
+} from "./character/foundation/senses/routes";
 
 /* Fundamental access, before any roll. */
 export type {
   SensoryAccessFailureReason,
   SensoryAccessResolution,
+  ResolveSensoryAccessInput,
 } from "./character/foundation/senses/access";
 
 export { resolveSensoryAccess } from "./character/foundation/senses/access";
@@ -1151,10 +1270,10 @@ export type { SensoryValidationIssue } from "./character/foundation/senses/valid
 
 export {
   isValidSenseSelector,
+  isValidSensoryChannelSelector,
   isValidPhenomenonSelector,
   isValidInformationThresholds,
   findInformationOverrideIssues,
-  findSensorySignatureIssues,
 } from "./character/foundation/senses/validation";
 
 /*

@@ -335,7 +335,7 @@ describe("no catalog is outside the registration barrier", () => {
 
   it("finds the registries it is checking", () => {
     /* Guards against the rules below passing because the walk found nothing. */
-    expect(registryFiles.length).toBeGreaterThan(9);
+    expect(registryFiles.length).toBeGreaterThan(11);
   });
 
   it("passes a NAMED validator to every createRegistry call", () => {
@@ -377,6 +377,8 @@ describe("no catalog is outside the registration barrier", () => {
       "findBodyPartDefinitionStructuralIssues",
       "findReferenceFormDefinitionStructuralIssues",
       "findAnatomicalPointDefinitionStructuralIssues",
+      "findSenseStructuralIssues",
+      "findSensoryChannelStructuralIssues",
     ];
 
     for (const path of registryFiles) {
@@ -896,10 +898,16 @@ describe("the sensory vocabulary has exactly one declaration", () => {
     (path) => !path.includes("__tests__"),
   );
 
-  /* `export const SENSE_IDS = [...]`, not `export { SENSE_IDS } from ...`. */
+  /*
+   * `export const PERCEPTION_PHENOMENA = [...]`, not a re-export.
+   *
+   * SENSE_IDS and PHYSICAL_SENSE_IDS used to head this list and are gone:
+   * Senses and channels are registry-backed open ids now, so "exactly one
+   * declaration" has become "exactly one registry", which is checked below.
+   * A copied array of Sense ids reappearing anywhere is what the sweep after
+   * this one refuses.
+   */
   const CLOSED_LISTS = [
-    "SENSE_IDS",
-    "PHYSICAL_SENSE_IDS",
     "PERCEPTION_PHENOMENA",
     "DETECTION_MODES",
     "CONCEALMENT_MODES",
@@ -908,7 +916,6 @@ describe("the sensory vocabulary has exactly one declaration", () => {
   ] as const;
 
   const SENSORY_TYPES = [
-    "SenseId",
     "PerceptionPhenomenon",
     "DetectionMode",
     "ConcealmentMode",
@@ -931,7 +938,11 @@ describe("the sensory vocabulary has exactly one declaration", () => {
   ] as const;
 
   /* Matching the selectors is part of the vocabulary, not a second opinion. */
-  const SENSORY_MATCHERS = ["matchesSenseSelector", "matchesPhenomenonSelector"] as const;
+  const SENSORY_MATCHERS = [
+    "matchesSenseSelector",
+    "matchesSensoryChannelSelector",
+    "matchesPhenomenonSelector",
+  ] as const;
 
   function declaringFiles(pattern: RegExp): readonly string[] {
     return everySource.filter((path) => pattern.test(readFileSync(path, "utf8")));
@@ -4783,5 +4794,341 @@ describe("Ken, Gyō and Shū compose upward and never downward", () => {
       join("character", "nen", "definitions.ts"),
       join("character", "nen", "zetsu.ts"),
     ]);
+  });
+});
+
+
+/*
+ * THE SENSORY SYSTEM
+ *
+ * Nine rules, and each of them is a shortcut somebody will reach for.
+ *
+ * The largest is the one about ids: Senses and channels are REGISTERED
+ * content, so a resolver that branches on `esp` or copies a list of Sense ids
+ * has quietly made the registry decorative. The previous model's closed
+ * six-member union is exactly what these forbid coming back.
+ *
+ * The rest are boundaries. Senses may not learn what Nen is, the body may not
+ * learn what a Sense is, and nothing under foundation/senses may start
+ * deriving how loud a sword is from the sword.
+ */
+describe("the sensory system keeps its boundaries", () => {
+  const SENSES_DIR = join(SRC, "character", "foundation", "senses");
+  const BODY_DIR = join(SRC, "character", "foundation", "body");
+
+  const everySource = sourceFilesUnder(SRC).filter(
+    (path) => !path.includes("__tests__") && path !== DECISION_LOG,
+  );
+
+  const production = (path: string): string => readFileSync(path, "utf8");
+
+  /* Comments explain these rules; only CODE is allowed to break them. */
+  function withoutComments(source: string): string {
+    return source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+  }
+
+  const SENSE_FILES = sourceFilesUnder(SENSES_DIR);
+  const BODY_FILES = sourceFilesUnder(BODY_DIR);
+
+  it("finds the directories it is checking", () => {
+    expect(SENSE_FILES.length).toBeGreaterThan(10);
+    expect(BODY_FILES.length).toBeGreaterThan(10);
+  });
+
+  it("gives Sense and channel definitions exactly one registry owner each", () => {
+    const owners = (label: string) =>
+      everySource.filter((path) =>
+        new RegExp(`createRegistry<[^>]*>\\(\\s*"${label}"`).test(production(path))
+      );
+
+    expect(owners("Sense")).toHaveLength(1);
+    expect(owners("Sensory Channel")).toHaveLength(1);
+    expect(owners("Sense")[0]!.endsWith(join("senses", "definitions.ts")))
+      .toBe(true);
+    expect(owners("Sensory Channel")[0]!.endsWith(join("senses", "channels.ts")))
+      .toBe(true);
+  });
+
+  it("leaves no second closed list of Sense ids anywhere", () => {
+    /*
+     * The shape this refuses is an array literal of built-in Sense ids — the
+     * old SENSE_IDS, under any name. A list like that compiles perfectly, and
+     * the first time a host registers a Sense it is silently wrong.
+     */
+    const offenders = everySource
+      .filter((path) => !path.endsWith(join("senses", "definitions.ts")))
+      .filter((path) =>
+        /\[\s*"sight"\s*,\s*"hearing"/.test(withoutComments(production(path)))
+      );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("never branches a generic resolver on a built-in special Sense id", () => {
+    /*
+     * `=== "esp"` and friends. The Senses named here are the ones whose rules
+     * look special enough to tempt a branch — ESP's grant-only availability,
+     * Echolocation's channel, Aura Perception's phenomenon — and every one of
+     * them is stated on its DEFINITION instead.
+     *
+     * definitions.ts is exempt because that is where the definitions are.
+     * profile.ts is exempt for exactly one line: turning a character's
+     * awakening into a grant of Aura Perception, which is a translation
+     * between two vocabularies rather than a rule.
+     */
+    const SPECIAL = [
+      "esp",
+      "echolocation",
+      "aura-perception",
+      "life-perception",
+      "vibration-sense",
+      "thermoreception",
+      "electroreception",
+      "magnetoreception",
+    ];
+
+    const EXEMPT = [
+      join("senses", "definitions.ts"),
+      join("senses", "profile.ts"),
+    ];
+
+    const offenders = everySource
+      .filter((path) => !EXEMPT.some((exempt) => path.endsWith(exempt)))
+      .filter((path) => {
+        const code = withoutComments(production(path));
+
+        return SPECIAL.some((id) =>
+          new RegExp(`[=!]==\\s*"${id}"`).test(code) ||
+          new RegExp(`case\\s+"${id}"`).test(code)
+        );
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("stores channel acceptance only on Sense definitions", () => {
+    /*
+     * `receiveChannels` is the ONE declaration of the channel relation. A
+     * channel definition growing a `receivedBy` or `senses` field would be a
+     * second declaration free to disagree with it.
+     */
+    const declarers = everySource.filter((path) =>
+      /\breceiveChannels\s*:/.test(withoutComments(production(path)))
+    );
+
+    for (const path of declarers) {
+      expect([path, path.includes(join("foundation", "senses"))])
+        .toEqual([path, true]);
+    }
+
+    const channels = production(join(SENSES_DIR, "channels.ts"));
+
+    expect(/\breceivedBy\b|\breceivingSenses\b/.test(channels)).toBe(false);
+  });
+
+  it("keeps the body foundation out of sensory resolution", () => {
+    /*
+     * The body carries Sensory metadata and validates its SHAPE. It must not
+     * import the Sense registry or the profile to do it — a membership test is
+     * not worth a runtime dependency from Body onto Senses, especially when
+     * Senses already depends on Body.
+     */
+    const offenders = BODY_FILES.filter((path) =>
+      /from\s+"[^"]*foundation\/senses|from\s+"\.\.\/senses/.test(production(path))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps Nen out of the sensory foundation", () => {
+    const offenders = SENSE_FILES.filter((path) =>
+      /from\s+"[^"]*\/nen\//.test(production(path))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps automatic emission composition out of the sensory domain", () => {
+    /*
+     * The boundary the ticket named non-negotiable. Senses consume RESOLVED
+     * emissions; it may not look at an Item, a Skill, an attack, a projectile,
+     * a material or a damage roll in order to invent one. Half a producer
+     * living here would be worse than none, because a partial composer is a
+     * set of rules nobody can find and nobody can override.
+     */
+    const FORBIDDEN = [
+      "equipment",
+      "actions/",
+      "combat",
+      "capabilities",
+      "gameplay",
+    ];
+
+    const offenders = SENSE_FILES.filter((path) => {
+      const code = production(path);
+
+      return FORBIDDEN.some((fragment) =>
+        new RegExp(`from\\s+"[^"]*${fragment}`).test(code)
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("leaves no Eye-specific Gyō vocabulary in production", () => {
+    const offenders = everySource.filter((path) =>
+      /\beyeSiteIds\b|\bEyeGyo\b|\bderiveEyeGyoBonuses\b|\bEYE_GYO_/
+        .test(withoutComments(production(path)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("leaves no automatic PER/SPI ESP unlock in production", () => {
+    const offenders = everySource.filter((path) =>
+      /NATURAL_EXTRASENSORY|natural-extrasensory-unlock/
+        .test(withoutComments(production(path)))
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("gives the sensory Gyō bonus table exactly one owner", () => {
+    const owners = everySource.filter((path) =>
+      /SENSORY_GYO_DECADE_THRESHOLDS|SENSORY_GYO_SATURATION_AURA\s*=/
+        .test(production(path))
+    );
+
+    expect(owners).toHaveLength(1);
+    expect(owners[0]!.endsWith(join("principles", "gyo.ts"))).toBe(true);
+  });
+
+  it("discriminates the two Gyō focus kinds rather than pairing two fields", () => {
+    const gyo = production(join(SRC, "character", "foundation", "nen", "principles", "gyo.ts"));
+
+    /*
+     * A union, so a focus carrying both a fist and an eye is not a request
+     * that gets refused — it is a request nobody can construct.
+     */
+    const union = gyo.slice(
+      gyo.indexOf("export type GyoFocusInput ="),
+      gyo.indexOf(";", gyo.indexOf("export type GyoFocusInput =")),
+    );
+
+    /*
+     * EXACTLY two members. A third alternative — an intersection carrying both
+     * shapes, say — would make a hybrid focus representable again, and the
+     * mutual exclusivity would be back to a rule somebody has to remember
+     * rather than one the type system keeps.
+     */
+    expect(union.split("|").filter((one) => one.trim().length > 0))
+      .toHaveLength(3);
+    expect(union).toContain("ReinforcementGyoFocusInput");
+    expect(union).toContain("SensoryGyoFocusInput");
+    expect(union).not.toContain("&");
+
+    /* Neither member carries the other's field. */
+    const bodyOf = (name: string): string => {
+      const start = gyo.indexOf(`interface ${name} {`);
+
+      expect(start).toBeGreaterThan(-1);
+
+      return gyo.slice(start, gyo.indexOf("\n}", start));
+    };
+
+    expect(bodyOf("ReinforcementGyoFocusInput")).not.toContain("pointIds");
+    expect(bodyOf("ReinforcementGyoFocusInput")).not.toContain("senseId");
+    expect(bodyOf("SensoryGyoFocusInput")).not.toContain("sites");
+    expect(bodyOf("SensoryGyoFocusInput")).not.toContain("edges");
+  });
+
+  it("keeps Detection rolling through ONE selected route", () => {
+    /*
+     * The sweep compares every candidate for free and returns one `best`; the
+     * rolled resolvers take a single route. A resolver that iterated routes
+     * and rolled inside the loop is the defect — a character with more senses
+     * must be better at noticing, not luckier.
+     */
+    const routes = production(join(SENSES_DIR, "detection", "routes.ts"));
+    const resolution = production(join(SENSES_DIR, "detection", "resolution.ts"));
+
+    expect(routes).toContain("resolvePassiveDetection");
+    expect(routes).not.toContain("resolveDetectionCheck");
+    expect(withoutComments(resolution)).not.toMatch(/for\s*\([^)]*routes/);
+  });
+
+  it("binds the complete route and the received intensity to a Reaction Gate", () => {
+    const gate = production(join(SRC, "gameplay", "senses", "reaction-gate.ts"));
+
+    expect(gate).toContain("readonly route: SensoryRoute | null");
+    expect(gate).toContain("readonly receivedIntensity: number | null");
+    expect(gate).toContain("left.receivedIntensity === right.receivedIntensity");
+
+    /* Route comparison goes through the canonical key, receiver included. */
+    expect(gate).toContain("sensoryRouteKey(left) === sensoryRouteKey(right)");
+  });
+
+  it("counts a received intensity in exactly one place", () => {
+    /*
+     * `received - 5` reaches a check through ONE named base contribution,
+     * built once in detection/scope.ts. Perception does not also add it, and
+     * neither passive nor rolled Detection derives it a second time.
+     */
+    const users = everySource
+      /* Barrels re-export it; they do not spend it. */
+      .filter((path) => !path.endsWith("index.ts"))
+      .filter((path) =>
+        /NEUTRAL_SENSORY_INTENSITY/.test(withoutComments(production(path)))
+      )
+      .map((path) => path.replace(SRC, ""))
+      .sort();
+
+    /*
+     * channels.ts DECLARES it, routes.ts fixes the arriving number onto the
+     * route, and detection/scope.ts turns that number into the one named base
+     * contribution both Detection resolvers use. Anything else appearing here
+     * is a fourth place the same circumstance could be priced.
+     */
+    expect(users).toEqual([
+      join("character", "foundation", "senses", "channels.ts"),
+      join("character", "foundation", "senses", "detection", "scope.ts"),
+      join("character", "foundation", "senses", "routes.ts"),
+    ]);
+
+    /*
+     * Perception may READ an intensity — it picks the loudest route to be read
+     * through — and may not SPEND one. Its check carries exactly one base
+     * contribution, the Sense's own modifier, because a cue's authored
+     * reception difficulty already says how hard it is to make sense of.
+     */
+    const perception = withoutComments(
+      production(join(SENSES_DIR, "perception", "resolution.ts")),
+    );
+
+    const start = perception.indexOf("baseContributions: [");
+    const contributions = perception.slice(
+      start,
+      perception.indexOf("],", start),
+    );
+
+    expect(start).toBeGreaterThan(-1);
+    expect(contributions).toContain("standardModifier");
+    expect(contributions).not.toContain("ntensity");
+    expect(contributions.split("{ id:")).toHaveLength(2);
+  });
+
+  it("keeps generic Aura and runtime free of Gyō and Sense ids", () => {
+    const generic = [
+      ...sourceFilesUnder(join(SRC, "character", "foundation", "aura")),
+      ...sourceFilesUnder(join(SRC, "runtime")),
+    ];
+
+    const offenders = generic.filter((path) =>
+      /\bgyo\b|\bsight\b|\bhearing\b|\besp\b/i.test(withoutComments(production(path)))
+    );
+
+    expect(offenders).toEqual([]);
   });
 });

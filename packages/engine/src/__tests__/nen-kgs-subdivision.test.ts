@@ -273,8 +273,7 @@ describe("a Gyō advance is the same however the time is chopped", () => {
       source: SELF,
       selectedOutput: 3000,
       selectedShift: 0.3,
-      focus: [HAND, ARM],
-      focusEdges: EDGES as never,
+      focus: { kind: "reinforcement", sites: [HAND, ARM], edges: EDGES as never },
       at: T0,
       nen: character.nen,
       attributes: character.attributes,
@@ -310,7 +309,11 @@ describe("a Gyō advance is the same however the time is chopped", () => {
     const stopped = findNenActivity(sliced.runtime, "gyo-1")!;
 
     expect(stopped.requested.payload)
-      .toEqual({ selectedShift: 0.3, focus: [HAND, ARM] });
+      .toEqual({
+        kind: "reinforcement",
+        selectedShift: 0.3,
+        focus: [HAND, ARM],
+      });
   });
 });
 

@@ -5,6 +5,13 @@
  * a route and the roll missed" are different answers. The old shape conflated
  * them behind one boolean, so a failed roll and a blind character looked alike
  * to anything narrowing on `perceived`.
+ *
+ * Access is now entirely a question about CHANNELS: a cue is inaccessible when
+ * no available Sense receives any channel it is emitting on, through a
+ * receiver that is working and reachable. Nothing here branches on a
+ * phenomenon or a Sense id, which is why the old "intent needs Extrasensory"
+ * case is gone — it was a hard-coded rule, and a registered Sense that read
+ * intent could never have satisfied it.
  */
 
 import { describe, expect, it } from "vitest";
@@ -23,7 +30,7 @@ import type {
   UnperceivedPerception,
 } from "../character/foundation/senses/perception/types";
 
-import { roll, sensoryProfile, signature, source } from "./fixtures/senses";
+import { cue, effects, roll, sensoryProfile, source } from "./fixtures/senses";
 
 /*
  * Narrowing helpers. The union no longer carries `band` on every member — an
@@ -63,10 +70,16 @@ function expectInaccessible(
 
 const SIGHT_MODIFIER = 3;
 
+/*
+ * The default cue here is an UNCERTAIN one, because that is the case this
+ * suite is mostly about. A cue with no authored reception is received
+ * automatically — which is the right default for the shared fixture, since a
+ * cue built for Detection has no reception at all.
+ */
 function request(overrides: Partial<PerceptionRequest> = {}): PerceptionRequest {
   return {
     profile: sensoryProfile(),
-    signature: signature(),
+    cue: cue({ reception: { kind: "uncertain", difficulty: 10 } }),
     ...overrides,
   };
 }
@@ -79,18 +92,20 @@ function issueTypes(input: PerceptionRequest): readonly string[] {
 describe("automatic reception", () => {
   it("is perceived at the authored band without rolling", () => {
     const result = expectPerceived(resolvePerception(request({
-      signature: signature({ reception: { kind: "automatic", band: "partial" } }),
+      cue: cue({ reception: { kind: "automatic", band: "partial" } }),
     })));
 
     expect(result.perceived).toBe(true);
     expect(result.band).toBe("partial");
     expect(result.check).toBeUndefined();
-    expect(result.cue.perceptionBand).toBe("partial");
+    expect(result.cue.id).toBe("footstep");
+    expect(result.route.sense).toBe("sight");
+    expect(result.route.channel).toBe("visible-light");
   });
 
   it("defaults to the full band when none is authored", () => {
     const result = expectPerceived(resolvePerception(request({
-      signature: signature({ reception: { kind: "automatic" } }),
+      cue: cue({ reception: { kind: "automatic" } }),
     })));
 
     expect(result.band).toBe("full");
@@ -101,7 +116,7 @@ describe("automatic reception", () => {
 describe("impossible reception", () => {
   it("is inaccessible rather than a failed roll", () => {
     const result = expectInaccessible(resolvePerception(request({
-      signature: signature({
+      cue: cue({
         reception: { kind: "impossible", reason: "sealed behind stone" },
       }),
     })));
@@ -117,7 +132,7 @@ describe("impossible reception", () => {
      */
     expect(() =>
       resolvePerception(request({
-        signature: signature({ reception: { kind: "impossible" } }),
+        cue: cue({ reception: { kind: "impossible" } }),
       }))
     ).not.toThrow();
   });
@@ -125,27 +140,40 @@ describe("impossible reception", () => {
 
 
 describe("inaccessible routes", () => {
-  it("reports an unavailable sense", () => {
+  it("reports a Sense whose anatomy is gone", () => {
     const result = expectInaccessible(resolvePerception(request({
-      profile: sensoryProfile({ unavailablePhysicalSenses: ["sight"] }),
+      profile: sensoryProfile({
+        pointStates: {
+          "left-eye:head-1": "archived-removed",
+          "right-eye:head-1": "archived-removed",
+        },
+      }),
     })));
 
-    expect(result.reason).toBe("sense-unavailable");
+    expect(result.reason).toBe("no-compatible-route");
   });
 
-  it("reports Nen as inaccessible to a physical sense without Nen Perception", () => {
+  it("reports a channel nothing this creature has can receive", () => {
     const result = expectInaccessible(resolvePerception(request({
-      signature: signature({ sense: "sight", phenomenon: "nen" }),
+      cue: cue({ channel: "magnetic-field" }),
     })));
 
-    expect(result.reason).toBe("phenomenon-inaccessible");
+    expect(result.reason).toBe("no-compatible-route");
   });
 
-  it("opens the Nen route once Nen Perception is available", () => {
+  it("reports Aura as inaccessible to an unawakened character", () => {
+    const result = expectInaccessible(resolvePerception(request({
+      cue: cue({ channel: "aura", phenomenon: "nen" }),
+    })));
+
+    expect(result.reason).toBe("no-compatible-route");
+  });
+
+  it("opens the Aura route once the character is awakened", () => {
     const result = payloadOf(resolvePerception(request({
       profile: sensoryProfile({ nenAwakened: true }),
-      signature: signature({
-        sense: "sight",
+      cue: cue({
+        channel: "aura",
         phenomenon: "nen",
         reception: { kind: "automatic" },
       }),
@@ -154,12 +182,21 @@ describe("inaccessible routes", () => {
     expect(result.status).toBe("perceived");
   });
 
-  it("reports intent as inaccessible to anything but Extrasensory", () => {
+  it("reports a contact channel nothing is touching", () => {
     const result = expectInaccessible(resolvePerception(request({
-      signature: signature({ sense: "hearing", phenomenon: "intent" }),
+      cue: cue({ channel: "contact-chemical" }),
     })));
 
-    expect(result.reason).toBe("phenomenon-inaccessible");
+    expect(result.reason).toBe("no-compatible-route");
+  });
+
+  it("opens a contact route once the caller supplies the contact", () => {
+    const result = payloadOf(resolvePerception(request({
+      cue: cue({ channel: "contact-chemical", reception: { kind: "automatic" } }),
+      exposure: { contactedPointIds: ["tongue:head-1"] },
+    })));
+
+    expect(result.status).toBe("perceived");
   });
 });
 
@@ -171,7 +208,7 @@ describe("uncertain reception", () => {
 
     expect(result.band).toBe("partial");
     expect(result.check?.margin).toBe(5);
-    expect(result.cue.signature.id).toBe("footstep");
+    expect(result.cue.id).toBe("footstep");
   });
 
   it("is not-perceived — not inaccessible — when the roll misses", () => {
@@ -214,23 +251,19 @@ describe("uncertain reception", () => {
 
   it("uses the sense's own modifier, not raw PER, when the sense was raised", () => {
     const profile = sensoryProfile({
-      effects: {
+      effects: effects({
         senseModifiers: [{
           source: source("keen-ears"),
           sense: { kind: "specific", sense: "hearing" },
           amount: 4,
         }],
-        senseGrants: [],
-        senseSuppressions: [],
-        nenPerceptionGrants: [],
-        nenPerceptionSuppressions: [],
-      },
+      }),
     });
 
     // Hearing is 20 -> +5. 7 + 5 = 12 against 10 -> margin 2 -> minimal.
     const heard = payloadOf(resolvePerception(request({
       profile,
-      signature: signature({ sense: "hearing" }),
+      cue: cue({ channel: "sound" }),
       dice: roll(7),
     })));
     const seen = payloadOf(resolvePerception(request({ profile, dice: roll(7) })));
@@ -246,7 +279,7 @@ describe("natural 1 and natural 20 carry no automatic outcome", () => {
   it("lets a natural 1 succeed when the modifier is enough", () => {
     // 1 + 3 = 4 against difficulty 1 -> margin 3 -> minimal.
     const result = expectPerceived(resolvePerception(request({
-      signature: signature({ reception: { kind: "uncertain", difficulty: 1 } }),
+      cue: cue({ reception: { kind: "uncertain", difficulty: 1 } }),
       dice: roll(1),
     })));
 
@@ -256,7 +289,7 @@ describe("natural 1 and natural 20 carry no automatic outcome", () => {
   it("lets a natural 20 fail when the difficulty is out of reach", () => {
     // 20 + 3 = 23 against difficulty 20 is fine; against 20 with margin 3.
     const result = expectPerceived(resolvePerception(request({
-      signature: signature({ reception: { kind: "uncertain", difficulty: 20 } }),
+      cue: cue({ reception: { kind: "uncertain", difficulty: 20 } }),
       dice: roll(20),
     })));
 
@@ -272,7 +305,7 @@ describe("natural 1 and natural 20 carry no automatic outcome", () => {
 
   it("gives a natural 1 no automatic failure flag", () => {
     const result = expectPerceived(resolvePerception(request({
-      signature: signature({ reception: { kind: "uncertain", difficulty: 1 } }),
+      cue: cue({ reception: { kind: "uncertain", difficulty: 1 } }),
       dice: roll(1),
     })));
 
@@ -289,14 +322,14 @@ describe("validate-then-resolve", () => {
 
   it("reports dice-unnecessary for automatic reception", () => {
     expect(issueTypes(request({
-      signature: signature({ reception: { kind: "automatic" } }),
+      cue: cue({ reception: { kind: "automatic" } }),
       dice: roll(12),
     }))).toContain("dice-unnecessary");
   });
 
   it("reports dice-unnecessary for impossible reception", () => {
     expect(issueTypes(request({
-      signature: signature({ reception: { kind: "impossible" } }),
+      cue: cue({ reception: { kind: "impossible" } }),
       dice: roll(12),
     }))).toContain("dice-unnecessary");
   });
@@ -307,7 +340,7 @@ describe("validate-then-resolve", () => {
 
   it("accepts a well-formed automatic request", () => {
     expect(issueTypes(request({
-      signature: signature({ reception: { kind: "automatic" } }),
+      cue: cue({ reception: { kind: "automatic" } }),
     }))).toEqual([]);
   });
 
@@ -325,16 +358,16 @@ describe("validate-then-resolve", () => {
       .toContain("character.senses.dice.missing");
   });
 
-  it("reports a malformed signature", () => {
+  it("reports a malformed cue", () => {
     expect(issueTypes(request({
-      signature: { ...signature(), id: "   " },
+      cue: { ...cue({ reception: { kind: "uncertain", difficulty: 10 } }), id: "   " },
       dice: roll(12),
     }))).toContain("identifier-missing");
   });
 
   it("reports an out-of-range authored difficulty", () => {
     expect(issueTypes(request({
-      signature: signature({ reception: { kind: "uncertain", difficulty: 21 } }),
+      cue: cue({ reception: { kind: "uncertain", difficulty: 21 } }),
       dice: roll(12),
     }))).toContain("difficulty-invalid");
   });

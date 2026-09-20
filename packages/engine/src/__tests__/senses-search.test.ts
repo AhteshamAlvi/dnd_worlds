@@ -26,14 +26,13 @@ import {
   resolveNenConcealmentModifiers,
 } from "../character/senses/nen-concealment";
 import { resolveCheckModifier } from "../checks/modifiers";
-import type { PerceivedCue } from "../character/foundation/senses/signatures";
 
 import {
+  generatedRoute,
   roll,
   route,
   sensoryProfile,
   sensoryStats,
-  signature,
   source,
 } from "./fixtures/senses";
 import { standardAwakenedNen } from "./fixtures/nen";
@@ -83,8 +82,13 @@ function inZetsu(nen: NenState): NenActivityRuntime {
 }
 
 const SIGHT = route();
-const HEARING = route({ sense: "hearing" });
-const NEN_PRESENCE = route({ sense: "extrasensory", phenomenon: "nen", subject: "entity" });
+const HEARING = route({ sense: "hearing", channel: "sound" });
+const NEN_PRESENCE = route({
+  sense: "aura-perception",
+  channel: "aura",
+  phenomenon: "nen",
+  subject: "entity",
+});
 
 /* Concealment Derived Attribute: round((DEX 12 + WIS 14) / 2) = 13 -> +1. */
 const CONCEALMENT_MODIFIER = 1;
@@ -92,11 +96,26 @@ const CONCEALMENT_MODIFIER = 1;
 /* Sight Detection: round((PER 16 + WIS 14) / 2) = 15 -> +2. */
 const SIGHT_DETECTION_MODIFIER = 2;
 
-function cue(sense: "sight" | "hearing" = "sight"): PerceivedCue {
-  return {
-    signature: signature({ id: `${sense}-cue`, sense }),
-    perceptionBand: "partial",
-  };
+const PROFILE = sensoryProfile();
+const AWAKENED = sensoryProfile({ nenAwakened: true });
+
+function generated(
+  sense: "sight" | "hearing" | "aura-perception" = "sight",
+  profile = PROFILE,
+) {
+  const channel = sense === "sight"
+    ? "visible-light"
+    : sense === "hearing"
+      ? "sound"
+      : "aura";
+
+  return generatedRoute(profile, {
+    id: `${sense}-cue`,
+    emissions: { [channel]: 5 },
+    ...(sense === "aura-perception"
+      ? { phenomenon: "nen" as const }
+      : {}),
+  });
 }
 
 function hidden(retained = 13): EstablishedConcealmentState {
@@ -121,7 +140,7 @@ function search(overrides: Partial<Parameters<typeof resolveActiveSearch>[0]> = 
   return resolveActiveSearch({
     observerId: "gon",
     profile: sensoryProfile(),
-    cue: cue(),
+    route: generated(),
     concealment: hidden(),
     dice: roll(20),
     at: 1,
@@ -240,10 +259,10 @@ describe("active searching", () => {
 
   it("refuses a route the attempt never covered", () => {
     expect(errorCodesOf(search({
-      cue: {
-        signature: signature({ id: "smell-cue", sense: "smell" }),
-        perceptionBand: "partial",
-      },
+      route: generatedRoute(PROFILE, {
+        id: "smell-cue",
+        emissions: { "airborne-chemical": 5 },
+      }),
     }))).toContain("character.senses.search.route.uncovered");
   });
 
@@ -271,15 +290,7 @@ describe("active searching", () => {
     const result = payloadOf(search({
       profile: sensoryProfile({ nenAwakened: true }),
       concealment: state,
-      cue: {
-        signature: signature({
-          id: "aura-cue",
-          sense: "extrasensory",
-          phenomenon: "nen",
-          subject: "entity",
-        }),
-        perceptionBand: "partial",
-      },
+      route: generated("aura-perception", AWAKENED),
       dice: roll(20),
     }));
 
@@ -314,6 +325,7 @@ describe("Zetsu as a Concealment modifier", () => {
       kind: "concealment",
       mode: "established",
       sense: "extrasensory",
+      channel: "visible-light",
       phenomenon: "nen",
       subject: "entity",
     })).toBe(CONCEALMENT_MODIFIER + 5);
@@ -352,6 +364,7 @@ describe("Zetsu as a Concealment modifier", () => {
         kind: "concealment",
         mode: "established",
         sense: "extrasensory",
+        channel: "visible-light",
         phenomenon: "nen",
         subject: "entity",
       })).toBe(CONCEALMENT_MODIFIER + EXPECTED[rank - 1]!);
@@ -365,17 +378,43 @@ describe("Zetsu as a Concealment modifier", () => {
       kind: "concealment",
       mode: "established",
       sense: "extrasensory",
+      channel: "visible-light",
       phenomenon: "nen",
       subject: "phenomenon",
     })).toBe(CONCEALMENT_MODIFIER + 5);
   });
 
   it.each([
-    ["sight of the body", { sense: "sight", phenomenon: "physical", subject: "entity" }],
-    ["footsteps", { sense: "hearing", phenomenon: "physical", subject: "entity" }],
-    ["a scent", { sense: "smell", phenomenon: "physical", subject: "entity" }],
-    ["physical tracks", { sense: "sight", phenomenon: "physical", subject: "trace" }],
-    ["Nen residue left behind", { sense: "extrasensory", phenomenon: "nen", subject: "trace" }],
+    ["sight of the body", {
+      sense: "sight",
+      channel: "visible-light",
+      phenomenon: "physical",
+      subject: "entity",
+    }],
+    ["footsteps", {
+      sense: "hearing",
+      channel: "sound",
+      phenomenon: "physical",
+      subject: "entity",
+    }],
+    ["a scent", {
+      sense: "smell",
+      channel: "airborne-chemical",
+      phenomenon: "physical",
+      subject: "entity",
+    }],
+    ["physical tracks", {
+      sense: "sight",
+      channel: "visible-light",
+      phenomenon: "physical",
+      subject: "trace",
+    }],
+    ["Nen residue left behind", {
+      sense: "aura-perception",
+      channel: "aura",
+      phenomenon: "nen",
+      subject: "trace",
+    }],
   ] as const)("contributes nothing to %s", (_name, scope) => {
     const modifiers = payloadOf(resolveNenConcealmentModifiers(inZetsu(nen), nen));
 

@@ -9,26 +9,21 @@ import {
   missingSensoryDiceError,
   sensoryFailure,
 } from "../diagnostics";
+import { sensoryRouteTermsKey } from "../routes";
 import { compareDetectionTotals } from "./outcome";
+import { detectionScopeFor, intensityContribution } from "./scope";
 import type { DetectionRequest, DetectionResolution } from "./types";
 import { resolvePassiveDetection } from "./passive";
 
 function routeMismatch(request: DetectionRequest): EngineResult<never> | undefined {
-  const signature = request.cue.signature;
-  const route = request.concealment.route;
+  const route = sensoryRouteTermsKey(request.route.route);
+  const rated = sensoryRouteTermsKey(request.concealment.route);
 
-  if (
-    route.sense !== signature.sense ||
-    route.phenomenon !== signature.phenomenon ||
-    route.subject !== signature.subject
-  ) {
+  if (route !== rated) {
     return sensoryFailure(
-      `character.senses.detection.${request.mode}.${signature.id}`,
+      `character.senses.detection.${request.mode}.${request.route.cueId}`,
       `Resolve ${request.mode} Detection`,
-      mismatchedSensoryRouteError(
-        `${signature.sense}/${signature.phenomenon}/${signature.subject}`,
-        `${route.sense}/${route.phenomenon}/${route.subject}`,
-      ),
+      mismatchedSensoryRouteError(route, rated),
     );
   }
 
@@ -57,30 +52,44 @@ export function resolveDetectionCheck(
 
   if (request.mode === "passive") return resolvePassiveDetection(request);
 
-  const signature = request.cue.signature;
+  const generated = request.route;
+  const route = generated.route;
 
   if (request.dice === undefined) {
     return sensoryFailure(
-      `character.senses.detection.${request.mode}.${signature.id}`,
+      `character.senses.detection.${request.mode}.${generated.cueId}`,
       `Resolve ${request.mode} Detection`,
       missingSensoryDiceError("Active and reaction Detection"),
     );
   }
 
-  const sense = request.profile.senses[signature.sense];
+  const sense = request.profile.senses[route.sense];
+
+  if (sense === undefined) {
+    return sensoryFailure(
+      `character.senses.detection.${request.mode}.${generated.cueId}`,
+      `Resolve ${request.mode} Detection`,
+      {
+        code: "character.senses.detection.sense.unresolved",
+        message:
+          "This observer has no resolved Sense for the route being detected through.",
+        audience: "developer",
+        required: "a Sense present in the observer's profile",
+        actual: route.sense,
+      },
+    );
+  }
+
   const checkResult = resolveCheck({
-    scope: {
-      kind: "detection",
-      mode: request.mode,
-      sense: signature.sense,
-      phenomenon: signature.phenomenon,
-      subject: signature.subject,
-    },
+    scope: detectionScopeFor(request.mode, route),
     dice: request.dice,
-    baseContributions: [{
-      id: "senseAdjustedDetection.standardModifier",
-      amount: sense.detection.standardModifier,
-    }],
+    baseContributions: [
+      {
+        id: "senseAdjustedDetection.standardModifier",
+        amount: sense.detection.standardModifier,
+      },
+      intensityContribution(generated),
+    ],
     modifiers: request.modifiers ?? [],
   });
 
@@ -93,10 +102,14 @@ export function resolveDetectionCheck(
   );
 
   const trace = createTraceNode({
-    id: `character.senses.detection.${request.mode}.${signature.id}`,
+    id: `character.senses.detection.${request.mode}.${generated.cueId}`,
     label: `Resolve ${request.mode} Detection`,
     formula: "detected when Detection total > Concealment total; a tie stays hidden",
-    inputs: { detection: { value: check.total }, concealment: { value: request.concealment.total } },
+    inputs: {
+      detection: { value: check.total },
+      concealment: { value: request.concealment.total },
+      receivedIntensity: { value: generated.receivedIntensity },
+    },
     output: detected,
     children: [check.trace, request.concealment.trace],
   });
@@ -107,7 +120,8 @@ export function resolveDetectionCheck(
     observerTotal: check.total,
     concealmentTotal: request.concealment.total,
     margin,
-    route: request.concealment.route,
+    route,
+    receivedIntensity: generated.receivedIntensity,
     check,
     trace,
   }, { root: trace });

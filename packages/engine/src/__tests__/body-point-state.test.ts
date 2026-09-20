@@ -193,11 +193,22 @@ describe("damage writes it", () => {
 
     expect(outcome.destroyedPartIds).toContain("head-1");
 
+    /*
+     * The sensory organs on the Head go with it, exactly as the Brain and the
+     * Eyes do. Destroying a head destroys the ears, nose, tongue and the skin
+     * over all of it — and the archive records each one, so extraordinary
+     * regeneration has a specific structure to restore.
+     */
     expect(outcome.destroyedPointIds.slice().sort()).toEqual([
       "brain:head-1",
       "jaw:head-1",
+      "left-ear:head-1",
       "left-eye:head-1",
+      "olfactory-organs:head-1",
+      "right-ear:head-1",
       "right-eye:head-1",
+      "tactile-surface:head-1",
+      "tongue:head-1",
     ]);
 
     for (const pointId of outcome.destroyedPointIds) {

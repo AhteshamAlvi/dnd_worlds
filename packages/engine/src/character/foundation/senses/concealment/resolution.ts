@@ -60,7 +60,14 @@ export function resolveConcealmentCheck(
 
   for (const route of request.routes) {
     const result = resolveCheck({
-      scope: { kind: "concealment", mode: request.mode, ...route },
+      scope: {
+        kind: "concealment",
+        mode: request.mode,
+        sense: route.sense,
+        channel: route.channel,
+        phenomenon: route.phenomenon,
+        subject: route.subject,
+      },
       dice,
       baseContributions,
       modifiers: request.modifiers ?? [],

@@ -138,8 +138,11 @@ function start(
         activityId: "gyo-1",
         selectedOutput: 2000,
         selectedShift: 0.25,
-        focus: [HAND, ARM],
-        focusEdges: EDGES as never,
+        focus: {
+          kind: "reinforcement",
+          sites: [HAND, ARM],
+          edges: EDGES as never,
+        },
       });
 
     case "shu":

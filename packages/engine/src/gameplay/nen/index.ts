@@ -19,7 +19,7 @@
  *             Gyō shift lands on it
  *   items     what each Item's contact path transmits, and what that does to
  *             the Item — once
- *   senses    the single modifier eye Gyō contributes to one concrete check
+ *   senses    the single modifier Sensory Gyō contributes to one concrete check
  *
  * NOTHING BELOW THIS DIRECTORY IMPORTS IT. That is the direction the whole
  * arrangement depends on, and an architecture test holds it.
@@ -36,8 +36,12 @@ export type {
 } from "./actions";
 
 export {
+  COATING_POINT_SITE_PREFIX,
   coatingAt,
+  protectiveAuraOn,
+  protectiveCoatingFor,
   resolveCoatingBoundary,
+  sensoryAuraOn,
 } from "./coating";
 
 export type {
@@ -45,7 +49,9 @@ export type {
   CoatingFocus,
   CoatingItem,
   CoatingSite,
+  ReinforcementCoatingFocus,
   ResolvedCoatingBoundary,
+  SensoryCoatingFocus,
 } from "./coating";
 
 export {
@@ -66,13 +72,15 @@ export type {
 } from "./items";
 
 export {
-  eyeGyoAura,
-  resolveEyeGyoContribution,
-  withEyeGyoModifier,
+  SENSORY_GYO_CHECK_KINDS,
+  resolveSensoryGyoContribution,
+  sensoryGyoFocusGroups,
+  withSensoryGyoModifier,
 } from "./senses";
 
 export type {
-  EyeGyoCheck,
-  EyeGyoProjection,
-  EyeGyoProjectionRequest,
+  SensoryGyoCheck,
+  SensoryGyoCheckKind,
+  SensoryGyoProjection,
+  SensoryGyoProjectionRequest,
 } from "./senses";

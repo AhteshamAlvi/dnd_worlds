@@ -223,7 +223,7 @@ describe("standard Special Point content", () => {
     expect(result.issues).toEqual([]);
   });
 
-  it("resolves to exactly the 27 expected instances over the standard Anatomy", () => {
+  it("resolves to exactly the 45 expected instances over the standard Anatomy", () => {
     const resolved = resolveCriticalPoints(
       STANDARD_HUMANOID_ANATOMY,
       BODY_PART_DEFINITIONS,
@@ -234,6 +234,16 @@ describe("standard Special Point content", () => {
      * 20 instances became 27. The roster gained Eyes, a Jaw, Respiratory
      * Organs, an Abdominal Core, a Solar Plexus, a Gut and Armpits, and lost
      * Face, Upper Organs and Lower Organs.
+     *
+     * The eighteen Sensory points are the second addition: two Ears, the
+     * Olfactory Organs, a Tongue, two Palms and one Tactile Surface per Body
+     * Part. The Eyes were already here and are now Sensory as well as Critical
+     * and Weak, which is the flag model doing what it exists for.
+     *
+     * A Tactile Surface on every part is not bloat — it is skin, and skin is
+     * where Touch comes from. Its footprint is the host remainder, so those
+     * thirteen instances add no surface area at all; they partition what was
+     * already there.
      *
      * Note where the limb joints are hosted. A Wrist sits on the ARM and
      * designates the Hand, so damage lands on the Arm while the threshold is
@@ -259,14 +269,32 @@ describe("standard Special Point content", () => {
         "jaw:head-1",
         "knee:leg-1",
         "knee:leg-2",
+        "left-ear:head-1",
         "left-eye:head-1",
         "lower-spine:lower-body-1",
         "neck:neck-1",
+        "olfactory-organs:head-1",
+        "palm:hand-1",
+        "palm:hand-2",
         "respiratory-organs:upper-body-1",
+        "right-ear:head-1",
         "right-eye:head-1",
         "shoulder:arm-1",
         "shoulder:arm-2",
         "solar-plexus:lower-body-1",
+        "tactile-surface:arm-1",
+        "tactile-surface:arm-2",
+        "tactile-surface:foot-1",
+        "tactile-surface:foot-2",
+        "tactile-surface:hand-1",
+        "tactile-surface:hand-2",
+        "tactile-surface:head-1",
+        "tactile-surface:leg-1",
+        "tactile-surface:leg-2",
+        "tactile-surface:lower-body-1",
+        "tactile-surface:neck-1",
+        "tactile-surface:upper-body-1",
+        "tongue:head-1",
         "upper-spine:upper-body-1",
         "wrist:arm-1",
         "wrist:arm-2",

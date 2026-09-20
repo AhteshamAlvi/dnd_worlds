@@ -51,8 +51,14 @@ import {
 } from "../../../../infrastructure/result";
 import { createTraceNode } from "../../../../infrastructure/trace";
 import { sensoryFailure } from "../diagnostics";
-import { isPerceptionPhenomenon, isSenseId } from "../scopes";
-import { DETECTION_SUBJECTS } from "../scopes";
+import {
+  isDetectionSubject,
+  isPerceptionPhenomenon,
+  isSenseId,
+  isSensoryChannelId,
+} from "../scopes";
+import { isSensoryReceiverRef, receiverKey } from "../receivers";
+import { sensoryRouteTermsKey } from "../routes";
 import type { ConcealmentRating, ConcealmentResolution, ConcealmentRoute } from "./types";
 import { shouldRerollEstablishedConcealment } from "./established";
 
@@ -107,13 +113,26 @@ function identifierError(what: string, path: string): EngineError {
 
 function isValidRoute(route: ConcealmentRoute): boolean {
   return isSenseId(route.sense) &&
+    isSensoryChannelId(route.channel) &&
     isPerceptionPhenomenon(route.phenomenon) &&
-    (DETECTION_SUBJECTS as readonly string[]).includes(route.subject);
+    isDetectionSubject(route.subject) &&
+    (route.receiver === undefined || isSensoryReceiverRef(route.receiver));
 }
 
 
+/*
+ * A retained rating's own identity.
+ *
+ * Includes the receiver when the rating names one, so a receiver-specific
+ * rating and the general rating for the same channel are two distinct
+ * retained entries rather than a duplicate.
+ */
 function routeKey(route: ConcealmentRoute): string {
-  return `${route.sense}/${route.phenomenon}/${route.subject}`;
+  const terms = sensoryRouteTermsKey(route);
+
+  return route.receiver === undefined
+    ? terms
+    : `${terms}|${receiverKey(route.receiver)}`;
 }
 
 
@@ -204,9 +223,12 @@ export function establishConcealmentState(input: {
     if (!isValidRoute(rating.route)) {
       return fail({
         code: "character.senses.concealment.state.route.invalid",
-        message: "A retained Concealment route must name a real sense, phenomenon and subject.",
+        message:
+          "A retained Concealment route must name a registered Sense and " +
+          "channel, a real phenomenon and subject, and a well-formed receiver " +
+          "when it names one at all.",
         audience: "developer",
-        required: "SenseId/PerceptionPhenomenon/DetectionSubject",
+        required: "SenseId/SensoryChannelId/PerceptionPhenomenon/DetectionSubject",
         actual: routeKey(rating.route),
       });
     }
@@ -268,14 +290,45 @@ export function isConcealedFrom(
 }
 
 
-/** The retained rating for one route, if this attempt covers it. */
+/**
+ * The retained rating for one route, if this attempt covers it.
+ *
+ * SPECIFIC BEATS GENERAL. A rating that names this exact receiver wins; a
+ * rating that names no receiver covers every receiver on the same channel and
+ * is the fallback. That ordering is what lets a general invisibility and a
+ * particular anti-echolocation ward coexist on one attempt without the general
+ * one masking the specific one.
+ *
+ * The lookup route may carry a receiver (a Detection route does) or not (a
+ * Concealment's own route usually does not); both work, because the receiver
+ * only ever narrows.
+ */
 export function concealmentRatingForRoute(
   state: EstablishedConcealmentState,
   route: ConcealmentRoute,
 ): ConcealmentRating | undefined {
-  const key = routeKey(route);
+  const terms = sensoryRouteTermsKey(route);
+  const receiver = route.receiver === undefined
+    ? undefined
+    : receiverKey(route.receiver);
 
-  return state.ratings.find((rating) => routeKey(rating.route) === key);
+  let general: ConcealmentRating | undefined;
+
+  for (const rating of state.ratings) {
+    if (sensoryRouteTermsKey(rating.route) !== terms) continue;
+
+    if (rating.route.receiver === undefined) {
+      general ??= rating;
+
+      continue;
+    }
+
+    if (receiver !== undefined && receiverKey(rating.route.receiver) === receiver) {
+      return rating;
+    }
+  }
+
+  return general;
 }
 
 

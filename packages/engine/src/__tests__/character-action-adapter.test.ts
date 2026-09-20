@@ -238,6 +238,7 @@ describe("governing contributions", () => {
         kind: "detection",
         mode: "active",
         sense: "sight",
+        channel: "visible-light",
         phenomenon: "physical",
         subject: "entity",
       },

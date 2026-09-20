@@ -24,3 +24,8 @@ export type {
 export { DETECTION_IMPORTANCE, resolvePassiveDetectionCandidates } from "./candidates";
 export type { DetectionValidationIssue } from "./validation";
 export { findDetectionRequestIssues } from "./validation";
+export {
+  SENSORY_INTENSITY_CONTRIBUTION_ID,
+  detectionScopeFor,
+  intensityContribution,
+} from "./scope";

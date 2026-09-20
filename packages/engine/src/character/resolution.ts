@@ -1335,6 +1335,18 @@ export function resolveCharacter(
   const senses = resolveSensoryProfile(stats, {
     effects: resolved.sensory,
     nenAwakened: isNenAwakened(character.nen),
+
+    /*
+     * Anatomy, which is what makes a Sense available at all now.
+     *
+     * The PRESENT points and their stored state, so a destroyed eye halves
+     * Sight and a severed hand leaves the Touch network to renormalize over
+     * the skin that is left. A character with no body resolves no physical
+     * Senses, which is the correct answer rather than an omission.
+     */
+    points: resolvedBody.anatomicalPoints,
+    pointStates: character.body.anatomicalPoints,
+    footprints: resolvedBody.sensoryFootprints,
   });
 
   /*

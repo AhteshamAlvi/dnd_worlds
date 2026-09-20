@@ -68,6 +68,10 @@ import {
 } from "./morphology/resolution";
 import { resolveBodyPoints } from "./body-points/resolution";
 import { resolveCriticalPoints } from "./critical-points/resolution";
+import {
+  resolveSensoryFootprints,
+  type ResolvedSensoryFootprints,
+} from "./critical-points/footprints";
 import { resolveBodyStructuralCapacity } from "./structure/resolution";
 import { resolveBodyStrength } from "./strength/resolution";
 import { resolveEffectiveScale } from "./scale";
@@ -192,6 +196,19 @@ export interface ResolvedBody {
   readonly strength: ResolvedBodyStrength;
   readonly points: ResolvedBodyPoints;
   readonly anatomicalPoints: ResolvedCriticalPoints;
+
+  /*
+   * How much of the body's PRESENT surface each Sensory point occupies, and
+   * what each host has left over.
+   *
+   * Resolved here rather than by the sensory domain because it is a fact about
+   * anatomy and measurement, and because two consumers need the same answer:
+   * profile resolution weights a distributed network by it, and the Nen
+   * coating subdivides its boundary by it. Two independent derivations of one
+   * partition would be two partitions.
+   */
+  readonly sensoryFootprints: ResolvedSensoryFootprints;
+
   readonly capability: ResolvedBodyCapability;
   readonly locomotion: ResolvedLocomotion;
 }
@@ -499,6 +516,20 @@ export function resolveBody(
     input.specialPointDefinitions,
   );
 
+  /*
+   * Footprints against the PRESENT measurements, because a point's share of a
+   * host is a share of the host that is actually there. A refusal here is a
+   * body whose authored organs claim more surface than it has, which is
+   * authored content that cannot be resolved rather than a character in an
+   * unusual state — so it fails the whole body resolution.
+   */
+  const sensoryFootprints = resolveSensoryFootprints({
+    points: anatomicalPoints,
+    measurements: measurements.present,
+  });
+
+  if (!sensoryFootprints.success) return sensoryFootprints;
+
   const capability = resolveBodyCapability({
     anatomy,
     points: anatomicalPoints,
@@ -516,6 +547,7 @@ export function resolveBody(
   );
 
   children.push(
+    sensoryFootprints.trace.root,
     createTraceNode({
       id: "body.capability",
       label: "Accessibility and effectiveness",
@@ -545,6 +577,7 @@ export function resolveBody(
       strength,
       points,
       anatomicalPoints,
+      sensoryFootprints: sensoryFootprints.payload,
       capability,
       locomotion,
     },

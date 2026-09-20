@@ -1,5 +1,6 @@
 import { findCheckRequestIssues, type CheckValidationIssue } from "../../../../checks/validation";
-import { findSensorySignatureIssues, type SensoryValidationIssue } from "../validation";
+import { findSensoryCueIssues, type SensoryCueIssue } from "../cues";
+import { generateSensoryRoutes } from "../routes";
 import type { PerceptionRequest } from "./types";
 
 /**
@@ -24,29 +25,53 @@ export type PerceptionValidationIssue =
  */
 export function findPerceptionRequestIssues(
   request: PerceptionRequest,
-): readonly (SensoryValidationIssue | PerceptionValidationIssue | CheckValidationIssue)[] {
+): readonly (SensoryCueIssue | PerceptionValidationIssue | CheckValidationIssue)[] {
   const issues: (
-    | SensoryValidationIssue
+    | SensoryCueIssue
     | PerceptionValidationIssue
     | CheckValidationIssue
-  )[] = [...findSensorySignatureIssues(request.signature)];
+  )[] = [...findSensoryCueIssues(request.cue)];
 
-  const reception = request.signature.reception;
+  const reception = request.cue.reception;
 
-  if (reception.kind === "uncertain") {
+  if (reception?.kind === "uncertain") {
     if (request.dice === undefined) {
       issues.push({ type: "dice-missing", path: "dice" });
     } else {
-      issues.push(...findCheckRequestIssues({
-        scope: {
-          kind: "perception",
-          sense: request.signature.sense,
-          phenomenon: request.signature.phenomenon,
-        },
-        dice: request.dice,
-        baseContributions: [],
-        modifiers: request.modifiers ?? [],
-      }));
+      /*
+       * Validated against the route the cue would ACTUALLY arrive through,
+       * generated from the same profile and exposure the resolver will use.
+       * A placeholder scope would have been simpler and would have been a
+       * check nobody is going to make.
+       *
+       * No route means the cue is inaccessible, and there is no check to
+       * validate — the resolver reports that as a successful resolution of an
+       * unsuccessful perception rather than as a malformed request.
+       */
+      const routes = generateSensoryRoutes({
+        profile: request.profile,
+        cue: request.cue,
+        ...(request.exposure === undefined ? {} : { exposure: request.exposure }),
+        ...(request.overrides === undefined
+          ? {}
+          : { overrides: request.overrides }),
+      });
+
+      const first = routes[0];
+
+      if (first !== undefined) {
+        issues.push(...findCheckRequestIssues({
+          scope: {
+            kind: "perception",
+            sense: first.route.sense,
+            channel: first.route.channel,
+            phenomenon: request.cue.phenomenon,
+          },
+          dice: request.dice,
+          baseContributions: [],
+          modifiers: request.modifiers ?? [],
+        }));
+      }
     }
   } else if (request.dice !== undefined) {
     issues.push({ type: "dice-unnecessary", path: "dice" });

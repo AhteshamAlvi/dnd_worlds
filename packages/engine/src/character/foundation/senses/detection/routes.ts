@@ -25,15 +25,15 @@ import {
 import { createTraceNode } from "../../../../infrastructure/trace";
 import { sensoryFailure } from "../diagnostics";
 import type { ConcealmentRating } from "../concealment";
-import type { PerceivedCue } from "../signatures";
+import { sensoryRouteKey, type GeneratedSensoryRoute } from "../routes";
 import type { ResolvedSensoryProfile } from "../types";
 import { resolvePassiveDetection } from "./passive";
 import type { DetectionResolution } from "./types";
 
 
-/** One cue the observer has, with the Concealment standing against it. */
+/** One route the observer has, with the Concealment standing against it. */
 export interface DetectionRouteCandidate {
-  readonly cue: PerceivedCue;
+  readonly route: GeneratedSensoryRoute;
   readonly concealment: ConcealmentRating;
 }
 
@@ -63,6 +63,11 @@ export interface PassiveDetectionSweep {
  * no sight route, which is an answer and not a malformed request. A sweep with
  * no usable route at all IS a failure, because "detected: false" would be
  * indistinguishable from a real comparison having happened.
+ *
+ * Several RECEIVERS of one Sense are several candidates here and are still one
+ * roll. A creature with eyes in its face and an eye in its palm compares both
+ * for free and acts through whichever is doing better; it does not roll twice
+ * for having two places to look from.
  */
 export function sweepPassiveDetectionRoutes(input: {
   readonly profile: ResolvedSensoryProfile;
@@ -70,7 +75,7 @@ export function sweepPassiveDetectionRoutes(input: {
   readonly modifiers?: readonly CheckModifierContribution[];
 }): EngineResult<PassiveDetectionSweep> {
   const usable = input.routes.filter((candidate) =>
-    input.profile.senses[candidate.cue.signature.sense]?.available === true
+    input.profile.senses[candidate.route.route.sense]?.available === true
   );
 
   if (usable.length === 0) {
@@ -94,7 +99,7 @@ export function sweepPassiveDetectionRoutes(input: {
     const result = resolvePassiveDetection({
       mode: "passive",
       profile: input.profile,
-      cue: candidate.cue,
+      route: candidate.route,
       concealment: candidate.concealment,
       ...(input.modifiers === undefined ? {} : { modifiers: input.modifiers }),
     });
@@ -110,9 +115,26 @@ export function sweepPassiveDetectionRoutes(input: {
    * therefore the smallest Concealment Lead — the same route either way, which
    * is why one comparison serves both.
    */
-  const best = results.reduce((leader, candidate) =>
-    candidate.margin > leader.margin ? candidate : leader
-  );
+  const best = results.reduce((leader, candidate) => {
+    if (candidate.margin !== leader.margin) {
+      return candidate.margin > leader.margin ? candidate : leader;
+    }
+
+    /*
+     * A tie broken by route identity rather than by arrival order.
+     *
+     * Two receivers of the same Sense can produce identical totals — a pair of
+     * eyes and an eye in a palm, against a Concealment that names neither —
+     * and whichever wins is then BOUND into a Reaction Gate. Letting that
+     * depend on the order the caller assembled its array would make an
+     * otherwise valid Gate go stale because a host iterated a map differently
+     * on the second call.
+     */
+    return sensoryRouteKey(candidate.route)
+        .localeCompare(sensoryRouteKey(leader.route)) < 0
+      ? candidate
+      : leader;
+  });
 
   const trace = createTraceNode({
     id: "character.senses.detection.routes",
@@ -125,6 +147,7 @@ export function sweepPassiveDetectionRoutes(input: {
     output: {
       detected: best.detected,
       sense: best.route.sense,
+      channel: best.route.channel,
       margin: best.margin,
     },
     children: results.map((result) => result.trace),

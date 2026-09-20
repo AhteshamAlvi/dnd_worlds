@@ -4,14 +4,26 @@ import type {
   FixedCheckResolution,
 } from "../../../../checks/types";
 import type { TraceNode } from "../../../../infrastructure/trace";
+import type { ResolvedSensoryCue } from "../cues";
 import type { InformationBand, InformationBandOverride } from "../information";
 import type { SensoryAccessFailureReason } from "../access";
-import type { PerceivedCue, SensorySignature } from "../signatures";
+import type {
+  GeneratedSensoryRoute,
+  SensoryExposureFacts,
+  SensoryRoute,
+} from "../routes";
 import type { ResolvedSensoryProfile } from "../types";
 
 export interface PerceptionRequest {
   readonly profile: ResolvedSensoryProfile;
-  readonly signature: SensorySignature;
+  readonly cue: ResolvedSensoryCue;
+
+  /** Propagation and exposure facts, exactly as route generation takes them. */
+  readonly exposure?: SensoryExposureFacts;
+
+  /** A host-asserted route, for a path no rule describes. */
+  readonly overrides?: readonly GeneratedSensoryRoute[];
+
   readonly dice?: CheckDiceInput;
   readonly modifiers?: readonly CheckModifierContribution[];
   readonly informationOverride?: InformationBandOverride;
@@ -26,14 +38,15 @@ export const PERCEPTION_STATUSES = [
 export type PerceptionStatus = typeof PERCEPTION_STATUSES[number];
 
 /**
- * No sensory route to the phenomenon exists at all: the sense is unavailable,
- * the phenomenon is inaccessible through it, or the signature is authored
- * impossible. Nothing was rolled, and no roll could have changed it.
+ * No sensory route to the phenomenon exists at all: no available Sense
+ * receives any channel it is emitting on, every receiver that could is blocked
+ * or ruined, or the cue is authored impossible. Nothing was rolled, and no
+ * roll could have changed it.
  */
 export interface InaccessiblePerception {
   readonly status: "inaccessible";
   readonly perceived: false;
-  readonly signature: SensorySignature;
+  readonly cue: ResolvedSensoryCue;
   readonly reason: SensoryAccessFailureReason;
   readonly trace: TraceNode;
 }
@@ -46,22 +59,23 @@ export interface InaccessiblePerception {
 export interface UnperceivedPerception {
   readonly status: "not-perceived";
   readonly perceived: false;
-  readonly signature: SensorySignature;
+  readonly cue: ResolvedSensoryCue;
+  readonly route: SensoryRoute;
   readonly band: "none";
   readonly check: FixedCheckResolution;
   readonly trace: TraceNode;
 }
 
 /**
- * The cue was received. `check` is absent for automatic reception, which does
+ * The cue was understood. `check` is absent for automatic reception, which does
  * not roll, and present for a cleared uncertain reception.
  */
 export interface PerceivedPerception {
   readonly status: "perceived";
   readonly perceived: true;
-  readonly signature: SensorySignature;
+  readonly cue: ResolvedSensoryCue;
+  readonly route: SensoryRoute;
   readonly band: Exclude<InformationBand, "none">;
-  readonly cue: PerceivedCue;
   readonly check?: FixedCheckResolution;
   readonly trace: TraceNode;
 }

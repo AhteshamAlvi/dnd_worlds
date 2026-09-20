@@ -10,18 +10,20 @@
  * Maximum BP.
  *
  *
- * FOUR INDEPENDENT CATEGORIES
+ * FIVE INDEPENDENT CATEGORIES
  *
  *   FATAL     ceil(containing MaxBP x 0.50) of final damage kills
  *   CRITICAL  10% / 30% / 50% of containing MaxBP, three injury tiers
  *   JOINT     ceil(designated MaxBP x 0.30) breaks the connection
  *   WEAK      multiplies final BP damage by 1.5
+ *   SENSORY   produces a share of one or more Senses, and occupies surface
  *
  * They are FLAGS, not a discriminated union, and that is the central change
- * in this model. A point may carry any combination: the Human Neck is all
- * four at once, an Armpit is Joint and Weak, an Eye is Critical and Weak, and
- * one hit evaluates every category it carries independently. The previous
- * model made category an exclusive tag, which could not express any of that.
+ * in this model. A point may carry any combination: the Human Neck is Fatal,
+ * Critical, Joint and Weak at once, an Armpit is Joint and Weak, an Eye is
+ * Critical, Weak and Sensory, an Ear is Sensory alone, and one hit evaluates
+ * every damage category it carries independently. The previous model made
+ * category an exclusive tag, which could not express any of that.
  *
  * The "semicritical" category is gone. It existed to mean "a hit here creates
  * an injury opportunity", which is now what the Critical tiers say with more
@@ -68,19 +70,31 @@ export type SpecialPointDefinitionId = CriticalPointTypeId;
 
 
 /*
- * The four independent mechanical roles a point may carry.
+ * The five independent mechanical roles a point may carry.
+ *
+ * SENSORY is the odd one out and deliberately so: the other four describe what
+ * happens when something HITS the point, and Sensory describes what the point
+ * DOES while nothing is happening to it. It is in the same list anyway because
+ * the combination is the whole model — an Eye is Critical, Weak and Sensory at
+ * once, and destroying it has to mean all three things.
+ *
+ * A point may be Sensory and nothing else. An Ear is not a damage category; it
+ * is a place a creature hears from, and requiring it to also be Critical or
+ * Weak in order to exist would be inventing a vulnerability nobody authored.
  */
 export type AnatomicalPointCategory =
   | "fatal"
   | "critical"
   | "joint"
-  | "weak";
+  | "weak"
+  | "sensory";
 
 export const ANATOMICAL_POINT_CATEGORIES = [
   "fatal",
   "critical",
   "joint",
   "weak",
+  "sensory",
 ] as const satisfies readonly AnatomicalPointCategory[];
 
 /** Retained name for the category union. */
@@ -193,6 +207,136 @@ export interface CriticalOutcome {
 }
 
 
+/* -------------------------------------------------------------------------- */
+/* Sensory metadata                                                           */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * A Sense id, as the BODY is allowed to know it.
+ *
+ * A plain string alias, and that is the point. Body validation checks the
+ * SHAPE of this field — non-empty, not duplicated within one point — and never
+ * whether the Sense exists, because importing the Sense registry here would
+ * make the body foundation depend on the sensory foundation at runtime for the
+ * sake of a membership test.
+ *
+ * Existence is proved at the character/content composition boundary, which is
+ * where both catalogs are in scope anyway. That is later than it could be and
+ * earlier than it matters: nothing between the two points can act on a Sense
+ * id, so an unknown one cannot do anything except fail to resolve.
+ */
+export type AnatomicalSenseId = string;
+
+
+/*
+ * How much of a Sense one point is responsible for.
+ *
+ *   fixed           a discrete organ's own share. Two Human Eyes are 0.50
+ *                   each. Shares are NOT normalized and are NOT clamped: a
+ *                   creature whose authored organs total 1.20 has unusually
+ *                   good eyes, and flattening that to 1.00 would delete the
+ *                   only thing the author was trying to say.
+ *
+ *   network-weight  a member of distributed anatomy, whose share is its
+ *                   weight over the sum of the weights of the members that are
+ *                   PRESENT. Skin is not 214 organs each worth 1/214 — it is
+ *                   one surface, and losing an arm redistributes rather than
+ *                   subtracts, which is what normalizing at resolution buys.
+ */
+export type SensoryContribution =
+  | { readonly kind: "fixed"; readonly amount: number }
+  | {
+      readonly kind: "network-weight";
+      readonly networkId: string;
+      readonly sensitivity: number;
+    };
+
+
+/*
+ * How much SURFACE the point occupies, for coating and Sensory Gyō.
+ *
+ *   host-surface-fraction  a share of the host BodyPart's resolved area.
+ *                          Right for biological anatomy, because an eye on a
+ *                          giant is a bigger eye.
+ *   absolute               a fixed area in square metres. Right for an implant,
+ *                          a gem or a construct's lens, which is the size it is
+ *                          regardless of what it is bolted to.
+ *   host-remainder         everything the host has left once every other point
+ *                          has taken its share.
+ *
+ * Any of the three resolves to one positive number of square metres, and it
+ * PARTITIONS the host rather than adding to it. A Palm's area is area the Hand
+ * already had; a body does not grow when somebody notices it has palms.
+ *
+ *
+ * WHY `host-remainder` HAS TO EXIST
+ *
+ * Because skin is a sense organ, and it is specifically the sense organ made
+ * of whatever is not another sense organ. A tactile surface authored as a
+ * fraction would be a number nobody can justify — 0.95 of a Head? 0.97? — and
+ * every such number would silently leave a sliver of skin that feels nothing.
+ *
+ * Stating it as "the rest" makes the partition exact by construction instead
+ * of by an author getting three decimal places right, and it keeps working
+ * when a Species adds a seventh facial organ: the skin gives up exactly that
+ * organ's area and nothing has to be retuned.
+ *
+ * At most ONE point per host may claim it. Two would each be handed the whole
+ * remainder and the host's area would be counted twice, which resolution
+ * refuses.
+ */
+export type SensoryPointFootprint =
+  | { readonly kind: "host-surface-fraction"; readonly fraction: number }
+  | { readonly kind: "absolute"; readonly squareMetres: number }
+  | { readonly kind: "host-remainder" };
+
+
+/*
+ * Which group of points Sensory Gyō may concentrate into together.
+ *
+ *   local        a cluster within one host — the facial eyes, one hand's palm.
+ *                Its resolved identity is (host BodyPart, Sense, cluster), so
+ *                the same authored cluster name on two different Heads is two
+ *                clusters and cannot be combined.
+ *   distributed  a network spanning the body. `all-active` is the only
+ *                selection there is: half a skin is not a thing a character
+ *                can choose to concentrate into.
+ */
+export type SensoryFocusMembership =
+  | { readonly kind: "local"; readonly cluster: string }
+  | {
+      readonly kind: "distributed";
+      readonly network: string;
+      readonly selection: "all-active";
+    };
+
+
+export interface AnatomicalPointSensoryFunction {
+  readonly senseId: AnatomicalSenseId;
+  readonly contribution: SensoryContribution;
+}
+
+
+/*
+ * Everything a Sensory point carries.
+ *
+ * Required on a Sensory point and FORBIDDEN on every other point. A Sensory
+ * category with no metadata is a point that claims to produce a Sense and
+ * cannot say which one; metadata on a non-Sensory point is a footprint that
+ * would silently claim host area for nothing.
+ *
+ * One footprint, however many Senses. A physical organ occupies one piece of
+ * the creature's surface even when it does several jobs — an eye that sees
+ * light and senses heat is one eye, and giving it two footprints would let a
+ * multi-purpose organ quietly claim twice the body it has.
+ */
+export interface SensoryAnatomicalPointData {
+  readonly footprint: SensoryPointFootprint;
+  readonly focus: SensoryFocusMembership;
+  readonly functions: readonly AnatomicalPointSensoryFunction[];
+}
+
+
 /*
  * Fields shared by every reusable Anatomical Point definition.
  */
@@ -228,6 +372,9 @@ export interface AnatomicalPointDefinition
 
   /** Overrides WEAK_DAMAGE_MULTIPLIER for this point. */
   readonly weakMultiplier?: number;
+
+  /** Required for Sensory points, forbidden otherwise. */
+  readonly sensory?: SensoryAnatomicalPointData;
 }
 
 /** Retained name. Every point definition is one type now. */
@@ -268,6 +415,17 @@ export interface CriticalPointInstance {
   readonly designatedPartId?: BodyPartId;
 
   readonly weakMultiplier: number;
+
+  /*
+   * Carried onto the instance rather than looked up from the definition by
+   * every consumer.
+   *
+   * A resolved point is what the sensory domain and the coating boundary are
+   * handed, and requiring each of them to also carry the definition catalog in
+   * order to find out that this Eye contributes 0.50 of Sight would mean three
+   * places holding a catalog for one field.
+   */
+  readonly sensory?: SensoryAnatomicalPointData;
 }
 
 

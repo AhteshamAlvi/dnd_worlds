@@ -58,7 +58,87 @@
 
 import { createRegistry } from "../../../../infrastructure/registry";
 import { validateSpecialPointDefinition } from "./validation";
-import type { CriticalPointTypeId, SpecialPointDefinition } from "./types";
+import type {
+  CriticalPointTypeId,
+  SensoryAnatomicalPointData,
+  SpecialPointDefinition,
+} from "./types";
+
+
+/* -------------------------------------------------------------------------- */
+/* Human sensory calibration                                                  */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * How much of its host each Human sensory organ occupies.
+ *
+ * CALIBRATION CONSTANTS, gathered here on purpose. They are the one place in
+ * the sensory system where a number was chosen rather than derived, so they
+ * are stated once, beside the anatomy they describe, and never re-derived in
+ * Gyō, in the coating, or in a test. Retuning an eye is editing one line here.
+ *
+ * Host fractions rather than absolute areas, because a Giant's eye is a
+ * Giant-sized eye: fractions scale with the body for free, and an absolute
+ * figure would make a ten-metre Giant see through Human-sized eyes.
+ *
+ * Against the reference Human — Head 1,183 cm2, Hand 422.5 cm2 — these resolve
+ * to:
+ *
+ *   Eye (each)          1.183 cm2     exposed anterior eyeball
+ *   Ear (each)         11.830 cm2     external auricle
+ *   Olfactory organs    4.732 cm2     olfactory epithelium
+ *   Tongue             23.660 cm2     dorsal lingual surface
+ *   Palm (each)       105.625 cm2     palmar surface, fingers excluded
+ *
+ * leaving a tactile remainder of 1,128.582 cm2 on the Head, 316.875 cm2 on
+ * each Hand, and the whole of every other part.
+ */
+export const HUMAN_SENSORY_FOOTPRINT_FRACTIONS = {
+  eye: 0.0010,
+  ear: 0.0100,
+  olfactory: 0.0040,
+  tongue: 0.0200,
+  palm: 0.2500,
+} as const;
+
+
+/*
+ * How finely each Human tactile region discriminates, relative to plain skin.
+ *
+ * A weight, not a bonus: Touch's score is shared across the whole network and
+ * these decide how much of it each region is responsible for. Four is the palm
+ * against ordinary skin, which is the right order for two-point discrimination
+ * on a hand versus a back.
+ */
+export const HUMAN_TACTILE_SENSITIVITIES = {
+  skin: 1,
+  palm: 4,
+} as const;
+
+
+/** The distributed network every Human tactile surface belongs to. */
+export const HUMAN_TOUCH_NETWORK_ID = "whole-body-touch";
+
+
+function tactileSurface(
+  sensitivity: number,
+  focus: SensoryAnatomicalPointData["focus"],
+  footprint: SensoryAnatomicalPointData["footprint"],
+): SensoryAnatomicalPointData {
+  return {
+    footprint,
+    focus,
+    functions: [{
+      senseId: "touch",
+      contribution: {
+        kind: "network-weight",
+        networkId: HUMAN_TOUCH_NETWORK_ID,
+        sensitivity,
+      },
+    }],
+  };
+}
+
 
 export const SPECIAL_POINT_DEFINITIONS = {
   /* ---- Head ---------------------------------------------------------- */
@@ -75,16 +155,36 @@ export const SPECIAL_POINT_DEFINITIONS = {
     id: "left-eye",
     name: "Left Eye",
     description: "A soft, exposed sensory structure.",
-    categories: ["critical", "weak"],
+    categories: ["critical", "weak", "sensory"],
     placement: { kind: "per-part", selector: { types: ["head"] } },
+    sensory: {
+      footprint: {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.eye,
+      },
+      focus: { kind: "local", cluster: "facial-eyes" },
+      functions: [
+        { senseId: "sight", contribution: { kind: "fixed", amount: 0.50 } },
+      ],
+    },
   },
 
   "right-eye": {
     id: "right-eye",
     name: "Right Eye",
     description: "A soft, exposed sensory structure.",
-    categories: ["critical", "weak"],
+    categories: ["critical", "weak", "sensory"],
     placement: { kind: "per-part", selector: { types: ["head"] } },
+    sensory: {
+      footprint: {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.eye,
+      },
+      focus: { kind: "local", cluster: "facial-eyes" },
+      functions: [
+        { senseId: "sight", contribution: { kind: "fixed", amount: 0.50 } },
+      ],
+    },
   },
 
   jaw: {
@@ -93,6 +193,93 @@ export const SPECIAL_POINT_DEFINITIONS = {
     description: "A vulnerable region of the skull. Damage lands on the Head.",
     categories: ["weak"],
     placement: { kind: "per-part", selector: { types: ["head"] } },
+  },
+
+  /*
+   * ONE definition per paired organ, exactly as the Eyes are, and for the same
+   * reason: side is presentational. Two Ear definitions hosted by one Head
+   * would be indistinguishable to anything that had to pick one, and a
+   * three-eared Species would need a third definition rather than a third
+   * instance.
+   *
+   * Both Ears sit in one `cranial-hearing` cluster, so Sensory Gyō may
+   * concentrate into one ear, the other, or both — and an ear on a DIFFERENT
+   * Head resolves a different cluster identity and cannot join them.
+   */
+  "left-ear": {
+    id: "left-ear",
+    name: "Left Ear",
+    description: "An external auricle and the auditory structures behind it.",
+    categories: ["sensory"],
+    placement: { kind: "per-part", selector: { types: ["head"] } },
+    sensory: {
+      footprint: {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.ear,
+      },
+      focus: { kind: "local", cluster: "cranial-hearing" },
+      functions: [
+        { senseId: "hearing", contribution: { kind: "fixed", amount: 0.50 } },
+      ],
+    },
+  },
+
+  "right-ear": {
+    id: "right-ear",
+    name: "Right Ear",
+    description: "An external auricle and the auditory structures behind it.",
+    categories: ["sensory"],
+    placement: { kind: "per-part", selector: { types: ["head"] } },
+    sensory: {
+      footprint: {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.ear,
+      },
+      focus: { kind: "local", cluster: "cranial-hearing" },
+      functions: [
+        { senseId: "hearing", contribution: { kind: "fixed", amount: 0.50 } },
+      ],
+    },
+  },
+
+  /*
+   * Unpaired, so one point carrying the whole 1.00. Losing it is total
+   * anosmia, which is what losing your olfactory epithelium is.
+   */
+  "olfactory-organs": {
+    id: "olfactory-organs",
+    name: "Olfactory Organs",
+    description: "The olfactory epithelium and the nasal passages serving it.",
+    categories: ["sensory"],
+    placement: { kind: "per-part", selector: { types: ["head"] } },
+    sensory: {
+      footprint: {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.olfactory,
+      },
+      focus: { kind: "local", cluster: "nasal-olfaction" },
+      functions: [
+        { senseId: "smell", contribution: { kind: "fixed", amount: 1.00 } },
+      ],
+    },
+  },
+
+  tongue: {
+    id: "tongue",
+    name: "Tongue",
+    description: "The dorsal lingual surface and its taste receptors.",
+    categories: ["sensory"],
+    placement: { kind: "per-part", selector: { types: ["head"] } },
+    sensory: {
+      footprint: {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.tongue,
+      },
+      focus: { kind: "local", cluster: "oral-taste" },
+      functions: [
+        { senseId: "taste", contribution: { kind: "fixed", amount: 1.00 } },
+      ],
+    },
   },
 
   /* ---- Neck ---------------------------------------------------------- */
@@ -265,6 +452,72 @@ export const SPECIAL_POINT_DEFINITIONS = {
     categories: ["joint"],
     jointDesignation: { kind: "child-of-host", selector: { types: ["foot"] } },
     placement: { kind: "per-part", selector: { types: ["leg"] } },
+  },
+
+  /* ---- Tactile ------------------------------------------------------- */
+
+  /*
+   * Skin, as anatomy.
+   *
+   * Placed on EVERY part, because that is what skin is, and given the host
+   * remainder as its footprint, because skin is specifically whatever surface
+   * is not another organ. On a Head it is everything the eyes, ears, nose and
+   * tongue did not take; on a Hand it is everything outside the palm; on a
+   * Leg it is the whole leg.
+   *
+   * Its contribution is a NETWORK WEIGHT rather than a fixed share, which is
+   * the only honest way to say what a skin does. A Human has thirteen of these
+   * instances and none of them is worth 1/13 of Touch — a torso is worth far
+   * more than a foot — so each is weighted by its own resolved area times its
+   * sensitivity and normalized against the members that are actually present.
+   * Lose an arm and the remaining surface redistributes rather than the
+   * character simply feeling less.
+   */
+  "tactile-surface": {
+    id: "tactile-surface",
+    name: "Tactile Surface",
+    description:
+      "The skin of one Body Part, outside any more specialized organ on it.",
+    categories: ["sensory"],
+    placement: { kind: "per-part", selector: { all: true } },
+    sensory: tactileSurface(
+      HUMAN_TACTILE_SENSITIVITIES.skin,
+      { kind: "distributed", network: HUMAN_TOUCH_NETWORK_ID, selection: "all-active" },
+      { kind: "host-remainder" },
+    ),
+  },
+
+  /*
+   * The palm is the exception that proves the network.
+   *
+   * It is a MEMBER of the whole-body touch network — its weight feeds the same
+   * shared Touch score — and its focus is nonetheless LOCAL, because a
+   * character can deliberately concentrate into their hands and cannot
+   * deliberately concentrate into three-quarters of their skin. Contribution
+   * and focus are separate fields for exactly this case.
+   *
+   * The cluster is authored as one name and resolves per Hand, since cluster
+   * identity is (host BodyPart, Sense, cluster). Two hands are two clusters
+   * without either of them being called "left".
+   *
+   * Its area is CARVED OUT of the Hand's tactile surface rather than added
+   * beside it: the Hand's remainder is what is left after this fraction, so
+   * palm area is never counted twice.
+   */
+  palm: {
+    id: "palm",
+    name: "Palm",
+    description: "The palmar surface of a Hand, far more sensitive than skin.",
+    categories: ["sensory"],
+    placement: { kind: "per-part", selector: { types: ["hand"] } },
+    sensory: tactileSurface(
+      HUMAN_TACTILE_SENSITIVITIES.palm,
+      { kind: "local", cluster: "palm" },
+      {
+        kind: "host-surface-fraction",
+        fraction: HUMAN_SENSORY_FOOTPRINT_FRACTIONS.palm,
+      },
+    ),
   },
 } as const satisfies Record<string, SpecialPointDefinition>;
 

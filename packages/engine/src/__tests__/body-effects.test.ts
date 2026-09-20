@@ -36,7 +36,7 @@ describe("the vocabulary", () => {
     );
 
     expect(body).toHaveLength(10);
-    expect(EFFECT_TYPES).toHaveLength(22);
+    expect(EFFECT_TYPES).toHaveLength(26);
   });
 
   /*

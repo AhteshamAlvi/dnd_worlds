@@ -41,20 +41,20 @@ import { setRoundActiveState } from "../gameplay/combat/round";
 import { startTurn } from "../gameplay/combat/turn";
 import type { CombatRound, ReactionTrigger } from "../gameplay/combat/types";
 import type { RuntimeRollSet } from "../runtime/dice";
-import type { PerceivedCue } from "../character/foundation/senses/signatures";
+import type { SensoryIntensity } from "../character/foundation/senses/channels";
 
 import { threeCombatantRound } from "./fixtures/combat";
 import {
   PASSIVE_DETECTION_BASE,
+  generatedRoute,
   route,
   sensoryProfile,
   sensoryStats,
-  signature,
   source,
 } from "./fixtures/senses";
 
 const SIGHT = route();
-const HEARING = route({ sense: "hearing" });
+const HEARING = route({ sense: "hearing", channel: "sound" });
 
 /* Concealment Derived Attribute: round((DEX 12 + WIS 14) / 2) = 13 -> +1. */
 const CONCEALMENT_MODIFIER = 1;
@@ -69,11 +69,23 @@ const TRIGGER: ReactionTrigger = {
 };
 
 
-function cue(sense: "sight" | "hearing" = "sight"): PerceivedCue {
-  return {
-    signature: signature({ id: `${sense}-cue`, sense }),
-    perceptionBand: "partial",
-  };
+const PROFILE = sensoryProfile();
+
+/*
+ * A generated route at the neutral intensity 5, so `received - 5` is zero and
+ * the totals below are the observer's alertness alone. The intensity binding
+ * has its own cases, which vary it deliberately.
+ */
+function generated(
+  sense: "sight" | "hearing" = "sight",
+  intensity = 5,
+) {
+  return generatedRoute(PROFILE, {
+    id: `${sense}-cue`,
+    emissions: {
+      [sense === "sight" ? "visible-light" : "sound"]: intensity as SensoryIntensity,
+    },
+  });
 }
 
 /** A Round with A's Turn under way, which is what a queue requires. */
@@ -137,10 +149,22 @@ function hiddenBy(lead: number): EstablishedConcealmentState {
   }));
 }
 
+/*
+ * Hearing FIRST, and that ordering is load-bearing for the suite rather than
+ * for the engine.
+ *
+ * One established attempt shares one d20, so both routes carry the same
+ * Concealment total and the passive sweep is a genuine tie. Ties are broken by
+ * canonical route identity — deterministically, so that a scene saved and
+ * reloaded prepares the same Gate — and `hearing|sound|...` sorts before
+ * `sight|visible-light|...`. Listing the winner at index 0 keeps every
+ * settlement below reading "the route that was prepared" instead of a number
+ * whose meaning nobody could see.
+ */
 function routesFor(state: EstablishedConcealmentState): readonly DetectionRouteCandidate[] {
   return [
-    { cue: cue(), concealment: state.ratings[0]! },
-    { cue: cue("hearing"), concealment: state.ratings[1]! },
+    { route: generated("hearing"), concealment: state.ratings[1]! },
+    { route: generated(), concealment: state.ratings[0]! },
   ];
 }
 
@@ -303,10 +327,10 @@ describe("preparation happens before dice exist", () => {
       concealment,
       routes: [
         {
-          cue: cue(),
+          route: generated(),
           concealment: { ...concealment.ratings[0]!, total: PASSIVE_DETECTION_BASE + 20 },
         },
-        { cue: cue("hearing"), concealment: concealment.ratings[1]! },
+        { route: generated("hearing"), concealment: concealment.ratings[1]! },
       ],
     }));
 
@@ -556,6 +580,132 @@ describe("a prepared Gate cannot be replayed", () => {
     };
   }
 
+  it("binds the received intensity, and refuses a threat that got louder", () => {
+    /*
+     * The intensity is a BASE CONTRIBUTION on the settling check, so a cue
+     * that grew between the two calls would be rolled against a Gate that was
+     * costed for the quieter one. Binding it is what makes that impossible
+     * rather than merely unlikely.
+     */
+    const { queue, preparation } = preparedForB();
+
+    expect(preparation.binding.receivedIntensity).toBe(5);
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: {
+        route: generated("hearing", 9),
+        concealment: concealment.ratings[1]!,
+      },
+      rolls: d20s(20, 19),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("refuses a threat that got quieter, too", () => {
+    const { queue, preparation } = preparedForB();
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: {
+        route: generated("hearing", 1),
+        concealment: concealment.ratings[1]!,
+      },
+      rolls: d20s(20, 19),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("settles happily at the intensity it was prepared against", () => {
+    const { queue, preparation } = preparedForB();
+
+    const settled = settle({
+      queue,
+      preparation,
+      concealment,
+      route: {
+        route: generated("hearing", 5),
+        concealment: concealment.ratings[1]!,
+      },
+      rolls: d20s(20, 19),
+    });
+
+    expect(settled.success).toBe(true);
+  });
+
+  it("carries the intensity into the settling check's total", () => {
+    /*
+     * A louder cue makes the Gate easier by exactly `received - 5`, and the
+     * preparation is re-made at the new loudness rather than reused — which is
+     * the honest way to spend the difference.
+     */
+    /*
+     * A Lead of 6, so neither loudness passively detects. A cue at intensity 9
+     * adds +4 to the passive comparison, and a Concealment that only just held
+     * would be beaten by the loud case and not the quiet one — which would
+     * make this a test about two different situations rather than two
+     * loudnesses of one.
+     */
+    const loud = hiddenBy(6);
+    const { queue } = queueThreatening();
+
+    const preparation = payloadOf(prepare({
+      queue,
+      concealment: loud,
+      routes: [{
+        route: generated("hearing", 9),
+        concealment: loud.ratings[1]!,
+      }],
+      observerId: "b",
+    }));
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment: loud,
+      route: {
+        route: generated("hearing", 9),
+        concealment: loud.ratings[1]!,
+      },
+      rolls: d20s(...Array.from(
+        { length: preparation.requiredRollCount },
+        () => 11,
+      )),
+    }));
+
+    const quiet = hiddenBy(6);
+    const quietQueue = queueThreatening().queue;
+
+    const quietPreparation = payloadOf(prepare({
+      queue: quietQueue,
+      concealment: quiet,
+      routes: [{
+        route: generated("hearing", 5),
+        concealment: quiet.ratings[1]!,
+      }],
+      observerId: "b",
+    }));
+
+    const quietSettled = payloadOf(settle({
+      queue: quietQueue,
+      preparation: quietPreparation,
+      concealment: quiet,
+      route: {
+        route: generated("hearing", 5),
+        concealment: quiet.ratings[1]!,
+      },
+      rolls: d20s(...Array.from(
+        { length: quietPreparation.requiredRollCount },
+        () => 11,
+      )),
+    }));
+
+    expect(settled.detection.observerTotal - quietSettled.detection.observerTotal)
+      .toBe(4);
+  });
+
   it("refuses settlement against a different observer", () => {
     const { queue, preparation } = preparedForB();
 
@@ -611,7 +761,7 @@ describe("a prepared Gate cannot be replayed", () => {
       queue,
       preparation,
       concealment: other,
-      route: { cue: cue(), concealment: other.ratings[0]! },
+      route: { route: generated(), concealment: other.ratings[0]! },
       rolls: d20s(20, 19),
     }))).toContain("gameplay.senses.reaction-gate.stale");
   });
@@ -619,7 +769,7 @@ describe("a prepared Gate cannot be replayed", () => {
   it("refuses settlement through a different route", () => {
     const { queue, preparation } = preparedForB();
 
-    expect(preparation.binding.route?.sense).toBe("sight");
+    expect(preparation.binding.route?.sense).toBe("hearing");
 
     expect(errorCodesOf(settle({
       queue,

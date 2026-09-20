@@ -8,13 +8,61 @@
  */
 
 export type {
+  SensoryChannelId,
+  SensoryChannelDefinition,
+  SensoryChannelPropagation,
+  SensoryIntensity,
+  BuiltInSensoryChannelId,
+} from "./channels";
+
+export {
+  SENSORY_CHANNEL_DEFINITIONS,
+  SENSORY_CHANNEL_PROPAGATIONS,
+  MINIMUM_SENSORY_INTENSITY,
+  MAXIMUM_SENSORY_INTENSITY,
+  NEUTRAL_SENSORY_INTENSITY,
+  isSensoryIntensity,
+  sensoryIntensityModifier,
+  sensoryChannelRegistry,
+  getSensoryChannel,
+  isSensoryChannelId,
+  listSensoryChannels,
+  findSensoryChannelCatalogIssues,
+  findSensoryChannelStructuralIssues,
+} from "./channels";
+
+export type {
   SenseId,
+  SenseDefinition,
+  SenseFamily,
+  SenseAvailabilityKind,
+  SenseScoreBasis,
+  BuiltInSenseId,
+} from "./definitions";
+
+export {
+  SENSE_DEFINITIONS,
+  SENSE_FAMILIES,
+  SENSE_AVAILABILITY_KINDS,
+  EXTRASENSORY_PERCEPTION_SENSE_ID,
+  senseRegistry,
+  getSenseDefinition,
+  isSenseId,
+  listSenses,
+  sensesReceiving,
+  senseReceivesChannel,
+  findSenseCatalogIssues,
+  findSenseStructuralIssues,
+} from "./definitions";
+
+export type {
   PerceptionPhenomenon,
   DetectionMode,
   ConcealmentMode,
   DetectionSubject,
   InvestigationSubject,
   SenseSelector,
+  SensoryChannelSelector,
   PhenomenonSelector,
   DetectionModeSelector,
   ConcealmentModeSelector,
@@ -33,56 +81,112 @@ export type {
 } from "./scopes";
 
 export {
-  SENSE_IDS,
-  PHYSICAL_SENSE_IDS,
   PERCEPTION_PHENOMENA,
   DETECTION_MODES,
   CONCEALMENT_MODES,
   DETECTION_SUBJECTS,
   INVESTIGATION_SUBJECTS,
-  isSenseId,
   isPerceptionPhenomenon,
+  isDetectionSubject,
   matchesSenseSelector,
+  matchesSensoryChannelSelector,
   matchesPhenomenonSelector,
 } from "./scopes";
 
 export type {
+  AnatomicalSensoryReceiver,
+  DistributedSensoryReceiver,
+  GrantedSensoryReceiver,
+  SensoryReceiverRef,
+} from "./receivers";
+
+export {
+  SENSORY_RECEIVER_KINDS,
+  receiverKey,
+  sameSensoryReceiver,
+  canonicalReceiver,
+  isCoatableReceiver,
+  receiverPointIds,
+  isSensoryReceiverRef,
+} from "./receivers";
+
+export type {
+  SensoryEmissions,
+  SensoryReception,
+  ResolvedSensoryCue,
+  SensoryCueIssue,
+} from "./cues";
+
+export { findSensoryCueIssues, emittedChannels } from "./cues";
+
+export type {
+  SensoryRouteTerms,
+  SensoryRoute,
+  GeneratedSensoryRoute,
+  SensoryExposureFacts,
+  GenerateSensoryRoutesInput,
+} from "./routes";
+
+export {
+  sensoryRouteTermsKey,
+  sensoryRouteKey,
+  sameSensoryRouteTerms,
+  sameSensoryRoute,
+  generateSensoryRoutes,
+} from "./routes";
+
+export type {
   ResolvedSense,
+  ResolvedSenseReceiver,
   ResolvedSensoryProfile,
   ResolvedNenPerception,
   SenseAvailabilityReason,
   SenseScoreContribution,
+  SenseAnatomicalContribution,
 } from "./types";
 
-export { NATURAL_EXTRASENSORY_PERCEPTION_REQUIREMENTS } from "./types";
+export {
+  getResolvedSense,
+  hasAvailableSense,
+  availableSenses,
+} from "./types";
 
 export type {
   SensoryEffect,
   ModifySenseEffect,
   GrantSenseEffect,
   SuppressSenseEffect,
+  GrantSenseChannelEffect,
+  SuppressSenseChannelEffect,
+  ModifySenseChannelReceptionEffect,
+  ModifyAnatomicalPointFunctionEffect,
   GrantNenPerceptionEffect,
   SuppressNenPerceptionEffect,
   SourcedSenseModifier,
   SourcedSenseGrant,
   SourcedSenseSuppression,
+  SourcedSenseChannelGrant,
+  SourcedSenseChannelSuppression,
+  SourcedSenseChannelReceptionModifier,
+  SourcedAnatomicalPointFunctionModifier,
   ResolvedSensoryEffects,
 } from "./modifiers";
 
 export { EMPTY_SENSORY_EFFECTS } from "./modifiers";
 
 export type { ResolveSensoryProfileOptions } from "./profile";
-export { resolveSensoryProfile } from "./profile";
-
-export type {
-  SensoryReception,
-  SensorySignature,
-  PerceivedCue,
-} from "./signatures";
+export {
+  NEN_PERCEPTION_SENSE_ID,
+  NEN_AWAKENING_SENSE_SOURCE,
+  resolveSensoryProfile,
+  localClusterKey,
+  receivedIntensityFor,
+} from "./profile";
 
 export type {
   SensoryAccessFailureReason,
   SensoryAccessResolution,
+  ResolveSensoryAccessInput,
 } from "./access";
 
 export { resolveSensoryAccess } from "./access";
@@ -105,10 +209,10 @@ export type { SensoryValidationIssue } from "./validation";
 
 export {
   isValidSenseSelector,
+  isValidSensoryChannelSelector,
   isValidPhenomenonSelector,
   isValidInformationThresholds,
   findInformationOverrideIssues,
-  findSensorySignatureIssues,
 } from "./validation";
 
 export type {
@@ -174,6 +278,7 @@ export {
   DETECTION_IMPORTANCE,
   CONCEALMENT_LEAD_BAND_SIZE,
   MAXIMUM_CONCEALMENT_REACTION_DISADVANTAGES,
+  SENSORY_INTENSITY_CONTRIBUTION_ID,
   resolveDetectionCheck,
   resolvePassiveDetection,
   resolvePassiveDetectionCandidates,
@@ -183,6 +288,8 @@ export {
   reconcileDetectionAdvantage,
   sweepPassiveDetectionRoutes,
   findDetectionRequestIssues,
+  detectionScopeFor,
+  intensityContribution,
 } from "./detection";
 
 export type {

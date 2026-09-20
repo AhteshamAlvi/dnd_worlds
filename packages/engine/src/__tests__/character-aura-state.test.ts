@@ -231,7 +231,7 @@ describe("serialization", () => {
     const restored = roundTrip(character);
 
     expect(validateCharacter(restored).success).toBe(true);
-    expect(resolveTestCharacter(restored).senses.senses.sight.available)
+    expect(resolveTestCharacter(restored).senses.senses.sight?.available)
       .toBe(true);
   });
 });

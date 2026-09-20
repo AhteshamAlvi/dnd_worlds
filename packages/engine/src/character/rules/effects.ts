@@ -91,18 +91,26 @@ import type {
 import type { ActionCapacityKind } from "../foundation/actions/types";
 import type {
   GrantNenPerceptionEffect,
+  GrantSenseChannelEffect,
   GrantSenseEffect,
+  ModifyAnatomicalPointFunctionEffect,
+  ModifySenseChannelReceptionEffect,
   ModifySenseEffect,
   SensoryEffect,
   SuppressNenPerceptionEffect,
+  SuppressSenseChannelEffect,
   SuppressSenseEffect,
 } from "../foundation/senses/modifiers";
 
 export type {
   GrantNenPerceptionEffect,
+  GrantSenseChannelEffect,
   GrantSenseEffect,
+  ModifyAnatomicalPointFunctionEffect,
+  ModifySenseChannelReceptionEffect,
   ModifySenseEffect,
   SuppressNenPerceptionEffect,
+  SuppressSenseChannelEffect,
   SuppressSenseEffect,
 } from "../foundation/senses/modifiers";
 
@@ -630,6 +638,10 @@ export const EFFECT_TYPES = [
   "modifySense",
   "grantSense",
   "suppressSense",
+  "grantSenseChannel",
+  "suppressSenseChannel",
+  "modifySenseChannelReception",
+  "modifyAnatomicalPointFunction",
   "grantNenPerception",
   "suppressNenPerception",
 

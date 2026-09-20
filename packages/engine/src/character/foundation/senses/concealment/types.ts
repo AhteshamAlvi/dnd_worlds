@@ -6,17 +6,28 @@ import type {
 import type { TraceNode } from "../../../../infrastructure/trace";
 import type { CharacterStats } from "../../attributes/stats";
 import type { ResolvedSensoryProfile } from "../types";
-import type {
-  ConcealmentMode,
-  DetectionSubject,
-  PerceptionPhenomenon,
-  SenseId,
-} from "../scopes";
+import type { ConcealmentMode } from "../scopes";
+import type { SensoryReceiverRef } from "../receivers";
+import type { SensoryRouteTerms } from "../routes";
 
-export interface ConcealmentRoute {
-  readonly sense: SenseId;
-  readonly phenomenon: PerceptionPhenomenon;
-  readonly subject: DetectionSubject;
+/*
+ * What a Concealment attempt is rated against.
+ *
+ * The four shared route terms, plus an OPTIONAL receiver.
+ *
+ * Optional, because a hider rates their own findability and has no idea what
+ * organs are pointed at them. Invisibility is a statement about `visible-light`
+ * — it is not a statement about eyes, and certainly not about which pair. So
+ * the ordinary rating names no receiver and covers every receiver reading that
+ * channel, which is what makes one hiding roll answer the whole room.
+ *
+ * Present when a rating genuinely IS receiver-specific — something that hides
+ * from a particular network or cluster and not from another. Lookup prefers an
+ * exact receiver match and falls back to the receiver-less rating, so the
+ * specific case is expressible without the general case paying for it.
+ */
+export interface ConcealmentRoute extends SensoryRouteTerms {
+  readonly receiver?: SensoryReceiverRef;
 }
 
 /*

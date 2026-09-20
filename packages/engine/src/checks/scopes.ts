@@ -20,6 +20,11 @@
  * cleanly and left modifier matching disagreeing with profile resolution at
  * runtime. A closed vocabulary has to have exactly one declaration for
  * "closed" to mean anything; architecture.test.ts now enforces that.
+ *
+ * Senses and channels are no longer closed at all — they are registry-backed
+ * open ids, so the thing being protected there is now "exactly one registry
+ * owner" rather than "exactly one array". The lists that remain closed below
+ * are mechanics: phenomena, modes and subjects.
  */
 
 import type { AttributeKey } from "../character/foundation/attributes/types";
@@ -37,8 +42,6 @@ import type {
 
 /* The sensory vocabulary, re-exported from its single owner. */
 export {
-  SENSE_IDS,
-  PHYSICAL_SENSE_IDS,
   PERCEPTION_PHENOMENA,
   DETECTION_MODES,
   CONCEALMENT_MODES,
@@ -48,6 +51,8 @@ export {
 
 export type {
   SenseId,
+  SensoryChannelId,
+  SensoryChannelSelector,
   PerceptionPhenomenon,
   DetectionMode,
   ConcealmentMode,

@@ -76,7 +76,7 @@ import {
   resolveGyoFocus,
   resolveGyoSelection,
   type GyoFocus,
-  type GyoFocusEdge,
+  type GyoFocusInput,
   type GyoSelection,
 } from "../foundation/nen/principles/gyo";
 import { NEN_OUTPUT_CLOCK_ID } from "../foundation/nen/principles/ren";
@@ -149,24 +149,44 @@ export function gyoStopCauseFor(nen: NenState): NenActivityStopCause | null {
 /*
  * What Gyō stores in the runtime's one opaque slot.
  *
- * JSON-safe by construction — two numbers and a list of strings — so a scene
- * saved mid-Gyō comes back as the same Gyō. The runtime validates that it
- * round-trips and reads nothing inside it.
+ * JSON-safe by construction — numbers and strings — so a scene saved mid-Gyō
+ * comes back as the same Gyō. The runtime validates that it round-trips and
+ * reads nothing inside it.
+ *
+ * Discriminated, like the focus it encodes. A stored payload that could be
+ * read as either kind would be a saved scene whose meaning depended on who
+ * loaded it.
  */
-export interface GyoActivityPayload {
-  readonly selectedShift: number;
-  readonly focus: readonly string[];
-}
+export type GyoActivityPayload =
+  | {
+    readonly kind: "reinforcement";
+    readonly selectedShift: number;
+    readonly focus: readonly string[];
+  }
+  | {
+    readonly kind: "sensory";
+    readonly selectedShift: number;
+    readonly senseId: string;
+    readonly pointIds: readonly string[];
+  };
 
 
 function encodeGyoPayload(
   selection: GyoSelection,
   focus: GyoFocus,
 ): JsonValue {
-  return {
-    selectedShift: selection.selectedShift,
-    focus: [...focus.sites],
-  };
+  return focus.kind === "sensory"
+    ? {
+      kind: "sensory",
+      selectedShift: selection.selectedShift,
+      senseId: focus.senseId,
+      pointIds: [...focus.pointIds],
+    }
+    : {
+      kind: "reinforcement",
+      selectedShift: selection.selectedShift,
+      focus: [...focus.sites],
+    };
 }
 
 
@@ -177,6 +197,18 @@ function encodeGyoPayload(
  * throw or a guess: a host can hand back a runtime it edited, and a focus that
  * cannot be read is a Gyō that cannot be placed, which the caller has to be
  * able to see.
+ *
+ *
+ * MIGRATION: A PAYLOAD WITH NO `kind` IS REINFORCEMENT
+ *
+ * Every Gyō stored before Sensory Gyō existed was a reinforcement Gyō — there
+ * was nothing else to be — and it was stored as `{ selectedShift, focus }`. A
+ * missing discriminant therefore has exactly one correct reading, and it is
+ * taken here rather than left to each caller.
+ *
+ * The reverse is deliberately NOT done: an old payload is never reinterpreted
+ * as sensory, however much its site list might look like a list of organs. A
+ * saved scene's Gyō must come back doing what it was doing.
  */
 export function decodeGyoPayload(
   activity: NenActivity,
@@ -187,19 +219,46 @@ export function decodeGyoPayload(
     return null;
   }
 
-  const { selectedShift, focus } = payload as {
+  const { kind, selectedShift, focus, senseId, pointIds } = payload as {
+    readonly kind?: unknown;
     readonly selectedShift?: unknown;
     readonly focus?: unknown;
+    readonly senseId?: unknown;
+    readonly pointIds?: unknown;
   };
 
-  if (
-    typeof selectedShift !== "number" || !Number.isFinite(selectedShift) ||
-    !Array.isArray(focus) || focus.some((one) => typeof one !== "string")
-  ) {
+  if (typeof selectedShift !== "number" || !Number.isFinite(selectedShift)) {
     return null;
   }
 
-  return { selectedShift, focus: focus as readonly string[] };
+  if (kind === "sensory") {
+    if (
+      typeof senseId !== "string" || senseId.trim().length === 0 ||
+      !Array.isArray(pointIds) || pointIds.length === 0 ||
+      pointIds.some((one) => typeof one !== "string")
+    ) {
+      return null;
+    }
+
+    return {
+      kind: "sensory",
+      selectedShift,
+      senseId,
+      pointIds: pointIds as readonly string[],
+    };
+  }
+
+  if (kind !== undefined && kind !== "reinforcement") return null;
+
+  if (!Array.isArray(focus) || focus.some((one) => typeof one !== "string")) {
+    return null;
+  }
+
+  return {
+    kind: "reinforcement",
+    selectedShift,
+    focus: focus as readonly string[],
+  };
 }
 
 
@@ -217,6 +276,11 @@ function refuse<T>(
     warnings: [],
     errors: errors as NonEmptyArray<EngineError>,
   };
+}
+
+
+function focusSize(focus: GyoFocus): number {
+  return focus.kind === "sensory" ? focus.pointIds.length : focus.sites.length;
 }
 
 
@@ -240,8 +304,7 @@ function committedByOthers(
 interface GyoIntent {
   readonly selectedOutput: number;
   readonly selectedShift: number;
-  readonly focus: readonly string[];
-  readonly focusEdges: readonly GyoFocusEdge[];
+  readonly focus: GyoFocusInput;
 }
 
 
@@ -302,10 +365,7 @@ function resolveFundedGyo(
    * reported as what it is rather than as an Output problem — and so that a
    * refused activation has touched neither.
    */
-  const focus = resolveGyoFocus({
-    sites: intent.focus,
-    edges: intent.focusEdges,
-  });
+  const focus = resolveGyoFocus(intent.focus);
 
   root.children.push(focus.trace.root);
 
@@ -425,14 +485,15 @@ export interface StartGyoRequest extends GyoCharacterFacts {
   /** The share moved into the focus, in (0, the rank's maximum]. */
   readonly selectedShift: number;
 
-  /** Namespaced site identities — see the pure file's prefixes. */
-  readonly focus: readonly string[];
-
   /**
-   * Every adjacency that authoritatively exists, supplied by the composition
-   * layer. Body attachment and Shū contact arrive as the same kind of edge.
+   * Where the shifted share goes, and what it is FOR.
+   *
+   * A reinforcement focus names namespaced body and Item sites plus the
+   * adjacency that authoritatively exists between them. A sensory focus names
+   * one Sense, the Anatomical Points selected, and the groups the composition
+   * layer resolved for that Sense. One or the other, never both.
    */
-  readonly focusEdges: readonly GyoFocusEdge[];
+  readonly focus: GyoFocusInput;
 }
 
 
@@ -520,7 +581,8 @@ export function startGyo(
     activeOutput: resolved.selection.activeOutput,
     selectedShift: resolved.selection.selectedShift,
     containmentLoad: resolved.selection.containmentLoad,
-    focus: resolved.focus.sites.length,
+    focusKind: resolved.focus.kind,
+    focus: focusSize(resolved.focus),
   };
 
   return { ...activated, trace: { root } };
@@ -616,7 +678,8 @@ export function adjustGyo(
     activeOutput: resolved.selection.activeOutput,
     selectedShift: resolved.selection.selectedShift,
     containmentLoad: resolved.selection.containmentLoad,
-    focus: resolved.focus.sites.length,
+    focusKind: resolved.focus.kind,
+    focus: focusSize(resolved.focus),
   };
 
   return { ...adjusted, trace: { root } };

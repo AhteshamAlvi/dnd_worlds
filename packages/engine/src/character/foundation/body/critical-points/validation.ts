@@ -25,6 +25,9 @@ import type {
   CriticalPointId,
   CriticalPointTypeId,
   ResolvedCriticalPoints,
+  SensoryContribution,
+  SensoryFocusMembership,
+  SensoryPointFootprint,
   SpecialPointDefinition,
 } from "./types";
 
@@ -42,6 +45,14 @@ export type CriticalPointValidationIssueCode =
   | "designation-without-joint"
   | "invalid-weak-multiplier"
   | "weak-multiplier-without-weak"
+  | "sensory-without-metadata"
+  | "metadata-without-sensory"
+  | "sensory-without-functions"
+  | "invalid-sensory-sense"
+  | "duplicate-sensory-sense"
+  | "invalid-sensory-contribution"
+  | "invalid-sensory-footprint"
+  | "invalid-sensory-focus"
   | "duplicate-point-instance-id"
   | "unknown-host-part"
   | "unknown-designated-part"
@@ -132,8 +143,8 @@ export function validateSpecialPointDefinition(
     flag(
       "no-categories",
       `Anatomical Point "${definition.id}" declares no categories. A point ` +
-      `that is none of Fatal, Critical, Joint or Weak has no mechanical ` +
-      `effect at all.`,
+      `that is none of Fatal, Critical, Joint, Weak or Sensory has no ` +
+      `mechanical effect at all.`,
     );
   }
 
@@ -181,6 +192,8 @@ export function validateSpecialPointDefinition(
     );
   }
 
+  issues.push(...findSensoryDefinitionIssues(definition));
+
   if (definition.weakMultiplier !== undefined) {
     if (
       !Number.isFinite(definition.weakMultiplier) ||
@@ -203,6 +216,249 @@ export function validateSpecialPointDefinition(
   }
 
   return createValidationResult(issues);
+}
+
+
+/*
+ * The Sensory half of one definition's rules.
+ *
+ * Split out because it is the one part of a point definition with structure of
+ * its own — three nested shapes, each with its own numeric invariants — and
+ * inlining it would bury the damage-category rules it sits beside.
+ *
+ * What is deliberately NOT checked here: whether `senseId` names a registered
+ * Sense. See AnatomicalSenseId in types.ts — proving that needs the Sense
+ * registry, and the body foundation does not import it. Cross-catalog
+ * validation at the composition boundary owns that question.
+ */
+function findSensoryDefinitionIssues(
+  definition: SpecialPointDefinition,
+): readonly CriticalPointValidationIssue[] {
+  const issues: CriticalPointValidationIssue[] = [];
+
+  const flag = (
+    code: CriticalPointValidationIssueCode,
+    message: string,
+  ): void => {
+    issues.push({ code, message, definitionId: definition.id });
+  };
+
+  const isSensory = definition.categories.includes("sensory");
+  const data = definition.sensory;
+
+  /*
+   * The pairing rule, both ways. A Sensory point with no metadata claims to
+   * produce a Sense and cannot say which; metadata on a point that is not
+   * Sensory declares a footprint that would claim host surface for nothing.
+   */
+  if (isSensory && data === undefined) {
+    flag(
+      "sensory-without-metadata",
+      `Anatomical Point "${definition.id}" is Sensory but carries no sensory ` +
+      `metadata, so nothing can say which Sense it serves or how much ` +
+      `surface it occupies.`,
+    );
+
+    return issues;
+  }
+
+  if (!isSensory && data !== undefined) {
+    flag(
+      "metadata-without-sensory",
+      `Anatomical Point "${definition.id}" carries sensory metadata but is ` +
+      `not a Sensory point, so none of it would ever apply.`,
+    );
+
+    return issues;
+  }
+
+  if (data === undefined) return issues;
+
+  /* ---- functions --------------------------------------------------- */
+
+  if (!Array.isArray(data.functions) || data.functions.length === 0) {
+    flag(
+      "sensory-without-functions",
+      `Anatomical Point "${definition.id}" is Sensory but serves no Sense.`,
+    );
+  } else {
+    const seenSenses = new Set<string>();
+
+    for (const entry of data.functions) {
+      const senseId = entry?.senseId;
+
+      if (typeof senseId !== "string" || senseId.trim().length === 0) {
+        flag(
+          "invalid-sensory-sense",
+          `Anatomical Point "${definition.id}" has a sensory function with ` +
+          `no Sense id.`,
+        );
+
+        continue;
+      }
+
+      if (seenSenses.has(senseId)) {
+        flag(
+          "duplicate-sensory-sense",
+          `Anatomical Point "${definition.id}" serves Sense "${senseId}" ` +
+          `twice. One point contributes to one Sense once.`,
+        );
+      }
+
+      seenSenses.add(senseId);
+
+      issues.push(
+        ...findContributionIssues(definition, senseId, entry.contribution),
+      );
+    }
+  }
+
+  issues.push(...findFootprintIssues(definition, data.footprint));
+  issues.push(...findFocusIssues(definition, data.focus));
+
+  return issues;
+}
+
+
+function findContributionIssues(
+  definition: SpecialPointDefinition,
+  senseId: string,
+  contribution: SensoryContribution | undefined,
+): readonly CriticalPointValidationIssue[] {
+  const bad = (detail: string): CriticalPointValidationIssue => ({
+    code: "invalid-sensory-contribution",
+    definitionId: definition.id,
+    message:
+      `Anatomical Point "${definition.id}" contributes to "${senseId}" ` +
+      `invalidly: ${detail}`,
+  });
+
+  if (typeof contribution !== "object" || contribution === null) {
+    return [bad("it declares no contribution.")];
+  }
+
+  if (contribution.kind === "fixed") {
+    return isPositiveFinite(contribution.amount)
+      ? []
+      : [bad("a fixed contribution must be a finite amount above zero.")];
+  }
+
+  if (contribution.kind === "network-weight") {
+    const issues: CriticalPointValidationIssue[] = [];
+
+    if (
+      typeof contribution.networkId !== "string" ||
+      contribution.networkId.trim().length === 0
+    ) {
+      issues.push(bad("a network contribution must name its network."));
+    }
+
+    if (!isPositiveFinite(contribution.sensitivity)) {
+      issues.push(
+        bad("a network sensitivity must be a finite amount above zero."),
+      );
+    }
+
+    return issues;
+  }
+
+  return [bad("a contribution is either fixed or a network weight.")];
+}
+
+
+function findFootprintIssues(
+  definition: SpecialPointDefinition,
+  footprint: SensoryPointFootprint | undefined,
+): readonly CriticalPointValidationIssue[] {
+  const bad = (detail: string): CriticalPointValidationIssue => ({
+    code: "invalid-sensory-footprint",
+    definitionId: definition.id,
+    message: `Anatomical Point "${definition.id}" footprint is invalid: ${detail}`,
+  });
+
+  if (typeof footprint !== "object" || footprint === null) {
+    return [bad("a Sensory point must declare how much surface it occupies.")];
+  }
+
+  if (footprint.kind === "host-surface-fraction") {
+    /*
+     * Strictly below one. A point occupying its ENTIRE host leaves the host no
+     * remainder to coat, which is expressible arithmetic and meaningless
+     * anatomy — an eye is not a head.
+     */
+    return typeof footprint.fraction === "number" &&
+        Number.isFinite(footprint.fraction) &&
+        footprint.fraction > 0 && footprint.fraction < 1
+      ? []
+      : [bad("a host fraction must be above 0 and below 1.")];
+  }
+
+  if (footprint.kind === "absolute") {
+    return isPositiveFinite(footprint.squareMetres)
+      ? []
+      : [bad("an absolute footprint must be a finite area above zero.")];
+  }
+
+  /*
+   * `host-remainder` carries no fields, so there is nothing here to check.
+   * Its one rule — at most one per host — is a fact about a resolved body
+   * rather than about a definition, and lives in footprints.ts.
+   */
+  if (footprint.kind === "host-remainder") return [];
+
+  return [
+    bad("a footprint is a host fraction, an absolute area, or the remainder."),
+  ];
+}
+
+
+function findFocusIssues(
+  definition: SpecialPointDefinition,
+  focus: SensoryFocusMembership | undefined,
+): readonly CriticalPointValidationIssue[] {
+  const bad = (detail: string): CriticalPointValidationIssue => ({
+    code: "invalid-sensory-focus",
+    definitionId: definition.id,
+    message: `Anatomical Point "${definition.id}" focus is invalid: ${detail}`,
+  });
+
+  if (typeof focus !== "object" || focus === null) {
+    return [bad("a Sensory point must declare its focus membership.")];
+  }
+
+  if (focus.kind === "local") {
+    return typeof focus.cluster === "string" && focus.cluster.trim().length > 0
+      ? []
+      : [bad("a local focus must name its cluster.")];
+  }
+
+  if (focus.kind === "distributed") {
+    const issues: CriticalPointValidationIssue[] = [];
+
+    if (typeof focus.network !== "string" || focus.network.trim().length === 0) {
+      issues.push(bad("a distributed focus must name its network."));
+    }
+
+    /*
+     * The only selection there is. Written as a check rather than trusted to
+     * the type, because a registered homebrew point arrives as JSON and an
+     * unrecognised selection would otherwise resolve as "select nothing".
+     */
+    if (focus.selection !== "all-active") {
+      issues.push(
+        bad("a distributed focus selects all active members and nothing else."),
+      );
+    }
+
+    return issues;
+  }
+
+  return [bad("a focus is either local or distributed.")];
+}
+
+
+function isPositiveFinite(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
 

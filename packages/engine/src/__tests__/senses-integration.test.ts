@@ -21,6 +21,7 @@ import * as engine from "../index";
 import { createTestCharacter, resolveTestCharacter } from "./fixtures/character";
 import { AWAKENING_CAPABLE, standardAwakenedNen } from "./fixtures/nen";
 import { source } from "./fixtures/senses";
+import { EMPTY_SENSORY_EFFECTS } from "../character/foundation/senses/modifiers";
 
 afterEach(() => {
   clearCustomDefinitions();
@@ -107,13 +108,7 @@ describe("collecting sensory Effects", () => {
   it("leaves the sensory lists empty when no content supplies any", () => {
     const resolved = resolve({ type: "modifyBaseAttribute", attribute: "per", amount: 2 });
 
-    expect(resolved.sensory).toEqual({
-      senseModifiers: [],
-      senseGrants: [],
-      senseSuppressions: [],
-      nenPerceptionGrants: [],
-      nenPerceptionSuppressions: [],
-    });
+    expect(resolved.sensory).toEqual(EMPTY_SENSORY_EFFECTS);
   });
 });
 
@@ -122,18 +117,58 @@ describe("validating sensory Effects", () => {
   it("accepts well-formed variants", () => {
     expect(issueTypes({
       type: "modifySense",
-      sense: { kind: "all-physical" },
+      sense: { kind: "family", family: "basic" },
       amount: -2,
     })).toEqual([]);
-    expect(issueTypes({ type: "grantSense", sense: "extrasensory" })).toEqual([]);
+    expect(issueTypes({ type: "grantSense", sense: "esp" })).toEqual([]);
     expect(issueTypes({ type: "grantNenPerception" })).toEqual([]);
+    expect(issueTypes({
+      type: "grantSenseChannel",
+      sense: "sight",
+      channel: "thermal",
+    })).toEqual([]);
+    expect(issueTypes({
+      type: "modifySenseChannelReception",
+      sense: { kind: "specific", sense: "sight" },
+      channel: "visible-light",
+      amount: 2,
+    })).toEqual([]);
+    expect(issueTypes({
+      type: "modifyAnatomicalPointFunction",
+      pointId: "left-eye:head-1",
+      multiplier: 0.5,
+    })).toEqual([]);
   });
 
   it("rejects an unknown sense in a grant", () => {
     expect(issueTypes({
       type: "grantSense",
-      sense: "echolocation" as never,
+      sense: "clairvoyance-of-the-ninth-house" as never,
     })).toContain("invalid-sense-effect");
+  });
+
+  it("rejects an enabled channel the granted Sense cannot receive", () => {
+    expect(issueTypes({
+      type: "grantSense",
+      sense: "esp",
+      enabledChannels: ["visible-light"],
+    })).toContain("invalid-sensory-channel-effect");
+  });
+
+  it("rejects an unregistered channel", () => {
+    expect(issueTypes({
+      type: "grantSenseChannel",
+      sense: "sight",
+      channel: "tachyon-flux",
+    })).toContain("invalid-sensory-channel-effect");
+  });
+
+  it("rejects a negative point-function multiplier", () => {
+    expect(issueTypes({
+      type: "modifyAnatomicalPointFunction",
+      pointId: "left-eye:head-1",
+      multiplier: -1,
+    })).toContain("invalid-effect-amount");
   });
 
   it("rejects a malformed selector", () => {
@@ -157,8 +192,8 @@ describe("ResolvedCharacter.senses", () => {
   it("resolves a sensory profile for every character", () => {
     const resolved = resolveTestCharacter(createTestCharacter());
 
-    expect(resolved.senses.senses.sight.available).toBe(true);
-    expect(resolved.senses.senses.sight.score).toBe(10);
+    expect(resolved.senses.senses.sight?.available).toBe(true);
+    expect(resolved.senses.senses.sight?.score).toBe(10);
   });
 
   it("tracks the character's resolved PER, not the stored value", () => {
@@ -174,7 +209,7 @@ describe("ResolvedCharacter.senses", () => {
     }));
 
     expect(resolved.attributes.resolved.per).toBe(14);
-    expect(resolved.senses.senses.sight.score).toBe(14);
+    expect(resolved.senses.senses.sight?.score).toBe(14);
   });
 
   it("carries an authored sense grant all the way through", () => {
@@ -182,15 +217,15 @@ describe("ResolvedCharacter.senses", () => {
       id: "third-eye",
       name: "Third Eye",
       description: "A test Trait granting Extrasensory Perception.",
-      effects: [{ type: "grantSense", sense: "extrasensory" }],
+      effects: [{ type: "grantSense", sense: "esp" }],
     });
 
     const resolved = resolveTestCharacter(createTestCharacter({
       traits: [{ traitId: "third-eye" }],
     }));
 
-    expect(resolved.senses.senses.extrasensory.available).toBe(true);
-    expect(resolved.senses.senses.extrasensory.availabilityReason).toBe("granted");
+    expect(resolved.senses.senses.esp?.available).toBe(true);
+    expect(resolved.senses.senses.esp?.availabilityReason).toBe("granted");
   });
 
   it("carries an authored sense modifier all the way through", () => {
@@ -209,9 +244,9 @@ describe("ResolvedCharacter.senses", () => {
       traits: [{ traitId: "keen-ears" }],
     }));
 
-    expect(resolved.senses.senses.hearing.score).toBe(14);
-    expect(resolved.senses.senses.sight.score).toBe(10);
-    expect(resolved.senses.senses.hearing.contributions).toEqual([
+    expect(resolved.senses.senses.hearing?.score).toBe(14);
+    expect(resolved.senses.senses.sight?.score).toBe(10);
+    expect(resolved.senses.senses.hearing?.contributions).toEqual([
       { source: { type: "trait", id: "keen-ears" }, amount: 4 },
     ]);
   });
@@ -278,8 +313,41 @@ describe("ResolvedCharacter.senses", () => {
 
 describe("the public barrel", () => {
   const EXPORTED_VALUES = [
-    "SENSE_IDS",
-    "PHYSICAL_SENSE_IDS",
+    "SENSE_DEFINITIONS",
+    "SENSORY_CHANNEL_DEFINITIONS",
+    "SENSE_FAMILIES",
+    "SENSE_AVAILABILITY_KINDS",
+    "SENSORY_CHANNEL_PROPAGATIONS",
+    "SENSORY_RECEIVER_KINDS",
+    "EXTRASENSORY_PERCEPTION_SENSE_ID",
+    "NEUTRAL_SENSORY_INTENSITY",
+    "MINIMUM_SENSORY_INTENSITY",
+    "MAXIMUM_SENSORY_INTENSITY",
+    "senseRegistry",
+    "sensoryChannelRegistry",
+    "getSenseDefinition",
+    "getSensoryChannel",
+    "listSenses",
+    "listSensoryChannels",
+    "sensesReceiving",
+    "senseReceivesChannel",
+    "isSensoryChannelId",
+    "isSensoryIntensity",
+    "sensoryIntensityModifier",
+    "generateSensoryRoutes",
+    "sensoryRouteKey",
+    "sensoryRouteTermsKey",
+    "receiverKey",
+    "canonicalReceiver",
+    "isCoatableReceiver",
+    "receiverPointIds",
+    "findSensoryCueIssues",
+    "emittedChannels",
+    "getResolvedSense",
+    "hasAvailableSense",
+    "availableSenses",
+    "localClusterKey",
+    "receivedIntensityFor",
     "PERCEPTION_PHENOMENA",
     "DETECTION_MODES",
     "CONCEALMENT_MODES",
@@ -293,11 +361,11 @@ describe("the public barrel", () => {
     "NEN_PRESENCE_EVIDENCE_ID",
     "INFORMATION_BANDS",
     "DEFAULT_INFORMATION_THRESHOLDS",
-    "NATURAL_EXTRASENSORY_PERCEPTION_REQUIREMENTS",
     "EMPTY_SENSORY_EFFECTS",
     "isSenseId",
     "isPerceptionPhenomenon",
     "matchesSenseSelector",
+    "matchesSensoryChannelSelector",
     "matchesPhenomenonSelector",
     "resolveSensoryProfile",
     "resolveSensoryAccess",
@@ -334,9 +402,9 @@ describe("the public barrel", () => {
     "findDetectionRequestIssues",
     "findConcealmentRequestIssues",
     "findInvestigationRequestIssues",
-    "findSensorySignatureIssues",
     "findInformationOverrideIssues",
     "isValidSenseSelector",
+    "isValidSensoryChannelSelector",
     "isValidPhenomenonSelector",
     "isValidInformationThresholds",
   ] as const;
@@ -362,37 +430,54 @@ describe("the public barrel", () => {
     expect(typeof engine.resolveDetectionCheck).toBe("function");
   });
 
-  it("exports one sense vocabulary, shared with the check vocabulary", () => {
-    expect(engine.SENSE_IDS).toEqual([
-      "sight",
-      "hearing",
-      "smell",
-      "taste",
-      "touch",
-      "extrasensory",
-    ]);
+  it("exports ONE sense vocabulary, registry-backed and shared with checks", () => {
+    /*
+     * There is no SENSE_IDS array any more, and its absence is the point: a
+     * copied list is a second answer that can disagree with the registry. The
+     * registry IS the vocabulary, and `isSenseId` asks it.
+     */
+    expect(engine).not.toHaveProperty("SENSE_IDS");
+    expect(engine).not.toHaveProperty("PHYSICAL_SENSE_IDS");
+
     expect(engine.isSenseId("sight")).toBe(true);
-    expect(engine.isSenseId("echolocation")).toBe(false);
+    expect(engine.isSenseId("echolocation")).toBe(true);
+    expect(engine.isSenseId("clairvoyance-of-the-ninth-house")).toBe(false);
+
+    expect(engine.listSenses().map((sense) => sense.id).sort()).toEqual(
+      Object.keys(engine.SENSE_DEFINITIONS).sort(),
+    );
+  });
+
+  it("no longer exports the removed sensory vocabulary", () => {
+    for (
+      const removed of [
+        "NATURAL_EXTRASENSORY_PERCEPTION_REQUIREMENTS",
+        "findSensorySignatureIssues",
+        "eyeGyoAura",
+        "resolveEyeGyoContribution",
+        "withEyeGyoModifier",
+      ]
+    ) {
+      expect(engine).not.toHaveProperty(removed);
+    }
   });
 
   it("is usable end to end without reaching past the barrel", () => {
-    const profile = engine.resolveSensoryProfile(
-      engine.createCharacterStats(
-        {
-          agi: 10, dex: 12, con: 10, vit: 10,
-          int: 18, wis: 14, per: 16, spi: 10, cha: 10,
-        },
-        10,
-      ),
-    );
+    const character = resolveTestCharacter(createTestCharacter({
+      attributes: {
+        agi: 10, dex: 12, con: 10, vit: 10,
+        int: 18, wis: 14, per: 16, spi: 10, cha: 10,
+      },
+    }));
 
     const result = payloadOf(engine.resolvePerception({
-      profile,
-      signature: {
+      profile: character.senses,
+      cue: {
         id: "footstep",
-        sense: "hearing",
+        source: { type: "scene", id: "corridor" },
         phenomenon: "physical",
         subject: "entity",
+        emissions: { sound: 5 },
         reception: { kind: "uncertain", difficulty: 10 },
       },
       dice: { advantage: 0, rolls: [12] },
@@ -401,6 +486,7 @@ describe("the public barrel", () => {
     expect(result.status).toBe("perceived");
     if (result.status !== "perceived") throw new Error("unreachable");
     expect(result.band).toBe("partial");
-    expect(result.cue.signature.sense).toBe("hearing");
+    expect(result.route.sense).toBe("hearing");
+    expect(result.route.channel).toBe("sound");
   });
 });

@@ -62,6 +62,8 @@ import { findItemFamilyCatalogIssues } from "../character/equipment/families";
 import { resolveItemUse as resolveItemUseWith } from "../character/equipment/use";
 import { findBodyPartCatalogIssues } from "../character/foundation/body/anatomy/body-parts";
 import { findReferenceFormCatalogIssues } from "../character/foundation/body/anatomy/reference-forms";
+import { findSenseCatalogIssues } from "../character/foundation/senses/definitions";
+import { findSensoryChannelCatalogIssues } from "../character/foundation/senses/channels";
 import { findSpecialPointCatalogIssues } from "../character/foundation/body/critical-points/special-points";
 
 import type { CatalogDomain } from "../character/catalogs";
@@ -85,6 +87,8 @@ function findCatalogIssuesFor(domain: CatalogDomain): readonly string[] {
     "body-part": findBodyPartCatalogIssues,
     "reference-form": findReferenceFormCatalogIssues,
     "special-point": findSpecialPointCatalogIssues,
+    sense: findSenseCatalogIssues,
+    "sensory-channel": findSensoryChannelCatalogIssues,
   };
 
   return checks[domain]();

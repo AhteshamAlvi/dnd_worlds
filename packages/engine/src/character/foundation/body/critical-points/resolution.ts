@@ -129,6 +129,9 @@ export function resolveSpecialPointDefinition(
       hostPartId: part.id,
       ...(designatedPartId !== undefined ? { designatedPartId } : {}),
       weakMultiplier: definition.weakMultiplier ?? WEAK_DAMAGE_MULTIPLIER,
+      ...(definition.sensory === undefined
+        ? {}
+        : { sensory: definition.sensory }),
     };
   });
 }
