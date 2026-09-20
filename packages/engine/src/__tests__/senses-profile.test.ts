@@ -656,3 +656,184 @@ describe("the profile trace", () => {
     expect(trace.formula).toContain("floor(basis x support");
   });
 });
+
+
+/*
+ * Channels belong to a RECEIVER, not to the Sense.
+ *
+ * A Sense-wide channel list made a restriction into a statement about
+ * everything that receives that Sense: the first grant carrying
+ * `enabledChannels` decided what the whole Sense received, so grant ORDER was
+ * mechanically significant, two restricted grants could not supply different
+ * channels, and a restricted grant could delete channels that working anatomy
+ * was already supplying.
+ */
+describe("receiver-specific channels", () => {
+  const PREMONITION = {
+    source: source("premonition"),
+    sense: "esp",
+    enabledChannels: ["danger"],
+  };
+
+  const EMPATHY = {
+    source: source("empathy"),
+    sense: "esp",
+    enabledChannels: ["hostile-intent", "presence"],
+  };
+
+  function espReceiver(profile: ReturnType<typeof sensoryProfile>, id: string) {
+    return getResolvedSense(profile, "esp")!.receivers
+      .find((receiver) => receiver.key === `granted:trait:${id}`)!;
+  }
+
+  it("keeps two restricted grants on their own disjoint channels", () => {
+    const profile = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, EMPATHY] }),
+    });
+
+    expect(espReceiver(profile, "premonition").channels).toEqual(["danger"]);
+    expect(espReceiver(profile, "empathy").channels)
+      .toEqual(["hostile-intent", "presence"]);
+  });
+
+  it("resolves an identical profile whichever order the grants arrived in", () => {
+    const forwards = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, EMPATHY] }),
+    });
+    const backwards = sensoryProfile({
+      effects: effects({ senseGrants: [EMPATHY, PREMONITION] }),
+    });
+
+    const channelsBy = (profile: typeof forwards) =>
+      Object.fromEntries(
+        getResolvedSense(profile, "esp")!.receivers
+          .map((receiver) => [receiver.key, receiver.channels]),
+      );
+
+    expect(channelsBy(forwards)).toEqual(channelsBy(backwards));
+    expect(getResolvedSense(forwards, "esp")!.channels)
+      .toEqual(getResolvedSense(backwards, "esp")!.channels);
+  });
+
+  it("lets neither restricted grant restrict the other", () => {
+    const profile = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, EMPATHY] }),
+    });
+
+    expect(espReceiver(profile, "premonition").channels)
+      .not.toContain("hostile-intent");
+    expect(espReceiver(profile, "empathy").channels).not.toContain("danger");
+  });
+
+  it("gives an unrestricted grant the definition's complete set beside a restricted one", () => {
+    const profile = sensoryProfile({
+      effects: effects({
+        senseGrants: [PREMONITION, { source: source("third-eye"), sense: "esp" }],
+      }),
+    });
+
+    expect(espReceiver(profile, "third-eye").channels).toEqual([
+      "causal-disturbance",
+      "danger",
+      "hostile-intent",
+      "metaphysical-anomaly",
+      "presence",
+    ]);
+    expect(espReceiver(profile, "premonition").channels).toEqual(["danger"]);
+  });
+
+  it("never lets a restricted grant take a channel from working anatomy", () => {
+    /*
+     * A grant that supplies pressure alone, on a creature whose skin already
+     * reads all four tactile channels. The grant is a floor under Touch, not a
+     * ceiling over it.
+     */
+    const profile = sensoryProfile({
+      effects: effects({
+        senseGrants: [{
+          source: source("phantom-limb"),
+          sense: "touch",
+          enabledChannels: ["surface-pressure"],
+        }],
+      }),
+    });
+    const touch = getResolvedSense(profile, "touch")!;
+
+    for (const receiver of touch.receivers) {
+      if (receiver.ref.kind === "granted") continue;
+
+      expect(receiver.channels).toEqual([
+        "air-displacement",
+        "ground-vibration",
+        "structural-vibration",
+        "surface-pressure",
+      ]);
+    }
+
+    expect(touch.channels).toContain("air-displacement");
+  });
+
+  it("opens a channel the definition never listed, on every receiver of that Sense", () => {
+    const profile = sensoryProfile({
+      effects: effects({
+        senseChannelGrants: [{
+          source: source("pit-organs"),
+          sense: "sight",
+          channel: "thermal",
+        }],
+      }),
+    });
+    const sight = getResolvedSense(profile, "sight")!;
+
+    expect(sight.receivers[0]!.channels).toEqual(["thermal", "visible-light"]);
+    expect(sight.channels).toEqual(["thermal", "visible-light"]);
+  });
+
+  it("removes a suppressed channel from every receiver its scope covers", () => {
+    const profile = sensoryProfile({
+      effects: effects({
+        senseChannelSuppressions: [{
+          source: source("numbness", "condition"),
+          sense: { kind: "specific", sense: "touch" },
+          channel: "air-displacement",
+        }],
+        senseGrants: [{ source: source("phantom-limb"), sense: "touch" }],
+      }),
+    });
+    const touch = getResolvedSense(profile, "touch")!;
+
+    for (const receiver of touch.receivers) {
+      expect([receiver.key, receiver.channels.includes("air-displacement")])
+        .toEqual([receiver.key, false]);
+    }
+
+    expect(touch.channels).not.toContain("air-displacement");
+  });
+
+  it("publishes the Sense's channels as the sorted union of its active receivers", () => {
+    const profile = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, EMPATHY] }),
+    });
+    const esp = getResolvedSense(profile, "esp")!;
+
+    expect(esp.channels).toEqual(["danger", "hostile-intent", "presence"]);
+
+    const union = [
+      ...new Set(
+        esp.receivers
+          .filter((receiver) => receiver.functionalSupport > 0)
+          .flatMap((receiver) => [...receiver.channels]),
+      ),
+    ].sort();
+
+    expect(esp.channels).toEqual(union);
+  });
+
+  it("holds that union for an anatomical Sense too", () => {
+    const touch = getResolvedSense(sensoryProfile(), "touch")!;
+
+    expect(touch.channels).toEqual([
+      ...new Set(touch.receivers.flatMap((receiver) => [...receiver.channels])),
+    ].sort());
+  });
+});

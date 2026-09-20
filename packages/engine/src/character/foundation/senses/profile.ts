@@ -280,6 +280,7 @@ function collectReceivers(
   senseId: SenseId,
   shares: readonly PointShare[],
   grantReceivers: readonly ResolvedSenseReceiver[],
+  anatomicalChannels: readonly SensoryChannelId[],
 ): readonly ResolvedSenseReceiver[] {
   const local = new Map<string, { pointIds: CriticalPointId[]; support: number }>();
   const distributed = new Map<
@@ -322,7 +323,12 @@ function collectReceivers(
       pointIds: held.pointIds,
     });
 
-    receivers.push({ ref, key: receiverKey(ref), functionalSupport: held.support });
+    receivers.push({
+      ref,
+      key: receiverKey(ref),
+      functionalSupport: held.support,
+      channels: anatomicalChannels,
+    });
   }
 
   for (const networkId of [...distributed.keys()].sort()) {
@@ -333,7 +339,12 @@ function collectReceivers(
       pointIds: held.pointIds,
     });
 
-    receivers.push({ ref, key: receiverKey(ref), functionalSupport: held.support });
+    receivers.push({
+      ref,
+      key: receiverKey(ref),
+      functionalSupport: held.support,
+      channels: anatomicalChannels,
+    });
   }
 
   return [...receivers, ...grantReceivers];
@@ -379,19 +390,27 @@ function resolveScoreBasis(
 }
 
 
+/**
+ * One RECEIVER's channel set: a starting list, plus this Sense's channel
+ * Effects.
+ *
+ * `restrictedTo` is a restricted grant's own enabled list and replaces the
+ * definition's set for THAT receiver alone. Null is the ordinary start —
+ * anatomy, and an unrestricted grant — which begins from the definition.
+ *
+ * The Effects apply either way, because their scope is the Sense: a Trait that
+ * adds `thermal` to Sight adds it wherever Sight is received, and a Condition
+ * that suppresses a channel takes it from every receiver it covers. What a
+ * restricted grant may not do is reach past itself, which is the whole reason
+ * this is called once per receiver instead of once per Sense.
+ */
 function resolveChannels(
   definition: SenseDefinition,
-  grantedChannels: readonly SensoryChannelId[] | null,
+  restrictedTo: readonly SensoryChannelId[] | null,
   effects: ResolvedSensoryEffects,
 ): readonly SensoryChannelId[] {
-  /*
-   * A restricted grant REPLACES the definition's set rather than intersecting
-   * with anatomy's. A premonition of danger alone is exactly its enabled list,
-   * and a character who also has the anatomy for the rest keeps it through the
-   * anatomical path below.
-   */
   const base = new Set<SensoryChannelId>(
-    grantedChannels ?? definition.receiveChannels,
+    restrictedTo ?? definition.receiveChannels,
   );
 
   for (const grant of effects.senseChannelGrants) {
@@ -405,6 +424,28 @@ function resolveChannels(
   }
 
   return [...base].sort();
+}
+
+
+/**
+ * What the creature receives ANYWHERE, as the sorted union of its receivers.
+ *
+ * Only active receivers contribute: a channel that arrives exclusively at a
+ * destroyed organ is a channel this creature no longer receives, and route
+ * generation drops that receiver for the same reason.
+ */
+function unionReceiverChannels(
+  receivers: readonly ResolvedSenseReceiver[],
+): readonly SensoryChannelId[] {
+  const union = new Set<SensoryChannelId>();
+
+  for (const receiver of receivers) {
+    if (receiver.functionalSupport <= 0) continue;
+
+    for (const channel of receiver.channels) union.add(channel);
+  }
+
+  return [...union].sort();
 }
 
 
@@ -542,15 +583,12 @@ export function resolveSensoryProfile(
       continue;
     }
 
-    const restricted = matchingGrants
-      .map((grant) => grant.enabledChannels)
-      .find((channels) => channels !== undefined);
-
-    const channels = resolveChannels(
-      definition,
-      restricted ?? null,
-      effects,
-    );
+    /*
+     * Anatomy's channels, and an unrestricted grant's: the definition's set
+     * with this Sense's channel Effects applied. Resolved once and shared,
+     * because every receiver that is not restricted has the same answer.
+     */
+    const anatomicalChannels = resolveChannels(definition, null, effects);
 
     const matchingModifiers = effects.senseModifiers.filter((modifier) =>
       matchesSenseSelector(modifier.sense, definition.id)
@@ -573,6 +611,11 @@ export function resolveSensoryProfile(
       senseAdjustedStats,
     );
 
+    /*
+     * One receiver per grant, each with ITS OWN channels. Two restricted
+     * grants of one Sense are two receivers supplying two channel sets, and
+     * neither of them narrows the other or the anatomy.
+     */
     const grantReceivers: ResolvedSenseReceiver[] = matchingGrants.map(
       (grant) => {
         const ref = { kind: "granted" as const, source: grant.source };
@@ -581,9 +624,21 @@ export function resolveSensoryProfile(
           ref,
           key: receiverKey(ref),
           functionalSupport: grant.amount ?? 1,
+          channels: grant.enabledChannels === undefined
+            ? anatomicalChannels
+            : resolveChannels(definition, grant.enabledChannels, effects),
         };
       },
     );
+
+    const receivers = collectReceivers(
+      definition.id,
+      shares,
+      grantReceivers,
+      anatomicalChannels,
+    );
+
+    const channels = unionReceiverChannels(receivers);
 
     senses[definition.id] = {
       id: definition.id,
@@ -600,7 +655,7 @@ export function resolveSensoryProfile(
         channels,
         effects,
       ),
-      receivers: collectReceivers(definition.id, shares, grantReceivers),
+      receivers,
       contributions: matchingModifiers.map(({ source, amount }) => ({
         source,
         amount,

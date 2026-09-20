@@ -48,6 +48,21 @@
  * either changes the dice count or changes the total the dice are compared
  * against, so a binding that omitted one would let a preparation be spent on a
  * check it was not costed for.
+ *
+ *
+ * A PASSIVE WIN IS DECIDED IN THE FIRST CALL AND APPLIED IN THE SECOND
+ *
+ * Preparation is pure: it takes no ordering value, returns no state, and must
+ * not quietly rewrite the world before the dice arrive. But passive Detection
+ * is compared during it, and a passive win breaks the attempt outright — so
+ * preparation records that break as a PENDING TRANSITION bound to the attempt
+ * and the observer, and settlement applies it, once, at its own `at`.
+ *
+ * The first version instead described an already-unconcealed world in the
+ * binding while leaving the state untouched. Settlement then re-derived a
+ * still-concealed world from that same state, the two disagreed, and every
+ * passive success refused its own preparation as stale — the one outcome in
+ * the whole Gate that should cost a combatant nothing.
  */
 
 import type {
@@ -129,6 +144,29 @@ export interface ReactionGateBinding {
 }
 
 
+/**
+ * A Concealment break that preparation DECIDED and settlement must APPLY.
+ *
+ * Passive Detection is free and constant, so it can succeed during the pure
+ * preparation pass — and §3.2 says a passive win breaks the attempt outright.
+ * Preparation may not return a new Concealment state (it takes no ordering
+ * value and produces no transition), and it may not pretend the break already
+ * happened either: the retained state still records this observer as
+ * concealed, so settlement re-derived the old answer and refused its own
+ * preparation as stale.
+ *
+ * It is recorded here instead, as a transition addressed at one attempt and
+ * one observer, and applied once at settlement's `at`. Both fields are also in
+ * the binding, which is what makes this a bound instruction rather than a
+ * boolean a caller could set: settlement checks the attempt in front of it
+ * before it applies anything.
+ */
+export interface ReactionGatePendingDetection {
+  readonly attemptId: string;
+  readonly observerId: string;
+}
+
+
 export interface ReactionGatePreparation {
   readonly binding: ReactionGateBinding;
 
@@ -137,6 +175,13 @@ export interface ReactionGatePreparation {
    * through passive Detection just now. No Concealment Lead applies.
    */
   readonly alreadyDetected: boolean;
+
+  /**
+   * The passive break this preparation owes the Concealment state.
+   *
+   * Null unless passive Detection beat a live attempt during preparation.
+   */
+  readonly pendingDetection: ReactionGatePendingDetection | null;
 
   readonly concealmentTotal: number;
   readonly passiveDetectionTotal: number;
@@ -269,27 +314,43 @@ export function prepareReactionGate(
   const best = sweep.payload.best;
 
   /*
-   * Three ways to be unconcealed, and all three mean the same thing here: the
-   * combatant knows where the threat is, so the Gate is an ordinary Reaction
-   * check with no Lead penalty.
+   * TWO questions, and the defect was answering them with one boolean.
    *
-   *   - no concealment attempt is in play at all;
-   *   - this observer broke the attempt earlier;
-   *   - passive Detection just beat it, which §3.2 says breaks it outright.
+   * What the retained state SAYS is whether an attempt is live against this
+   * observer, and that is what the binding is made of: settlement re-derives
+   * it from the state it is handed, so a preparation that quietly described
+   * an unconcealed world could never match a state that still said concealed.
+   *
+   * What the Gate COSTS is a different question. Three things make it an
+   * ordinary Reaction check with no Lead penalty: no attempt in play, an
+   * attempt this observer broke earlier, or passive Detection beating it just
+   * now — which §3.2 says breaks it outright, and which this preparation
+   * therefore owes the state as a pending transition rather than as an
+   * assumption.
    */
-  const stillConcealed = input.concealment !== null &&
-    isConcealedFrom(input.concealment, input.observerId) &&
-    !sweep.payload.detected;
+  const concealedNow = input.concealment !== null &&
+    isConcealedFrom(input.concealment, input.observerId);
+
+  const passivelyDetected = concealedNow && sweep.payload.detected;
+  const concealmentApplies = concealedNow && !passivelyDetected;
 
   const binding: ReactionGateBinding = {
     trigger: opportunity.trigger,
     reactingCombatantId: opportunity.reactingCombatantId,
     observerId: input.observerId,
     sourceId: input.sourceId,
-    attemptId: stillConcealed ? input.concealment!.attemptId : null,
-    route: stillConcealed ? best.route : null,
-    receivedIntensity: stillConcealed ? best.receivedIntensity : null,
+    attemptId: concealedNow ? input.concealment!.attemptId : null,
+    route: concealedNow ? best.route : null,
+    receivedIntensity: concealedNow ? best.receivedIntensity : null,
   };
+
+  const pendingDetection: ReactionGatePendingDetection | null =
+    passivelyDetected
+      ? {
+        attemptId: input.concealment!.attemptId,
+        observerId: input.observerId,
+      }
+      : null;
 
   const finish = (
     lead: number,
@@ -299,7 +360,8 @@ export function prepareReactionGate(
     const requiredRollCount = expectedRollCount(finalAdvantage);
     const preparation: ReactionGatePreparation = {
       binding,
-      alreadyDetected: !stillConcealed,
+      alreadyDetected: !concealmentApplies,
+      pendingDetection,
       concealmentTotal: best.concealmentTotal,
       passiveDetectionTotal: best.observerTotal,
       lead,
@@ -312,7 +374,8 @@ export function prepareReactionGate(
         label,
         formula: "A_final = A - D, and D is fixed before any die is requested",
         inputs: {
-          concealed: { value: stillConcealed },
+          concealed: { value: concealmentApplies },
+          passiveBreak: { value: pendingDetection !== null },
           lead: { value: lead },
           concealmentDisadvantages: { value: concealmentDisadvantages },
           independentAdvantage: { value: independentAdvantage },
@@ -325,7 +388,7 @@ export function prepareReactionGate(
     return engineSuccess(preparation, { root: preparation.trace });
   };
 
-  if (!stillConcealed) return finish(0, 0, independentAdvantage);
+  if (!concealmentApplies) return finish(0, 0, independentAdvantage);
 
   const lead = resolveConcealmentLead({
     concealmentTotal: best.concealmentTotal,
@@ -379,7 +442,14 @@ export interface ReactionGateSettlement {
   /** The queue advanced through its own canonical success/failure transition. */
   readonly queue: ReactionQueue;
 
-  /** Unchanged on a failure. That is the rule, not an oversight. */
+  /**
+   * Unchanged by a FAILED Gate. That is the rule, not an oversight.
+   *
+   * It is not unchanged by a failed Gate that a passive Detection preceded. A
+   * passive win broke the attempt for this observer before any die was asked
+   * for, and the rolled Gate that follows decides whether they get to react —
+   * not whether they saw what they had already seen.
+   */
   readonly concealment: EstablishedConcealmentState | null;
 }
 
@@ -479,6 +549,45 @@ export function settleReactionGate(
     });
   }
 
+  /*
+   * The passive break, applied ONCE, before the Gate is rolled and regardless
+   * of how it goes. Re-checked against the state actually in front of us even
+   * though the binding has already matched it, so that a hand-built
+   * preparation cannot address a transition at an attempt that is not here.
+   */
+  const pending = input.preparation.pendingDetection;
+  let concealment = input.concealment;
+
+  if (pending !== null) {
+    if (
+      input.concealment === null ||
+      pending.attemptId !== input.concealment.attemptId ||
+      pending.observerId !== input.observerId
+    ) {
+      return gateFailure(label, {
+        code: "gameplay.senses.reaction-gate.stale",
+        message:
+          "This prepared Gate owes a passive Detection to a Concealment attempt that is not the one in front of it.",
+        audience: "developer",
+        required: JSON.stringify(pending),
+        actual: JSON.stringify({
+          attemptId: input.concealment?.attemptId ?? null,
+          observerId: input.observerId,
+        }),
+      });
+    }
+
+    const passive = recordConcealmentDetection(input.concealment, {
+      attemptId: pending.attemptId,
+      observerId: pending.observerId,
+      at: input.at,
+    });
+
+    if (!passive.success) return passive;
+
+    concealment = passive.payload;
+  }
+
   const detected = resolveDetectionCheck({
     mode: "reaction",
     profile: input.profile,
@@ -499,6 +608,7 @@ export function settleReactionGate(
     inputs: {
       reacting: { value: opportunity.reactingCombatantId },
       finalAdvantage: { value: input.preparation.finalAdvantage },
+      passiveBreakApplied: { value: pending !== null },
     },
     output: detection.detected,
     children: [detection.trace],
@@ -513,23 +623,28 @@ export function settleReactionGate(
       passed: false,
       detection,
       queue: skipReactionOpportunity(input.queue),
-      concealment: input.concealment,
+      concealment,
     }, { root: trace });
   }
 
   const queue = queueReactionAfterGateSuccess(input.queue);
 
-  if (!stillConcealed) {
+  /*
+   * At most once. An observer the passive break has already removed is not
+   * recorded a second time by the roll that followed it — and an attempt that
+   * was never live is not started by one.
+   */
+  if (concealment === null || !isConcealedFrom(concealment, input.observerId)) {
     return engineSuccess({
       passed: true,
       detection,
       queue,
-      concealment: input.concealment,
+      concealment,
     }, { root: trace });
   }
 
-  const broken = recordConcealmentDetection(input.concealment!, {
-    attemptId: input.concealment!.attemptId,
+  const broken = recordConcealmentDetection(concealment, {
+    attemptId: concealment.attemptId,
     observerId: input.observerId,
     at: input.at,
   });

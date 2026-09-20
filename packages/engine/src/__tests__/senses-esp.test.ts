@@ -185,6 +185,7 @@ describe("Sensory Gyō cannot reach a nonanatomical ESP", () => {
             },
             key: "anatomical:head-1/esp/third-eye:third-eye:head-1",
             functionalSupport: 1,
+            channels: ["danger"],
           }],
         },
       },

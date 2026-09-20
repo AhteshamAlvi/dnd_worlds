@@ -493,3 +493,141 @@ describe("access", () => {
       .toBe("sealed in stone");
   });
 });
+
+
+/*
+ * Routes are generated from the observer's RESOLVED profile.
+ *
+ * Starting from `sensesReceiving(channel)` answered "which Senses were
+ * authored to read this channel", which is a different question from "which of
+ * this creature's receivers reads it". The difference is a runtime
+ * `grantSenseChannel`, which opened a channel no definition listed and could
+ * therefore produce no route at all.
+ */
+describe("routes follow receiver channels", () => {
+  const PREMONITION = {
+    source: source("premonition"),
+    sense: "esp",
+    enabledChannels: ["danger"],
+  };
+
+  const EMPATHY = {
+    source: source("empathy"),
+    sense: "esp",
+    enabledChannels: ["presence"],
+  };
+
+  const TWO_GRANTS = sensoryProfile({
+    effects: effects({ senseGrants: [PREMONITION, EMPATHY] }),
+  });
+
+  it("routes each restricted grant's channel through that grant alone", () => {
+    const danger = generatedRoutes(TWO_GRANTS, { emissions: { danger: 7 } });
+    const presence = generatedRoutes(TWO_GRANTS, { emissions: { presence: 7 } });
+
+    expect(danger).toHaveLength(1);
+    expect(receiverKey(danger[0]!.route.receiver))
+      .toBe("granted:trait:premonition");
+
+    expect(presence).toHaveLength(1);
+    expect(receiverKey(presence[0]!.route.receiver))
+      .toBe("granted:trait:empathy");
+  });
+
+  it("generates nothing for a channel neither grant enabled", () => {
+    expect(generatedRoutes(TWO_GRANTS, { emissions: { "hostile-intent": 7 } }))
+      .toEqual([]);
+  });
+
+  it("produces identical routes whichever order the grants arrived in", () => {
+    const reversed = sensoryProfile({
+      effects: effects({ senseGrants: [EMPATHY, PREMONITION] }),
+    });
+
+    for (const channel of ["danger", "presence"] as const) {
+      expect(
+        generatedRoutes(reversed, { emissions: { [channel]: 7 } })
+          .map((one) => sensoryRouteKey(one.route)),
+      ).toEqual(
+        generatedRoutes(TWO_GRANTS, { emissions: { [channel]: 7 } })
+          .map((one) => sensoryRouteKey(one.route)),
+      );
+    }
+  });
+
+  it("opens a route on a channel the Sense definition never listed", () => {
+    /*
+     * A Human reads no thermal channel through any Sense they have, so the
+     * Effect is the only thing that could produce this route — and the eyes it
+     * lands on are ordinary anatomy, not a grant.
+     */
+    const pitOrgans = sensoryProfile({
+      effects: effects({
+        senseChannelGrants: [{
+          source: source("pit-organs"),
+          sense: "sight",
+          channel: "thermal",
+        }],
+      }),
+    });
+
+    expect(generatedRoutes(PROFILE, { emissions: { thermal: 6 } })).toEqual([]);
+
+    const routes = generatedRoutes(pitOrgans, { emissions: { thermal: 6 } });
+
+    expect(routes).toHaveLength(1);
+    expect(routes[0]!.route.sense).toBe("sight");
+    expect(receiverKey(routes[0]!.route.receiver)).toBe(receiverKey(EYES));
+  });
+
+  it("drops a channel suppressed on the receiver that would have carried it", () => {
+    const deaf = sensoryProfile({
+      effects: effects({
+        senseChannelSuppressions: [{
+          source: source("numbness", "condition"),
+          sense: { kind: "specific", sense: "touch" },
+          channel: "air-displacement",
+        }],
+      }),
+    });
+
+    expect(generatedRoutes(PROFILE, { emissions: { "air-displacement": 6 } })
+      .length).toBeGreaterThan(0);
+    expect(generatedRoutes(deaf, { emissions: { "air-displacement": 6 } }))
+      .toEqual([]);
+  });
+
+  it("produces one canonical route from duplicated grant data", () => {
+    /*
+     * Two grants with identical provenance are two entries and one receiver in
+     * the world. A sweep that saw it twice would compare the creature against
+     * itself and call the tie a second chance.
+     */
+    const duplicated = sensoryProfile({
+      effects: effects({
+        senseGrants: [
+          { source: source("third-eye"), sense: "esp" },
+          { source: source("third-eye"), sense: "esp" },
+        ],
+      }),
+    });
+
+    const routes = generatedRoutes(duplicated, { emissions: { danger: 7 } });
+
+    expect(routes).toHaveLength(1);
+    expect(new Set(routes.map((one) => sensoryRouteKey(one.route))).size)
+      .toBe(routes.length);
+  });
+
+  it("still offers both receivers of one Sense as separate candidates", () => {
+    const routes = generatedRoutes(
+      PROFILE,
+      { emissions: { "surface-pressure": 6 } },
+      { contactedPointIds: ["palm:hand-1", "tactile-surface:upper-body-1"] },
+    );
+
+    expect(routes.length).toBeGreaterThan(1);
+    expect(new Set(routes.map((one) => sensoryRouteKey(one.route))).size)
+      .toBe(routes.length);
+  });
+});

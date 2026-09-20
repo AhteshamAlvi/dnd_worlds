@@ -24,6 +24,7 @@ import {
   establishConcealmentState,
   isConcealedFrom,
   recordConcealmentDetection,
+  replaceConcealmentAttempt,
   type EstablishedConcealmentState,
 } from "../character/foundation/senses/concealment/state";
 import type { DetectionRouteCandidate } from "../character/foundation/senses/detection";
@@ -917,5 +918,352 @@ describe("the Gate reads the sensory result and Combat stays principle-neutral",
     }));
 
     expect(settled.detection.observerTotal).toBe(10 + SIGHT_DETECTION_MODIFIER + 3);
+  });
+});
+
+
+/*
+ * A passive win during preparation.
+ *
+ * Passive Detection is compared for free while the Gate is being costed, and
+ * §3.2 says a passive win breaks the attempt outright. Preparation cannot
+ * apply that break — it is pure, and takes no ordering value — so it records
+ * it as a pending transition and settlement applies it.
+ *
+ * The defect this suite exists for: preparation used to describe an
+ * unconcealed world in its binding while leaving the retained state saying
+ * "still concealed", so settlement re-derived the old answer, the two
+ * disagreed, and every passive success refused its own preparation as stale.
+ */
+describe("a passive Detection during preparation", () => {
+  /** A Lead of -2: the observer's passive total beats the Concealment. */
+  function seen() {
+    return hiddenBy(-2);
+  }
+
+  function preparedAfterPassiveWin(threatened: readonly string[] = ["b", "c"]) {
+    const concealment = seen();
+    const { queue } = queueThreatening(threatened);
+    const preparation = payloadOf(prepare({
+      queue,
+      concealment,
+      routes: routesFor(concealment),
+    }));
+
+    return { concealment, queue, preparation };
+  }
+
+  it("records the break as a pending transition bound to the attempt", () => {
+    const { preparation } = preparedAfterPassiveWin();
+
+    expect(preparation.alreadyDetected).toBe(true);
+    expect(preparation.concealmentDisadvantages).toBe(0);
+    expect(preparation.pendingDetection)
+      .toEqual({ attemptId: "attempt-1", observerId: "b" });
+
+    /*
+     * And the binding still describes the attempt that is genuinely retained.
+     * Describing an unconcealed world here is exactly what made settlement
+     * refuse itself.
+     */
+    expect(preparation.binding.attemptId).toBe("attempt-1");
+    expect(preparation.binding.route?.sense).toBe("hearing");
+    expect(preparation.binding.receivedIntensity).toBe(5);
+  });
+
+  it("settles without a stale refusal", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    const settled = settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+    });
+
+    expect(settled.success ? [] : settled.errors.map((one) => one.code))
+      .toEqual([]);
+  });
+
+  it("records the observer as having detected the subject", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+    }));
+
+    expect(settled.passed).toBe(true);
+    expect(isConcealedFrom(settled.concealment!, "b")).toBe(false);
+    expect(settled.concealment!.detectedByObserverIds).toEqual(["b"]);
+    expect(settled.concealment!.lastChangedAt).toBe(10);
+  });
+
+  it("does not restore Concealment when the Reaction roll fails", () => {
+    /*
+     * The rolled Gate decides whether this combatant gets to REACT. It does
+     * not decide whether they saw what they had already seen, and a failure
+     * that re-hid the assassin would be the passive win being taken back.
+     */
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(1),
+    }));
+
+    expect(settled.passed).toBe(false);
+    expect(settled.detection.detected).toBe(false);
+    expect(isConcealedFrom(settled.concealment!, "b")).toBe(false);
+    expect(settled.concealment!.status).toBe("concealed");
+  });
+
+  it("leaves every other observer concealed", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+    }));
+
+    expect(isConcealedFrom(settled.concealment!, "c")).toBe(true);
+    expect(settled.concealment!.detectedByObserverIds).toEqual(["b"]);
+  });
+
+  it("applies the transition once, not once passively and again on the pass", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+    }));
+
+    /*
+     * `recordConcealmentDetection` refuses a duplicate observer outright, so a
+     * second application would have failed the settlement rather than
+     * appending a second entry — and the single entry is the proof it was not
+     * attempted.
+     */
+    expect(settled.concealment!.detectedByObserverIds).toEqual(["b"]);
+
+    /* The retained attempt is untouched apart from that one observer. */
+    expect(settled.concealment!.attemptId).toBe(concealment.attemptId);
+    expect(settled.concealment!.ratings).toBe(concealment.ratings);
+  });
+
+  it("refuses a preparation whose attempt was replaced", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    const replaced = payloadOf(replaceConcealmentAttempt(concealment, {
+      attemptId: "attempt-2",
+      subjectId: "a",
+      sourceId: "a",
+      resolution: payloadOf(establishConcealment({
+        basis: {
+          kind: "character",
+          stats: sensoryStats(),
+          profile: sensoryProfile(),
+        },
+        routes: [SIGHT, HEARING],
+        dice: { advantage: 0, rolls: [2] },
+      })),
+      at: 5,
+      change: { methodMateriallyChanged: true },
+    })).current;
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation,
+      concealment: replaced,
+      route: {
+        route: generated("hearing"),
+        concealment: replaced.ratings[1]!,
+      },
+      rolls: d20s(20),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+
+    /* And the replacement attempt is still hiding from everybody. */
+    expect(isConcealedFrom(replaced, "b")).toBe(true);
+  });
+
+  it("refuses a preparation spent against a different source", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    expect(errorCodesOf(settleReactionGate({
+      queue,
+      preparation,
+      observerId: "b",
+      profile: sensoryProfile(),
+      sourceId: "someone-else",
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+      at: 10,
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("refuses a preparation spent through a different receiver", () => {
+    /*
+     * Gate identity binds the CONCRETE receiver, and still does through the
+     * passive path: an eye in a palm is not the pair of eyes in a face, and a
+     * Gate costed for one may not be settled through the other.
+     */
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+    const prepared = routesFor(concealment)[0]!;
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: {
+        ...prepared,
+        route: {
+          ...prepared.route,
+          route: {
+            ...prepared.route.route,
+            receiver: {
+              kind: "anatomical" as const,
+              clusterKey: "hand-1/hearing/palm-ears",
+              pointIds: ["palm:hand-1"],
+            },
+          },
+        },
+      },
+      rolls: d20s(20),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("refuses a preparation spent on a different channel", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+    const prepared = routesFor(concealment)[0]!;
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: {
+        ...prepared,
+        route: {
+          ...prepared.route,
+          route: { ...prepared.route.route, channel: "reflected-sound" },
+        },
+      },
+      rolls: d20s(20),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("refuses a Concealment whose total moved between the two calls", () => {
+    /*
+     * The same attempt, the same route, a different number. The binding
+     * matches and the total does not, which is the one staleness the binding
+     * alone could never see.
+     */
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+    const stronger: EstablishedConcealmentState = {
+      ...concealment,
+      ratings: concealment.ratings.map((rating) => ({
+        ...rating,
+        total: rating.total + 4,
+      })),
+    };
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation,
+      concealment: stronger,
+      route: {
+        route: generated("hearing"),
+        concealment: stronger.ratings[1]!,
+      },
+      rolls: d20s(20),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("refuses a hand-built pending transition addressed elsewhere", () => {
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+
+    expect(errorCodesOf(settle({
+      queue,
+      preparation: {
+        ...preparation,
+        pendingDetection: { attemptId: "attempt-9", observerId: "b" },
+      },
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+    }))).toContain("gameplay.senses.reaction-gate.stale");
+  });
+
+  it("never rerolls the established Concealment", () => {
+    /*
+     * One hiding attempt, rolled once. The passive comparison, the pending
+     * break and the rolled Gate all read the SAME retained ratings — the
+     * assassin does not re-hide because somebody looked.
+     */
+    const { concealment, queue, preparation } = preparedAfterPassiveWin();
+    const before = concealment.ratings.map((rating) => rating.total);
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(20),
+    }));
+
+    expect(settled.concealment!.ratings.map((rating) => rating.total))
+      .toEqual(before);
+    expect(settled.concealment!.ratings).toBe(concealment.ratings);
+    expect(preparation.concealmentTotal).toBe(concealment.ratings[1]!.total);
+    expect(settled.detection.concealmentTotal).toBe(before[1]);
+  });
+
+  it("leaves the ordinary disadvantage path alone when passive Detection fails", () => {
+    const concealment = hiddenBy(7);
+    const { queue } = queueThreatening();
+    const preparation = payloadOf(prepare({
+      queue,
+      concealment,
+      routes: routesFor(concealment),
+    }));
+
+    expect(preparation.pendingDetection).toBeNull();
+    expect(preparation.alreadyDetected).toBe(false);
+    expect(preparation.concealmentDisadvantages).toBe(2);
+    expect(preparation.requiredRollCount).toBe(3);
+
+    const settled = payloadOf(settle({
+      queue,
+      preparation,
+      concealment,
+      route: routesFor(concealment)[0]!,
+      rolls: d20s(1, 2, 3),
+    }));
+
+    /* A failed Gate after a failed passive look reveals nothing at all. */
+    expect(settled.passed).toBe(false);
+    expect(settled.concealment).toBe(concealment);
+    expect(isConcealedFrom(settled.concealment!, "b")).toBe(true);
+  });
+
+  it("charges no Lead and asks for no extra dice", () => {
+    const { preparation } = preparedAfterPassiveWin();
+
+    expect(preparation.lead).toBe(0);
+    expect(preparation.finalAdvantage).toBe(0);
+    expect(preparation.requiredRollCount).toBe(1);
   });
 });

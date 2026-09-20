@@ -38,6 +38,30 @@ export interface ResolvedSenseReceiver {
    * than resolved at a penalty. A grant receiver carries the grant's support.
    */
   readonly functionalSupport: number;
+
+  /*
+   * The channels THIS receiver accepts, sorted.
+   *
+   * Per receiver rather than per Sense, because a restriction belongs to the
+   * thing that is restricted. A premonition that warns of danger alone is a
+   * statement about the premonition — it is not a statement about the eyes,
+   * the ears, or a second grant of the same Sense, and a Sense-wide channel
+   * list made it one: the first restricted grant found decided what the whole
+   * Sense received, so grant ORDER was mechanically significant, two
+   * restricted grants could not supply different channels, and a restricted
+   * grant could delete channels that working anatomy was supplying.
+   *
+   * Anatomy and an unrestricted grant begin from the Sense definition's
+   * channels; a restricted grant begins from exactly its own enabled list.
+   * Channel grants and channel suppressions then apply to every receiver their
+   * scope covers, which is what keeps `grantSenseChannel` a fact about the
+   * Sense while `enabledChannels` stays a fact about one grant.
+   *
+   * This is the list route generation asks. `ResolvedSense.channels` is the
+   * union of these and never decides whether an individual receiver accepts a
+   * channel.
+   */
+  readonly channels: readonly SensoryChannelId[];
 }
 
 
@@ -85,7 +109,14 @@ export interface ResolvedSense extends ResolvedScore {
   readonly anatomicalSupport: number;
   readonly grantedSupport: number;
 
-  /** The channels THIS creature receives, after grants and suppressions. */
+  /**
+   * The channels this creature receives at all, after grants and suppressions.
+   *
+   * The sorted UNION of every active receiver's channels — an aggregate, for
+   * display and for asking "can this creature receive X anywhere". Whether a
+   * particular route exists is a question about a receiver, and is answered by
+   * ResolvedSenseReceiver.channels.
+   */
   readonly channels: readonly SensoryChannelId[];
 
   /** Signed steps applied to an arriving intensity, per channel. */

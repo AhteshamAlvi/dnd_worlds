@@ -50,7 +50,6 @@ import {
   type SensoryIntensity,
 } from "./channels";
 import { emittedChannels, type ResolvedSensoryCue } from "./cues";
-import { sensesReceiving } from "./definitions";
 import { receiverKey, type SensoryReceiverRef } from "./receivers";
 import type { ContributionSourceRef } from "../../../infrastructure/contribution-source";
 import type { CriticalPointId } from "../body/critical-points/types";
@@ -247,12 +246,34 @@ function isContacted(
  * Deterministically ordered — channels sorted, Senses sorted, receivers in the
  * profile's own sorted order — so that a best-route tie resolves the same way
  * on every host rather than following object iteration order.
+ *
+ *
+ * GENERATED FROM THE RESOLVED PROFILE, NOT FROM THE REGISTRY
+ *
+ * The candidates are this observer's own resolved Senses and their own
+ * receivers, rather than `sensesReceiving(channel)` filtered afterwards. The
+ * static definitions answer "which Senses were authored to read this channel",
+ * which is a different question: a runtime `grantSenseChannel` opens a channel
+ * the definition never listed, and starting from the definitions made that
+ * Effect unable to produce a single route.
+ *
+ * Each receiver is then asked for itself. One restricted grant does not speak
+ * for the anatomy or for a second grant, so a creature can genuinely have one
+ * receiver that reads `danger` and another that reads `presence`.
  */
 export function generateSensoryRoutes(
   input: GenerateSensoryRoutesInput,
 ): readonly GeneratedSensoryRoute[] {
   const { profile, cue, exposure } = input;
   const generated: GeneratedSensoryRoute[] = [];
+
+  /*
+   * One canonical route, once. Two grants carrying identical provenance are
+   * two entries in the profile and one receiver in the world, and a Detection
+   * sweep that saw it twice would compare a creature against itself.
+   */
+  const seen = new Set<string>();
+  const senseIds = Object.keys(profile.senses).sort();
 
   for (const channel of emittedChannels(cue)) {
     if (exposure?.blockedChannels?.includes(channel) === true) continue;
@@ -266,16 +287,11 @@ export function generateSensoryRoutes(
 
     if (definition === undefined) continue;
 
-    for (const candidate of sensesReceiving(channel)) {
-      const sense = profile.senses[candidate.id];
+    for (const senseId of senseIds) {
+      const sense = profile.senses[senseId]!;
 
-      /*
-       * Availability is checked against THIS observer, and so is the channel
-       * list: a restricted ESP grant receives `danger` and genuinely does not
-       * receive `hostile-intent`, so the second generates nothing.
-       */
-      if (sense === undefined || !sense.available) continue;
-      if (!sense.channels.includes(channel)) continue;
+      /* Availability is checked against THIS observer. */
+      if (!sense.available) continue;
 
       const receivedIntensity = receivedIntensityFor(
         sense,
@@ -284,6 +300,13 @@ export function generateSensoryRoutes(
       ) as SensoryIntensity;
 
       for (const receiver of sense.receivers) {
+        /*
+         * The channel question is asked of the RECEIVER. A restricted ESP
+         * grant that receives `danger` and not `hostile-intent` answers for
+         * itself, and the eyes beside it are not restricted by it.
+         */
+        if (!receiver.channels.includes(channel)) continue;
+
         /* A receiver with no working anatomy is not a route, it is a scar. */
         if (receiver.functionalSupport <= 0) continue;
 
@@ -296,14 +319,21 @@ export function generateSensoryRoutes(
           continue;
         }
 
+        const route = {
+          sense: senseId,
+          channel,
+          receiver: receiver.ref,
+          phenomenon: cue.phenomenon,
+          subject: cue.subject,
+        };
+        const key = sensoryRouteKey(route);
+
+        if (seen.has(key)) continue;
+
+        seen.add(key);
+
         generated.push({
-          route: {
-            sense: candidate.id,
-            channel,
-            receiver: receiver.ref,
-            phenomenon: cue.phenomenon,
-            subject: cue.subject,
-          },
+          route,
           cueId: cue.id,
           source: cue.source,
           emittedIntensity: emitted,
