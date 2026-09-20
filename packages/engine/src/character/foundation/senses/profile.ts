@@ -275,6 +275,20 @@ function collectPointShares(
  * Local clusters key on (host BodyPart, Sense, authored cluster), which is what
  * makes the eyes on one Head a different receiver from the eye on a hand —
  * without either of them being identified by a name or a side.
+ *
+ * Returned in CANONICAL KEY ORDER, over every receiver at once rather than per
+ * kind. Grants used to be appended in the order the Effects happened to arrive
+ * in, which was fine while no two of them read the same channel and wrong the
+ * moment two did: route generation walks this array, so a cue on a shared
+ * channel emitted its candidates in host order, and the sweep's best-route tie
+ * — deliberately broken on canonical route identity so a scene saved and
+ * reloaded prepares the same Reaction Gate — was being handed its candidates
+ * in an order that depended on how the host built its list.
+ *
+ * The key is the identity route generation, Concealment lookup and Gate
+ * binding already compare on, so ordering by it introduces no second notion of
+ * which receiver this is. Nothing is merged: two distinct grants remain two
+ * receivers with their own sources, support and channels.
  */
 function collectReceivers(
   senseId: SenseId,
@@ -347,7 +361,13 @@ function collectReceivers(
     });
   }
 
-  return [...receivers, ...grantReceivers];
+  /*
+   * A stable sort, so receivers that genuinely share a key — duplicate grant
+   * data, which is one receiver written twice — keep a fixed relative order
+   * instead of swapping under a comparator that cannot tell them apart.
+   */
+  return [...receivers, ...grantReceivers]
+    .sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
 }
 
 

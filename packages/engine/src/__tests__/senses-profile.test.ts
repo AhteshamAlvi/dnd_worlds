@@ -829,6 +829,65 @@ describe("receiver-specific channels", () => {
     expect(esp.channels).toEqual(union);
   });
 
+  /*
+   * Two grants that BOTH read one channel.
+   *
+   * Disjoint grants hide this: each channel has exactly one receiver, so no
+   * order is expressible. Overlapping ones make the array order visible, and
+   * it was the order the host happened to hand the grants in — which then
+   * became the order route generation emitted candidates in, and the order a
+   * best-route tie broke on.
+   */
+  const OMEN = {
+    source: source("omen"),
+    sense: "esp",
+    enabledChannels: ["danger", "presence"],
+  };
+
+  it("orders receivers canonically, not by the order the grants arrived", () => {
+    const forwards = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, OMEN] }),
+    });
+    const backwards = sensoryProfile({
+      effects: effects({ senseGrants: [OMEN, PREMONITION] }),
+    });
+
+    const keysOf = (profile: typeof forwards) =>
+      getResolvedSense(profile, "esp")!.receivers.map((one) => one.key);
+
+    expect(keysOf(forwards)).toEqual(keysOf(backwards));
+    expect(keysOf(forwards)).toEqual(["granted:trait:omen", "granted:trait:premonition"]);
+  });
+
+  it("keeps the two overlapping grants distinct receivers", () => {
+    const profile = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, OMEN] }),
+    });
+    const esp = getResolvedSense(profile, "esp")!;
+
+    expect(esp.receivers).toHaveLength(2);
+    expect(espReceiver(profile, "premonition").channels).toEqual(["danger"]);
+    expect(espReceiver(profile, "omen").channels).toEqual(["danger", "presence"]);
+  });
+
+  it("orders anatomical receivers canonically beside granted ones", () => {
+    /*
+     * One total order over every receiver of a Sense, by the same canonical
+     * key a route is identified through — so "which receiver comes first" has
+     * one answer rather than one per receiver kind.
+     */
+    const profile = sensoryProfile({
+      effects: effects({
+        senseGrants: [{ source: source("phantom-limb"), sense: "touch" }],
+      }),
+    });
+    const keys = getResolvedSense(profile, "touch")!.receivers
+      .map((one) => one.key);
+
+    expect(keys).toEqual([...keys].sort());
+    expect(keys).toHaveLength(4);
+  });
+
   it("holds that union for an anatomical Sense too", () => {
     const touch = getResolvedSense(sensoryProfile(), "touch")!;
 

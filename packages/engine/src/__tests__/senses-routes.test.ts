@@ -555,6 +555,36 @@ describe("routes follow receiver channels", () => {
     }
   });
 
+  it("emits candidates in canonical receiver order, whatever order the grants arrived", () => {
+    /*
+     * Two grants that both read `danger`, so the channel genuinely has two
+     * receivers and their order is expressible. It is the order the sweep
+     * compares candidates in and the order a best-route tie breaks on, so it
+     * may not be the order the host assembled its Effects in.
+     */
+    const OMEN = {
+      source: source("omen"),
+      sense: "esp",
+      enabledChannels: ["danger", "presence"],
+    };
+
+    const forwards = sensoryProfile({
+      effects: effects({ senseGrants: [PREMONITION, OMEN] }),
+    });
+    const backwards = sensoryProfile({
+      effects: effects({ senseGrants: [OMEN, PREMONITION] }),
+    });
+
+    const keysOf = (profile: typeof forwards) =>
+      generatedRoutes(profile, { emissions: { danger: 7 } })
+        .map((one) => sensoryRouteKey(one.route));
+
+    expect(keysOf(forwards)).toEqual(keysOf(backwards));
+    expect(keysOf(forwards)).toHaveLength(2);
+    expect(keysOf(forwards).map((key) => key.split("|").at(-1)))
+      .toEqual(["granted:trait:omen", "granted:trait:premonition"]);
+  });
+
   it("opens a route on a channel the Sense definition never listed", () => {
     /*
      * A Human reads no thermal channel through any Sense they have, so the
