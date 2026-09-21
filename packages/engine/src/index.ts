@@ -62,16 +62,24 @@ export {
   contributionSourceKey,
 } from "./infrastructure/contribution-source";
 
-// The shared shape behind every catalog, authored or registered at runtime.
+// The shared shape behind every catalog: authored in the engine's source,
+// hydrated from the Vault, or registered at runtime by a host.
 export type {
   Definition,
+  DefinitionSnapshot,
+  DefinitionSnapshotEntry,
   Registry,
   RegistrationResult,
   ReferenceIssue,
   ReferenceIssueKind,
+  SnapshotResult,
 } from "./infrastructure/registry";
 
-export { DEFINITION_ID_PATTERN } from "./infrastructure/registry";
+export {
+  DEFINITION_ID_PATTERN,
+  createDefinitionSnapshot,
+  emptyDefinitionSnapshot,
+} from "./infrastructure/registry";
 
 /* ── Catalogs ───────────────────────────────────────────────────────────── */
 
@@ -93,6 +101,12 @@ export {
   unregisterDefinition,
   clearCustomDefinitions,
   exportCustomDefinitions,
+
+  // External production content: a validated snapshot the Vault loader built,
+  // installed through this boundary rather than by editing a catalog.
+  hydrateDefinitions,
+  clearHydratedDefinitions,
+  definitionProvenance,
 
   // A fresh, random, permanent id for a new entry in one domain — the same
   // scheme character ids use, and the pattern that recognises one.
@@ -2325,3 +2339,15 @@ export * from "./gameplay/nen";
  */
 export * from "./gameplay/composition";
 export * from "./gameplay/phenomena";
+
+/*
+ * `vault/` sits above every domain above, and for the same kind of reason: it
+ * reads composition profiles, Species and equipment in order to turn authored
+ * JSON into the definitions those domains resolve against, which is a
+ * composition none of them may make for itself.
+ *
+ * It is pure. Discovery, parsing and index generation live in the separate
+ * `@nenworld/vault` package, which is allowed to touch a filesystem; this layer
+ * only ever receives values that have already been parsed.
+ */
+export * from "./vault";

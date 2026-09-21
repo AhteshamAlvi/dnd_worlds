@@ -27,7 +27,6 @@ import { resolvePassiveConcealment } from "../../character/foundation/senses/con
 import type { ConcealmentRating } from "../../character/foundation/senses/concealment";
 import type { ResolvedSensoryProfile } from "../../character/foundation/senses/types";
 import {
-  EMISSION_PROFILE_DEFINITIONS,
   prepareActionProjections,
   stepsForProposal,
   type ActionProjector,
@@ -43,6 +42,7 @@ import type { DistanceInterval, MetricPosition, SpatialTravel } from "../../spat
 
 import { payloadOf } from "./result";
 import { effects, sensoryProfile, sensoryStats, source } from "./senses";
+import { canonicalEmissionProfile } from "./vault-content";
 
 export const CLEARING = "forest-clearing";
 
@@ -59,9 +59,14 @@ export const FIRE_BLAST_SOURCE = { type: "skill", id: "fire-blast" } as const;
 
 export const SHOUT_METHOD = { type: "communication", id: "ordinary-shout" } as const;
 
+/*
+ * The real Vault documents, read from disk. Every awareness suite that asserts a
+ * shout is intensity 5 or that a blast is a threat is therefore asserting it
+ * about the JSON an author edits, rather than about a copy kept in TypeScript.
+ */
 export const PROFILES = [
-  EMISSION_PROFILE_DEFINITIONS["fire-blast"],
-  EMISSION_PROFILE_DEFINITIONS["ordinary-shout"],
+  canonicalEmissionProfile("fire-blast"),
+  canonicalEmissionProfile("ordinary-shout"),
 ];
 
 const DECLARED_RANGE: DistanceInterval = {

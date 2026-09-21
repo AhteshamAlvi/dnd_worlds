@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "emission-profile",
+  "id": "fixture-clang",
+  "name": "Fixture clang",
+  "description": "A test fixture emission profile. Not canon.",
+  "appliesTo": { "type": "skill", "id": "fixture-clang" },
+  "emissions": [
+    {
+      "appliesTo": { "phase": "release" },
+      "subject": "action",
+      "phenomenon": "physical",
+      "channel": "sound",
+      "intensity": 4,
+      "anchor": "actor"
+    }
+  ],
+  "propagationPresets": [{ "kind": "propagation-preset", "id": "fixture-sound" }]
+}

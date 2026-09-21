@@ -7,5 +7,5 @@ dist/
 # Pure local churn — it changes every time the vault is opened and means
 # nothing to another machine. The rest of .obsidian/ (app, appearance,
 # plugins) is shared config and stays tracked.
-worldbuilding/.obsidian/workspace.json
-worldbuilding/.obsidian/workspace-mobile.json
+World/.obsidian/workspace.json
+World/.obsidian/workspace-mobile.json

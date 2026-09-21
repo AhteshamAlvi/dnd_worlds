@@ -157,7 +157,6 @@ export {
 } from "./session";
 
 export {
-  EMISSION_PROFILE_DEFINITIONS,
   collectEmissionContributions,
   collectPropagationProfiles,
   collectThreatSeverity,
@@ -167,7 +166,6 @@ export {
   findEmissionProfileStructuralIssues,
   type AuthoredEmission,
   type EmissionProfileDefinition,
-  type KnownEmissionProfileId,
 } from "./profiles";
 
 export {

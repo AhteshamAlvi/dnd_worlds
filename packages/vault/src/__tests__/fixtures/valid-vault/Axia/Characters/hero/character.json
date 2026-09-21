@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "kind": "character",
+  "id": "fixture-hero",
+  "name": "Fixture Hero",
+  "narrative": { "biography": "A **fixture**, not a person." },
+  "mechanics": { "id": "fixture-hero" },
+  "placement": { "parent": "location", "locationId": "fixture-clearing" },
+  "assets": {
+    "portrait": { "path": "assets/missing-portrait.webp" },
+    "token": { "path": "assets/token.webp", "widthPixels": 400, "heightPixels": 400 }
+  }
+}

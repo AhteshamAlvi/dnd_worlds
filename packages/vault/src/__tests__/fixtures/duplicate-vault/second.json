@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "kind": "species",
+  "id": "twin-fixture",
+  "name": "Second twin",
+  "description": "Claims the same id."
+}

@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "kind": "emission-profile",
+  "id": "fire-blast",
+  "name": "Fire Blast emissions",
+  "description": "What projecting fire offensively puts into the world.",
+
+  "appliesTo": { "type": "skill", "id": "fire-blast" },
+
+  "threatSeverity": 3,
+
+  "emissions": [
+    { "appliesTo": { "phase": "preparation" }, "subject": "action", "phenomenon": "physical", "channel": "visible-light", "intensity": 4, "anchor": "actor" },
+    { "appliesTo": { "phase": "preparation" }, "subject": "action", "phenomenon": "nen", "channel": "aura", "intensity": 5, "anchor": "actor" },
+
+    { "appliesTo": { "phase": "release" }, "subject": "action", "phenomenon": "physical", "channel": "visible-light", "intensity": 7, "anchor": "actor" },
+    { "appliesTo": { "phase": "release" }, "subject": "action", "phenomenon": "physical", "channel": "sound", "intensity": 5, "anchor": "actor" },
+    { "appliesTo": { "phase": "release" }, "subject": "action", "phenomenon": "physical", "channel": "thermal", "intensity": 5, "anchor": "actor" },
+    { "appliesTo": { "phase": "release" }, "subject": "action", "phenomenon": "nen", "channel": "aura", "intensity": 6, "anchor": "actor" },
+
+    { "appliesTo": { "phase": "travel" }, "subject": "action", "phenomenon": "physical", "channel": "visible-light", "intensity": 6, "anchor": "step" },
+    { "appliesTo": { "phase": "travel" }, "subject": "action", "phenomenon": "physical", "channel": "thermal", "intensity": 4, "anchor": "step" },
+    { "appliesTo": { "phase": "travel" }, "subject": "action", "phenomenon": "nen", "channel": "aura", "intensity": 5, "anchor": "step" },
+
+    { "appliesTo": { "phase": "impact" }, "subject": "action", "phenomenon": "physical", "channel": "visible-light", "intensity": 7, "anchor": "target" },
+    { "appliesTo": { "phase": "impact" }, "subject": "action", "phenomenon": "physical", "channel": "sound", "intensity": 6, "anchor": "target" },
+    { "appliesTo": { "phase": "impact" }, "subject": "action", "phenomenon": "physical", "channel": "thermal", "intensity": 7, "anchor": "target" },
+
+    { "appliesTo": { "phase": "aftermath" }, "subject": "trace", "phenomenon": "physical", "channel": "thermal", "intensity": 4, "anchor": "target" },
+    { "appliesTo": { "phase": "aftermath" }, "subject": "trace", "phenomenon": "physical", "channel": "airborne-chemical", "intensity": 5, "anchor": "target" }
+  ],
+
+  "propagationPresets": [
+    { "kind": "propagation-preset", "id": "ordinary-sound" }
+  ],
+
+  "propagation": [
+    {
+      "channel": "visible-light",
+      "distance": [
+        { "beyondMetres": 50, "adjustBy": -1 },
+        { "beyondMetres": 150, "adjustBy": -2 }
+      ],
+      "environment": [
+        { "factor": "illumination", "band": "absent", "adjustBy": 2 },
+        { "factor": "illumination", "band": "overwhelming", "adjustBy": -2 },
+        { "factor": "visibility", "band": "blocked", "blocks": true }
+      ]
+    },
+    {
+      "channel": "thermal",
+      "distance": [
+        { "beyondMetres": 5, "adjustBy": -2 },
+        { "beyondMetres": 20, "adjustBy": -4 }
+      ],
+      "environment": [
+        { "factor": "visibility", "band": "blocked", "blocks": true }
+      ]
+    }
+  ]
+}

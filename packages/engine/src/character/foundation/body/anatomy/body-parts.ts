@@ -13,9 +13,10 @@
  * on every boot, never removable — exactly like SPECIES_DEFINITIONS in
  * character/identity/species.ts. A table with a tail, a wing, or any other
  * anatomy the standard humanoid doesn't have adds it the same way a GM adds
- * a homebrew Species: a custom definition registered at runtime (in this
- * app, loaded from worldbuilding/Vault/body-part-vault/*.json), not a change
- * to this file or to any engine mechanics.
+ * a homebrew Species: a definition supplied from outside the engine, not a
+ * change to this file or to any engine mechanics. BodyParts have no Vault
+ * document kind yet — see docs/VAULT_STORAGE_CONTRACT.md for the kinds that
+ * do — so for now that means a host registration rather than a JSON file.
  *
  * The authored numbers are the Basic Human Standard. They are real physical
  * measurements — a Human Leg really is 81 cm and 11.8 kg — and they sum

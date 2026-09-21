@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "kind": "propagation-preset",
+  "id": "ordinary-sound",
+  "name": "Ordinary sound",
+  "description": "How an ordinary airborne noise weakens with distance and with ambient racket.",
+
+  "channel": "sound",
+
+  "distance": [
+    { "beyondMetres": 20, "adjustBy": -1 },
+    { "beyondMetres": 60, "adjustBy": -3 }
+  ],
+
+  "environment": [
+    { "factor": "ambientNoise", "band": "loud", "adjustBy": -2 },
+    { "factor": "ambientNoise", "band": "overwhelming", "adjustBy": -3 }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "documents": [
+    {
+      "id": "elf",
+      "kind": "species",
+      "schemaVersion": 1,
+      "path": "World/Vault/Definitions/Species/elf.json"
+    },
+    {
+      "id": "fire-blast",
+      "kind": "emission-profile",
+      "schemaVersion": 1,
+      "path": "World/Vault/Definitions/Emission-Profiles/fire-blast.json"
+    },
+    {
+      "id": "gon-freecs",
+      "kind": "character",
+      "schemaVersion": 1,
+      "path": "World/Vault/Axia/Characters/gon-freecs/character.json"
+    },
+    {
+      "id": "ordinary-shout",
+      "kind": "emission-profile",
+      "schemaVersion": 1,
+      "path": "World/Vault/Definitions/Emission-Profiles/ordinary-shout.json"
+    },
+    {
+      "id": "ordinary-sound",
+      "kind": "propagation-preset",
+      "schemaVersion": 1,
+      "path": "World/Vault/Definitions/Propagation-Presets/ordinary-sound.json"
+    }
+  ]
+}

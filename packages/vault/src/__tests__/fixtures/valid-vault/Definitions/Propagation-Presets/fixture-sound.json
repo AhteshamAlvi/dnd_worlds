@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "kind": "propagation-preset",
+  "id": "fixture-sound",
+  "name": "Fixture sound",
+  "description": "A test fixture falloff. Not canon.",
+  "channel": "sound",
+  "distance": [{ "beyondMetres": 10, "adjustBy": -1 }]
+}

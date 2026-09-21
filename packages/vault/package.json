@@ -1,0 +1,24 @@
+{
+  "name": "@nenworld/vault",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "validate": "vite-node src/cli.ts -- validate",
+    "index": "vite-node src/cli.ts -- index",
+    "index:check": "vite-node src/cli.ts -- index --check"
+  },
+  "dependencies": {
+    "@nenworld/engine": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

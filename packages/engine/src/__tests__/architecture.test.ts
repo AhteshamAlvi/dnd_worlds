@@ -28,6 +28,16 @@ import { describe, expect, it } from "vitest";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
+/*
+ * The canonical Vault, reached from the engine rather than assumed.
+ *
+ * Several guards below assert facts about production CONTENT — that a profile is
+ * a document, that no table is duplicated, that no engine file is a second
+ * authority — and those facts live in JSON now. A guard that read a TypeScript
+ * copy instead would pass while the real content said something else.
+ */
+const VAULT_DEFINITIONS = join(SRC, "..", "..", "..", "World", "Vault", "Definitions");
+
 function sourceFilesUnder(directory: string): readonly string[] {
   const files: string[] = [];
 
@@ -5659,20 +5669,52 @@ describe("threat awareness consumes SEN-1 rather than second-guessing it", () =>
     expect(offenders).toEqual([]);
   });
 
-  it("declares the one authored communication profile as content, not as a branch", () => {
+  it("declares the one communication profile as Vault content, not as engine source", () => {
     /*
      * `ordinary-shout` is a profile keyed by a source reference, exactly as
-     * `fire-blast` is. It lives with the other emission profiles, and nothing
-     * outside that file names it — which is what makes a host's own
-     * communication method a registration rather than a code change.
+     * `fire-blast` is — and it is now a JSON document rather than a TypeScript
+     * object, which makes this guard strictly stronger than it was.
+     *
+     * It used to permit one namer: `composition/profiles.ts`, which held the
+     * authored catalog. That catalog is gone, so the exception is gone with it.
+     * NO engine source file may name the id, because a host's own communication
+     * method must be a file somebody adds rather than a code change — and an id
+     * appearing in engine source is the first step toward a branch on it.
+     *
+     * The intensity is asserted here too. `5` is an authored ordinal balance
+     * value, and M18 is the mutation that changes it: the awareness warning suite
+     * catches that through behaviour, and this catches it in the content.
      */
-    const profiles = read(join(SRC, "gameplay", "composition", "profiles.ts"));
+    const document = JSON.parse(read(join(
+      VAULT_DEFINITIONS,
+      "Emission-Profiles",
+      "ordinary-shout.json",
+    ))) as {
+      appliesTo: { type: string; id: string };
+      emissions: readonly { channel: string; intensity: number; anchor: string }[];
+      propagationPresets: readonly { id: string }[];
+    };
 
-    expect(profiles).toMatch(/"ordinary-shout"/);
+    expect(document.appliesTo).toEqual({ type: "communication", id: "ordinary-shout" });
+    expect(document.emissions).toHaveLength(1);
+    expect(document.emissions[0]).toMatchObject({
+      channel: "sound",
+      intensity: 5,
+      anchor: "actor",
+    });
+
+    /*
+     * And it BORROWS the sound falloff rather than owning a copy. A duplicated
+     * table here is M17: it would pass every behavioural test on the day it was
+     * written and drift from the shout's the first time somebody retuned one.
+     */
+    expect(document.propagationPresets).toEqual([
+      { kind: "propagation-preset", id: "ordinary-sound" },
+    ]);
+    expect(document).not.toHaveProperty("propagation");
 
     const namers = sourceFilesUnder(SRC)
       .filter((path) => !path.includes("__tests__"))
-      .filter((path) => !path.endsWith(join("composition", "profiles.ts")))
       .filter((path) => /"ordinary-shout"/.test(read(path)));
 
     expect(namers).toEqual([]);
@@ -5734,5 +5776,377 @@ describe("threat awareness consumes SEN-1 rather than second-guessing it", () =>
     });
 
     expect(offenders).toEqual([]);
+  });
+});
+
+
+/* -------------------------------------------------------------------------- */
+/* The Vault boundary                                                         */
+/* -------------------------------------------------------------------------- */
+
+/*
+ * Shared by the two Vault suites below.
+ *
+ * The suites above each declare their own copies, scoped to the directory they
+ * check. These two examine overlapping sets of files — all of production, and
+ * `vault/` within it — so one pair here rather than two more.
+ */
+const readSource = (path: string): string => readFileSync(path, "utf8");
+
+function withoutComments(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/.*$/gm, "");
+}
+
+
+describe("The engine performs no I/O and owns no host state", () => {
+  const productionFiles = sourceFilesUnder(SRC)
+    .filter((path) => !path.includes("__tests__"));
+
+  const vaultFiles = sourceFilesUnder(join(SRC, "vault"));
+
+  it("finds the sources it is checking", () => {
+    // Guards against the walk silently matching nothing and passing vacuously.
+    expect(productionFiles.length).toBeGreaterThan(300);
+    expect(vaultFiles.length).toBeGreaterThan(5);
+  });
+
+  it("T8, M19 — imports no filesystem, network, DOM or host API anywhere in production", () => {
+    /*
+     * The rule that makes every engine function testable against an object literal and
+     * safe to call from a browser, a Foundry sandbox and a CLI alike.
+     *
+     * The Vault made this rule newly easy to break: "load a document" sounds like
+     * something the code that owns documents should do. It is not — `packages/vault`
+     * does the loading and hands values over, and the whole reason that package exists
+     * is so this list stays empty.
+     *
+     * Checked over specifiers rather than over raw text, so a comment discussing
+     * `node:fs` is not an offence. M19 is exactly this: an `import` of `node:fs` into
+     * engine production code.
+     */
+    const FORBIDDEN = [
+      /^node:/,
+      /^fs$/,
+      /^path$/,
+      /^os$/,
+      /^url$/,
+      /^http$/,
+      /^https$/,
+      /^obsidian$/,
+      /^react/,
+      /^vite/,
+      /^@nenworld\/vault$/,
+      /^@nenworld\/workbench$/,
+    ];
+
+    const offenders = productionFiles.filter((path) =>
+      moduleSpecifiers(path).some((specifier) =>
+        FORBIDDEN.some((pattern) => pattern.test(specifier))
+      )
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("R24 — reaches no global I/O, clock or randomness from the Vault layer", () => {
+    /*
+     * The other half of purity. An import is not the only way in: `globalThis.fetch`,
+     * `localStorage` and `Date.now()` are all reachable without one, and a hidden clock
+     * is exactly as untestable as a hidden filesystem. A Vault module that stamped
+     * `updatedAt` itself, or minted an id, would make the same document migrate to two
+     * different values on two machines.
+     *
+     * Scoped to `vault/` on purpose. The engine-wide claim is the IMPORT guard above,
+     * which is precise; a global-name search across all of production is not, because
+     * `window` and `document` are ordinary domain words here — an Aura time WINDOW, a
+     * Vault DOCUMENT — and a guard that flagged those would be one every author learns
+     * to add an exemption to. `infrastructure/id.ts` also holds a deliberate,
+     * documented `Math.random` fallback for environments without `crypto`, which is a
+     * decision this ticket has no business reversing.
+     */
+    const FORBIDDEN = [
+      /\bglobalThis\b/,
+      /\bfetch\s*\(/,
+      /\bXMLHttpRequest\b/,
+      /\blocalStorage\b/,
+      /\bsessionStorage\b/,
+      /\bindexedDB\b/,
+      /\bDate\.now\s*\(/,
+      /\bnew Date\s*\(/,
+      /\bperformance\.now\s*\(/,
+      /\bMath\.random\s*\(/,
+      /\bsetTimeout\s*\(/,
+      /\bsetInterval\s*\(/,
+      /\bprocess\.\w+/,
+      /\brequire\s*\(/,
+      /\b(readFileSync|writeFileSync|existsSync|readdirSync|statSync|mkdirSync)\b/,
+    ];
+
+    const offenders = vaultFiles
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => {
+        const code = withoutComments(readSource(path));
+
+        return FORBIDDEN.some((pattern) => pattern.test(code));
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("T24, R10 — never derives a document's kind, owner or placement from a path", () => {
+    /*
+     * A folder is organization. The rule is that mechanics never read it, and the way
+     * that rule breaks is a well-meant convenience: "it's under Characters/, so it's a
+     * character", or "it's in Gon's bundle, so it's Gon's".
+     *
+     * So the Vault layer is checked for the vocabulary such a shortcut needs. It has no
+     * path parameter anywhere, which is the structural version of the same claim — but
+     * a future author could add one, and this is what would notice.
+     */
+    const PATH_MECHANICS = [
+      /\bdirname\s*\(/,
+      /\bbasename\s*\(/,
+      /\bextname\s*\(/,
+      /\.split\s*\(\s*["']\/["']\s*\)\s*\.\s*(pop|at|slice)\b/,
+      /\bendsWith\s*\(\s*["']\.json["']\s*\)/,
+      /\bincludes\s*\(\s*["']Characters["']\s*\)/,
+      /\bincludes\s*\(\s*["']Item-Instances["']\s*\)/,
+      /\bincludes\s*\(\s*["']Definitions["']\s*\)/,
+    ];
+
+    const offenders = vaultFiles
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => {
+        const code = withoutComments(readSource(path));
+
+        return PATH_MECHANICS.some((pattern) => pattern.test(code));
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("holds no mutable module-level Vault state", () => {
+    /*
+     * A registry's hydrated snapshot is the one piece of mutable state in this design,
+     * and it lives in the registry closure where `clearHydrated` can reach it. A
+     * `let` or a top-level `Map` under `vault/` would be a second, unresettable one —
+     * which is how one test's Vault leaks into the next.
+     */
+    const offenders = vaultFiles
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => {
+        const code = withoutComments(readSource(path));
+
+        return /^let\s/m.test(code) ||
+          /^const\s+\w+\s*=\s*new (Map|Set)\b/m.test(code);
+      });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("T56 — no Foundry, Obsidian or Workbench field reaches a portable document", () => {
+    /*
+     * A portable character that carried one application's private state would stop
+     * being portable the moment a second application opened it — and would quietly
+     * invite that application to write its own block beside the first.
+     *
+     * Scene coordinates and placed-token state are on this list separately: those are
+     * facts about one session's map, not about a character, and the engine is explicit
+     * that exact world coordinates belong to the host.
+     */
+    const FORBIDDEN = [
+      /\bprototypeToken\b/,
+      /\$UserData\b/,
+      /\bactorId\b/,
+      /\bsceneId\b/,
+      /\btokenId\b/,
+      /\bflags\.\w*foundry/i,
+      /\bobsidianPath\b/,
+      /\bworkbench\w*:/,
+    ];
+
+    /*
+     * One file legitimately NAMES these: `character-document.ts` keeps a table of keys
+     * it refuses, and `workbench` is on it explicitly because the current save format
+     * has such a block and this contract's point is that it does not survive.
+     *
+     * So the refusal table is removed before searching. Searching the file as-is would
+     * flag the code that enforces the rule as a violation of it — and the usual fix for
+     * that, an exemption for the whole file, would stop checking the one file most
+     * likely to grow a host field.
+     */
+    const withoutRefusalTable = (code: string): string =>
+      code.replace(/const REFUSED_CHARACTER_KEYS[\s\S]*?\n\};/, "");
+
+    const offenders = vaultFiles
+      .filter((path) => !path.includes("__tests__"))
+      .filter((path) => {
+        const code = withoutRefusalTable(withoutComments(readSource(path)));
+
+        return FORBIDDEN.some((pattern) => pattern.test(code));
+      });
+
+    expect(offenders).toEqual([]);
+
+    // And the table really does still refuse them, rather than having been emptied.
+    const characterDocument = readSource(join(SRC, "vault", "character-document.ts"));
+
+    expect(characterDocument).toMatch(/REFUSED_CHARACTER_KEYS[\s\S]*?workbench:/);
+    expect(characterDocument).toMatch(/REFUSED_CHARACTER_KEYS[\s\S]*?foundry:/);
+  });
+
+  it("T57 — provenance and file paths are developer-audience only", () => {
+    /*
+     * Two audiences ask "where did this come from" and need different answers. A
+     * developer needs the file. A player reading a trace needs the world, and the
+     * machine path is nobody's business — an absolute one names a home directory, and
+     * traces get pasted into bug reports.
+     *
+     * So every diagnostic that carries a path is `audience: "developer"`. Checked by
+     * reading the diagnostics themselves rather than by trusting the convention.
+     */
+    const pathBearing = vaultFiles
+      .filter((path) => !path.includes("__tests__"))
+      .flatMap((path) => {
+        const code = readSource(path);
+
+        return [...code.matchAll(/\{[^{}]*?code:\s*["'`][^"'`]*?path[^"'`]*?["'`][\s\S]*?\}/g)]
+          .map((match) => ({ path, diagnostic: match[0] }));
+      });
+
+    expect(pathBearing.length).toBeGreaterThan(0);
+
+    const nonDeveloper = pathBearing.filter(
+      (entry) => !/audience:\s*"developer"/.test(entry.diagnostic),
+    );
+
+    expect(nonDeveloper).toEqual([]);
+  });
+});
+
+
+describe("Production content has exactly one authority", () => {
+  const productionFiles = sourceFilesUnder(SRC)
+    .filter((path) => !path.includes("__tests__"));
+
+  it("T42, M16 — no engine source holds a Fire Blast, Shout, sound or Elf definition", () => {
+    /*
+     * The four things this ticket externalized. Each now lives in exactly one place, a
+     * JSON document under `World/Vault/Definitions/`, and M16 is the mutation that
+     * restores a private TypeScript copy beside it.
+     *
+     * The ids are searched for as quoted strings, which is how a definition or a branch
+     * would name one. `fire-blast` appears in engine source as a SKILL id — the Skill
+     * and its emission profile are different content that share a name — so the
+     * emission-profile shape is what is checked here, not the id in isolation.
+     */
+    const offenders = productionFiles.filter((path) => {
+      const code = withoutComments(readSource(path));
+
+      return /"ordinary-shout"/.test(code) ||
+        /"ordinary-sound"/.test(code) ||
+        /EMISSION_PROFILE_DEFINITIONS/.test(code) ||
+        /appliesTo:\s*\{\s*type:\s*"(skill|communication)"/.test(code) ||
+        /\bid:\s*"elf"/.test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("keeps the profile CONTRACT in the engine and the profile CONTENT out of it", () => {
+    /*
+     * The distinction that makes the move coherent. The type, the validator, the
+     * matching rules and the collectors are the contract hydration produces, and they
+     * stay. The authored catalog is what left.
+     */
+    const profiles = readSource(join(SRC, "gameplay", "composition", "profiles.ts"));
+
+    expect(profiles).toMatch(/export interface EmissionProfileDefinition/);
+    expect(profiles).toMatch(/export function findEmissionProfileIssues/);
+    expect(profiles).toMatch(/export function collectEmissionContributions/);
+
+    // An empty authored catalog, declared inline where the object used to be.
+    expect(profiles).toMatch(/createRegistry<EmissionProfileDefinition>\(\s*"Emission Profile",\s*\{\},/);
+  });
+
+  it("T54, R37 — invents no production location, event, organization or NPC", () => {
+    /*
+     * Fixture ids are isolated to test files, and production content does not name a
+     * place, group or person that this ticket made up. The two ids that DO appear in
+     * tests — `whale-island`, `docks` — are fixture locations in the placement suites,
+     * and they must not have leaked into engine production source or into the Vault as
+     * though they were canon.
+     */
+    const offenders = productionFiles.filter((path) => {
+      const code = withoutComments(readSource(path));
+
+      return /"whale-island"/.test(code) ||
+        /"yorknew"/.test(code) ||
+        /"forest-clearing"/.test(code) ||
+        /"hunter-association"/.test(code);
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("the canonical Vault holds no invented Axia location, event or organization", () => {
+    /*
+     * Not a pinned list of documents — that would churn every time real content is
+     * added, and a test somebody has to update on every commit is a test somebody
+     * eventually updates without reading.
+     *
+     * The claim is about KINDS and about fixture leakage. There is no `location`,
+     * `event` or `organization` document kind, so no document in this Vault can assert
+     * a setting fact of that sort; and the placeholder ids the test suites use as
+     * stand-ins for places must not have found their way into production content.
+     */
+    const documentIndex = JSON.parse(readSource(join(
+      VAULT_DEFINITIONS,
+      "..",
+      "Indexes",
+      "documents.json",
+    ))) as { documents: readonly { id: string; kind: string; path: string }[] };
+
+    expect(documentIndex.documents.length).toBeGreaterThan(0);
+
+    const IMPLEMENTED_KINDS = [
+      "species",
+      "item-definition",
+      "emission-profile",
+      "propagation-preset",
+      "character",
+      "item-instance",
+    ];
+
+    for (const entry of documentIndex.documents) {
+      expect(IMPLEMENTED_KINDS).toContain(entry.kind);
+    }
+
+    for (const inventedKind of ["location", "event", "organization", "region", "faction"]) {
+      expect(IMPLEMENTED_KINDS).not.toContain(inventedKind);
+      expect(documentIndex.documents.map((entry) => entry.kind)).not.toContain(inventedKind);
+    }
+
+    /*
+     * And no fixture id leaked into the real tree. These are the stand-in places the
+     * placement suites use; they exist to exercise a graph, not to say anything about
+     * Axia, and a Vault document naming one would be fabricated canon.
+     */
+    const vaultText = documentIndex.documents
+      .map((entry) => readSource(join(VAULT_DEFINITIONS, "..", "..", "..", entry.path)))
+      .join("\n");
+
+    for (const fixtureId of [
+      "whale-island",
+      "yorknew",
+      "forest-clearing",
+      "fixture-clearing",
+      "hunter-association",
+      "docks",
+    ]) {
+      expect(vaultText).not.toContain(fixtureId);
+    }
   });
 });

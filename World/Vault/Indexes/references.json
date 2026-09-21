@@ -1,0 +1,36 @@
+{
+  "relationships": [
+    {
+      "id": "elf",
+      "references": [],
+      "referencedBy": []
+    },
+    {
+      "id": "fire-blast",
+      "references": [
+        "ordinary-sound"
+      ],
+      "referencedBy": []
+    },
+    {
+      "id": "gon-freecs",
+      "references": [],
+      "referencedBy": []
+    },
+    {
+      "id": "ordinary-shout",
+      "references": [
+        "ordinary-sound"
+      ],
+      "referencedBy": []
+    },
+    {
+      "id": "ordinary-sound",
+      "references": [],
+      "referencedBy": [
+        "fire-blast",
+        "ordinary-shout"
+      ]
+    }
+  ]
+}

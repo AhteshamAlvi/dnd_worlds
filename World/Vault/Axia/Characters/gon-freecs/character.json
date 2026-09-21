@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "kind": "character",
+  "id": "gon-freecs",
+  "name": "Gon Freecs",
+  "mechanics": {
+    "id": "gon-freecs",
+    "details": {
+      "name": "Gon Freecs"
+    },
+    "attributes": {
+      "agi": 10,
+      "dex": 10,
+      "con": 13,
+      "vit": 13,
+      "int": 10,
+      "wis": 10,
+      "per": 10,
+      "spi": 10,
+      "cha": 10
+    },
+    "body": {
+      "characterScale": 1,
+      "globalMorphology": {
+        "length": 1,
+        "bulk": 1,
+        "muscularity": 1,
+        "adiposity": 1
+      },
+      "strengthDevelopmentMuscularity": 1,
+      "continuity": {},
+      "anatomicalPoints": {}
+    },
+    "species": [
+      {
+        "speciesId": "human",
+        "percentage": 100
+      }
+    ],
+    "aura": {
+      "current": 100,
+      "allocations": []
+    },
+    "nen": {
+      "awakening": {
+        "condition": "unawakened",
+        "nodes": "half-open",
+        "currentMethod": null,
+        "currentAwakeningId": null,
+        "history": [],
+        "naturalAbility": null,
+        "externalAbilities": [],
+        "suppression": [],
+        "collapseRecovery": null
+      },
+      "affinity": {
+        "status": "unassigned"
+      },
+      "mastery": {
+        "ten": 0,
+        "ren": 0,
+        "zetsu": 0,
+        "hatsu": 0,
+        "shu": 0,
+        "en": 0,
+        "gyo": 0,
+        "ken": 0,
+        "chu": 0,
+        "in": 0,
+        "ko": 0,
+        "ryu": 0,
+        "yu": 0,
+        "ju": 0,
+        "fu": 0
+      }
+    },
+    "wakefulness": {
+      "hoursAwake": 0,
+      "consecutiveSleepHours": 0
+    },
+    "clans": [],
+    "traits": [],
+    "techniques": [],
+    "skills": [],
+    "items": [],
+    "conditions": [],
+    "injuries": []
+  }
+}

@@ -190,176 +190,38 @@ export function findEmissionProfileStructuralIssues(
 }
 
 
-export const EMISSION_PROFILE_DEFINITIONS = {
-  /*
-   * The one authored COMMUNICATION method, and deliberately only one.
-   *
-   * A warning is an Action that makes a noise, so it needs a profile exactly
-   * as a fire blast does — and it needs its own, because there is no such
-   * thing as a generic communication intensity. A shout, a hand signal, a
-   * radio and telepathy travel on different channels, carry different
-   * distances and are intercepted by different people, and giving the generic
-   * Warning Action a universal channel would make all four of those the same
-   * mechanic wearing four names.
-   *
-   * So the Warning Action REFERENCES a communication profile and has no
-   * emissions of its own, and this is the only one authored. Gestures, radios
-   * and telepathy each need theirs, later, with their own numbers.
-   *
-   * Sound 5 is an authored ordinal balance value and nothing more: louder than
-   * a campfire's crackle at 3, comparable to a fire blast's loose at 5,
-   * implying no decibels. It is anchored to the actor because a shout comes
-   * from whoever shouted, and it is emitted on `release` alone because that is
-   * the Action's authoritative completion time — the point where a warning
-   * becomes receivable.
-   *
-   * The falloff is the sound falloff this engine already uses, reused rather
-   * than re-chosen. A second, different table for the same channel would make
-   * a shout and a blast obey different physics.
-   *
-   * There is no privacy field, and that absence is R14: anybody with an ear
-   * pointed this way may hear it. Making an ordinary shout private would
-   * require a mechanic somebody authored, not a flag a caller sets.
-   */
-  "ordinary-shout": {
-    id: "ordinary-shout",
-    name: "Ordinary shout",
-    description: "Warning somebody out loud, in a voice anybody nearby can hear.",
-
-    appliesTo: { type: "communication", id: "ordinary-shout" },
-
-    /*
-     * No `threatSeverity`. Shouting at somebody endangers nobody, and a
-     * communication profile that declared a severity would emit danger on the
-     * warning itself — a warning the recipients would then need warning about.
-     */
-
-    emissions: [
-      { appliesTo: { phase: "release" }, subject: "action", phenomenon: "physical", channel: "sound", intensity: 5, anchor: "actor" },
-    ],
-
-    propagation: [
-      {
-        channel: "sound",
-        source: { type: "communication", id: "ordinary-shout" },
-        distance: [
-          { beyondMetres: 20, adjustBy: -1 },
-          { beyondMetres: 60, adjustBy: -3 },
-        ],
-        environment: [
-          { factor: "ambientNoise", band: "loud", adjustBy: -2 },
-          { factor: "ambientNoise", band: "overwhelming", adjustBy: -3 },
-        ],
-      },
-    ],
-  },
-
-  /*
-   * The one authored action profile, and the vertical slice this architecture
-   * was proved against.
-   *
-   * Fire Blast was chosen because it is the engine's only real ranged
-   * projectile: its own definition says the fire CROSSES the gap rather than
-   * arriving instantly, which is what gives it a genuine travel phase and
-   * therefore a genuine release-versus-impact distinction. A melee Skill would
-   * have proved the phase vocabulary against an action that only ever has two
-   * of the five.
-   *
-   * The intensities are ordinal positions on the 1-10 scale, relative to each
-   * other rather than measured. Fire is loudest and brightest where it lands,
-   * it is Nen the whole way (a second phenomenon on the same steps, which is
-   * what proves cues do not merge across phenomena), and what it leaves behind
-   * is smoke and warmth rather than a bang.
-   */
-  "fire-blast": {
-    id: "fire-blast",
-    name: "Fire Blast emissions",
-    description: "What projecting fire offensively puts into the world.",
-
-    appliesTo: { type: "skill", id: "fire-blast" },
-
-    threatSeverity: 3,
-
-    emissions: [
-      /* Gathering it: visible at the bender, not yet a threat anywhere else. */
-      { appliesTo: { phase: "preparation" }, subject: "action", phenomenon: "physical", channel: "visible-light", intensity: 4, anchor: "actor" },
-      { appliesTo: { phase: "preparation" }, subject: "action", phenomenon: "nen", channel: "aura", intensity: 5, anchor: "actor" },
-
-      /* The loose. Loud and bright, and it happens where the bender is. */
-      { appliesTo: { phase: "release" }, subject: "action", phenomenon: "physical", channel: "visible-light", intensity: 7, anchor: "actor" },
-      { appliesTo: { phase: "release" }, subject: "action", phenomenon: "physical", channel: "sound", intensity: 5, anchor: "actor" },
-      { appliesTo: { phase: "release" }, subject: "action", phenomenon: "physical", channel: "thermal", intensity: 5, anchor: "actor" },
-      { appliesTo: { phase: "release" }, subject: "action", phenomenon: "nen", channel: "aura", intensity: 6, anchor: "actor" },
-
-      /* In flight: anchored to the step, which is where the blast has got to. */
-      { appliesTo: { phase: "travel" }, subject: "action", phenomenon: "physical", channel: "visible-light", intensity: 6, anchor: "step" },
-      { appliesTo: { phase: "travel" }, subject: "action", phenomenon: "physical", channel: "thermal", intensity: 4, anchor: "step" },
-      { appliesTo: { phase: "travel" }, subject: "action", phenomenon: "nen", channel: "aura", intensity: 5, anchor: "step" },
-
-      /* Arrival, at the far end. Different place, different cue. */
-      { appliesTo: { phase: "impact" }, subject: "action", phenomenon: "physical", channel: "visible-light", intensity: 7, anchor: "target" },
-      { appliesTo: { phase: "impact" }, subject: "action", phenomenon: "physical", channel: "sound", intensity: 6, anchor: "target" },
-      { appliesTo: { phase: "impact" }, subject: "action", phenomenon: "physical", channel: "thermal", intensity: 7, anchor: "target" },
-
-      /* What is left: scorch and smoke, and no longer an action. */
-      { appliesTo: { phase: "aftermath" }, subject: "trace", phenomenon: "physical", channel: "thermal", intensity: 4, anchor: "target" },
-      { appliesTo: { phase: "aftermath" }, subject: "trace", phenomenon: "physical", channel: "airborne-chemical", intensity: 5, anchor: "target" },
-    ],
-
-    propagation: [
-      {
-        channel: "sound",
-        source: { type: "skill", id: "fire-blast" },
-        distance: [
-          { beyondMetres: 20, adjustBy: -1 },
-          { beyondMetres: 60, adjustBy: -3 },
-        ],
-        environment: [
-          { factor: "ambientNoise", band: "loud", adjustBy: -2 },
-          { factor: "ambientNoise", band: "overwhelming", adjustBy: -3 },
-        ],
-      },
-      {
-        channel: "visible-light",
-        source: { type: "skill", id: "fire-blast" },
-        distance: [
-          { beyondMetres: 50, adjustBy: -1 },
-          { beyondMetres: 150, adjustBy: -2 },
-        ],
-        environment: [
-          { factor: "illumination", band: "absent", adjustBy: 2 },
-          { factor: "illumination", band: "overwhelming", adjustBy: -2 },
-          /*
-           * Blocked, not attenuated. A wall between you and a fireball is a
-           * different fact from a hundred metres of air, and the two produce
-           * different answers downstream: one leaves a faint route to fail a
-           * roll against, the other leaves no route at all.
-           */
-          { factor: "visibility", band: "blocked", blocks: true },
-        ],
-      },
-      {
-        channel: "thermal",
-        source: { type: "skill", id: "fire-blast" },
-        distance: [
-          { beyondMetres: 5, adjustBy: -2 },
-          { beyondMetres: 20, adjustBy: -4 },
-        ],
-        environment: [{ factor: "visibility", band: "blocked", blocks: true }],
-      },
-    ],
-  },
-} as const satisfies Record<string, EmissionProfileDefinition>;
-
-
-export type KnownEmissionProfileId = keyof typeof EMISSION_PROFILE_DEFINITIONS;
-
+/*
+ * THE AUTHORED CATALOG IS EMPTY, AND THAT IS THE DESIGN.
+ *
+ * Fire Blast and Ordinary Shout used to live here as TypeScript objects, along
+ * with two copies of one sound-falloff table. They are JSON now:
+ *
+ *   World/Vault/Definitions/Emission-Profiles/fire-blast.json
+ *   World/Vault/Definitions/Emission-Profiles/ordinary-shout.json
+ *   World/Vault/Definitions/Propagation-Presets/ordinary-sound.json
+ *
+ * They arrive through `emissionProfileRegistry.hydrate()`, which a host calls with
+ * a validated snapshot the loader built. Adding a profile is adding a file; it is
+ * not an edit to this module, a rebuild, or a release.
+ *
+ * The object is gone rather than emptied because an empty production catalog next
+ * to a real one in JSON is precisely the "second authority" this move existed to
+ * remove — the next person with a profile to add would find a plausible-looking
+ * home for it here, and then two places would own the same question.
+ *
+ * Everything else in this file stays. The TYPE, the validator, the matching rules
+ * and the four collectors are the profile contract, and that contract is what
+ * hydration produces — see `resolveEmissionProfileDocument` in
+ * `vault/content.ts`, which builds exactly this shape and stamps each
+ * propagation rule with the profile's own source.
+ */
 
 const EMISSION_PROFILE_REGISTRY = createRegistry<EmissionProfileDefinition>(
   "Emission Profile",
-  EMISSION_PROFILE_DEFINITIONS,
+  {},
   composeStructuralValidators(findEmissionProfileStructuralIssues),
 );
+
 
 
 export const emissionProfileRegistry = EMISSION_PROFILE_REGISTRY;

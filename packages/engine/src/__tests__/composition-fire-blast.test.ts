@@ -36,7 +36,6 @@ import { UNSTRUCTURED_EXECUTION } from "../actions/timing";
 import {
   collectEmissionContributions,
   createCompositionSession,
-  EMISSION_PROFILE_DEFINITIONS,
   findStaleBindings,
   prepareActionProjections,
   propagateCue,
@@ -48,6 +47,7 @@ import { seconds } from "../time/duration";
 import type { DistanceInterval, MetricPosition, SpatialTravel } from "../spatial";
 
 import { payloadOf } from "./fixtures/result";
+import { canonicalEmissionProfile } from "./fixtures/vault-content";
 import { sensoryProfile } from "./fixtures/senses";
 import { currentRevisions, silence } from "./fixtures/composition";
 
@@ -82,7 +82,12 @@ const DECLARED_TRAVEL: SpatialTravel = {
 
 const FIRE_BLAST_SOURCE = { type: "skill", id: "fire-blast" } as const;
 
-const PROFILES = [EMISSION_PROFILE_DEFINITIONS["fire-blast"]];
+/*
+ * Loaded from World/Vault/Definitions/, not built here. This suite is the parity
+ * check for the JSON: it passes only if the file says what the retired TypeScript
+ * profile used to say.
+ */
+const PROFILES = [canonicalEmissionProfile("fire-blast")];
 
 
 /** The real Skill, projected into the neutral profile everything downstream reads. */

@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "kind": "species",
+  "id": "Invalid Id Fixture",
+  "name": "",
+  "description": "Two structural faults: the id and the name."
+}

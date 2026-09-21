@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "kind": "species",
+  "id": "good-fixture",
+  "name": "Good fixture",
+  "description": "Valid, and must still be diagnosable beside a broken sibling."
+}

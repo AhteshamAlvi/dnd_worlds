@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "kind": "emission-profile",
+  "id": "ordinary-shout",
+  "name": "Ordinary shout",
+  "description": "Warning somebody out loud, in a voice anybody nearby can hear.",
+
+  "appliesTo": { "type": "communication", "id": "ordinary-shout" },
+
+  "emissions": [
+    {
+      "appliesTo": { "phase": "release" },
+      "subject": "action",
+      "phenomenon": "physical",
+      "channel": "sound",
+      "intensity": 5,
+      "anchor": "actor"
+    }
+  ],
+
+  "propagationPresets": [
+    { "kind": "propagation-preset", "id": "ordinary-sound" }
+  ]
+}

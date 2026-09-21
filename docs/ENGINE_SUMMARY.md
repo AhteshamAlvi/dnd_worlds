@@ -1718,12 +1718,17 @@ The shape of it, for orientation only — the file has the detail and the states
 ```
 dnd_worlds/                     npm workspaces, "nenworld"
 ├── packages/engine/            the rules kernel — this document
+├── packages/vault/             the filesystem loader — see VAULT_STORAGE_CONTRACT.md
 ├── apps/workbench/             React + Vite; currently broken — see BACKLOG.md
 ├── foundry_module/             planned consumer
-└── worldbuilding/              Obsidian vault — the frozen Rulebook + content
+└── World/                      Obsidian vault — the frozen Rulebook + content
     ├── Rulebook/               01 Core Rules · 02 Characters · 03 Aura Engine · 04 Combat ·
     │                           05 Progression · 06 Races · 07 World · 08 GM Tools · 09 Appendices
-    └── Vault/                  host-registered custom content (JSON, one file per entry)
+    ├── Axia/                   setting prose: lore, geography, history, cultures
+    ├── Vault/Definitions/      production definitions (JSON, one file per entry)
+    ├── Vault/Axia/             characters and Item instances
+    ├── Vault/Indexes/          generated, rebuildable
+    └── ../World/Campaigns/     per-campaign players and Items
 ```
 
 ```bash

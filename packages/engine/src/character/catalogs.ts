@@ -44,6 +44,8 @@ import {
 
 import { clanRegistry, type ClanDefinition } from "./identity/clans";
 import { speciesRegistry, type SpeciesDefinition } from "./identity/species";
+import type { DefinitionProvenance } from "../infrastructure/provenance";
+import type { DefinitionSnapshot } from "../infrastructure/registry";
 import { traitRegistry, type TraitDefinition } from "./identity/traits";
 
 import { findCapabilityDependencyIssues } from "./capabilities/dependencies";
@@ -237,6 +239,46 @@ export function unregisterDefinition(
   id: string,
 ): boolean {
   return REGISTRIES[domain].unregister(id);
+}
+
+/*
+ * Installs the production content of one domain from a validated snapshot.
+ *
+ * The boundary the Vault loader crosses, and deliberately the ONLY one. A loader
+ * cannot reach a registry object directly — nothing exports them — so external
+ * content arrives through this function, already parsed, already validated, and
+ * carrying provenance. Which means "add a Species" is "add a file", and no part
+ * of that sentence involves editing a TypeScript catalog.
+ *
+ * Distinct from registerDefinition, which adds ONE host entry additively. A
+ * hydrate REPLACES the domain's production content wholesale, because that is what
+ * reloading a vault means: a definition whose file was deleted must disappear.
+ */
+export function hydrateDefinitions<D extends CatalogDomain>(
+  domain: D,
+  snapshot: DefinitionSnapshot<CatalogDefinitions[D]>,
+): RegistrationResult {
+  return REGISTRIES[domain].hydrate(snapshot);
+}
+
+/** Drops every hydrated definition in every domain. */
+export function clearHydratedDefinitions(): void {
+  for (const domain of CATALOG_DOMAINS) {
+    REGISTRIES[domain].clearHydrated();
+  }
+}
+
+/**
+ * Which file one definition came from, at which schema version.
+ *
+ * Developer diagnostics only. The path is repository-relative — see
+ * infrastructure/provenance.ts for why an absolute one is never recorded.
+ */
+export function definitionProvenance(
+  domain: CatalogDomain,
+  id: string,
+): DefinitionProvenance | undefined {
+  return REGISTRIES[domain].provenanceOf(id);
 }
 
 /*

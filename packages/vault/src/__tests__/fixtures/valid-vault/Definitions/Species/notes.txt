@@ -1,0 +1,1 @@
+Not JSON. Not a document. Not an error.
